@@ -39,6 +39,7 @@ import type {
   EnquiryFile,
   EnquiryStatus,
   FollowUp,
+  FollowUpStatus,
   InternalNote,
   OutboxJob,
   Profile,
@@ -620,15 +621,25 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       );
     },
 
-    async listFollowUps(filter: { enquiryId?: string; clientId?: string; open?: boolean; artistId?: string } = {}): Promise<FollowUp[]> {
+    async listFollowUps(filter: {
+      enquiryId?: string;
+      clientId?: string;
+      open?: boolean;
+      artistId?: string;
+      statuses?: readonly FollowUpStatus[];
+      dueDescending?: boolean;
+      limit?: number;
+    } = {}): Promise<FollowUp[]> {
+      const limit = Math.max(1, Math.min(filter.limit ?? 100, 100));
       let query = client
         .from('follow_ups')
         .select('id, artist_id, status, due_at, subject, details, client_id, enquiry_id, project_id, assigned_to')
-        .order('due_at', { ascending: true })
-        .limit(100);
+        .order('due_at', { ascending: !filter.dueDescending })
+        .limit(limit);
       if (filter.enquiryId) query = query.eq('enquiry_id', filter.enquiryId);
       if (filter.clientId) query = query.eq('client_id', filter.clientId);
       if (filter.open) query = query.eq('status', 'open');
+      else if (filter.statuses?.length) query = query.in('status', [...filter.statuses]);
       if (filter.artistId) query = query.eq('artist_id', filter.artistId);
       return unwrap<FollowUp[]>(await query, 'load follow-ups');
     },
