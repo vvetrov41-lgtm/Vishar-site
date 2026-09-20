@@ -115,6 +115,21 @@ export function buildGoogleContact(job) {
   return { phone, body };
 }
 
+function buildMinimalGoogleContact(job) {
+  const phone = normalizedPhone(job?.phone_normalized);
+  if (!phone) throw new CalendarConnectorError('google_contact_job_invalid');
+
+  return {
+    phone,
+    body: {
+      // Google documents givenName as the canonical minimal create shape.
+      // Keep the CRM display name intact instead of guessing name boundaries.
+      names: [{ givenName: cleanName(job?.client_display_name) }],
+      phoneNumbers: [{ value: phone }],
+    },
+  };
+}
+
 export function createGoogleContactsProvider({
   accessToken,
   fetchImpl = fetch,
@@ -177,38 +192,52 @@ export function createGoogleContactsProvider({
   }
 
   async function createContact(job) {
-    const { phone, body } = buildGoogleContact(job);
-    const params = new URLSearchParams({
-      personFields: 'metadata,names,phoneNumbers,emailAddresses',
-    });
+    const primary = buildGoogleContact(job);
+
+    async function sendCreate(body, personFields) {
+      const params = new URLSearchParams({ personFields });
+      try {
+        return await fetchImpl(
+          `${GOOGLE_PEOPLE_BASE_URL}/people:createContact?${params}`,
+          {
+            method: 'POST',
+            headers: {
+              ...headers,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          },
+        );
+      } catch {
+        throw new CalendarConnectorError('google_contacts_create_result_unknown');
+      }
+    }
 
     // A network failure or 5xx after POST is ambiguous: Google may have
     // committed the contact even though the response never reached us. Give
     // that case its own retry code so the database can wait longer before the
     // next search-and-create attempt.
-    let response;
-    try {
-      response = await fetchImpl(
-        `${GOOGLE_PEOPLE_BASE_URL}/people:createContact?${params}`,
-        {
-          method: 'POST',
-          headers: {
-            ...headers,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        },
-      );
-    } catch {
+    let response = await sendCreate(
+      primary.body,
+      'metadata,names,phoneNumbers,emailAddresses',
+    );
+    if (response.status >= 500) {
       throw new CalendarConnectorError('google_contacts_create_result_unknown');
     }
-    if (!response.ok) {
+
+    if (response.status === 400) {
+      // A 400 create response is an explicit rejection, so no contact was
+      // committed. Retry once with Google's minimal documented create shape:
+      // exact CRM display name plus canonical phone, with no optional fields.
+      const fallback = buildMinimalGoogleContact(job);
+      response = await sendCreate(fallback.body, 'names,phoneNumbers');
       if (response.status >= 500) {
         throw new CalendarConnectorError('google_contacts_create_result_unknown');
       }
-      throw await peopleResponseError(response);
     }
-    return { phone };
+
+    if (!response.ok) throw await peopleResponseError(response);
+    return { phone: primary.phone };
   }
 
   return {
