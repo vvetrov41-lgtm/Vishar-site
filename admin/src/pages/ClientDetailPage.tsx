@@ -464,17 +464,44 @@ function WorkSection({
   );
 }
 
-function BookingsSection({ appointments }: { appointments: Appointment[] }) {
-  const { t, label, language } = useLanguage();
+function upcomingClientAppointments(appointments: Appointment[]): Appointment[] {
   const now = Date.now();
-
-  const upcoming = appointments
+  return appointments
     .filter((appointment) => appointment.cancelled_at === null && timeOf(appointment.start_at) >= now)
     .sort((left, right) => timeOf(left.start_at) - timeOf(right.start_at));
-  const past = appointments
+}
+
+function pastClientAppointments(appointments: Appointment[]): Appointment[] {
+  const now = Date.now();
+  return appointments
     .filter((appointment) => appointment.cancelled_at !== null || timeOf(appointment.start_at) < now)
     .sort((left, right) => timeOf(right.start_at) - timeOf(left.start_at))
     .slice(0, 5);
+}
+
+function ClientAppointmentRow({ appointment }: { appointment: Appointment }) {
+  const { t, label, language } = useLanguage();
+  const cancelled = appointment.cancelled_at !== null;
+  return (
+    <Link to={`/appointments/${appointment.id}`} className="row">
+      <div className="title">{formatDateTime(appointment.start_at, language)}</div>
+      <div className="meta">
+        <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
+        <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
+          {label('sessionStatus', appointment.status)}
+        </span>{' '}
+        {appointment.duration_hours !== null ? (
+          <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+function BookingsSection({ appointments }: { appointments: Appointment[] }) {
+  const { t } = useLanguage();
+  const upcoming = upcomingClientAppointments(appointments);
+  const past = pastClientAppointments(appointments);
 
   return (
     <Section
@@ -489,49 +516,53 @@ function BookingsSection({ appointments }: { appointments: Appointment[] }) {
         />
       ) : (
         <>
-          <h3>{t('clientWorkspace.upcoming')}</h3>
-          {upcoming.length === 0 ? (
-            <EmptyState compact title={t('clientWorkspace.noBooking')} />
-          ) : (
-            <div className="list">
-              {upcoming.map((appointment) => (
-                <AppointmentRow key={appointment.id} appointment={appointment} />
-              ))}
-            </div>
-          )}
+          <div className="client-bookings-upcoming">
+            <h3>{t('clientWorkspace.upcoming')}</h3>
+            {upcoming.length === 0 ? (
+              <EmptyState compact title={t('clientWorkspace.noBooking')} />
+            ) : (
+              <div className="list">
+                {upcoming.map((appointment) => (
+                  <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+                ))}
+              </div>
+            )}
+          </div>
 
           {past.length > 0 ? (
-            <>
+            <div className="client-bookings-past">
               <h3 style={{ marginTop: 14 }}>{t('clientWorkspace.past')}</h3>
               <div className="list">
                 {past.map((appointment) => (
-                  <AppointmentRow key={appointment.id} appointment={appointment} />
+                  <ClientAppointmentRow key={appointment.id} appointment={appointment} />
                 ))}
               </div>
-            </>
+            </div>
           ) : null}
         </>
       )}
     </Section>
   );
+}
 
-  function AppointmentRow({ appointment }: { appointment: Appointment }) {
-    const cancelled = appointment.cancelled_at !== null;
-    return (
-      <Link to={`/appointments/${appointment.id}`} className="row">
-        <div className="title">{formatDateTime(appointment.start_at, language)}</div>
-        <div className="meta">
-          <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
-          <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
-            {label('sessionStatus', appointment.status)}
-          </span>{' '}
-          {appointment.duration_hours !== null ? (
-            <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>
-          ) : null}
-        </div>
-      </Link>
-    );
-  }
+function PastBookingsMobileSection({ appointments }: { appointments: Appointment[] }) {
+  const { t } = useLanguage();
+  const past = pastClientAppointments(appointments);
+  return (
+    <div className="client-mobile-history-only">
+      <Section title={t('clientWorkspace.previousBookings')}>
+        {past.length === 0 ? (
+          <EmptyState compact title={t('clientWorkspace.noPastBookings')} />
+        ) : (
+          <div className="list">
+            {past.map((appointment) => (
+              <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+            ))}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
 }
 
 /**
