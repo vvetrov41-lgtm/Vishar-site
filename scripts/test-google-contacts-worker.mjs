@@ -125,6 +125,40 @@ await test('route and token validation fail closed until Contacts capability and
   );
 });
 
+await test('People 403 responses preserve only safe provider reason classification', async () => {
+  for (const [reason, expectedCode] of [
+    ['SERVICE_DISABLED', 'google_contacts_provider_rejected'],
+    ['ACCESS_TOKEN_SCOPE_INSUFFICIENT', 'google_contacts_scope_missing'],
+    ['SOME_OTHER_REASON', 'google_contacts_permission_denied'],
+  ]) {
+    const provider = createGoogleContactsProvider({
+      accessToken: 'access-token',
+      sleepImpl: async () => {},
+      fetchImpl: async () => Response.json({
+        error: {
+          code: 403,
+          status: 'PERMISSION_DENIED',
+          message: 'provider text must not become an internal error code',
+          details: [{
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason,
+            domain: 'googleapis.com',
+            metadata: {
+              service: 'people.googleapis.com',
+              consumer: 'projects/redacted',
+            },
+          }],
+        },
+      }, { status: 403 }),
+    });
+
+    await assert.rejects(
+      provider.warmSearch(),
+      (error) => error instanceof CalendarConnectorError && error.code === expectedCode,
+    );
+  }
+});
+
 await test('People search warms first and exact E.164 match suppresses create', async () => {
   const calls = [];
   const provider = createGoogleContactsProvider({

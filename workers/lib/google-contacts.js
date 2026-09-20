@@ -39,13 +39,37 @@ function normalizedEmail(value) {
   return cleaned;
 }
 
-function peopleError(status) {
+function googleErrorReason(payload) {
+  const details = Array.isArray(payload?.error?.details) ? payload.error.details : [];
+  for (const detail of details) {
+    const reason = typeof detail?.reason === 'string'
+      ? detail.reason.trim().toUpperCase()
+      : '';
+    if (/^[A-Z][A-Z0-9_]{2,63}$/.test(reason)) return reason;
+  }
+  return '';
+}
+
+function peopleError(status, reason = '') {
   if (status === 401) return new CalendarConnectorError('calendar_oauth_expired');
-  if (status === 403) return new CalendarConnectorError('google_contacts_permission_denied');
+  if (status === 403) {
+    if (reason === 'SERVICE_DISABLED') {
+      return new CalendarConnectorError('google_contacts_provider_rejected');
+    }
+    if (reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT') {
+      return new CalendarConnectorError('google_contacts_scope_missing');
+    }
+    return new CalendarConnectorError('google_contacts_permission_denied');
+  }
   if (status === 429 || status >= 500) {
     return new CalendarConnectorError('google_contacts_provider_unavailable');
   }
   return new CalendarConnectorError('google_contacts_provider_rejected');
+}
+
+async function peopleResponseError(response) {
+  const payload = await response.json().catch(() => null);
+  return peopleError(response.status, googleErrorReason(payload));
 }
 
 async function peopleFetch(fetchImpl, url, init) {
@@ -55,7 +79,7 @@ async function peopleFetch(fetchImpl, url, init) {
   } catch {
     throw new CalendarConnectorError('google_contacts_provider_unavailable');
   }
-  if (!response.ok) throw peopleError(response.status);
+  if (!response.ok) throw await peopleResponseError(response);
   return response;
 }
 
@@ -182,7 +206,7 @@ export function createGoogleContactsProvider({
       if (response.status >= 500) {
         throw new CalendarConnectorError('google_contacts_create_result_unknown');
       }
-      throw peopleError(response.status);
+      throw await peopleResponseError(response);
     }
     return { phone };
   }
@@ -200,5 +224,7 @@ export const __testing = {
   normalizedPhone,
   normalizedEmail,
   cleanName,
+  googleErrorReason,
   peopleError,
+  peopleResponseError,
 };
