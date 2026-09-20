@@ -98,6 +98,17 @@ for (const row of OPERATOR_PARITY) {
 }
 
 const criticalGaps = [
+  'finance.invoices.list',
+  'finance.invoices.get',
+  'finance.invoices.create',
+  'finance.invoices.line_item.set',
+  'finance.invoices.line_item.remove',
+  'finance.invoices.details.set',
+  'finance.invoices.issue',
+  'finance.invoices.void',
+  'finance.invoices.payment_request.attach',
+  'finance.invoices.payment.record',
+  'finance.invoices.credit_note.create',
   'finance.project.deposit_policy.configure',
   'finance.project.deposit.request',
   'finance.project.deposit.confirm_manual',
