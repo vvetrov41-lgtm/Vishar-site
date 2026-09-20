@@ -233,6 +233,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/inbox', label: 'Inbox', capability: 'viewEnquiries' },
   { path: '/enquiries', label: 'Enquiries', capability: 'viewEnquiries' },
   { path: '/clients', label: 'Clients', capability: 'viewClients' },
+  { path: '/follow-ups', label: 'nav.follow-ups', capability: 'viewFollowUps' },
   { path: '/projects', label: 'Projects', capability: 'viewProjects' },
   { path: '/appointments', label: 'Calendar', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },

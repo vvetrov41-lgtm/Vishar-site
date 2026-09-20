@@ -1001,3 +1001,226 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
 .contact-diff-value { margin: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
 .contact-diff-value .contact-diff-label { color: var(--muted); }
 .contact-diff-choice { display: flex; align-items: center; gap: 8px; min-height: var(--tap); }
+
+
+/* Enquiry board ---------------------------------------------------------- */
+
+.enquiry-view-toggle {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 14px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.enquiry-view-toggle button {
+  min-height: 38px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+}
+.enquiry-view-toggle button.active,
+.enquiry-view-toggle button[aria-pressed='true'] {
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.enquiry-board-scope > span {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.enquiry-board-scope .meta { margin: 0; max-width: 32rem; }
+
+.enquiry-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 86vw);
+  gap: 12px;
+  padding: 2px 2px 10px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-snap-type: x proximity;
+}
+.enquiry-board-column {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  scroll-snap-align: start;
+}
+.enquiry-board-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.enquiry-board-column-header h2 {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+.enquiry-board-stack { display: flex; flex-direction: column; gap: 8px; }
+.enquiry-board-empty {
+  min-height: 64px;
+  margin: 0;
+  padding: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 9px;
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+.enquiry-board-card {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.enquiry-board-card-main {
+  display: block;
+  min-height: var(--tap);
+  padding: 11px 12px 9px;
+  color: inherit;
+  text-decoration: none;
+}
+.enquiry-board-card-title {
+  font-size: 0.92rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.enquiry-board-card-status { margin-top: 6px; }
+.enquiry-board-card-brief {
+  margin-top: 8px;
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.enquiry-board-card .meta { margin-top: 7px; font-size: 0.72rem; }
+.enquiry-board-move {
+  display: block;
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--border);
+}
+.enquiry-board-move select {
+  width: 100%;
+  min-height: var(--tap);
+  margin-top: 8px;
+  font-size: 0.82rem;
+}
+
+@media (min-width: 900px) {
+  .enquiry-board {
+    grid-auto-columns: minmax(220px, 1fr);
+    grid-template-columns: repeat(5, minmax(220px, 1fr));
+    overflow-x: auto;
+  }
+}
+
+
+/* Mobile client workspace tabs ------------------------------------------ */
+
+.client-mobile-tabs { display: none; }
+.client-mobile-tab-panel { display: contents; }
+.client-mobile-history-only { display: none; }
+
+@media (max-width: 639px) {
+  .client-mobile-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    margin: 0 0 12px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+  }
+  .client-mobile-tabs button {
+    min-width: 0;
+    min-height: var(--tap);
+    padding: 7px 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .client-mobile-tabs button.active,
+  .client-mobile-tabs button[aria-pressed='true'] {
+    background: var(--surface-raised);
+    color: var(--text);
+  }
+
+  .client-mobile-tab-panel { display: none; }
+  .client-mobile-tab-panel[data-active='true'] { display: contents; }
+
+  /* Desktop keeps the compact five-item history inside Bookings. On a phone
+     it moves to History so Work stays focused on what is ahead. */
+  .client-mobile-tab-panel[data-client-tab='work'] .client-bookings-past {
+    display: none;
+  }
+  .client-mobile-history-only { display: block; }
+}
+
+
+/* Follow-up workspace ---------------------------------------------------- */
+
+.follow-up-workspace-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.follow-up-workspace-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.follow-up-workspace-main .title,
+.follow-up-workspace-main .meta {
+  overflow-wrap: anywhere;
+}
+.follow-up-done {
+  flex: 0 0 auto;
+  min-height: 36px;
+  cursor: pointer;
+}
+@media (max-width: 639px) {
+  .follow-up-workspace-row {
+    align-items: stretch;
+  }
+  .follow-up-done {
+    min-height: var(--tap);
+    align-self: center;
+  }
+}
+
+
+/* Activity feed --------------------------------------------------------- */
+
+.activity-feed-state {
+  margin: 0;
+  padding-block: 6px;
+}
+.activity-feed-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--warn-border, var(--border));
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.activity-feed-error button { flex: 0 0 auto; }
+.activity-feed-sentinel { width: 100%; height: 1px; }

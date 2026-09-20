@@ -14,6 +14,11 @@
 import { useEffect, useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
+import {
+  ClientMobileTabPanel,
+  ClientMobileTabs,
+  type ClientMobileTab,
+} from '../components/ClientMobileTabs';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink } from '../components/DetailContext';
 import { BookingPanel } from '../components/BookingPanel';
@@ -59,6 +64,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   const { profile } = useSession();
   const { t, language } = useLanguage();
   const role = profile?.role;
+  const [mobileTab, setMobileTab] = useState<ClientMobileTab>('work');
 
   const { data, loading, error, reload } = useAsync<ClientData>(async () => {
     const client = await api.getClient(clientId);
@@ -130,88 +136,106 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
         artistIds={artistIds}
       />
 
-      <NextActionCard snapshot={snapshot} />
+      <ClientMobileTabs active={mobileTab} onChange={setMobileTab} />
 
-      <WorkSection enquiries={enquiries} projects={projects} snapshot={snapshot} />
+      <ClientMobileTabPanel tab="work" active={mobileTab}>
+        <NextActionCard snapshot={snapshot} />
 
-      {can(role, 'viewSessions') ? (
-        <BookingsSection appointments={appointments} />
-      ) : null}
+        <WorkSection enquiries={enquiries} projects={projects} snapshot={snapshot} />
 
-      {/* Booking starts where the operator realises they need it. The artist
-          comes from the client's own work when it is unambiguous, and from the
-          scope selector otherwise - never from a free-text field, because the
-          artist decides the whole schedule. */}
-      {can(role, 'manageSessions') ? (
-        <Section title={t('booking.title')}>
-          <BookingPanel
-            artistId={bookingArtistId}
-            clientId={clientId}
-            clientName={client.full_name}
-            /* Tattoo work belongs to a project, and the database refuses one
-               without. This screen already holds the client's projects and
-               enquiries, so it offers them rather than sending an operator to
-               another page to find out which. */
-            projectOptions={projects.map((project) => ({
-              id: project.id,
-              label: project.title,
-              enquiryId: project.enquiry_id,
-            }))}
-            enquiryOptions={enquiries.map((enquiry) => ({
-              id: enquiry.id,
-              label: enquiry.reference_number,
-            }))}
-            onBooked={() => reload()}
-          />
-        </Section>
-      ) : null}
+        {can(role, 'viewSessions') ? (
+          <BookingsSection appointments={appointments} />
+        ) : null}
 
-      {can(role, 'viewEnquiries') ? (
-        <>
-          <MessagesSection conversations={conversations} messages={latestMessages} />
-          <GmailMessagesSection api={api} clientId={clientId} />
-        </>
-      ) : null}
+        {/* Booking starts where the operator realises they need it. The artist
+            comes from the client's own work when it is unambiguous, and from the
+            scope selector otherwise - never from a free-text field, because the
+            artist decides the whole schedule. */}
+        {can(role, 'manageSessions') ? (
+          <Section title={t('booking.title')}>
+            <BookingPanel
+              artistId={bookingArtistId}
+              clientId={clientId}
+              clientName={client.full_name}
+              /* Tattoo work belongs to a project, and the database refuses one
+                 without. This screen already holds the client's projects and
+                 enquiries, so it offers them rather than sending an operator to
+                 another page to find out which. */
+              projectOptions={projects.map((project) => ({
+                id: project.id,
+                label: project.title,
+                enquiryId: project.enquiry_id,
+              }))}
+              enquiryOptions={enquiries.map((enquiry) => ({
+                id: enquiry.id,
+                label: enquiry.reference_number,
+              }))}
+              onBooked={() => reload()}
+            />
+          </Section>
+        ) : null}
 
-      {can(role, 'viewFollowUps') ? (
-        <FollowUpsSection followUps={snapshot.openFollowUps} clientId={clientId} />
-      ) : null}
+        {can(role, 'viewFollowUps') ? (
+          <FollowUpsSection followUps={snapshot.openFollowUps} clientId={clientId} />
+        ) : null}
+      </ClientMobileTabPanel>
 
-      {can(role, 'viewNotes') ? (
-        <Section title={t('client.notes')}>
-          {notes.length === 0 ? <EmptyState compact title={t('client.noNotes')} /> : (
-            <ul className="timeline">
-              {notes.map((note) => (
-                <li key={note.id}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
-                  <div className="when">{formatDateTime(note.created_at, language)}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Section>
-      ) : null}
+      <ClientMobileTabPanel tab="messages" active={mobileTab}>
+        {can(role, 'viewEnquiries') ? (
+          <>
+            <MessagesSection conversations={conversations} messages={latestMessages} />
+            <GmailMessagesSection api={api} clientId={clientId} />
+          </>
+        ) : null}
+      </ClientMobileTabPanel>
 
-      {/* The nine-row identity block used to occupy the top of this page. It is
-          reference material, not the operational question, so it sits last and
-          closed. */}
-      <section className="card">
-        <details className="submitted-snapshot" style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}>
-          <summary>{t('clientWorkspace.details')}</summary>
-          <dl className="definition">
-            <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(client.phone) ?? '—'}</dd>
-            <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
-            <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
-            <dt>{t('artistScope.label')}</dt>
-            <dd><ArtistRelationship artistIds={artistIds} showEmpty /></dd>
-            <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
-          </dl>
-          <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />
-          <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
-        </details>
-      </section>
+      <ClientMobileTabPanel tab="history" active={mobileTab}>
+        {can(role, 'viewSessions') ? (
+          <PastBookingsMobileSection appointments={appointments} />
+        ) : null}
+
+        {can(role, 'viewNotes') ? (
+          <Section title={t('client.notes')}>
+            {notes.length === 0 ? <EmptyState compact title={t('client.noNotes')} /> : (
+              <ul className="timeline">
+                {notes.map((note) => (
+                  <li key={note.id}>
+                    <div style={{ whiteSpace: 'pre-wrap' }}>{note.body}</div>
+                    <div className="when">{formatDateTime(note.created_at, language)}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        ) : null}
+      </ClientMobileTabPanel>
+
+      <ClientMobileTabPanel tab="details" active={mobileTab}>
+        {/* On desktop this remains the same collapsed reference block. On a
+            phone, choosing Details opens it immediately instead of asking for
+            another tap after choosing the tab. */}
+        <section className="card">
+          <details
+            className="submitted-snapshot"
+            open={mobileTab === 'details' ? true : undefined}
+            style={{ marginTop: 0, paddingTop: 0, borderTop: 0 }}
+          >
+            <summary>{t('clientWorkspace.details')}</summary>
+            <dl className="definition">
+              <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
+              <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(client.phone) ?? '—'}</dd>
+              <dt>{t('enquiry.instagram')}</dt><dd>{client.instagram ?? '—'}</dd>
+              <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(client.preferred_contact, language)}</dd>
+              <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
+              <dt>{t('artistScope.label')}</dt>
+              <dd><ArtistRelationship artistIds={artistIds} showEmpty /></dd>
+              <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
+            </dl>
+            <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />
+            <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
+          </details>
+        </section>
+      </ClientMobileTabPanel>
     </>
   );
 }
@@ -440,17 +464,44 @@ function WorkSection({
   );
 }
 
-function BookingsSection({ appointments }: { appointments: Appointment[] }) {
-  const { t, label, language } = useLanguage();
+function upcomingClientAppointments(appointments: Appointment[]): Appointment[] {
   const now = Date.now();
-
-  const upcoming = appointments
+  return appointments
     .filter((appointment) => appointment.cancelled_at === null && timeOf(appointment.start_at) >= now)
     .sort((left, right) => timeOf(left.start_at) - timeOf(right.start_at));
-  const past = appointments
+}
+
+function pastClientAppointments(appointments: Appointment[]): Appointment[] {
+  const now = Date.now();
+  return appointments
     .filter((appointment) => appointment.cancelled_at !== null || timeOf(appointment.start_at) < now)
     .sort((left, right) => timeOf(right.start_at) - timeOf(left.start_at))
     .slice(0, 5);
+}
+
+function ClientAppointmentRow({ appointment }: { appointment: Appointment }) {
+  const { t, label, language } = useLanguage();
+  const cancelled = appointment.cancelled_at !== null;
+  return (
+    <Link to={`/appointments/${appointment.id}`} className="row">
+      <div className="title">{formatDateTime(appointment.start_at, language)}</div>
+      <div className="meta">
+        <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
+        <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
+          {label('sessionStatus', appointment.status)}
+        </span>{' '}
+        {appointment.duration_hours !== null ? (
+          <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>
+        ) : null}
+      </div>
+    </Link>
+  );
+}
+
+function BookingsSection({ appointments }: { appointments: Appointment[] }) {
+  const { t } = useLanguage();
+  const upcoming = upcomingClientAppointments(appointments);
+  const past = pastClientAppointments(appointments);
 
   return (
     <Section
@@ -465,49 +516,53 @@ function BookingsSection({ appointments }: { appointments: Appointment[] }) {
         />
       ) : (
         <>
-          <h3>{t('clientWorkspace.upcoming')}</h3>
-          {upcoming.length === 0 ? (
-            <EmptyState compact title={t('clientWorkspace.noBooking')} />
-          ) : (
-            <div className="list">
-              {upcoming.map((appointment) => (
-                <AppointmentRow key={appointment.id} appointment={appointment} />
-              ))}
-            </div>
-          )}
+          <div className="client-bookings-upcoming">
+            <h3>{t('clientWorkspace.upcoming')}</h3>
+            {upcoming.length === 0 ? (
+              <EmptyState compact title={t('clientWorkspace.noBooking')} />
+            ) : (
+              <div className="list">
+                {upcoming.map((appointment) => (
+                  <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+                ))}
+              </div>
+            )}
+          </div>
 
           {past.length > 0 ? (
-            <>
+            <div className="client-bookings-past">
               <h3 style={{ marginTop: 14 }}>{t('clientWorkspace.past')}</h3>
               <div className="list">
                 {past.map((appointment) => (
-                  <AppointmentRow key={appointment.id} appointment={appointment} />
+                  <ClientAppointmentRow key={appointment.id} appointment={appointment} />
                 ))}
               </div>
-            </>
+            </div>
           ) : null}
         </>
       )}
     </Section>
   );
+}
 
-  function AppointmentRow({ appointment }: { appointment: Appointment }) {
-    const cancelled = appointment.cancelled_at !== null;
-    return (
-      <Link to={`/appointments/${appointment.id}`} className="row">
-        <div className="title">{formatDateTime(appointment.start_at, language)}</div>
-        <div className="meta">
-          <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
-          <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
-            {label('sessionStatus', appointment.status)}
-          </span>{' '}
-          {appointment.duration_hours !== null ? (
-            <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>
-          ) : null}
-        </div>
-      </Link>
-    );
-  }
+function PastBookingsMobileSection({ appointments }: { appointments: Appointment[] }) {
+  const { t } = useLanguage();
+  const past = pastClientAppointments(appointments);
+  return (
+    <div className="client-mobile-history-only">
+      <Section title={t('clientWorkspace.previousBookings')}>
+        {past.length === 0 ? (
+          <EmptyState compact title={t('clientWorkspace.noPastBookings')} />
+        ) : (
+          <div className="list">
+            {past.map((appointment) => (
+              <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+            ))}
+          </div>
+        )}
+      </Section>
+    </div>
+  );
 }
 
 /**

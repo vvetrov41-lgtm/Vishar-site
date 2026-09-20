@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
-import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
+import { ActivityFeed } from '../components/ActivityFeed';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
@@ -19,7 +19,7 @@ import { useLanguage, type Language } from '../lib/i18n';
 import { typeLabel } from './AppointmentsPage';
 import type { Appointment } from '../lib/appointment-api';
 import type {
-  ActivityEntry, InternalNote, Project, ProjectFinance, ProjectStatus, SessionFinance,
+  InternalNote, Project, ProjectFinance, ProjectStatus, SessionFinance,
 } from '../lib/types';
 
 interface ProjectData {
@@ -29,7 +29,6 @@ interface ProjectData {
   appointments: Appointment[];
   sessionFinance: SessionFinance[];
   notes: InternalNote[];
-  activity: ActivityEntry[];
 }
 
 const PROJECT_STATUSES: ProjectStatus[] = ['draft', 'active', 'on_hold', 'completed', 'cancelled'];
@@ -54,18 +53,16 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         appointments: [],
         sessionFinance: [],
         notes: [],
-        activity: [],
       };
     }
 
     const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
     const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
-    const [finance, appointments, sessionFinance, notes, activity] = await Promise.all([
+    const [finance, appointments, sessionFinance, notes] = await Promise.all([
       mayViewFinance ? api.getProjectFinance(projectId) : Promise.resolve(null),
       api.listAppointments({ projectId }),
       mayViewFinance ? api.listSessionFinance(projectId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ projectId }) : Promise.resolve([]),
-      can(role, 'viewActivity') ? api.listActivity({ projectId }) : Promise.resolve([]),
     ]);
 
     const [clientRow] = await api.listClientsByIds([project.client_id]);
@@ -77,7 +74,6 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       appointments,
       sessionFinance,
       notes,
-      activity,
     };
   }, [api, projectId, role, memberships]);
 
@@ -102,7 +98,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
-  const { project, clientName, finance, appointments, sessionFinance, notes, activity } = data;
+  const { project, clientName, finance, appointments, sessionFinance, notes } = data;
   const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
   const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
   const mayManageFinance = canAccess(role, 'manageFinance', scopedMemberships);
@@ -338,7 +334,11 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       {can(role, 'viewActivity') ? (
         <Section title={t('project.activity')}>
-          <CollapsibleActivityLog activity={activity} emptyTitle={t('project.noActivity')} />
+          <ActivityFeed
+            filter={{ projectId: project.id }}
+            emptyTitle={t('project.noActivity')}
+            initiallyCollapsed
+          />
         </Section>
       ) : null}
     </>
