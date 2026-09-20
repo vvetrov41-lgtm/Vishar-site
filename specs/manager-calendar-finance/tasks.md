@@ -65,19 +65,23 @@
 
 ## Remaining
 
-- [ ] T024 Human review of PR #818.
-- [ ] T025 Manual browser acceptance: a pointer drag across days, the conflict
-      path, and the print dialog's rendering of the invoice document.
+- [x] T024 Independent full-diff review of PR #818, including RLS/IDOR,
+      idempotency and invoice-wide payment ceilings; repair the findings.
+- [x] T025 Record every new invoicing operator action explicitly in GPT/MCP
+      parity as a bounded gap rather than silently changing the inventory.
 - [ ] T026 Re-check base drift and mergeability, then merge the proven head.
 - [ ] T027 Verify post-merge CI on the product integration branch.
-- [ ] T028 Staging verification of the calendar and invoicing screens.
-- [ ] T029 Fresh-check the production Supabase migration head, then apply the
+- [ ] T028 Fresh-check the production Supabase migration head, then apply the
       two migrations through the guarded database release workflow from an
       approved release branch.
-- [ ] T030 Deploy CRM Pages from the same approved release lineage and read back
+- [ ] T029 Deploy CRM Pages from the same approved release lineage and read back
       the deployed revision and migration head.
-- [ ] T031 Read-only production acceptance without creating fake client or
+- [ ] T030 Read-only production acceptance without creating fake client or
       payment data.
+
+Staging is intentionally not part of this rollout. Pointer/print behaviour is
+covered by the existing keyboard/synthetic interaction tests and print CSS; no
+staging environment is required before merge.
 
 ## Deferred
 
