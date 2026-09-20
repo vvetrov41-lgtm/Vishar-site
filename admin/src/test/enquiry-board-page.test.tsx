@@ -52,7 +52,7 @@ describe('enquiry board page', () => {
     await screen.findByText('Fixture Client');
     fireEvent.click(screen.getByRole('button', { name: 'Board' }));
 
-    expect(await screen.findByText('New')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { level: 2, name: 'New' })).toBeInTheDocument();
     expect(screen.queryByRole('combobox', { name: /Move Fixture Client/ })).not.toBeInTheDocument();
   });
 });
