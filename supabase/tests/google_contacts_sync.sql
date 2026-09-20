@@ -1,6 +1,6 @@
 begin;
 
-select plan(17);
+select plan(19);
 
 select ok(
   'google_contact_create' = any(enum_range(null::public.outbox_kind)::text[]),
@@ -38,6 +38,277 @@ select ok(
       and pg_get_function_identity_arguments(p.oid) = 'p_artist_id uuid'
   ),
   'Google Contacts capability check is VOLATILE so same-RPC enablement is visible'
+);
+
+select ok(
+  '+447700900123' ~ E'^\\+[1-9][0-9]{7,14}select ok(
+  not has_function_privilege(
+    'anon',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'anon cannot toggle Google Contacts capability'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'authenticated browser role cannot toggle Google Contacts capability'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'service backend can toggle Google Contacts capability'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.claim_google_contact_outbox(text,integer,integer)',
+    'EXECUTE'
+  ),
+  'authenticated browser role cannot lease Google Contacts jobs'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.claim_google_contact_outbox(text,integer,integer)',
+    'EXECUTE'
+  ),
+  'service backend can lease Google Contacts jobs'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_trigger t
+    where t.tgrelid = 'public.communication_conversations'::regclass
+      and t.tgname = 'communication_conversations_enqueue_google_contact'
+      and not t.tgisinternal
+  ),
+  'linked WhatsApp Google Contacts trigger exists'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.channel <> ''whatsapp''%'
+  and pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.link_state <> ''linked''%'
+  and pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.client_id is null%',
+  'trigger ignores non-WhatsApp, unlinked and clientless conversations'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%exception when others%',
+  'provider enqueue failures cannot roll back communication linkage'
+);
+
+select ok(
+  pg_get_functiondef('public.resolve_outbox_route(uuid)'::regprocedure)
+    like '%google_contact_create%'
+  and pg_get_functiondef('public.resolve_outbox_route(uuid)'::regprocedure)
+    like '%google_contacts_sync%',
+  'provider route requires explicit Google Contacts capability'
+);
+
+select ok(
+  pg_get_functiondef('public.list_calendar_connection_status()'::regprocedure)
+    like '%google_contact_create%'
+  and pg_get_functiondef('public.list_calendar_connection_status()'::regprocedure)
+    like '%google_contacts_scope_missing%',
+  'Google connection health includes Contacts jobs and legacy-consent reconnect state'
+);
+
+select * from finish();
+rollback;
+,
+  'explicit E.164 regex matches a valid canonical phone'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_google_contact_create(uuid,uuid)'::regprocedure)
+    like '%phone_normalized ~ E''^\\+[1-9][0-9]{7,14}select ok(
+  not has_function_privilege(
+    'anon',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'anon cannot toggle Google Contacts capability'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'authenticated browser role cannot toggle Google Contacts capability'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'service backend can toggle Google Contacts capability'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.claim_google_contact_outbox(text,integer,integer)',
+    'EXECUTE'
+  ),
+  'authenticated browser role cannot lease Google Contacts jobs'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.claim_google_contact_outbox(text,integer,integer)',
+    'EXECUTE'
+  ),
+  'service backend can lease Google Contacts jobs'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_trigger t
+    where t.tgrelid = 'public.communication_conversations'::regclass
+      and t.tgname = 'communication_conversations_enqueue_google_contact'
+      and not t.tgisinternal
+  ),
+  'linked WhatsApp Google Contacts trigger exists'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.channel <> ''whatsapp''%'
+  and pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.link_state <> ''linked''%'
+  and pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.client_id is null%',
+  'trigger ignores non-WhatsApp, unlinked and clientless conversations'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%exception when others%',
+  'provider enqueue failures cannot roll back communication linkage'
+);
+
+select ok(
+  pg_get_functiondef('public.resolve_outbox_route(uuid)'::regprocedure)
+    like '%google_contact_create%'
+  and pg_get_functiondef('public.resolve_outbox_route(uuid)'::regprocedure)
+    like '%google_contacts_sync%',
+  'provider route requires explicit Google Contacts capability'
+);
+
+select ok(
+  pg_get_functiondef('public.list_calendar_connection_status()'::regprocedure)
+    like '%google_contact_create%'
+  and pg_get_functiondef('public.list_calendar_connection_status()'::regprocedure)
+    like '%google_contacts_scope_missing%',
+  'Google connection health includes Contacts jobs and legacy-consent reconnect state'
+);
+
+select * from finish();
+rollback;
+'%'
+  and pg_get_functiondef('crm_private.reconcile_google_contact_sync(uuid)'::regprocedure)
+    like '%phone_normalized ~ E''^\\+[1-9][0-9]{7,14}select ok(
+  not has_function_privilege(
+    'anon',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'anon cannot toggle Google Contacts capability'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'authenticated browser role cannot toggle Google Contacts capability'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.set_google_contacts_sync(uuid,text,boolean)',
+    'EXECUTE'
+  ),
+  'service backend can toggle Google Contacts capability'
+);
+select ok(
+  not has_function_privilege(
+    'authenticated',
+    'public.claim_google_contact_outbox(text,integer,integer)',
+    'EXECUTE'
+  ),
+  'authenticated browser role cannot lease Google Contacts jobs'
+);
+select ok(
+  has_function_privilege(
+    'service_role',
+    'public.claim_google_contact_outbox(text,integer,integer)',
+    'EXECUTE'
+  ),
+  'service backend can lease Google Contacts jobs'
+);
+
+select ok(
+  exists (
+    select 1
+    from pg_trigger t
+    where t.tgrelid = 'public.communication_conversations'::regclass
+      and t.tgname = 'communication_conversations_enqueue_google_contact'
+      and not t.tgisinternal
+  ),
+  'linked WhatsApp Google Contacts trigger exists'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.channel <> ''whatsapp''%'
+  and pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.link_state <> ''linked''%'
+  and pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%new.client_id is null%',
+  'trigger ignores non-WhatsApp, unlinked and clientless conversations'
+);
+
+select ok(
+  pg_get_functiondef('crm_private.enqueue_linked_whatsapp_google_contact()'::regprocedure)
+    like '%exception when others%',
+  'provider enqueue failures cannot roll back communication linkage'
+);
+
+select ok(
+  pg_get_functiondef('public.resolve_outbox_route(uuid)'::regprocedure)
+    like '%google_contact_create%'
+  and pg_get_functiondef('public.resolve_outbox_route(uuid)'::regprocedure)
+    like '%google_contacts_sync%',
+  'provider route requires explicit Google Contacts capability'
+);
+
+select ok(
+  pg_get_functiondef('public.list_calendar_connection_status()'::regprocedure)
+    like '%google_contact_create%'
+  and pg_get_functiondef('public.list_calendar_connection_status()'::regprocedure)
+    like '%google_contacts_scope_missing%',
+  'Google connection health includes Contacts jobs and legacy-consent reconnect state'
+);
+
+select * from finish();
+rollback;
+'%',
+  'enqueue and reconciliation use the explicit E.164 escape string'
 );
 
 select ok(
