@@ -138,7 +138,7 @@ describe('Statistics screen', () => {
 
     // No artist chosen: the browser adds no artist filter of its own, because
     // "everything I may see" is a question only row level security can answer.
-    const statisticsTables = ['enquiries', 'projects', 'sessions'];
+    const statisticsTables = ['statistics_enquiries', 'statistics_projects', 'statistics_sessions'];
     const scoped = queryCalls.filter(
       (call) => statisticsTables.includes(call.table) && call.method === 'eq' && call.args[0] === 'artist_id',
     );
