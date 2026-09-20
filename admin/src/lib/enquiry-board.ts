@@ -16,6 +16,17 @@ export const ENQUIRY_BOARD_COLUMNS: readonly EnquiryBoardColumn[] = [
   { key: 'booked', statuses: ['converted'] },
 ] as const;
 
+export const ENQUIRY_BOARD_STATUSES: readonly EnquiryStatus[] = [
+  'new',
+  'reviewing',
+  'waiting_for_client',
+  'accepted',
+  'quote_sent',
+  'deposit_requested',
+  'deposit_paid',
+  'converted',
+] as const;
+
 const STATUS_TO_COLUMN: Partial<Record<EnquiryStatus, EnquiryBoardColumnKey>> = {
   new: 'new',
   reviewing: 'new',
