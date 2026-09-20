@@ -54,7 +54,7 @@ function peopleError(status, reason = '') {
   if (status === 401) return new CalendarConnectorError('calendar_oauth_expired');
   if (status === 403) {
     if (reason === 'SERVICE_DISABLED') {
-      return new CalendarConnectorError('google_contacts_api_disabled');
+      return new CalendarConnectorError('google_contacts_provider_rejected');
     }
     if (reason === 'ACCESS_TOKEN_SCOPE_INSUFFICIENT') {
       return new CalendarConnectorError('google_contacts_scope_missing');
