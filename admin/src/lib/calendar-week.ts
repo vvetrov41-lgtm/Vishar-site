@@ -337,6 +337,47 @@ export function rescheduleTarget(input: {
   };
 }
 
+/**
+ * Where an appointment ends when its lower edge is resized onto a grid row.
+ *
+ * Unlike a move, the start instant stays fixed. The chosen end is a wall clock
+ * in the artist's zone, so a manager resizing across a GMT/BST boundary gets
+ * the time they pointed at rather than a browser-zone approximation.
+ */
+export function resizeTarget(input: {
+  appointment: Pick<Appointment, 'start_at' | 'end_at'>;
+  endDayStart: number;
+  endMinutesFromMidnight: number;
+  timeZone: string;
+}): { startAt: string; endAt: string } | null {
+  const timeZone = input.timeZone || DEFAULT_TIMEZONE;
+  const from = instantOf(input.appointment.start_at);
+  const currentEnd = instantOf(input.appointment.end_at);
+  if (Number.isNaN(from) || Number.isNaN(currentEnd) || currentEnd <= from) return null;
+
+  const dayParts = zonedParts(input.endDayStart, timeZone);
+  const minutes = Math.max(0, Math.round(input.endMinutesFromMidnight));
+  const dayOffset = Math.floor(minutes / MINUTES_PER_DAY);
+  const minutesInDay = minutes % MINUTES_PER_DAY;
+  const nextEnd = zonedTimestamp(
+    {
+      year: dayParts.year,
+      month: dayParts.month,
+      day: dayParts.day + dayOffset,
+      hour: Math.floor(minutesInDay / 60),
+      minute: minutesInDay % 60,
+    },
+    timeZone
+  );
+
+  if (nextEnd - from < SLOT_MINUTES * 60_000) return null;
+
+  return {
+    startAt: input.appointment.start_at,
+    endAt: new Date(nextEnd).toISOString(),
+  };
+}
+
 /** The slot rows a grid draws between its first and last hour. */
 export function slotsFor(calendar: Pick<WeekCalendar, 'startHour' | 'endHour'>): number[] {
   const slots: number[] = [];
