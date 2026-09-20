@@ -9,6 +9,7 @@ import { parseEnquiryFields, PRIVACY_NOTICE_VERSION } from '../workers/lib/valid
 import { handleHostedBookingRequest } from '../workers/routes/hosted-booking.js';
 import { handlePublicBookingRequest } from '../workers/routes/public-booking.js';
 import { SUPPORTED_BOOKING_FORM_VERSION } from '../workers/lib/provider-routing.js';
+import registry from '../config/discovery-sources.json' with { type: 'json' };
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const env = {
@@ -29,25 +30,15 @@ async function test(name, fn) {
   }
 }
 
-const expectedOptions = [
-  ['instagram', 'Instagram'],
-  ['google', 'Google'],
-  ['ai', 'ChatGPT / AI'],
-  ['referral', 'Recommendation / Friend'],
-  ['convention', 'Tattoo convention'],
-  ['returning_client', 'Returning client'],
-  ['other', 'Other'],
-];
+const expectedOptions = registry.sources.map((source) => [source.key, source.labels.en]);
 
 function assertReferralMarkup(html) {
   assert.match(html, /How did you hear about/);
   for (const [value, label] of expectedOptions) {
-    assert.ok(
-      html.includes(`<option value="${value}">${label}</option>`),
-      `missing ${value} option`,
-    );
+    assert.ok(html.includes(`value="${value}"`), `missing ${value} option`);
+    assert.ok(html.includes(`>${label}</option>`), `missing ${value} label`);
   }
-  for (const legacy of ['chatgpt', 'other_ai', 'friend_referral', 'tattoo_convention']) {
+  for (const legacy of Object.keys(registry.legacyAliases)) {
     assert.equal(html.includes(`value="${legacy}"`), false, `legacy option ${legacy} must not be rendered`);
   }
   assert.match(html, /name="discoverySourceDetail"/);

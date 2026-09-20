@@ -10,6 +10,7 @@ import {
 } from '../workers/routes/public-booking.js';
 import { readTrustedBookingConfig } from '../workers/lib/provider-routing.js';
 import { PUBLIC_SLUG_LOOKUP_RPCS, READ_ONLY_RPCS } from '../workers/lib/supabase.js';
+import registry from '../config/discovery-sources.json' with { type: 'json' };
 
 const env = {
   SUPABASE_URL: 'https://project.supabase.co',
@@ -62,19 +63,13 @@ test('GET resolves only the path slug, renders bounded discovery choices and ign
   assert.match(html, /Vladimir/);
   assert.doesNotMatch(html, /kristina|forged/i);
   assert.match(html, /<select id="discoverySource" name="discoverySource" required>/);
-  for (const [value, label] of [
-    ['instagram', 'Instagram'],
-    ['google', 'Google'],
-    ['ai', 'ChatGPT \/ AI'],
-    ['referral', 'Recommendation \/ Friend'],
-    ['convention', 'Tattoo convention'],
-    ['returning_client', 'Returning client'],
-    ['other', 'Other'],
-  ]) {
-    assert.match(html, new RegExp(`<option value="${value}">${label}</option>`));
+  for (const source of registry.sources) {
+    assert.ok(html.includes(`value="${source.key}"`), `missing ${source.key} discovery option`);
+    assert.ok(html.includes(`>${source.labels.en}</option>`), `missing ${source.key} discovery label`);
+    assert.ok(html.includes(`data-detail-mode="${source.detail.mode}"`), `missing ${source.key} detail mode`);
   }
-  for (const legacy of ['chatgpt', 'other_ai', 'friend_referral', 'tattoo_convention']) {
-    assert.doesNotMatch(html, new RegExp(`<option value="${legacy}">`));
+  for (const legacy of Object.keys(registry.legacyAliases)) {
+    assert.doesNotMatch(html, new RegExp(`<option value="${legacy}"(?:\\s|>)`));
   }
   assert.match(html, /name="discoverySourceDetail"/);
   assert.match(html, /Which AI service\? \(optional\)/);

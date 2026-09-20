@@ -10,6 +10,7 @@ import { RequestError, ConfigurationError, isMultipartRequest, jsonResponse } fr
 import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { SUPPORTED_BOOKING_FORM_VERSION } from '../lib/provider-routing.js';
 import { PRIVACY_NOTICE_VERSION } from '../lib/validation.js';
+import { renderDiscoverySourceOptionsHtml } from '../lib/discovery-sources.js';
 import { handleHostedEnquiryIntake } from './enquiries.js';
 
 const PUBLIC_SOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -74,10 +75,12 @@ function unavailablePage(status = 404) {
 }
 
 function renderHostedForm(meta, sourceId) {
-  const artist = escapeHtml(meta.artist_display_name || 'Tattoo artist');
+  const rawArtist = String(meta.artist_display_name || 'Tattoo artist');
+  const artist = escapeHtml(rawArtist);
   const label = escapeHtml(meta.display_label || 'Tattoo enquiry');
   const formPath = `/forms/${encodeURIComponent(sourceId)}`;
   const privacyVersion = escapeHtml(PRIVACY_NOTICE_VERSION);
+  const discoveryOptions = renderDiscoverySourceOptionsHtml(rawArtist, escapeHtml);
 
   return `<!doctype html>
 <html lang="en-GB">
@@ -108,7 +111,7 @@ function renderHostedForm(meta, sourceId) {
 <label>Approximate size <span class="required">*</span><input name="size" maxlength="120" placeholder="Centimetres or body area" required></label>
 <label>Existing tattoo / cover-up? <span class="required">*</span><select name="coverUp" required><option value="">Choose one</option><option>No</option><option>Yes</option><option>Not sure</option></select></label>
 <label class="span">When would you like to start?<input name="timing" maxlength="160" placeholder="Preferred month or flexible dates"></label>
-<label class="span">How did you hear about ${artist}? <span class="required">*</span><select id="discoverySource" name="discoverySource" required><option value="">Choose one</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="ai">ChatGPT / AI</option><option value="referral">Recommendation / Friend</option><option value="convention">Tattoo convention</option><option value="returning_client">Returning client</option><option value="other">Other</option></select></label>
+<label class="span">How did you hear about ${artist}? <span class="required">*</span><select id="discoverySource" name="discoverySource" required><option value="">Choose one</option>${discoveryOptions}</select></label>
 <label id="discoveryDetailField" class="span" hidden><span id="discoveryDetailLabel">More details</span><input id="discoverySourceDetail" name="discoverySourceDetail" maxlength="240"></label>
 <label class="span">Your idea <span class="required">*</span><textarea name="idea" maxlength="3500" required></textarea></label>
 <label class="span">Reference images <span class="required">*</span><input id="references" name="references" type="file" accept="image/jpeg,image/png,image/webp" multiple required><small>Attach 1-3 JPG, PNG or WebP images, up to 4 MB each.</small></label>
@@ -139,12 +142,10 @@ function renderHostedForm(meta, sourceId) {
   function clearKey(){try{sessionStorage.removeItem(keyName);}catch(e){}}
   function sync(){
     phone.required=preferred.value==='WhatsApp';instagram.required=preferred.value==='Instagram';
-    var value=discovery.value;var show=value==='other'||value==='referral'||value==='ai';
-    discoveryDetailField.hidden=!show;discoveryDetail.required=value==='other';
-    if(value==='other')discoveryDetailLabel.textContent='Please tell us where you found ${artist}';
-    else if(value==='referral')discoveryDetailLabel.textContent='Who recommended ${artist}? (optional)';
-    else if(value==='ai')discoveryDetailLabel.textContent='Which AI service? (optional)';
-    else{discoveryDetailLabel.textContent='More details';discoveryDetail.value='';}
+    var option=discovery.options[discovery.selectedIndex];var mode=option&&option.dataset.detailMode||'none';var show=mode!=='none';
+    discoveryDetailField.hidden=!show;discoveryDetail.required=mode==='required';
+    discoveryDetailLabel.textContent=show?((option.dataset.detailLabel||'More details')+(mode==='required'?' *':'')):'More details';
+    if(!show)discoveryDetail.value='';
   }
   preferred.addEventListener('change',sync);discovery.addEventListener('change',sync);sync();
   form.addEventListener('submit',async function(event){

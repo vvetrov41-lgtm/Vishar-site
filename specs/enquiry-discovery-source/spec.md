@@ -3,13 +3,13 @@
 ## Status
 
 - Feature: `enquiry-discovery-source`
-- State: Clarified
+- State: Implemented
 - Owner/workstream: Vishar CRM
 - Related PRs/issues: none
 
 ## Problem
 
-The public booking form records technical acquisition data such as booking source and UTM values, but it does not ask clients how they first discovered the artist. The Statistics screen therefore cannot answer the separate business question "How did clients hear about you?" for Vladimir, Kristina, or Sam.
+The public booking form records technical acquisition data such as booking source and UTM values, but it does not ask clients how they first discovered the artist. The Statistics screen therefore cannot answer the separate business question "How did clients hear about you?" for every artist using the canonical booking flow.
 
 ## Goals
 
@@ -51,19 +51,19 @@ Given a submission with an unsupported non-empty discovery category, when it rea
 
 ## Functional requirements
 
-- FR-001: Canonical public booking pages MUST present a required discovery-source selector with stable choices: Instagram, ChatGPT, Other AI assistant, Friend / recommendation, Google, Other.
+- FR-001: Canonical public booking pages MUST present a required discovery-source selector driven by the shared registry, currently: Instagram, Google, ChatGPT / AI, Recommendation / Friend, Tattoo convention, Returning client, Other.
 - FR-002: The durable enquiry record MUST store the stable category independently from technical acquisition fields.
 - FR-003: Existing intake clients MAY omit the field and MUST remain compatible.
 - FR-004: Statistics MUST aggregate the stored value for the selected artist and selected period, without altering the existing technical-source calculation.
 - FR-005: Historical enquiries with no value MUST be represented as "Not recorded" / "Не указано" in the discovery breakdown.
-- FR-006: The feature MUST work identically for Vladimir, Kristina, and Sam through the shared canonical booking form.
+- FR-006: The feature MUST work identically for every active artist through the shared canonical booking form.
 
 ## Security and trust requirements
 
 - SR-001: The discovery answer is descriptive business metadata only and MUST NOT select or override `artist_id`, `booking_source_id`, source keys, form versions, origins, or provider routing.
 - SR-002: Artist and booking-source ownership MUST continue to be resolved server-side from the trusted public booking route/source registry.
 - SR-003: Statistics MUST rely on the existing database/RLS artist scope rather than browser-side filtering as an authorization boundary.
-- SR-004: The database MUST constrain stored non-null values to the supported stable category ids.
+- SR-004: The database MUST constrain stored non-null values to the supported stable category ids, and CI MUST fail if that constraint drifts from the shared registry.
 
 ## Failure and recovery behavior
 
@@ -78,7 +78,7 @@ Given a submission with an unsupported non-empty discovery category, when it rea
 
 ## Acceptance criteria
 
-- AC-001: `/book/vladimir`, `/book/kristina`, and `/book/sam` render the same required discovery-source selector with the six supported choices.
+- AC-001: Canonical `/book/{artist}` and hosted forms render the same required discovery-source selector from `config/discovery-sources.json`; Vladimir's static form is held to the same contract by CI.
 - AC-002: A valid hosted public booking intake persists the selected stable category on the matching enquiry.
 - AC-003: Unsupported discovery values are rejected and cannot be persisted.
 - AC-004: Omitted discovery values remain accepted for compatible non-canonical/legacy intake and persist as NULL.
@@ -92,6 +92,13 @@ Given a submission with an unsupported non-empty discovery category, when it rea
 - Existing trusted booking-source intake and public booking slug architecture.
 - Existing Statistics screen and artist-scoped RLS.
 - Ordered forward-only Supabase migrations.
+
+## Architecture
+
+- `config/discovery-sources.json` is the canonical application registry for current category ids, labels, detail-field behaviour, and legacy aliases.
+- Worker intake validation and Worker-rendered public/hosted forms consume the registry directly.
+- Statistics normalises legacy aliases from the registry and preserves unknown non-empty values as visible fallback rows.
+- CI compares the registry with the final database check constraint, CRM AI validator vocabulary, and the static Vladimir booking form before production rollout.
 
 ## Open questions
 
