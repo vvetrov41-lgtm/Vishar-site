@@ -1169,3 +1169,36 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
   }
   .client-mobile-history-only { display: block; }
 }
+
+
+/* Follow-up workspace ---------------------------------------------------- */
+
+.follow-up-workspace-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.follow-up-workspace-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.follow-up-workspace-main .title,
+.follow-up-workspace-main .meta {
+  overflow-wrap: anywhere;
+}
+.follow-up-done {
+  flex: 0 0 auto;
+  min-height: 36px;
+  cursor: pointer;
+}
+@media (max-width: 639px) {
+  .follow-up-workspace-row {
+    align-items: stretch;
+  }
+  .follow-up-done {
+    min-height: var(--tap);
+    align-self: center;
+  }
+}
