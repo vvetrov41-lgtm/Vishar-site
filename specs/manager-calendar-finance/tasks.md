@@ -63,21 +63,23 @@
 - [x] T023 Move the durable feature intent into `specs/manager-calendar-finance/`
       and remove the superseded plan document.
 
-## Remaining
+## Rollout completion
 
 - [x] T024 Independent full-diff review of PR #818, including RLS/IDOR,
       idempotency and invoice-wide payment ceilings; repair the findings.
 - [x] T025 Record every new invoicing operator action explicitly in GPT/MCP
       parity as a bounded gap rather than silently changing the inventory.
-- [ ] T026 Re-check base drift and mergeability, then merge the proven head.
-- [ ] T027 Verify post-merge CI on the product integration branch.
-- [ ] T028 Fresh-check the production Supabase migration head, then apply the
+- [x] T026 Re-check base drift and mergeability, then merge the proven head.
+- [x] T027 Verify post-merge CI on the product integration branch.
+- [x] T028 Fresh-check the production Supabase migration head, then apply the
       two migrations through the guarded database release workflow from an
       approved release branch.
-- [ ] T029 Deploy CRM Pages from the same approved release lineage and read back
+- [x] T029 Deploy CRM Pages from the same approved release lineage and read back
       the deployed revision and migration head.
-- [ ] T030 Read-only production acceptance without creating fake client or
+- [x] T030 Read-only production acceptance without creating fake client or
       payment data.
+
+Completion evidence (2026-09-20): PR #818 merged as `153eef58b03106af39f9ec136248d17baca28ec2`. Post-merge validation passed on that SHA. The immutable release branch `release/private-crm-rc-manager-calendar-finance-20260920` completed the guarded private production release, applying `20260920120000_invoicing_core` and `20260920121000_invoicing_rpcs`, deploying the matching CRM Pages revision, and passing deployment readback. Independent production database readback confirmed the migration head, forced RLS on the three new tables, the expected finance guards on all eleven RPCs, and zero synthetic invoice, line-item or credit-note rows.
 
 Staging is intentionally not part of this rollout. Pointer/print behaviour is
 covered by the existing keyboard/synthetic interaction tests and print CSS; no
