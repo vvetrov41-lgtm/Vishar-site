@@ -355,6 +355,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     // ---- enquiries --------------------------------------------------------
     async listEnquiries(filters: {
       status?: EnquiryStatus;
+      statuses?: readonly EnquiryStatus[];
       assignedTo?: string;
       clientId?: string;
       search?: string;
@@ -372,6 +373,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
         .limit(200);
 
       if (filters.status) query = query.eq('status', filters.status);
+      else if (filters.statuses?.length) query = query.in('status', [...filters.statuses]);
       if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
       if (filters.clientId) query = query.eq('client_id', filters.clientId);
       // A reference number is the one identifier the operator does not have to
