@@ -106,7 +106,7 @@ jobs:
           const output = process.env.DRY_RUN || '';
           const expected = process.env.EXPECTED_MIGRATION;
           const migrations = Array.from(new Set(
-            output.match(/\b\d{14}_[a-z0-9_]+\.sql\b/g) || []
+            output.match(/\d{14}_[a-z0-9_]+\.sql/g) || []
           ));
           if (!output.includes(expected)) {
             throw new Error(`Expected pending migration was not present in production dry-run: ${expected}`);
@@ -136,7 +136,7 @@ jobs:
           AFTER="$after" node <<'NODE'
           const output = process.env.AFTER || '';
           const pending = Array.from(new Set(
-            output.match(/\b\d{14}_[a-z0-9_]+\.sql\b/g) || []
+            output.match(/\d{14}_[a-z0-9_]+\.sql/g) || []
           ));
           if (pending.length) {
             throw new Error(`Production still has pending migrations after rollout: ${pending.join(', ')}`);
