@@ -48,32 +48,48 @@ function assertRegistryShape() {
 async function latestDatabaseDiscoveryKeys() {
   const files = (await readdir(migrationDir)).filter((name) => name.endsWith('.sql')).sort();
   let latest = null;
+  let latestMention = null;
 
   const pattern = /add constraint enquiries_discovery_source_known[\s\S]*?check\s*\(\s*discovery_source is null\s*or\s*discovery_source in\s*\(([^)]*)\)/gi;
   for (const file of files) {
     const sql = await readFile(path.join(migrationDir, file), 'utf8');
+    if (sql.includes('enquiries_discovery_source_known')) latestMention = file;
     for (const match of sql.matchAll(pattern)) {
       latest = { file, keys: sqlQuotedValues(match[1]) };
     }
   }
 
   assert.ok(latest, 'could not find the final enquiries_discovery_source_known constraint');
+  assert.equal(
+    latest.file,
+    latestMention,
+    `latest discovery_source constraint mutation in ${latestMention} is not parseable by the registry drift guard`,
+  );
   return latest;
 }
 
 async function latestAiDiscoveryKeys() {
   const files = (await readdir(migrationDir)).filter((name) => name.endsWith('.sql')).sort();
   let latest = null;
+  let latestMention = null;
 
   const pattern = /v_key\s*=\s*'discovery_source'[\s\S]{0,260}?not in\s*\(([^)]*)\)/gi;
   for (const file of files) {
     const sql = await readFile(path.join(migrationDir, file), 'utf8');
+    if (sql.includes('validate_enquiry_ai_result') && sql.includes('discovery_source')) {
+      latestMention = file;
+    }
     for (const match of sql.matchAll(pattern)) {
       latest = { file, keys: sqlQuotedValues(match[1]) };
     }
   }
 
   assert.ok(latest, 'could not find the final AI discovery_source validator contract');
+  assert.equal(
+    latest.file,
+    latestMention,
+    `latest AI discovery_source contract mutation in ${latestMention} is not parseable by the registry drift guard`,
+  );
   return latest;
 }
 
