@@ -26,7 +26,7 @@ const NAV_KEYS: Record<string, string> = {
   '/inbox': 'nav.inbox',
   '/enquiries': 'nav.enquiries',
   '/clients': 'nav.clients',
-  '/follow-ups': 'nav.followUps',
+  '/follow-ups': 'nav.follow-ups',
   '/projects': 'nav.projects',
   '/appointments': 'nav.appointments',
   '/sessions': 'nav.appointments',
