@@ -10,6 +10,7 @@ import { can } from '../lib/permissions';
 import type { Enquiry, EnquiryStatus, StatusTransition } from '../lib/types';
 import { useArtistScope } from '../lib/artist-scope';
 import { useDebouncedValue } from '../lib/use-debounced-value';
+import { ENQUIRY_BOARD_STATUSES } from '../lib/enquiry-board';
 
 const FILTERS: ('' | EnquiryStatus)[] = [
   '',
@@ -93,6 +94,7 @@ export function EnquiriesPage() {
     const [enquiries, transitions] = await Promise.all([
       api.listEnquiries({
         status: view === 'list' ? status || undefined : undefined,
+        statuses: view === 'board' ? ENQUIRY_BOARD_STATUSES : undefined,
         search: debouncedSearch || undefined,
         artistId: selectedArtistId ?? undefined,
       }),
