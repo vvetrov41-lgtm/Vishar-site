@@ -54,3 +54,15 @@ export function discoverySourceDetailLabel(source, artistName, language = 'en') 
   const template = language === 'ru' ? source.detail.label_ru : source.detail.label_en;
   return String(template || '').replaceAll('{artist}', artistName || 'the artist');
 }
+
+export function renderDiscoverySourceOptionsHtml(artistName, escapeHtml) {
+  return DISCOVERY_SOURCE_DEFINITIONS.map((source) => {
+    const detailLabel = discoverySourceDetailLabel(source, artistName, 'en');
+    return [
+      '<option value="', escapeHtml(source.key),
+      '" data-detail-mode="', escapeHtml(source.detail.mode),
+      '" data-detail-label="', escapeHtml(detailLabel),
+      '">', escapeHtml(source.labels.en), '</option>',
+    ].join('');
+  }).join('');
+}
