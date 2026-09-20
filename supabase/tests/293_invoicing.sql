@@ -27,7 +27,7 @@ select has_table('public', 'credit_notes', 'credit_notes exists');
 
 select has_column('public', 'invoices', c, 'invoices.' || c || ' exists')
 from unnest(array[
-  'id', 'artist_id', 'client_id', 'project_id', 'invoice_number', 'status',
+  'id', 'idempotency_key', 'artist_id', 'client_id', 'project_id', 'invoice_number', 'status',
   'currency', 'discount_amount', 'issue_date', 'due_date', 'notes',
   'issued_at', 'voided_at', 'void_reason', 'created_by', 'created_at', 'updated_at'
 ]) as c;
@@ -187,10 +187,20 @@ select ok(
 select is(
   ((select public.create_invoice(
       'd9111111-1111-4111-8111-111111111111',
-      '60000000-0000-4000-8000-000000000002'
+      '60000000-0000-4000-8000-000000000001'
     )) ->> 'replayed'),
   'true',
-  'a repeated draft request returns the invoice that already exists'
+  'the same invoice request replays the document it already created'
+);
+
+select throws_ok(
+  $select public.create_invoice(
+      'd9111111-1111-4111-8111-111111111111',
+      '60000000-0000-4000-8000-000000000001',
+      current_date + 7
+    )$,
+  '22023', null,
+  'an invoice idempotency key cannot be reused for different terms'
 );
 
 select lives_ok(
@@ -316,8 +326,35 @@ select is(
   'the invoice reads as part paid once the deposit counts'
 );
 
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+insert into public.payment_requests (
+  id, idempotency_key, artist_id, client_id, project_id,
+  purpose, amount, currency
+) values (
+  'a9444444-4444-4444-8444-444444444444',
+  '61000000-0000-4000-8000-000000000004',
+  'a1111111-1111-4111-8111-111111111111',
+  'c9111111-1111-4111-8111-111111111111',
+  'd9111111-1111-4111-8111-111111111111',
+  'additional_payment', 900.00, 'GBP'
+);
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"91111111-1111-4111-8111-111111111111","role":"authenticated"}');
+
 select throws_ok(
-  $$select public.record_invoice_payment(
+  $select public.attach_payment_request_to_invoice(
+      'a9444444-4444-4444-8444-444444444444',
+      (select id from public.invoices where project_id = 'd9111111-1111-4111-8111-111111111111')
+    )$,
+  '23514', null,
+  'a request whose face value exceeds the remaining invoice balance cannot be attached'
+);
+
+select throws_ok(
+  $select public.record_invoice_payment(
       (select id from public.invoices where project_id = 'd9111111-1111-4111-8111-111111111111'),
       '63000000-0000-4000-8000-000000000009', 900
     )$$,
