@@ -38,12 +38,22 @@ export function InvoicesPage() {
     [api, selectedArtistId, status]
   );
 
+  /**
+   * One line per currency. Adding GBP100 to USD100 and calling the answer
+   * GBP200 is worse than saying nothing, and the schema allows an artist in
+   * another currency even though both artists are on GBP today.
+   */
   const totals = useMemo(() => {
-    const rows = data?.invoices ?? [];
-    return {
-      outstanding: rows.reduce((sum, invoice) => sum + invoice.amount_outstanding, 0),
-      currency: rows[0]?.currency ?? 'GBP',
-    };
+    const byCurrency = new Map<string, number>();
+    for (const invoice of data?.invoices ?? []) {
+      byCurrency.set(
+        invoice.currency,
+        (byCurrency.get(invoice.currency) ?? 0) + invoice.amount_outstanding
+      );
+    }
+    return [...byCurrency.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([currency, outstanding]) => ({ currency, outstanding }));
   }, [data?.invoices]);
 
   if (loading) return <LoadingState label={copy.loading} />;
@@ -69,9 +79,14 @@ export function InvoicesPage() {
         <EmptyState title={copy.none} hint={copy.noneHint} />
       ) : (
         <>
-          <p className="meta">
-            {copy.outstandingTotal.replace('{amount}', formatMoney(totals.outstanding, totals.currency, language))}
-          </p>
+          {totals.map((total) => (
+            <p className="meta" key={total.currency}>
+              {copy.outstandingTotal.replace(
+                '{amount}',
+                formatMoney(total.outstanding, total.currency, language)
+              )}
+            </p>
+          ))}
           <div className="invoice-list">
             {invoices.map((invoice) => (
               <InvoiceListRow

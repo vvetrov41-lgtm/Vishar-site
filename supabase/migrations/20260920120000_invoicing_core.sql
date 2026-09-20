@@ -600,6 +600,39 @@ end;
 $$;
 
 /**
+ * A void invoice must never acquire money.
+ *
+ * `guard_payment_transaction_insert` in 0018 checks the payment request and
+ * knows nothing about invoices, so without this a request attached while still
+ * pending could settle after its invoice was voided - leaving a document that
+ * reads `void` and holds a payment. The ledger row is refused instead, which
+ * keeps the refusal at the point money would have moved.
+ */
+create or replace function crm_private.guard_transaction_against_void_invoice()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_voided_at timestamptz;
+begin
+  if new.status = 'failed' then return new; end if;
+
+  select i.voided_at into v_voided_at
+  from public.payment_requests r
+  join public.invoices i on i.id = r.invoice_id
+  where r.id = new.payment_request_id;
+
+  if v_voided_at is not null then
+    raise exception 'a void invoice cannot receive a payment' using errcode = '42501';
+  end if;
+
+  return new;
+end;
+$$;
+
+/**
  * Keeps `invoices.status` honest after anything that moves the arithmetic:
  * a line item, a credit note, or a settled transaction on a linked request.
  */
@@ -688,6 +721,8 @@ revoke all on function crm_private.block_credit_note_mutation()
   from public, anon, authenticated, service_role;
 revoke all on function crm_private.guard_payment_request_invoice_link()
   from public, anon, authenticated, service_role;
+revoke all on function crm_private.guard_transaction_against_void_invoice()
+  from public, anon, authenticated, service_role;
 revoke all on function crm_private.refresh_invoice_status(uuid)
   from public, anon, authenticated, service_role;
 revoke all on function crm_private.refresh_invoice_from_line_item()
@@ -752,6 +787,13 @@ drop trigger if exists payment_requests_invoice_link_guard on public.payment_req
 create trigger payment_requests_invoice_link_guard
   before insert or update on public.payment_requests
   for each row execute function crm_private.guard_payment_request_invoice_link();
+
+-- Sorts after `payment_transactions_guard_insert`, which owns the ledger's own
+-- arithmetic; this one only adds the invoice question that guard cannot ask.
+drop trigger if exists payment_transactions_guard_invoice on public.payment_transactions;
+create trigger payment_transactions_guard_invoice
+  before insert on public.payment_transactions
+  for each row execute function crm_private.guard_transaction_against_void_invoice();
 
 drop trigger if exists payment_transactions_refresh_invoice on public.payment_transactions;
 create trigger payment_transactions_refresh_invoice

@@ -515,6 +515,102 @@ select throws_ok(
 );
 
 -- ---------------------------------------------------------------------------
+-- A void invoice can never end up holding money
+--
+-- The path Codex found on PR 818: attach a request while it is still pending,
+-- void the invoice while nothing has settled, then let the payment arrive.
+-- ---------------------------------------------------------------------------
+
+select lives_ok(
+  $$select public.create_invoice(
+      'd9111111-1111-4111-8111-111111111111',
+      '60000000-0000-4000-8000-000000000006',
+      null, 'Open request'
+    )$$,
+  'a fourth invoice can be opened'
+);
+select lives_ok(
+  $$select public.set_invoice_line_item(
+      (select id from public.invoices where notes = 'Open request'),
+      'Tattoo session', 1, 200
+    )$$,
+  'and priced'
+);
+select lives_ok(
+  $$select public.issue_invoice((select id from public.invoices where notes = 'Open request'))$$,
+  'and issued'
+);
+
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- A deposit request that has been asked for but not paid.
+insert into public.payment_requests (
+  id, idempotency_key, artist_id, client_id, project_id,
+  purpose, amount, currency
+) values (
+  'a9333333-3333-4333-8333-333333333333',
+  '61000000-0000-4000-8000-000000000003',
+  'a1111111-1111-4111-8111-111111111111',
+  'c9111111-1111-4111-8111-111111111111',
+  'd9111111-1111-4111-8111-111111111111',
+  'deposit', 200.00, 'GBP'
+);
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"91111111-1111-4111-8111-111111111111","role":"authenticated"}');
+
+select lives_ok(
+  $$select public.attach_payment_request_to_invoice(
+      'a9333333-3333-4333-8333-333333333333',
+      (select id from public.invoices where notes = 'Open request')
+    )$$,
+  'a request that has not settled yet can still be attached'
+);
+
+select throws_ok(
+  $$select public.void_invoice(
+      (select id from public.invoices where notes = 'Open request'),
+      'Changed my mind'
+    )$$,
+  '42501', null,
+  'an invoice with an open payment request cannot be voided'
+);
+
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- Force the invoice void behind the RPC's back, so the ledger guard is tested
+-- on its own rather than only through the door that already refuses.
+update public.invoices
+set voided_at = now(), void_reason = 'Forced for the test', status = 'void'
+where notes = 'Open request';
+
+select throws_ok(
+  $$insert into public.payment_transactions (
+      idempotency_key, payment_request_id, artist_id,
+      transaction_type, direction, amount, currency, status,
+      occurred_at, recorded_by, recorded_by_kind
+    ) values (
+      '62000000-0000-4000-8000-000000000003',
+      'a9333333-3333-4333-8333-333333333333',
+      'a1111111-1111-4111-8111-111111111111',
+      'manual_payment', 'credit', 200.00, 'GBP', 'succeeded',
+      now(), '91111111-1111-4111-8111-111111111111', 'human'
+    )$$,
+  '42501', null,
+  'a payment cannot settle against a void invoice'
+);
+
+select is(
+  (select count(*)::int from public.payment_transactions t
+   join public.payment_requests r on r.id = t.payment_request_id
+   where r.invoice_id = (select id from public.invoices where notes = 'Open request')),
+  0,
+  'the void invoice holds no money'
+);
+
+-- ---------------------------------------------------------------------------
 -- Vladimir and Kristina stay apart
 -- ---------------------------------------------------------------------------
 

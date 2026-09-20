@@ -487,6 +487,33 @@ describe('the invoice list', () => {
     });
   });
 
+  it('keeps outstanding totals apart by currency rather than adding them up', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/invoices',
+      invoices: [
+        ROW,
+        {
+          ...ROW,
+          id: 'b1111111-1111-4111-8111-111111111111',
+          invoice_number: 'INV-2026-00002',
+          currency: 'USD',
+          amount_outstanding: 100,
+          total: 100,
+          amount_paid: 0,
+          subtotal: 100,
+        },
+      ],
+    });
+
+    await screen.findByRole('link', { name: 'INV-2026-00002' });
+    // GBP730 plus USD100 is not GBP830, and saying so would be worse than
+    // saying nothing.
+    expect(screen.getByText('Outstanding across these invoices: £730.00')).toBeInTheDocument();
+    expect(screen.getByText('Outstanding across these invoices: US$100.00')).toBeInTheDocument();
+    expect(screen.queryByText('Outstanding across these invoices: £830.00')).not.toBeInTheDocument();
+  });
+
   it('shows a membership without finance access no invoices at all', async () => {
     renderWithSession(<App />, {
       role: 'booking_manager',

@@ -261,16 +261,26 @@ export function buildWeekCalendar(input: WeekCalendarInput): WeekCalendar {
       if (to <= day.date || from >= dayEnd) continue;
 
       const allDay = block.is_all_day || (from <= day.date && to >= dayEnd);
+      const startMinutes = allDay ? 0 : minutesOfZonedDay(Math.max(from, day.date), timeZone);
+      const endMinutes = allDay
+        ? MINUTES_PER_DAY
+        : (to >= dayEnd ? MINUTES_PER_DAY : minutesOfZonedDay(to, timeZone));
       day.entries.push({
         kind: 'time_off',
         key: `time-off-${block.block_id}-${day.date}`,
         block,
-        startMinutes: allDay ? 0 : minutesOfZonedDay(Math.max(from, day.date), timeZone),
-        endMinutes: allDay
-          ? MINUTES_PER_DAY
-          : (to >= dayEnd ? MINUTES_PER_DAY : minutesOfZonedDay(to, timeZone)),
+        startMinutes,
+        endMinutes,
         allDay,
       });
+
+      // A block from 08:00 to 12:00 is as much a reason to widen the grid as a
+      // booking is. An all-day block does not widen anything: it is drawn in
+      // the strip above the hours, not against them.
+      if (!allDay) {
+        startHour = Math.min(startHour, Math.floor(startMinutes / 60));
+        endHour = Math.max(endHour, Math.ceil(endMinutes / 60));
+      }
     }
 
     day.entries.sort((left, right) => {

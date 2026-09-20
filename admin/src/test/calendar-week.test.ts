@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addZonedDays,
   buildWeekCalendar,
+  SLOT_MINUTES,
   minutesOfZonedDay,
   rescheduleTarget,
   slotsFor,
@@ -237,5 +238,59 @@ describe('building the grid', () => {
       (entry) => entry.kind === 'time_off' && entry.allDay
     ));
     expect(marked).toHaveLength(2);
+  });
+});
+
+describe('partial-day time off', () => {
+  const now = new Date('2026-09-01T08:00:00Z');
+
+  function block(startAt: string, endAt: string) {
+    return {
+      block_id: 'b-partial',
+      artist_id: 'artist-1',
+      block_kind: 'personal',
+      start_at: startAt,
+      end_at: endAt,
+      is_all_day: false,
+      note: null,
+      cancelled_at: null,
+      created_at: '2026-08-01T09:00:00Z',
+      updated_at: '2026-08-01T09:00:00Z',
+    } as any;
+  }
+
+  it('widens the grid to contain a block that starts before the working day', () => {
+    // 08:00 to 12:00 BST on Tuesday 1 September.
+    const week = buildWeekCalendar({
+      anchor: Date.parse('2026-09-02T09:00:00Z'),
+      now,
+      timeZone: LONDON,
+      days: 7,
+      appointments: [],
+      timeOff: [block('2026-09-01T07:00:00Z', '2026-09-01T11:00:00Z')],
+    });
+
+    // Without the widening the grid would still start at 09:00 and the block
+    // would have no row to appear in.
+    expect(week.startHour).toBe(8);
+    const tuesday = week.days[1];
+    const entry = tuesday.entries.find((row) => row.kind === 'time_off');
+    expect(entry).toBeDefined();
+    expect(entry!.startMinutes).toBe(8 * 60);
+    expect(entry!.endMinutes).toBe(12 * 60);
+    expect(slotsFor(week)[0]).toBe(8 * 60);
+  });
+
+  it('leaves the grid alone for an all-day block, which has its own strip', () => {
+    const week = buildWeekCalendar({
+      anchor: Date.parse('2026-09-02T09:00:00Z'),
+      now,
+      timeZone: LONDON,
+      days: 7,
+      appointments: [],
+      timeOff: [{ ...block('2026-09-01T00:00:00Z', '2026-09-02T00:00:00Z'), is_all_day: true }],
+    });
+    expect(week.startHour).toBe(9);
+    expect(SLOT_MINUTES).toBe(30);
   });
 });

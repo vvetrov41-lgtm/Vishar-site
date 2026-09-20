@@ -844,7 +844,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     // screen that scopes a read by client, project or status would "pass" while
     // rendering rows the database would never have returned.
     const filters: { column: string; value: unknown }[] = [];
-    const bounds: { column: string; kind: 'gte' | 'lt'; value: unknown }[] = [];
+    const bounds: { column: string; kind: 'gte' | 'gt' | 'lt'; value: unknown }[] = [];
     let page: { start: number; end: number } | null = null;
     const chain: any = {
       select: () => chain,
@@ -872,6 +872,11 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       gte: (...args: unknown[]) => {
         queryCalls.push({ table, method: 'gte', args });
         if (typeof args[0] === 'string') bounds.push({ column: args[0], kind: 'gte', value: args[1] });
+        return chain;
+      },
+      gt: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'gt', args });
+        if (typeof args[0] === 'string') bounds.push({ column: args[0], kind: 'gt', value: args[1] });
         return chain;
       },
       lt: (...args: unknown[]) => {
@@ -925,7 +930,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
           const left = Date.parse(String(row[column]));
           const right = Date.parse(String(value));
           if (Number.isNaN(left) || Number.isNaN(right)) return true;
-          return kind === 'gte' ? left >= right : left < right;
+          if (kind === 'gte') return left >= right;
+          if (kind === 'gt') return left > right;
+          return left < right;
         }));
       }
       if (page) rows = rows.slice(page.start, page.end + 1);

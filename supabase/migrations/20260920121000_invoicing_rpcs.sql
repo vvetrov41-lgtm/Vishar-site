@@ -512,6 +512,12 @@ $$;
  * Void is for an invoice that should never have existed. Money that has
  * already settled is not undone by deleting the paperwork, so an invoice with
  * a settled payment is refused here and corrected with a credit note instead.
+ *
+ * A request that is merely attached and still open is refused too. It could
+ * settle tomorrow - through a Monzo webhook nobody is watching - and a void
+ * invoice holding a payment is not a state the ledger should be able to reach.
+ * The transaction guard refuses that payment as well; this is the half that
+ * tells the operator now rather than surprising the payer later.
  */
 create or replace function public.void_invoice(
   p_invoice_id uuid,
@@ -544,6 +550,15 @@ begin
   select * into v_totals from crm_private.invoice_totals(p_invoice_id);
   if coalesce(v_totals.amount_paid, 0) > 0 then
     raise exception 'an invoice with settled payments cannot be voided; issue a credit note'
+      using errcode = '42501';
+  end if;
+
+  if exists (
+    select 1 from public.payment_requests r
+    where r.invoice_id = p_invoice_id
+      and r.status in ('pending', 'partially_paid')
+  ) then
+    raise exception 'an invoice with an open payment request cannot be voided; cancel the request first'
       using errcode = '42501';
   end if;
 

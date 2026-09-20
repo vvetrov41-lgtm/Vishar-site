@@ -153,6 +153,75 @@ describe('the manager week grid', () => {
   });
 });
 
+describe('what the grid asks the server for', () => {
+  // Sunday 23:00 BST to Monday 02:00 BST, so it starts before the Monday the
+  // week begins on and is still running inside it.
+  const OVERNIGHT = {
+    id: '88888888-8888-4888-8888-888888888888',
+    artist_id: VLADIMIR_ARTIST_ID,
+    client_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    project_id: null,
+    enquiry_id: null,
+    appointment_type: 'tattoo_session',
+    status: 'confirmed',
+    start_at: '2026-08-30T22:00:00Z',
+    end_at: '2026-08-31T01:00:00Z',
+    duration_hours: 3,
+    currency: 'GBP',
+    payment_status: 'unpaid',
+    calendar_provider: 'none',
+    calendar_event_id: null,
+    calendar_version: 0,
+    notes: null,
+    cancelled_at: null,
+  };
+
+  it('bounds the window by overlap, so an overnight booking is not lost', async () => {
+    // `renderWithSession` hands back the RPC log but not the PostgREST one, so
+    // the array is held here and passed in.
+    const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
+    const { container } = await openWeek({
+      role: 'booking_manager',
+      extraSessions: [OVERNIGHT],
+      queryCalls,
+    });
+
+    // Both bookings belong to the fixture client, so two labels is itself the
+    // evidence that the overnight one survived the window.
+    expect(await screen.findAllByText('Fixture Client')).toHaveLength(2);
+
+    // Bounding on start_at alone would have excluded it: it starts an hour
+    // before the window opens.
+    const sessionBounds = queryCalls.filter(
+      (call) => call.table === 'sessions' && (call.method === 'gt' || call.method === 'gte')
+    );
+    expect(sessionBounds.some((call) => call.method === 'gt' && call.args[0] === 'end_at')).toBe(true);
+    expect(sessionBounds.some((call) => call.args[0] === 'start_at')).toBe(false);
+
+    // Two blocks in the grid: the fixture booking and the overnight one.
+    expect(container.querySelectorAll('.week-event').length).toBe(2);
+  });
+
+  it('keeps the hour ruler independent of what is booked in it', async () => {
+    const { container } = await openWeek({ role: 'booking_manager' });
+
+    await screen.findByText('Fixture Client');
+    const gutterRows = container.querySelectorAll('.week-gutter-slot').length;
+    const firstDaySlots = container.querySelectorAll('.week-day')[0]
+      .querySelectorAll('.week-slot').length;
+
+    // One row per slot in every column, whatever length the bookings are: a
+    // six-hour block that stretched its own slot would knock every later hour
+    // label out of line.
+    expect(firstDaySlots).toBe(gutterRows);
+
+    // And the blocks live in their own layer rather than inside a slot.
+    const block = (screen.getByText('Fixture Client')).closest('.week-event') as HTMLElement;
+    expect(block.parentElement).toHaveClass('week-day-events');
+    expect(block.closest('.week-slot')).toBeNull();
+  });
+});
+
 describe('who may move an appointment', () => {
   it('offers nothing to a read-only account', async () => {
     await openWeek({ role: 'read_only' });

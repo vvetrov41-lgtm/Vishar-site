@@ -128,44 +128,59 @@ export function WeekCalendarView({
                 {entry.kind === 'time_off' ? timeOffLabel(entry.block.block_kind, language) : null}
               </div>
             ))}
-            {slots.map((minutes) => (
-              <div
-                key={minutes}
-                className="week-slot"
-                onDragOver={(event) => {
-                  if (!draggingId) return;
-                  event.preventDefault();
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const id = draggingId
-                    ?? (event.dataTransfer ? event.dataTransfer.getData('text/plain') : '');
-                  if (!id) return;
-                  const appointment = appointmentFor(id);
-                  if (!appointment || !canMove(appointment)) return;
-                  complete(appointment, day, minutes);
-                }}
-              >
-                {picking && picking.kind === 'appointment' ? (
-                  <button
-                    type="button"
-                    className="week-slot-target"
-                    aria-label={copy.moveHere
-                      .replace('{day}', dayColumnHeading(day.date, calendar.timeZone, language))
-                      .replace('{time}', slotLabel(minutes))}
-                    onClick={() => complete(picking.appointment, day, minutes)}
+            {/* Two layers, not one. The slots are the grid and the drop
+                targets, and they keep their exact row height whatever is
+                booked - otherwise a six-hour block would stretch its own slot
+                and every hour label below it would stop lining up. The events
+                float above, positioned by time. */}
+            <div className="week-day-body">
+              <div className="week-slots">
+                {slots.map((minutes) => (
+                  <div
+                    key={minutes}
+                    className="week-slot"
+                    onDragOver={(event) => {
+                      if (!draggingId) return;
+                      event.preventDefault();
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const id = draggingId
+                        ?? (event.dataTransfer ? event.dataTransfer.getData('text/plain') : '');
+                      if (!id) return;
+                      const appointment = appointmentFor(id);
+                      if (!appointment || !canMove(appointment)) return;
+                      complete(appointment, day, minutes);
+                    }}
                   >
-                    {slotLabel(minutes)}
-                  </button>
-                ) : null}
+                    {picking && picking.kind === 'appointment' ? (
+                      <button
+                        type="button"
+                        className="week-slot-target"
+                        aria-label={copy.moveHere
+                          .replace('{day}', dayColumnHeading(day.date, calendar.timeZone, language))
+                          .replace('{time}', slotLabel(minutes))}
+                        onClick={() => complete(picking.appointment, day, minutes)}
+                      >
+                        {slotLabel(minutes)}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              {/* While something is being dragged the whole layer stops taking
+                  pointer events, so the drop lands on the slot underneath
+                  rather than on whatever block happens to cover it. */}
+              <div className={`week-day-events${draggingId ? ' dragging' : ''}`}>
                 {day.entries
-                  .filter((entry) => entry.startMinutes >= minutes && entry.startMinutes < minutes + SLOT_MINUTES)
                   .filter((entry) => !(entry.kind === 'time_off' && entry.allDay))
-                  .map((entry) => (
+                  .map((entry) => ({ entry, placement: placeEntry(entry, calendar) }))
+                  .filter((placed) => placed.placement !== null)
+                  .map(({ entry, placement }) => (
                     <EntryBlock
                       key={entry.key}
                       entry={entry}
-                      slotStart={minutes}
+                      placement={placement!}
                       language={language}
                       clients={clients}
                       projects={projects}
@@ -191,7 +206,7 @@ export function WeekCalendarView({
                     />
                   ))}
               </div>
-            ))}
+            </div>
           </div>
         ))}
       </div>
@@ -199,9 +214,30 @@ export function WeekCalendarView({
   );
 }
 
+/**
+ * Where a block sits in its column, in slot units counted from the first hour
+ * line. An entry that starts before the grid or runs past its end is clipped to
+ * what is visible rather than dropped, so a block that began yesterday still
+ * shows against the hours it covers today.
+ */
+function placeEntry(
+  entry: WeekEntry,
+  calendar: WeekCalendar
+): { offsetSlots: number; spanSlots: number } | null {
+  const gridStart = calendar.startHour * 60;
+  const gridEnd = calendar.endHour * 60;
+  const from = Math.max(entry.startMinutes, gridStart);
+  const to = Math.min(Math.max(entry.endMinutes, entry.startMinutes + 15), gridEnd);
+  if (to <= from) return null;
+  return {
+    offsetSlots: (from - gridStart) / SLOT_MINUTES,
+    spanSlots: (to - from) / SLOT_MINUTES,
+  };
+}
+
 function EntryBlock({
   entry,
-  slotStart,
+  placement,
   language,
   clients,
   projects,
@@ -216,7 +252,7 @@ function EntryBlock({
   onDragEnd,
 }: {
   entry: WeekEntry;
-  slotStart: number;
+  placement: { offsetSlots: number; spanSlots: number };
   language: Language;
   clients: Client[];
   projects: Project[];
@@ -231,10 +267,9 @@ function EntryBlock({
   onDragEnd: () => void;
 }) {
   const copy = COPY[language];
-  const spanMinutes = Math.max(entry.endMinutes - entry.startMinutes, 15);
   const style = {
-    marginTop: `${((entry.startMinutes - slotStart) / SLOT_MINUTES) * 100}%`,
-    minHeight: `calc(${spanMinutes / SLOT_MINUTES} * var(--week-slot-height))`,
+    top: `calc(${placement.offsetSlots} * var(--week-slot-height))`,
+    height: `calc(${placement.spanSlots} * var(--week-slot-height))`,
   };
 
   if (entry.kind === 'time_off') {
