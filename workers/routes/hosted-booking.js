@@ -75,11 +75,12 @@ function unavailablePage(status = 404) {
 }
 
 function renderHostedForm(meta, sourceId) {
-  const artist = escapeHtml(meta.artist_display_name || 'Tattoo artist');
+  const rawArtist = String(meta.artist_display_name || 'Tattoo artist');
+  const artist = escapeHtml(rawArtist);
   const label = escapeHtml(meta.display_label || 'Tattoo enquiry');
   const formPath = `/forms/${encodeURIComponent(sourceId)}`;
   const privacyVersion = escapeHtml(PRIVACY_NOTICE_VERSION);
-  const discoveryOptions = renderDiscoverySourceOptionsHtml(artist, escapeHtml);
+  const discoveryOptions = renderDiscoverySourceOptionsHtml(rawArtist, escapeHtml);
 
   return `<!doctype html>
 <html lang="en-GB">
