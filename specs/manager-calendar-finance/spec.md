@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `manager-calendar-finance`
-- State: Production; duration-resize extension in progress
+- State: Production
 - Owner/workstream: Vishar CRM
 - Related PRs/issues: PR #818 on `feature/manager-calendar-finance`
 
