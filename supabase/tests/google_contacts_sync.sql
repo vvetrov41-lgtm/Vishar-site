@@ -1,6 +1,6 @@
 begin;
 
-select plan(22);
+select plan(24);
 
 select ok(
   'google_contact_create' = any(enum_range(null::public.outbox_kind)::text[]),
@@ -136,6 +136,36 @@ select is(
   ),
   true,
   'claim marks a valid E.164 linked WhatsApp Google Contact job as valid'
+);
+
+select is(
+  (
+    public.record_google_contact_outbox_result(
+      (
+        select id
+        from public.integration_outbox
+        where kind = 'google_contact_create'::public.outbox_kind
+          and client_id = 'ca611111-1111-4111-8111-111111111111'
+      ),
+      'google-contacts-test',
+      false,
+      null,
+      'google_contacts_provider_rejected_http_400_invalid_argument'
+    ) ->> 'status'
+  ),
+  'dead',
+  'safe Google Contacts provider diagnostics are terminal and do not retry'
+);
+
+select is(
+  (
+    select last_error_code
+    from public.integration_outbox
+    where kind = 'google_contact_create'::public.outbox_kind
+      and client_id = 'ca611111-1111-4111-8111-111111111111'
+  ),
+  'google_contacts_provider_rejected_http_400_invalid_argument',
+  'terminal Google Contacts provider diagnostics remain available for diagnosis'
 );
 
 insert into public.clients
