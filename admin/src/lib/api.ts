@@ -713,18 +713,22 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       sessionId?: string;
       eventType?: string;
       artistId?: string;
+      limit?: number;
+      offset?: number;
     } = {}): Promise<ActivityEntry[]> {
+      const limit = Math.max(1, Math.min(Math.floor(filter.limit ?? 200), 200));
+      const offset = Math.max(0, Math.floor(filter.offset ?? 0));
       let query = client
         .from('activity_log')
         .select('id, artist_id, occurred_at, event_type, actor_kind, actor_profile_id, client_id, enquiry_id, project_id, session_id, metadata')
-        .order('occurred_at', { ascending: false })
-        .limit(200);
+        .order('occurred_at', { ascending: false });
       if (filter.enquiryId) query = query.eq('enquiry_id', filter.enquiryId);
       if (filter.clientId) query = query.eq('client_id', filter.clientId);
       if (filter.projectId) query = query.eq('project_id', filter.projectId);
       if (filter.sessionId) query = query.eq('session_id', filter.sessionId);
       if (filter.eventType) query = query.eq('event_type', filter.eventType);
       if (filter.artistId) query = query.eq('artist_id', filter.artistId);
+      query = query.range(offset, offset + limit - 1);
       return unwrap<ActivityEntry[]>(await query, 'load the activity log');
     },
 
