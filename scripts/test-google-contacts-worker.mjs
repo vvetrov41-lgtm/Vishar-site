@@ -159,6 +159,35 @@ await test('People 403 responses preserve only safe provider reason classificati
   }
 });
 
+await test('People 4xx diagnostics expose only HTTP and canonical Google status', async () => {
+  const provider = createGoogleContactsProvider({
+    accessToken: 'access-token',
+    sleepImpl: async () => {},
+    fetchImpl: async (url) => {
+      const parsed = new URL(String(url));
+      if (!parsed.pathname.endsWith('/people:createContact')) {
+        return Response.json({ results: [] });
+      }
+      return Response.json({
+        error: {
+          code: 400,
+          status: 'INVALID_ARGUMENT',
+          message: 'sensitive provider text must never enter the machine error code',
+        },
+      }, { status: 400 });
+    },
+  });
+
+  await assert.rejects(
+    provider.createContact(job()),
+    (error) => (
+      error instanceof CalendarConnectorError
+      && error.code === 'google_contacts_provider_rejected_http_400_invalid_argument'
+      && !error.code.includes('sensitive')
+    ),
+  );
+});
+
 await test('People search warms first and exact E.164 match suppresses create', async () => {
   const calls = [];
   const provider = createGoogleContactsProvider({
