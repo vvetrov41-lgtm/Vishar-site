@@ -435,6 +435,11 @@ const EN = {
   'activity.notice': 'The activity log is append-only. There is no edit or delete control here because the database refuses both, for every role.',
   'activity.loading': 'Loading activity…',
   'activity.noMatch': 'No matching activity',
+  'activity.loadMore': 'Load more',
+  'activity.loadingMore': 'Loading…',
+  'activity.expand': 'Show history',
+  'activity.loadFailed': 'Could not load more activity.',
+  'activity.retry': 'Retry',
 
   'enquiryStatus.new': 'New',
   'enquiryStatus.reviewing': 'Reviewing',
@@ -1021,6 +1026,11 @@ const RU: Record<TranslationKey, string> = {
   'activity.notice': 'Журнал действий доступен только для добавления записей. Здесь нет кнопок редактирования или удаления, потому что база данных запрещает оба действия для всех ролей.',
   'activity.loading': 'Загружаем журнал…',
   'activity.noMatch': 'Подходящих событий нет',
+  'activity.loadMore': 'Загрузить ещё',
+  'activity.loadingMore': 'Загружаем…',
+  'activity.expand': 'Показать историю',
+  'activity.loadFailed': 'Не удалось загрузить журнал.',
+  'activity.retry': 'Повторить',
 
   'enquiryStatus.new': 'Новая',
   'enquiryStatus.reviewing': 'На рассмотрении',
