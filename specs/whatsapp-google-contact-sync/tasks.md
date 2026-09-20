@@ -61,3 +61,18 @@
 ## Deferred work
 
 - [ ] D001 Automatic update/delete of CRM-created Google contacts after later CRM client edits/archive. Reason: initial requested capability is safe create-once contact addition; modifying/deleting address-book data materially increases blast radius.
+
+
+## Phase 7: 2026-09-20 enquiry-preference extension
+
+Active bounded continuation. Earlier task checkboxes above are historical artifacts from the original workstream; the original capability is already present in canonical production code. These tasks track only the newly requested enquiry-origin path.
+
+- [x] T070 Fresh-check canonical CRM branch and production migration head. Canonical base: `2ab4e7f42c4ae99b88c46e820e81f547abb4341e`; production migration head: `20260920160027_google_contacts_terminal_provider_diagnostics`. [Constitution IV, VII]
+- [x] T071 Verify current provider path can complete an outbox job and inspect the effective enquiry intake path. Wayne Arcibald's production Google Contact outbox row is now `succeeded`; direct Google Contacts name search did not independently prove the contact, so provider acceptance remains separately tracked. [AC-009]
+- [x] T072 Update spec/plan/tasks before implementation to define trusted enquiry-preference eligibility and denial guards. [FR-001, FR-013, FR-014, AC-012, AC-013]
+- [ ] T073 Add one forward-only migration with private shared eligibility predicate, enquiry trigger, enqueue/claim/reconciliation replacements and unchanged service-only/provider boundaries. [FR-001, FR-004, FR-008, FR-009, FR-013, FR-014]
+- [ ] T074 Extend pgTAP regression coverage for enquiry-only eligibility, non-WhatsApp/conflict/phone-mismatch denial, trigger non-blocking behavior, dedupe and claim validity. [AC-001, AC-004, AC-012, AC-013]
+- [ ] T075 Run local/static database validation available in CI and exact-head GitHub Actions on the extension SHA. [AC-008]
+- [ ] T076 Fresh-check canonical drift and merge only if the extension remains bounded and exact-head CI is green.
+- [ ] T077 Roll out the additive migration through the existing production database release guard, then read back exact function definitions, trigger and migration head. [Constitution VII]
+- [ ] T078 Verify production behavior without fabricating customer data: inspect a legitimate new/existing WhatsApp-preferred enquiry path and resulting outbox/provider state; if no legitimate event is available, leave this acceptance criterion explicitly open rather than creating a fake production client. [AC-009, AC-012]

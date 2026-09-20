@@ -5,7 +5,8 @@
 - Spec: `specs/whatsapp-google-contact-sync/spec.md`
 - Target repository: `vvetrov41-lgtm/Vishar-site`
 - Target branch/PR: `agent/whatsapp-google-contact-sync`, PR to `agent/platform-telegram-self-service`
-- Exact target SHA: base `de181914ed5ad46c8303709748881f314bff6284`; feature head is reverified before each write stage.
+- Original implementation base: `de181914ed5ad46c8303709748881f314bff6284`.
+- 2026-09-20 extension base: `agent/platform-telegram-self-service@2ab4e7f42c4ae99b88c46e820e81f547abb4341e`; extension branch `agent/google-contacts-whatsapp-preferred-intake`. Head is reverified before each write stage.
 
 ## Constitution check
 
@@ -192,3 +193,29 @@ A post-link database trigger performs only a durable enqueue. The Google Worker 
 - Trust boundaries and service-only RPCs are explicit.
 - Enum migration ordering and stale-staging constraint are explicit.
 - Code/CI, provider consent, deployment and device acceptance are separate evidence stages.
+
+
+## 2026-09-20 extension: enquiry-selected WhatsApp
+
+### Patch plan
+
+The existing linked-conversation path remains intact. Add a second authoritative eligibility proof from durable enquiry intake without widening provider routing or credential authority.
+
+1. Add one forward-only migration after production head `20260920160027`.
+2. Centralize Google Contact eligibility in a private predicate that requires an active same-workspace client with valid E.164 phone plus either:
+   - an authoritative linked WhatsApp conversation for that artist/client; or
+   - a durable enquiry for that artist/client with `submitted_preferred_contact='WhatsApp'`, `client_identifier_conflict=false`, and submitted phone normalizing to the client's current canonical phone.
+3. Replace the effective enqueue, claim and reconciliation functions to use that predicate.
+4. Add an `AFTER INSERT` enquiry trigger that only attempts enqueue for explicit WhatsApp preference and swallows enqueue failures so intake remains durable.
+5. Extend pgTAP coverage for an enquiry-only happy path, non-WhatsApp denial, identifier-conflict denial, phone-mismatch denial, trigger existence, dedupe and claim validity.
+6. Run exact-head CI, recheck canonical drift, merge, then use the existing fail-closed database rollout/readback path. No Worker/provider code change is required for this extension.
+
+### Trust-boundary analysis
+
+The public form still does not select artist, workspace, Google account, credential, or provider route. Artist ownership is server-derived by the existing trusted booking-source/intake path. The new signal is only the user's explicit communication preference, and it is accepted as contact eligibility only after matching the immutable enquiry snapshot to the attached client's canonical phone and rejecting identifier conflicts.
+
+Raw WhatsApp webhook senders remain ineligible until linked. Existing Contacts capability, Google account pinning, encrypted OAuth token custody, exact-phone provider dedupe and outbox retry/dead-letter behavior remain unchanged.
+
+### Rollback
+
+Dropping the new enquiry trigger stops future enquiry-originated enqueue. Replacing the three database functions with the preceding canonical definitions restores linked-conversation-only eligibility. The additive outbox rows remain safe because the claim predicate fails closed if eligibility is removed. No provider contact deletion is attempted.
