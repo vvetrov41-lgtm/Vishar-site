@@ -3,7 +3,7 @@
 ## Status
 
 - Feature: `manager-calendar-finance`
-- State: Implemented, awaiting review and manual acceptance
+- State: Production; duration-resize extension in progress
 - Owner/workstream: Vishar CRM
 - Related PRs/issues: PR #818 on `feature/manager-calendar-finance`
 
@@ -123,11 +123,18 @@ credited or paid.
 - FR-008: A second move MUST be ignored while one is outstanding.
 - FR-009: Reads that bound a window MUST bound it by overlap, so an appointment
   that started earlier and is still running inside the window is drawn.
-- FR-010: Changing an appointment's duration stays where it already is - the
-  start/end fields on the appointment row. The week grid moves an appointment
-  without resizing it.
-- FR-011: No client notification is sent by a move. The existing calendar outbox
-  job is the only side effect, exactly as before.
+- FR-010: Week and day grids MUST let an authorised manager change a same-day
+  appointment's duration from its lower edge in `SLOT_MINUTES` increments while
+  keeping the start fixed.
+- FR-011: No client notification is sent by a move or resize. The existing
+  calendar outbox job is the only side effect, exactly as before.
+- FR-012: The resize edge MUST have a keyboard/touch equivalent: activating the
+  handle exposes valid end-time targets as buttons. A target before one minimum
+  slot after the start MUST NOT be offered.
+- FR-013: A resize MUST use the same `list_appointment_conflicts` pre-check,
+  `reschedule_appointment` write, optimistic hold, single-change guard and
+  rollback behaviour as a move. It MUST NOT introduce a new scheduling write
+  path.
 
 ### Invoicing
 
@@ -253,6 +260,14 @@ every record created before this feature.
 - AC-015: Outstanding totals are reported per currency.
 - AC-016: Exact-head CI is green: `supabase db reset`, `supabase test db`,
   `supabase db lint`, CRM typecheck/tests/build, artifact scan, secret scan.
+- AC-020: Dragging the lower edge changes only the end time in 30-minute grid
+  increments and persists through `reschedule_appointment`.
+- AC-021: Tapping/focusing the resize handle exposes keyboard-operable end-time
+  targets with an explicit accessible label.
+- AC-022: A resize conflict or server refusal keeps the stored duration and
+  reports the failure; a successful resize keeps the start unchanged.
+- AC-023: Read-only users and managers without `manage_sessions` for that
+  artist receive no resize affordance.
 
 ### Outstanding
 
@@ -287,8 +302,10 @@ every record created before this feature.
 
 ## Open questions
 
-- None blocking. Duration editing by dragging a block's edge is deferred, not
-  refused - see the plan's deferred section.
+- None blocking. Duration editing is part of the calendar surface. The grid
+  resize is deliberately limited to appointments that start and end on one
+  artist-local day; unusual overnight appointments keep the existing explicit
+  start/end editor rather than exposing an ambiguous cross-day edge gesture.
 
 ## Requirement changes
 
