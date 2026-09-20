@@ -1,5 +1,9 @@
 // The Statistics reader's boundary.
 //
+// Counted business rows come from security_invoker Statistics projections, so
+// an explicitly excluded test enquiry disappears together with its linked
+// project, session and finance lineage before browser-side aggregation begins.
+//
 // Correct arithmetic on the wrong rows is still the wrong answer, and the two
 // ways to get the wrong rows are asking for somebody else's and quietly
 // getting only some of your own. Both are pinned here, along with the rule
@@ -113,7 +117,7 @@ describe('statistics reader scope', () => {
     const { client, calls } = fakeClient();
     await createStatisticsApi(client).loadStatistics(request());
 
-    const enquiries = calls.find((call) => call.table === 'enquiries')!;
+    const enquiries = calls.find((call) => call.table === 'statistics_enquiries')!;
     expect(enquiries.filters).toContainEqual(['gte', 'created_at', WINDOW.from]);
     expect(enquiries.filters).toContainEqual(['lt', 'created_at', WINDOW.to]);
     // Half-submitted intakes are not enquiries anybody worked, so they are out
@@ -126,7 +130,7 @@ describe('statistics reader scope', () => {
     const { client, calls } = fakeClient();
     await createStatisticsApi(client).loadStatistics(request({ forwardDays: 30 }));
 
-    const sessions = calls.find((call) => call.table === 'sessions')!;
+    const sessions = calls.find((call) => call.table === 'statistics_sessions')!;
     const upperBound = sessions.filters.find(([kind, column]) => kind === 'lt' && column === 'start_at')![2] as string;
     expect(Date.parse(upperBound) - Date.parse(WINDOW.to)).toBe(30 * 86400000);
   });
@@ -135,11 +139,11 @@ describe('statistics reader scope', () => {
     const { client, calls } = fakeClient();
     await createStatisticsApi(client).loadStatistics(request());
 
-    const enquiries = calls.find((call) => call.table === 'enquiries')!;
+    const enquiries = calls.find((call) => call.table === 'statistics_enquiries')!;
     for (const column of ['submitted_email', 'submitted_phone', 'submitted_full_name', 'idea', 'submitted_instagram']) {
       expect(enquiries.columns).not.toContain(column);
     }
-    const sessions = calls.find((call) => call.table === 'sessions')!;
+    const sessions = calls.find((call) => call.table === 'statistics_sessions')!;
     expect(sessions.columns).not.toContain('notes');
   });
 });
@@ -165,7 +169,7 @@ describe('statistics reader completeness', () => {
 
     expect(dataset.enquiries).toHaveLength(1200);
     expect(dataset.truncated).toBe(false);
-    expect(calls.filter((call) => call.table === 'enquiries').map((call) => call.range)).toEqual([
+    expect(calls.filter((call) => call.table === 'statistics_enquiries').map((call) => call.range)).toEqual([
       [0, 499], [500, 999], [1000, 1499],
     ]);
   });
@@ -204,7 +208,7 @@ describe('statistics reader completeness', () => {
     await createStatisticsApi(client).loadStatistics(request());
 
     const linked = calls.filter(
-      (call) => call.table === 'projects' && call.filters.some(([kind, column]) => kind === 'in' && column === 'enquiry_id'),
+      (call) => call.table === 'statistics_projects' && call.filters.some(([kind, column]) => kind === 'in' && column === 'enquiry_id'),
     );
     expect(linked).toHaveLength(1);
     expect(linked[0].filters.some(([kind]) => kind === 'gte')).toBe(false);
@@ -224,7 +228,7 @@ describe('statistics reader completeness', () => {
     await createStatisticsApi(client).loadStatistics(request());
 
     const history = calls.filter(
-      (call) => call.table === 'sessions' && call.filters.some(([kind, column]) => kind === 'in' && column === 'client_id'),
+      (call) => call.table === 'statistics_sessions' && call.filters.some(([kind, column]) => kind === 'in' && column === 'client_id'),
     );
     expect(history).toHaveLength(1);
     expect(history[0].filters).toContainEqual(['in', 'client_id', ['client-a']]);
@@ -267,14 +271,14 @@ describe('statistics reader finance boundary', () => {
     const { client, calls } = fakeClient();
     await createStatisticsApi(client).loadStatistics(request({ includeFinance: false }));
 
-    for (const table of ['payment_transactions', 'payment_requests', 'projects_finance']) {
+    for (const table of ['statistics_payment_transactions', 'statistics_payment_requests', 'projects_finance']) {
       expect(calls.some((call) => call.table === table)).toBe(false);
     }
   });
 
   it('treats a refused finance read as no finance block, not as a page failure', async () => {
     const { client } = fakeClient({
-      deny: ['payment_transactions', 'payment_requests', 'projects_finance'],
+      deny: ['statistics_payment_transactions', 'statistics_payment_requests', 'projects_finance'],
     });
 
     const dataset = await createStatisticsApi(client).loadStatistics(request({ includeFinance: true }));
@@ -295,7 +299,7 @@ describe('statistics reader finance boundary', () => {
 
     const dataset = await createStatisticsApi(client).loadStatistics(request({ includeFinance: true }));
 
-    const transactions = calls.find((call) => call.table === 'payment_transactions')!;
+    const transactions = calls.find((call) => call.table === 'statistics_payment_transactions')!;
     expect(transactions.filters).toContainEqual(['gte', 'occurred_at', WINDOW.from]);
     expect(transactions.filters).toContainEqual(['lt', 'occurred_at', WINDOW.to]);
     expect(transactions.filters).toContainEqual(['eq', 'artist_id', ARTIST]);
