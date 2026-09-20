@@ -183,6 +183,44 @@ describe('reading an invoice', () => {
       p_unit_amount: 90,
     });
   });
+
+  it('lets a draft carry a due date, a discount and a note', async () => {
+    const { rpcCalls } = renderWithSession(<App />, {
+      role: 'owner',
+      path: INVOICE_PATH,
+      invoiceDocument: document({
+        invoice: { status: 'draft', issue_date: null, due_date: null, amount_paid: 0, amount_outstanding: 980 },
+        payments: [],
+      }),
+    });
+
+    const form = await screen.findByRole('form', { name: 'Invoice details' });
+    fireEvent.change(within(form).getByLabelText('Due date'), { target: { value: '2026-10-01' } });
+    fireEvent.change(within(form).getByLabelText('Discount in GBP'), { target: { value: '40' } });
+    fireEvent.change(within(form).getByLabelText('Notes'), { target: { value: 'Agreed on the day' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save details' }));
+
+    await waitFor(() => {
+      expect(rpcCalls.some((call) => call.name === 'set_invoice_details')).toBe(true);
+    });
+    expect(rpcCalls.find((call) => call.name === 'set_invoice_details')?.args).toMatchObject({
+      p_invoice_id: INVOICE_ID,
+      p_due_date: '2026-10-01',
+      p_discount_amount: 40,
+      p_notes: 'Agreed on the day',
+    });
+  });
+
+  it('stops offering those fields once the invoice is issued', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: INVOICE_PATH,
+      invoiceDocument: document(),
+    });
+
+    await screen.findByRole('heading', { level: 2, name: 'Line items' });
+    expect(screen.queryByRole('form', { name: 'Invoice details' })).not.toBeInTheDocument();
+  });
 });
 
 describe('recording money against an invoice', () => {

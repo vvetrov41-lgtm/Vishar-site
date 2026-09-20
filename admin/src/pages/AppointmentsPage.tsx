@@ -174,6 +174,11 @@ export function AppointmentsPage() {
     });
     if (!target) return;
     if (target.startAt === request.appointment.start_at && target.endAt === request.appointment.end_at) return;
+    // A second drop while the first is still in flight would send a second
+    // reschedule for the same row. The server would apply both in order, so
+    // nothing is duplicated - but the operator would watch the block land
+    // somewhere they had already moved on from.
+    if (changingAppointmentId !== null) return;
 
     setStatusError(null);
     setOptimisticMove({ appointmentId: request.appointment.id, startAt: target.startAt, endAt: target.endAt });

@@ -136,6 +136,21 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
           </div>
         ) : null}
 
+        {mayManage && isDraft ? (
+          <DraftDetailsForm
+            language={language}
+            busy={busy}
+            currency={invoice.currency}
+            dueDate={invoice.due_date}
+            discountAmount={invoice.discount_amount}
+            notes={invoice.notes}
+            onSave={(input) => run(
+              () => api.setInvoiceDetails({ invoiceId: invoice.id, ...input }),
+              copy.detailsNotice
+            )}
+          />
+        ) : null}
+
         {mayManage && !isVoid ? (
           <VoidInvoiceForm
             language={language}
@@ -282,6 +297,69 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
       <InvoiceDocumentView document={document} language={language} />
     </>
+  );
+}
+
+/**
+ * The header fields a draft still owns. After issue the due date and the
+ * discount stop moving, so this form is offered only while the invoice is a
+ * draft rather than being shown and then refused.
+ */
+function DraftDetailsForm({
+  language,
+  busy,
+  currency,
+  dueDate,
+  discountAmount,
+  notes,
+  onSave,
+}: {
+  language: Language;
+  busy: boolean;
+  currency: string;
+  dueDate: string | null;
+  discountAmount: number;
+  notes: string | null;
+  onSave: (input: { dueDate: string | null; discountAmount: number; notes: string | null }) => Promise<void>;
+}) {
+  const copy = COPY[language];
+  const [due, setDue] = useState(dueDate ?? '');
+  const [discount, setDiscount] = useState(String(discountAmount ?? 0));
+  const [note, setNote] = useState(notes ?? '');
+  const parsedDiscount = Number(discount);
+  const valid = Number.isFinite(parsedDiscount) && parsedDiscount >= 0;
+
+  return (
+    <form
+      className="form-grid"
+      aria-label={copy.draftDetails}
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!valid) return;
+        void onSave({
+          dueDate: due || null,
+          discountAmount: parsedDiscount,
+          notes: note.trim() || null,
+        });
+      }}
+    >
+      <label>
+        <span>{copy.dueDate}</span>
+        <input type="date" value={due} onChange={(event) => setDue(event.target.value)} />
+      </label>
+      <label>
+        <span>{copy.discountIn.replace('{currency}', currency)}</span>
+        <input type="number" min="0" step="0.01" value={discount} onChange={(event) => setDiscount(event.target.value)} />
+      </label>
+      <label>
+        <span>{copy.notesField}</span>
+        <input value={note} onChange={(event) => setNote(event.target.value)} />
+      </label>
+      <div className="actions">
+        <button type="submit" disabled={busy || !valid}>{copy.saveDetails}</button>
+      </div>
+      {!valid ? <p className="meta">{copy.discountInvalid}</p> : null}
+    </form>
   );
 }
 
@@ -662,6 +740,13 @@ const COPY: Record<Language, Record<string, string>> = {
     notIssued: 'Not issued yet',
     due: 'Due',
     voidReason: 'Voided',
+    draftDetails: 'Invoice details',
+    dueDate: 'Due date',
+    discountIn: 'Discount in {currency}',
+    notesField: 'Notes',
+    saveDetails: 'Save details',
+    detailsNotice: 'Invoice details saved.',
+    discountInvalid: 'A discount cannot be negative.',
     issue: 'Issue invoice',
     issuedNotice: 'Invoice issued.',
     void: 'Void invoice',
@@ -728,6 +813,13 @@ const COPY: Record<Language, Record<string, string>> = {
     notIssued: 'Ещё не выставлен',
     due: 'Срок оплаты',
     voidReason: 'Аннулирован',
+    draftDetails: 'Реквизиты счёта',
+    dueDate: 'Срок оплаты',
+    discountIn: 'Скидка, {currency}',
+    notesField: 'Примечание',
+    saveDetails: 'Сохранить реквизиты',
+    detailsNotice: 'Реквизиты счёта сохранены.',
+    discountInvalid: 'Скидка не может быть отрицательной.',
     issue: 'Выставить счёт',
     issuedNotice: 'Счёт выставлен.',
     void: 'Аннулировать счёт',
