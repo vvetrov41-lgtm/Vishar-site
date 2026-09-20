@@ -161,7 +161,7 @@ export function createStatisticsApi(client: CrmClient) {
 
     const transactions = await readAllOptional<StatisticsTransaction>(
       () => scoped(
-        'payment_transactions',
+        'statistics_payment_transactions',
         'id, artist_id, transaction_type, direction, amount, currency, status, occurred_at',
         artistId,
       )
@@ -172,7 +172,7 @@ export function createStatisticsApi(client: CrmClient) {
 
     const requests = await readAllOptional<StatisticsPaymentRequest>(
       () => scoped(
-        'payment_requests',
+        'statistics_payment_requests',
         'id, artist_id, purpose, amount, currency, status, created_at',
         artistId,
       )
@@ -224,13 +224,13 @@ export function createStatisticsApi(client: CrmClient) {
         return result;
       };
 
-      // Enquiries created in the window. `intake_state = 'complete'` matches
+      // Enquiries created in the window. The security_invoker Statistics view first\n      // removes explicitly excluded test/internal lineage. `intake_state = 'complete'` matches
       // the working queue exactly: a half-submitted intake is not an enquiry
       // the artist ever saw, so counting it would inflate every source and
       // depress every conversion rate.
       const enquiries = note(
         await readAll<StatisticsEnquiryWithDiscovery>(
-          () => scoped('enquiries', ENQUIRY_COLUMNS, artistId)
+          () => scoped('statistics_enquiries', ENQUIRY_COLUMNS, artistId)
             .is('archived_at', null)
             .eq('intake_state', 'complete')
             .gte('created_at', window.from)
@@ -244,7 +244,7 @@ export function createStatisticsApi(client: CrmClient) {
       // window, so one read serves the period figures and the upcoming load.
       const windowSessions = note(
         await readAll<StatisticsSession>(
-          () => scoped('sessions', SESSION_COLUMNS, artistId)
+          () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
             .gte('start_at', window.from)
             .lt('start_at', forwardTo)
             .order('start_at', { ascending: true }),
@@ -255,7 +255,7 @@ export function createStatisticsApi(client: CrmClient) {
       // Projects created in the window.
       const windowProjects = note(
         await readAll<StatisticsProject>(
-          () => scoped('projects', PROJECT_COLUMNS, artistId)
+          () => scoped('statistics_projects', PROJECT_COLUMNS, artistId)
             .is('archived_at', null)
             .gte('created_at', window.from)
             .lt('created_at', window.to)
@@ -274,7 +274,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsProject>(
-            () => scoped('projects', PROJECT_COLUMNS, artistId)
+            () => scoped('statistics_projects', PROJECT_COLUMNS, artistId)
               .is('archived_at', null)
               .in('enquiry_id', enquiryIds)
               .order('created_at', { ascending: true }),
@@ -285,7 +285,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsSession>(
-            () => scoped('sessions', SESSION_COLUMNS, artistId)
+            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
               .in('enquiry_id', enquiryIds)
               .order('start_at', { ascending: true }),
             'load statistics',
@@ -300,7 +300,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsSession>(
-            () => scoped('sessions', SESSION_COLUMNS, artistId)
+            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
               .in('project_id', projectIds)
               .order('start_at', { ascending: true }),
             'load statistics',
@@ -315,7 +315,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsSession>(
-            () => scoped('sessions', SESSION_COLUMNS, artistId)
+            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
               .in('client_id', clientIds)
               .order('start_at', { ascending: true }),
             'load statistics',
