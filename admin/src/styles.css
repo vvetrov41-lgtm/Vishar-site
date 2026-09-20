@@ -1122,3 +1122,50 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
     overflow-x: auto;
   }
 }
+
+
+/* Mobile client workspace tabs ------------------------------------------ */
+
+.client-mobile-tabs { display: none; }
+.client-mobile-tab-panel { display: contents; }
+.client-mobile-history-only { display: none; }
+
+@media (max-width: 639px) {
+  .client-mobile-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 3px;
+    margin: 0 0 12px;
+    padding: 3px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--surface);
+  }
+  .client-mobile-tabs button {
+    min-width: 0;
+    min-height: var(--tap);
+    padding: 7px 4px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 0.72rem;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .client-mobile-tabs button.active,
+  .client-mobile-tabs button[aria-pressed='true'] {
+    background: var(--surface-raised);
+    color: var(--text);
+  }
+
+  .client-mobile-tab-panel { display: none; }
+  .client-mobile-tab-panel[data-active='true'] { display: contents; }
+
+  /* Desktop keeps the compact five-item history inside Bookings. On a phone
+     it moves to History so Work stays focused on what is ahead. */
+  .client-mobile-tab-panel[data-client-tab='work'] .client-bookings-past {
+    display: none;
+  }
+  .client-mobile-history-only { display: block; }
+}
