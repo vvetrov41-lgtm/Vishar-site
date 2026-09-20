@@ -151,11 +151,19 @@ const APPOINTMENT_KINDS_FOR_ANALYTICS = new Set<string>(['consultation', 'sessio
 
 export function createAppointmentApi(client: CrmClient) {
   return {
+    /**
+     * `from` and `to` are optional and bound the window by start time. The
+     * calendar passes the window it is drawing, because the unbounded read is
+     * capped at 300 rows ordered from the earliest - which is the wrong 300
+     * as soon as an operator pages forward far enough.
+     */
     async listAppointments(filters: {
       artistId?: string;
       projectId?: string;
       clientId?: string;
       appointmentType?: AppointmentType;
+      from?: string;
+      to?: string;
     } = {}): Promise<Appointment[]> {
       let query = client
         .from('sessions')
@@ -167,6 +175,8 @@ export function createAppointmentApi(client: CrmClient) {
       if (filters.projectId) query = query.eq('project_id', filters.projectId);
       if (filters.clientId) query = query.eq('client_id', filters.clientId);
       if (filters.appointmentType) query = query.eq('appointment_type', filters.appointmentType);
+      if (filters.from) query = query.gte('start_at', filters.from);
+      if (filters.to) query = query.lt('start_at', filters.to);
 
       const rows = unwrap<Array<Partial<Appointment> & Pick<Appointment, 'id' | 'artist_id' | 'status' | 'start_at' | 'end_at'>>>(
         await query,

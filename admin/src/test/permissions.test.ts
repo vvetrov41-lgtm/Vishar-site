@@ -10,6 +10,7 @@ import {
   availableTransitions,
   can,
   canAccess,
+  canManageArtistSessions,
   capabilitiesFor,
   navItemsFor,
   type Capability,
@@ -192,5 +193,41 @@ describe('status transitions', () => {
   it('offers read_only nothing', () => {
     expect(availableTransitions(TRANSITIONS, 'new', 'read_only')).toEqual([]);
     expect(availableTransitions(TRANSITIONS, 'new', null)).toEqual([]);
+  });
+});
+
+describe('who may move one artist schedule', () => {
+  it('lets the owner move any artist appointments', () => {
+    expect(canManageArtistSessions('owner', [], 'artist-1')).toBe(true);
+  });
+
+  it('lets a manager move the schedule their membership allows', () => {
+    expect(canManageArtistSessions('booking_manager', [membership()], 'artist-1')).toBe(true);
+  });
+
+  it('refuses a manager whose membership cannot manage sessions', () => {
+    expect(canManageArtistSessions(
+      'booking_manager',
+      [membership({ can_manage_sessions: false })],
+      'artist-1'
+    )).toBe(false);
+  });
+
+  it('refuses a manager holding another artist only', () => {
+    expect(canManageArtistSessions(
+      'booking_manager',
+      [membership({ artist_id: 'artist-2' })],
+      'artist-1'
+    )).toBe(false);
+  });
+
+  it('refuses a deactivated membership and read_only outright', () => {
+    expect(canManageArtistSessions(
+      'booking_manager',
+      [membership({ is_active: false })],
+      'artist-1'
+    )).toBe(false);
+    expect(canManageArtistSessions('read_only', [membership()], 'artist-1')).toBe(false);
+    expect(canManageArtistSessions(null, [membership()], 'artist-1')).toBe(false);
   });
 });

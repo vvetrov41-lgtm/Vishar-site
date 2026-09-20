@@ -1,15 +1,25 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { AppointmentRow } from '../components/AppointmentRow';
 import { BookingPanel } from '../components/BookingPanel';
 import { ClientPicker } from '../components/ClientPicker';
 import { MonthCalendarView, dayHeading, timeOffLabel } from '../components/MonthCalendarView';
+import { WeekCalendarView, weekHeading, type WeekMoveRequest } from '../components/WeekCalendarView';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
 import { buildMonthCalendar, calendarMonthWindow, startOfLocalDay, startOfLocalMonth } from '../lib/calendar-month';
+import {
+  DEFAULT_TIMEZONE,
+  addZonedDays,
+  buildWeekCalendar,
+  rescheduleTarget,
+  startOfZonedDay,
+  startOfZonedWeek,
+  zonedTimeLabel,
+} from '../lib/calendar-week';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
-import { can } from '../lib/permissions';
+import { can, canManageArtistSessions } from '../lib/permissions';
 import { useApi, useSession } from '../lib/session';
 import type { AvailabilityBlock } from '../lib/availability-api';
 import type { Client, Enquiry, Project, SessionStatus } from '../lib/types';
@@ -20,22 +30,55 @@ export { AppointmentRow, clientResponseLabel, typeLabel } from '../components/Ap
 
 type PageData = { appointments: Appointment[]; projects: Project[]; enquiries: Enquiry[]; clients: Client[]; timeOff: AvailabilityBlock[]; };
 type TypeFilter = AppointmentType | 'all';
+type CalendarView = 'month' | 'week' | 'day';
 const TYPES: AppointmentType[] = ['tattoo_session', 'in_person_consultation', 'video_consultation', 'touch_up'];
+const VIEWS: CalendarView[] = ['month', 'week', 'day'];
+
+/** An appointment held at the position the operator dropped it on, until the server answers. */
+interface OptimisticMove { appointmentId: string; startAt: string; endAt: string; }
 
 export function AppointmentsPage() {
   const api = useApi();
-  const { profile } = useSession();
+  const { profile, memberships } = useSession();
   const { artists, selectedArtistId } = useArtistScope();
   const { language, label } = useLanguage();
   const copy = COPY[language];
   const mayManage = can(profile?.role, 'manageSessions');
+  const [view, setView] = useState<CalendarView>('month');
   const [visibleMonth, setVisibleMonth] = useState(() => startOfLocalMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const monthWindow = useMemo(() => calendarMonthWindow(visibleMonth), [visibleMonth]);
 
+  // The diary is the artist's, so its day boundaries are theirs. With no artist
+  // chosen the installation's own zone is the honest default; the database has
+  // every artist on Europe/London today.
+  const timeZone = useMemo(() => {
+    const scoped = artists.find((artist) => artist.id === selectedArtistId)
+      ?? (artists.length === 1 ? artists[0] : null);
+    return scoped?.timezone || DEFAULT_TIMEZONE;
+  }, [artists, selectedArtistId]);
+
+  const [anchor, setAnchor] = useState<number>(() => Date.now());
+  const gridWindow = useMemo(() => {
+    const days = view === 'day' ? 1 : 7;
+    const start = days === 1
+      ? startOfZonedDay(anchor, timeZone)
+      : startOfZonedWeek(anchor, timeZone);
+    return { start, end: startOfZonedDay(addZonedDays(start, days, timeZone), timeZone), days };
+  }, [anchor, timeZone, view]);
+
+  // Only the week and day grids bound the read. The month grid has always
+  // loaded the unbounded window and is left exactly as it was.
+  const readFrom = view === 'month' ? null : new Date(gridWindow.start).toISOString();
+  const readTo = view === 'month' ? null : new Date(gridWindow.end).toISOString();
+
   const { data, loading, error, reload } = useAsync<PageData>(async () => {
     const [appointments, projects, enquiries] = await Promise.all([
-      api.listAppointments({ artistId: selectedArtistId ?? undefined }),
+      api.listAppointments({
+        artistId: selectedArtistId ?? undefined,
+        from: readFrom ?? undefined,
+        to: readTo ?? undefined,
+      }),
       api.listProjects(undefined, selectedArtistId ?? undefined),
       api.listEnquiries({ artistId: selectedArtistId ?? undefined }),
     ]);
@@ -47,22 +90,31 @@ export function AppointmentsPage() {
     const calendarArtistIds = selectedArtistId
       ? [selectedArtistId]
       : (await api.listAccessibleArtists()).filter((artist) => artist.is_active).map((artist) => artist.id);
-    const from = new Date(monthWindow.start).toISOString();
-    const to = new Date(monthWindow.end).toISOString();
+    const from = new Date(view === 'month' ? monthWindow.start : gridWindow.start).toISOString();
+    const to = new Date(view === 'month' ? monthWindow.end : gridWindow.end).toISOString();
     const timeOff = (await Promise.all(
       calendarArtistIds.map((id) => api.listAvailabilityBlocks({ artistId: id, from, to }).catch(() => [])),
     )).flat();
     return { appointments, projects, enquiries, clients, timeOff };
-  }, [api, selectedArtistId, monthWindow.start, monthWindow.end]);
+  }, [api, selectedArtistId, view, monthWindow.start, monthWindow.end, gridWindow.start, gridWindow.end, readFrom, readTo]);
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [clientId, setClientId] = useState('');
   const [statusError, setStatusError] = useState<string | null>(null);
   const [changingAppointmentId, setChangingAppointmentId] = useState<string | null>(null);
+  const [optimisticMove, setOptimisticMove] = useState<OptimisticMove | null>(null);
+
+  // Fresh rows have arrived, so the held position has served its purpose.
+  useEffect(() => { setOptimisticMove(null); }, [data]);
+
   const visibleAppointments = useMemo(() => {
-    const rows = data?.appointments ?? [];
+    const rows = (data?.appointments ?? []).map((appointment) => (
+      optimisticMove && optimisticMove.appointmentId === appointment.id
+        ? { ...appointment, start_at: optimisticMove.startAt, end_at: optimisticMove.endAt }
+        : appointment
+    ));
     return typeFilter === 'all' ? rows : rows.filter((appointment) => appointment.appointment_type === typeFilter);
-  }, [data?.appointments, typeFilter]);
+  }, [data?.appointments, optimisticMove, typeFilter]);
 
   if (loading) return <LoadingState label={copy.loading} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -81,6 +133,17 @@ export function AppointmentsPage() {
   const selectedCalendarDay = month.days.find((day) => day.date === effectiveSelectedDay) ?? null;
   const bookingArtistId = selectedArtistId ?? (artists.length === 1 ? artists[0].id : null);
 
+  const week = buildWeekCalendar({
+    anchor,
+    now: nowDate,
+    timeZone,
+    days: gridWindow.days,
+    appointments: visibleAppointments,
+    timeOff: data.timeOff,
+  });
+  const artistNames: Record<string, string> = {};
+  for (const artist of artists) artistNames[artist.id] = artist.display_name;
+
   async function changeStatus(appointmentId: string, status: SessionStatus) {
     setChangingAppointmentId(appointmentId);
     setStatusError(null);
@@ -97,32 +160,126 @@ export function AppointmentsPage() {
     finally { setChangingAppointmentId(null); }
   }
 
+  /**
+   * A dropped appointment. The block sits at the new time while the server
+   * decides; a conflict or a refusal drops the held position and the block
+   * returns to where the server still says it is.
+   */
+  async function moveAppointment(request: WeekMoveRequest) {
+    const target = rescheduleTarget({
+      appointment: request.appointment,
+      dayStart: request.dayStart,
+      minutesFromMidnight: request.minutesFromMidnight,
+      timeZone,
+    });
+    if (!target) return;
+    if (target.startAt === request.appointment.start_at && target.endAt === request.appointment.end_at) return;
+
+    setStatusError(null);
+    setOptimisticMove({ appointmentId: request.appointment.id, startAt: target.startAt, endAt: target.endAt });
+    setChangingAppointmentId(request.appointment.id);
+    try {
+      const conflicts = await api.listAppointmentConflicts({
+        artistId: request.appointment.artist_id,
+        startAt: target.startAt,
+        endAt: target.endAt,
+        excludeAppointmentId: request.appointment.id,
+      });
+      if (conflicts.length > 0) {
+        setOptimisticMove(null);
+        setStatusError(conflictMessage(conflicts[0].start_at, conflicts[0].end_at, timeZone, language));
+        return;
+      }
+      await api.rescheduleAppointment({
+        appointmentId: request.appointment.id,
+        startAt: target.startAt,
+        endAt: target.endAt,
+      });
+      reload();
+    } catch (cause) {
+      setOptimisticMove(null);
+      setStatusError(cause instanceof Error ? cause.message : copy.rescheduleFailed);
+    } finally {
+      setChangingAppointmentId(null);
+    }
+  }
+
+  function moveGrid(offset: number) {
+    setAnchor((current) => addZonedDays(current, offset * gridWindow.days, timeZone));
+  }
+
   function moveMonth(offset: number) { const current = new Date(visibleMonth); setVisibleMonth(new Date(current.getFullYear(), current.getMonth() + offset, 1).getTime()); setSelectedDay(null); }
-  function showToday() { const current = new Date(); setVisibleMonth(startOfLocalMonth(current)); setSelectedDay(startOfLocalDay(current)); }
+  function showToday() {
+    const current = new Date();
+    setVisibleMonth(startOfLocalMonth(current));
+    setSelectedDay(startOfLocalDay(current));
+    setAnchor(current.getTime());
+  }
 
   return (
     <>
       <Section title={copy.title}>
-        <div className="filters"><label><span>{copy.filterType}</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}><option value="all">{copy.allTypes}</option>{TYPES.map((type) => <option key={type} value={type}>{appointmentTypeLabel(type, language)}</option>)}</select></label></div>
-      </Section>
-      {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
-      <Section title={copy.monthView}>
-        <MonthCalendarView month={month} visibleMonth={visibleMonth} selectedDay={effectiveSelectedDay} language={language} clients={data.clients} onSelectDay={setSelectedDay} onPreviousMonth={() => moveMonth(-1)} onNextMonth={() => moveMonth(1)} onToday={showToday} />
-      </Section>
-      <Section title={dayHeading(effectiveSelectedDay, language)}>
-        <div className="calendar-selected-day">
-          {!selectedCalendarDay || selectedCalendarDay.entries.length === 0 ? <EmptyState compact title={copy.dayFree} /> : selectedCalendarDay.entries.map((entry) => entry.kind === 'time_off' ? (
-            <div key={entry.key} className="row calendar-time-off-detail"><div className="title">{timeOffLabel(entry.block.block_kind, language)}</div><div className="meta">{entry.block.is_all_day ? copy.allDay : `${formatDateTime(entry.block.start_at, language)} - ${formatDateTime(entry.block.end_at, language)}`}{entry.block.note ? ` · ${entry.block.note}` : ''}</div></div>
-          ) : (
-            <AppointmentRow key={entry.key} appointment={entry.appointment} client={data.clients.find((client) => client.id === entry.appointment.client_id) ?? null} enquiry={data.enquiries.find((enquiry) => enquiry.id === entry.appointment.enquiry_id) ?? null} project={data.projects.find((project) => project.id === entry.appointment.project_id) ?? null} language={language} statusLabel={label('sessionStatus', entry.appointment.status)} paymentLabel={label('paymentStatus', entry.appointment.payment_status)} mayManage={mayManage} changing={changingAppointmentId === entry.appointment.id} onStatus={(status) => { void changeStatus(entry.appointment.id, status); }} onReschedule={(nextStartAt, nextEndAt) => rescheduleAppointment(entry.appointment.id, nextStartAt, nextEndAt)} />
-          ))}
+        <div className="filters">
+          <label><span>{copy.filterType}</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}><option value="all">{copy.allTypes}</option>{TYPES.map((type) => <option key={type} value={type}>{appointmentTypeLabel(type, language)}</option>)}</select></label>
+          <div className="calendar-view-switch" role="group" aria-label={copy.viewLabel}>
+            {VIEWS.map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={view === option}
+                onClick={() => setView(option)}
+              >
+                {copy[`view_${option}`]}
+              </button>
+            ))}
+          </div>
         </div>
       </Section>
+      {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
+      {view === 'month' ? (
+        <>
+          <Section title={copy.monthView}>
+            <MonthCalendarView month={month} visibleMonth={visibleMonth} selectedDay={effectiveSelectedDay} language={language} clients={data.clients} onSelectDay={setSelectedDay} onPreviousMonth={() => moveMonth(-1)} onNextMonth={() => moveMonth(1)} onToday={showToday} />
+          </Section>
+          <Section title={dayHeading(effectiveSelectedDay, language)}>
+            <div className="calendar-selected-day">
+              {!selectedCalendarDay || selectedCalendarDay.entries.length === 0 ? <EmptyState compact title={copy.dayFree} /> : selectedCalendarDay.entries.map((entry) => entry.kind === 'time_off' ? (
+                <div key={entry.key} className="row calendar-time-off-detail"><div className="title">{timeOffLabel(entry.block.block_kind, language)}</div><div className="meta">{entry.block.is_all_day ? copy.allDay : `${formatDateTime(entry.block.start_at, language)} - ${formatDateTime(entry.block.end_at, language)}`}{entry.block.note ? ` · ${entry.block.note}` : ''}</div></div>
+              ) : (
+                <AppointmentRow key={entry.key} appointment={entry.appointment} client={data.clients.find((client) => client.id === entry.appointment.client_id) ?? null} enquiry={data.enquiries.find((enquiry) => enquiry.id === entry.appointment.enquiry_id) ?? null} project={data.projects.find((project) => project.id === entry.appointment.project_id) ?? null} language={language} statusLabel={label('sessionStatus', entry.appointment.status)} paymentLabel={label('paymentStatus', entry.appointment.payment_status)} mayManage={mayManage} changing={changingAppointmentId === entry.appointment.id} onStatus={(status) => { void changeStatus(entry.appointment.id, status); }} onReschedule={(nextStartAt, nextEndAt) => rescheduleAppointment(entry.appointment.id, nextStartAt, nextEndAt)} />
+              ))}
+            </div>
+          </Section>
+        </>
+      ) : (
+        <Section title={view === 'week' ? copy.weekView : copy.dayView}>
+          <WeekCalendarView
+            calendar={week}
+            language={language}
+            clients={data.clients}
+            projects={data.projects}
+            artistNames={artistNames}
+            statusLabelFor={(appointment) => label('sessionStatus', appointment.status)}
+            canMove={(appointment) => canManageArtistSessions(profile?.role, memberships, appointment.artist_id)}
+            movingAppointmentId={changingAppointmentId}
+            onMove={(request) => { void moveAppointment(request); }}
+            onPrevious={() => moveGrid(-1)}
+            onNext={() => moveGrid(1)}
+            onToday={showToday}
+            heading={weekHeading(week, language)}
+          />
+          <p className="meta">{copy.timeZoneNote.replace('{zone}', timeZone)}</p>
+        </Section>
+      )}
       {mayManage ? <Section title={copy.findTime}>{!bookingArtistId ? <p className="meta">{copy.chooseArtistFirst}</p> : clientId ? <BookingPanel artistId={bookingArtistId} clientId={clientId} clientName={clientName(data.clients, clientId) ?? copy.thisClient} projectOptions={data.projects.filter((project) => project.client_id === clientId).map((project) => ({ id: project.id, label: project.title, enquiryId: project.enquiry_id }))} enquiryOptions={data.enquiries.filter((enquiry) => enquiry.client_id === clientId).map((enquiry) => ({ id: enquiry.id, label: enquiry.reference_number }))} onBooked={() => reload()} /> : <div className="client-picker-field"><span className="client-picker-heading">{copy.whoFor}</span><ClientPicker value={clientId} language={language} inputId="smart-booking-client-search" onChange={setClientId} /></div>}</Section> : null}
       <p className="notice">{copy.calendarNotice}</p>
     </>
   );
 }
 function clientName(clients: Client[], clientId: string): string | null { return clients.find((client) => client.id === clientId)?.full_name ?? null; }
+function conflictMessage(startAt: string, endAt: string, timeZone: string, language: Language): string {
+  const window = `${zonedTimeLabel(startAt, timeZone)}–${zonedTimeLabel(endAt, timeZone)}`;
+  return COPY[language].conflict.replace('{window}', window);
+}
 function appointmentTypeLabel(type: AppointmentType, language: Language): string { const labels: Record<Language, Record<AppointmentType, string>> = { en: { tattoo_session: 'Tattoo session', in_person_consultation: 'In-person consultation', video_consultation: 'Video consultation', touch_up: 'Touch-up' }, ru: { tattoo_session: 'Тату-сеанс', in_person_consultation: 'Очная консультация', video_consultation: 'Видеоконсультация', touch_up: 'Коррекция' } }; return labels[language][type]; }
-const COPY: Record<Language, Record<string, string>> = { en: { title:'Calendar', loading:'Loading appointments…', none:'No appointments yet', filterType:'Filter by type', allTypes:'All appointment types', monthView:'Month', dayFree:'Nothing booked', allDay:'All day', findTime:'Find a time', chooseArtistFirst:'Choose an artist above to search for free times.', whoFor:'Who is this for?', thisClient:'this client', statusFailed:'Could not change that appointment.', rescheduleFailed:'Could not reschedule that appointment.', calendarNotice:'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.' }, ru: { title:'Календарь', loading:'Загрузка записей…', none:'Записей пока нет', filterType:'Фильтр по типу', allTypes:'Все типы записей', monthView:'Месяц', dayFree:'Записей нет', allDay:'Весь день', findTime:'Подобрать время', chooseArtistFirst:'Выберите мастера выше, чтобы искать свободное время.', whoFor:'Для кого?', thisClient:'этот клиент', statusFailed:'Не удалось изменить статус записи.', rescheduleFailed:'Не удалось перенести запись.', calendarNotice:'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.' } };
+const COPY: Record<Language, Record<string, string>> = { en: { title:'Calendar', loading:'Loading appointments…', none:'No appointments yet', filterType:'Filter by type', allTypes:'All appointment types', viewLabel:'Calendar view', view_month:'Month', view_week:'Week', view_day:'Day', monthView:'Month', weekView:'Week', dayView:'Day', dayFree:'Nothing booked', allDay:'All day', findTime:'Find a time', chooseArtistFirst:'Choose an artist above to search for free times.', whoFor:'Who is this for?', thisClient:'this client', statusFailed:'Could not change that appointment.', rescheduleFailed:'Could not reschedule that appointment.', conflict:'That time is already taken ({window}). The appointment has not moved.', timeZoneNote:'Times are shown in {zone}.', calendarNotice:'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.' }, ru: { title:'Календарь', loading:'Загрузка записей…', none:'Записей пока нет', filterType:'Фильтр по типу', allTypes:'Все типы записей', viewLabel:'Вид календаря', view_month:'Месяц', view_week:'Неделя', view_day:'День', monthView:'Месяц', weekView:'Неделя', dayView:'День', dayFree:'Записей нет', allDay:'Весь день', findTime:'Подобрать время', chooseArtistFirst:'Выберите мастера выше, чтобы искать свободное время.', whoFor:'Для кого?', thisClient:'этот клиент', statusFailed:'Не удалось изменить статус записи.', rescheduleFailed:'Не удалось перенести запись.', conflict:'Это время уже занято ({window}). Запись осталась на месте.', timeZoneNote:'Время показано в зоне {zone}.', calendarNotice:'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.' } };
