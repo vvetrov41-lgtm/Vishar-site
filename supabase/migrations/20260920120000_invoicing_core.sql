@@ -560,7 +560,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
-as $
+as $function$
 declare
   v_invoice public.invoices%rowtype;
   v_totals record;
@@ -616,9 +616,9 @@ begin
     raise exception 'a draft invoice takes no payments; issue it first' using errcode = '42501';
   end if;
 
-  -- Linking a request reserves its full face value against the invoice, not
-  -- merely what has settled so far. That prevents a partially-paid request
-  -- from being safe at link time but capable of overpaying later.
+  -- A newly linked request cannot already be larger than today's balance.
+  -- The transaction guard below re-checks the invoice-wide outstanding amount
+  -- at settlement time, so later payments or credit notes cannot overpay it.
   if v_link_added then
     select * into v_totals from crm_private.invoice_totals(new.invoice_id);
     if new.amount > coalesce(v_totals.amount_outstanding, 0) then
@@ -629,7 +629,7 @@ begin
 
   return new;
 end;
-$;
+$function$;
 
 /**
  * A void invoice must never acquire money.
@@ -645,7 +645,7 @@ returns trigger
 language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
-as $
+as $function$
 declare
   v_invoice public.invoices%rowtype;
   v_totals record;
@@ -678,7 +678,7 @@ begin
 
   return new;
 end;
-$;
+$function$;
 
 /**
  * Keeps `invoices.status` honest after anything that moves the arithmetic:
