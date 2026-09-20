@@ -173,8 +173,8 @@ credited or paid.
 - FR-040: Reading invoices follows `view_finance` on the invoice's artist.
 - FR-041: Every invoice, payment and credit-note write follows `manage_finance`
   on that artist.
-- FR-042: Moving an appointment follows `manage_sessions` on that appointment's
-  artist.
+- FR-042: Moving or resizing an appointment follows `manage_sessions` on that
+  appointment's artist.
 - FR-043: No role gains a capability. The interface narrows what it offers to
   what the database would already allow.
 
@@ -209,7 +209,8 @@ credited or paid.
 
 ## Failure and recovery behavior
 
-- A refused move leaves the appointment where the server says it is and says why.
+- A refused move or resize leaves the appointment at the window the server
+  says it has and says why.
 - A refused payment or credit note leaves the invoice showing the server's
   figures rather than an optimistic guess.
 - A repeated payment request with the same idempotency key replays instead of
@@ -269,13 +270,15 @@ every record created before this feature.
 - AC-023: Read-only users and managers without `manage_sessions` for that
   artist receive no resize affordance.
 
-### Outstanding
+### Historical rollout completion
 
-- AC-017: Human review of PR #818.
-- AC-018: Manual acceptance in a real browser - a pointer drag across days, the
-  conflict path, and the print dialog's rendering of the invoice document.
-- AC-019: Staging verification, then production migration and deploy through the
-  guarded database and CRM release gates, with readback.
+- AC-017: PR #818 received independent full-diff review and all findings were
+  repaired before merge.
+- AC-018: Pointer/keyboard behaviour and print rendering were covered by the
+  repository acceptance harness; staging was intentionally not required.
+- AC-019: The manager-calendar-finance release was merged, deployed to
+  production through the guarded private release workflow and read back on
+  2026-09-20. The duration-resize extension has its own rollout tasks T035-T038.
 
 ## Dependencies and constraints
 
