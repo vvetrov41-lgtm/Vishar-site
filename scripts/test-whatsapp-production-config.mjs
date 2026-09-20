@@ -92,28 +92,43 @@ try {
 const workflow = read('.github/workflows/deploy-private-production-whatsapp.yml');
 for (const needle of [
   'environment: crm-production',
-  'release/private-crm-rc*',
+  "release/private-crm-rc*-backend-auth-whatsapp-drain-*",
+  'workflow_dispatch:',
   'approved_sha',
   'cancel-in-progress: false',
+  'actions: read',
+  "github.event_name != 'push' || (github.actor == github.repository_owner && github.run_attempt == 1)",
+  'agent/platform-telegram-self-service',
+  'Static Validation',
+  'CRM and booking validation',
+  'WhatsApp production onboarding validation',
   'ENABLE_PRIVATE_CRM_WHATSAPP_DRAIN',
   'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED',
+  'CRM_PRODUCTION_SUPABASE_SECRET_KEY',
+  'wrangler secret put SUPABASE_SECRET_KEY',
   'wrangler secret list',
   'validate-whatsapp-production-secret-names.mjs drain',
   'test-whatsapp-production-secret-names.mjs',
   '--strict',
   'wrangler versions list',
   'wrangler deployments list',
+  '/workers/scripts/$WORKER_NAME/schedules',
   'safe-summary.json',
   'WRANGLER_OUTPUT_FILE_PATH',
   "version_source: 'wrangler_deploy_event'",
 ]) expectIncludes(workflow, needle, 'production workflow');
 
+if ((workflow.match(/wrangler secret put SUPABASE_SECRET_KEY/g) || []).length !== 1) {
+  throw new Error('production workflow must reconcile exactly one fixed Supabase backend binding');
+}
+
 expectExcludes(workflow, 'versions[0].id', 'production workflow');
 
 for (const needle of [
-  // Secret values are never written or read by this workflow.
-  'wrangler secret put',
+  // Artist/provider secret values are never provisioned by this workflow.
   'wrangler secret bulk',
+  'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION" <<',
+  'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION" <<',
   // No other surface may be deployed from the WhatsApp gate.
   'wrangler pages deploy',
   'supabase db push',
@@ -134,6 +149,7 @@ expectIncludes(workerSource, "env.WHATSAPP_DRAIN_ENABLED !== 'true'", 'drain Wor
 expectExcludes(workerSource, 'async fetch(', 'drain Worker');
 
 console.log(
-  'WhatsApp production config tests passed: tracked template inert, generated config activates '
-  + 'exactly one drain with one cron, and the guarded workflow writes no secret and touches no Meta account.'
+  'WhatsApp production config tests passed: tracked template stays inert, the generated config activates '
+  + 'exactly one drain with one cron, and automatic production activation remains exact-head, '
+  + 'artist-binding-preserving and Meta-account neutral.'
 );

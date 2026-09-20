@@ -1,16 +1,21 @@
 name: Deploy private production WhatsApp drain
 
-# This workflow exists so that activation is reviewable, not so that it is
-# convenient. It never runs on its own: it is workflow_dispatch only, it must
-# be started from an approved release branch, it requires the exact approved
-# SHA, a protected-environment repository variable, and an exact approval
-# phrase before it will deploy anything.
+# The primary release path is automatic but fail-closed: creating an isolated
+# backend-auth WhatsApp drain release ref at the exact current canonical CRM SHA
+# deploys only after exact-head CI, immutable lineage, production target and
+# secret-name checks pass. workflow_dispatch remains as an emergency/manual
+# validation or rollback path.
 #
 # It deploys only the scheduled WhatsApp drain Worker. It never registers or
 # migrates a phone number, never completes Meta Embedded Signup, never enables
-# Meta billing, never writes a Worker secret, and never sends a message.
+# Meta billing, and never sends a message. The only credential it may reconcile
+# from the protected environment is the canonical production Supabase backend
+# key; artist-scoped Meta bindings must already exist on the Worker.
 
 on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-whatsapp-drain-*'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -30,6 +35,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: deploy-private-production-whatsapp
@@ -37,56 +43,106 @@ concurrency:
 
 jobs:
   whatsapp:
+    if: github.event_name != 'push' || (github.actor == github.repository_owner && github.run_attempt == 1)
     name: Private CRM WhatsApp production gate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: crm-production
     env:
       WORKER_NAME: vishar-whatsapp-drain-production
+      PRODUCT_BRANCH: agent/platform-telegram-self-service
 
     steps:
       - name: Verify exact release branch and explicit production gate
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
-          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
+          APPROVAL_PHRASE: ${{ github.event_name == 'push' && 'AUTO_EXACT_HEAD_RELEASE' || inputs.approval_phrase }}
           DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
-          case "$GITHUB_REF_NAME" in
-            release/private-crm-rc*) ;;
-            *) echo 'This workflow may run only from an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
-          esac
           [ "$APPROVED_SHA" = "$GITHUB_SHA" ] || {
             echo 'approved_sha must exactly match the workflow source SHA.' >&2
             exit 1
           }
-          if [ "$DEPLOY_REQUESTED" = 'true' ]; then
-            if [ "$DEPLOY_ENABLED" != 'true' ]; then
-              echo 'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED is not explicitly enabled.' >&2
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-whatsapp-drain-[a-z0-9-]+$ ]] || {
+              echo 'Automatic WhatsApp rollout requires the isolated backend-auth WhatsApp drain release ref.' >&2
               exit 1
-            fi
-            if [ "$APPROVAL_PHRASE" != 'ENABLE_PRIVATE_CRM_WHATSAPP_DRAIN' ]; then
-              echo 'The exact WhatsApp production approval phrase is required for deploy=true.' >&2
+            }
+            [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ] || {
+              echo 'Only the repository owner may trigger automatic WhatsApp production activation.' >&2
               exit 1
+            }
+            [ "$GITHUB_RUN_ATTEMPT" = '1' ] || {
+              echo 'Automatic WhatsApp production activation may run only once for a release ref.' >&2
+              exit 1
+            }
+          else
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*) ;;
+              *) echo 'Manual WhatsApp workflow runs require an approved release/private-crm-rc* branch.' >&2; exit 1 ;;
+            esac
+            if [ "$DEPLOY_REQUESTED" = 'true' ]; then
+              if [ "$DEPLOY_ENABLED" != 'true' ]; then
+                echo 'CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED is not explicitly enabled.' >&2
+                exit 1
+              fi
+              if [ "$APPROVAL_PHRASE" != 'ENABLE_PRIVATE_CRM_WHATSAPP_DRAIN' ]; then
+                echo 'The exact WhatsApp production approval phrase is required for manual deploy=true.' >&2
+                exit 1
+              fi
             fi
           fi
 
       - name: Checkout exact approved SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
           fetch-depth: 0
 
       - name: Verify checkout is exact and clean
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
         run: |
           set -euo pipefail
           [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
           [ -z "$(git status --short)" ]
+
+      - name: Verify automatic exact canonical source and exact-head CI
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          canonical_sha="$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ] || {
+            echo 'WhatsApp release ref moved after workflow start.' >&2
+            exit 1
+          }
+          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+            echo 'Canonical CRM moved or does not match this WhatsApp release SHA.' >&2
+            exit 1
+          }
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,head_sha,status,conclusion}' | jq -s . > "$RUNNER_TEMP/whatsapp-ci.json"
+          for workflow in \
+            'Static Validation' \
+            'CRM and booking validation' \
+            'WhatsApp production onboarding validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/whatsapp-ci.json" >/dev/null || {
+                echo "Required exact-head workflow is not green: $workflow" >&2
+                exit 1
+              }
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -110,8 +166,51 @@ jobs:
           npm run check:whatsapp-production-bundle
           npm run scan:secrets
 
+      - name: Recheck automatic source immediately before credential mutation
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+
+      - name: Validate and reconcile production Supabase backend secret
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CANONICAL_SUPABASE_SECRET_KEY: ${{ secrets.CRM_PRODUCTION_SUPABASE_SECRET_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$CANONICAL_SUPABASE_SECRET_KEY" in
+            sb_secret_*) ;;
+            *) echo 'The canonical production Supabase backend key is absent or malformed.' >&2; exit 1 ;;
+          esac
+          if ! printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" | grep -Eq '^sb_secret_[A-Za-z0-9._~-]{16,512}$'; then
+            echo 'The canonical production Supabase backend key is not safe as an HTTP header.' >&2
+            exit 1
+          fi
+
+          probe_status="$(curl --silent --show-error --max-time 20 \
+            --output "$RUNNER_TEMP/whatsapp-supabase-auth-probe.json" \
+            --write-out '%{http_code}' \
+            --header "apikey: $CANONICAL_SUPABASE_SECRET_KEY" \
+            --header 'authorization: Bearer synthetic.session.token-abcdefghijklmnop' \
+            --header 'accept: application/json' \
+            'https://vfjexhfdbrjmuxfdvbdx.supabase.co/auth/v1/user')"
+          case "$probe_status" in
+            401|403) ;;
+            *) echo "Production Supabase backend key canary returned $probe_status." >&2; exit 1 ;;
+          esac
+
+          printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" \
+            | npx wrangler secret put SUPABASE_SECRET_KEY \
+                --config wrangler.whatsapp-drain.production.toml \
+                --name "$WORKER_NAME"
+
       - name: Verify bounded pre-provisioned production Worker secret names
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -121,8 +220,16 @@ jobs:
           secrets_json="$(npx wrangler secret list --config wrangler.whatsapp-drain.production.toml --name "$WORKER_NAME" --format json)"
           SECRET_LIST="$secrets_json" node scripts/validate-whatsapp-production-secret-names.mjs drain
 
+      - name: Recheck automatic canonical source immediately before Worker mutation
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+
       - name: Generate and deploy only the scheduled WhatsApp drain Worker
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -156,7 +263,7 @@ jobs:
           trap - EXIT
 
       - name: Record active Worker version and deployment evidence
-        if: ${{ inputs.deploy }}
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
@@ -200,11 +307,34 @@ jobs:
           console.log(`WHATSAPP_WORKER_VERSION=${deployedVersionId}`);
           NODE
 
+      - name: Read back exact production cron
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          schedules="$(curl -fsS \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H 'Accept: application/json' \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/schedules")"
+          SCHEDULES="$schedules" node <<'NODE'
+          const body = JSON.parse(process.env.SCHEDULES || '{}');
+          if (body.success !== true || !Array.isArray(body.result)) {
+            throw new Error('WhatsApp Worker cron readback failed');
+          }
+          const crons = body.result.map((entry) => entry?.cron).filter(Boolean).sort();
+          if (crons.length !== 1 || crons[0] !== '*/5 * * * *') {
+            throw new Error(`Unexpected WhatsApp Worker cron readback: ${crons.join(', ')}`);
+          }
+          NODE
+
       - name: Upload safe WhatsApp production evidence
-        if: ${{ always() && inputs.deploy }}
+        if: ${{ always() && (github.event_name == 'push' || inputs.deploy) }}
         uses: actions/upload-artifact@v4
         with:
-          name: whatsapp-production-${{ inputs.approved_sha }}
+          name: whatsapp-production-${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
           path: ${{ runner.temp }}/whatsapp-production-evidence/safe-summary.json
           if-no-files-found: warn
           retention-days: 30
@@ -213,7 +343,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
         run: |
           {
             echo '### Private CRM WhatsApp production gate'
@@ -228,7 +358,7 @@ jobs:
             echo '- Batch: default 10, DB hard maximum 20; lease-aware claim/ack and DB rollout cutoff remain authoritative'
             echo '- Required secret names: one production Supabase backend key plus one or more strictly encoded artist-scoped WhatsApp bindings'
             echo '- Global WhatsApp token/phone-number bindings are forbidden and not provisioned by this workflow'
-            echo '- Secret values are never read or printed; this workflow never runs secret put/bulk'
+            echo '- Fixed credential mutation: reconcile only canonical production SUPABASE_SECRET_KEY; artist/provider bindings are read by name only and never written here'
             echo '- Meta actions not performed: no Embedded Signup, no phone-number registration or migration, no billing change, no message sent'
             echo '- Retained staging / Pages / CRM / Calendar / Telegram / GPT / booking / database deployment commands: none'
           } >> "$GITHUB_STEP_SUMMARY"
