@@ -159,6 +159,28 @@ distinct forms remain distinct rows either way.
 Per source: enquiries in the period, how many converted (same rule as
 Conversion above), and the rate.
 
+### Self-reported discovery source
+
+The separate **How clients heard about you** block uses
+`enquiries.discovery_source`. Its canonical taxonomy lives in
+`config/discovery-sources.json`; booking Worker validation and generated
+public/hosted booking choices consume the same registry.
+
+Historical aliases are normalised through that registry. NULL/empty values are
+shown as **Not recorded**. A non-empty value that is not yet in the registry is
+still emitted as its own row with a humanised fallback label instead of being
+collapsed into Not recorded. This makes the statistics block forward-compatible
+during rollout or unexpected schema drift and, crucially, never hides real
+attribution data.
+
+`scripts/test-discovery-source-registry.mjs` is a fail-closed contract check.
+It verifies that the registry matches the final
+`enquiries_discovery_source_known` database constraint, the current CRM AI
+validator contract, and Vladimir's static booking form. The public and hosted
+Worker forms render their options directly from the registry. A taxonomy change
+therefore cannot silently reach production with statistics or booking forms on
+a different vocabulary.
+
 ### Funnel
 Enquiry → Project → Session, as a cohort of the enquiries created in the
 period. Every stage counts **distinct enquiries**, not rows.

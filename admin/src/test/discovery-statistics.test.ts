@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { discoveryBreakdown } from '../lib/discovery-statistics';
+import { discoverySourceLabel } from '../lib/discovery-source-registry';
 import type { StatisticsEnquiryWithDiscovery } from '../lib/statistics-api';
 
 function enquiry(
@@ -56,8 +57,14 @@ describe('discoveryBreakdown', () => {
       to: '2026-09-08T00:00:00.000Z',
     })).toEqual([
       { key: 'ai', count: 2, share: 40 },
-      { key: 'not_recorded', count: 2, share: 40 },
+      { key: 'not_recorded', count: 1, share: 20 },
       { key: 'referral', count: 1, share: 20 },
+      { key: 'something-new', count: 1, share: 20 },
     ]);
+  });
+
+  it('keeps future categories visible even before a friendly label is added', () => {
+    expect(discoverySourceLabel('tiktok_social', 'en')).toBe('Tiktok social');
+    expect(discoverySourceLabel('tiktok_social', 'ru')).toBe('Tiktok social');
   });
 });

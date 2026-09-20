@@ -5,6 +5,11 @@
 // treated as hints that must agree with the actual bytes.
 
 import { RequestError } from './http.js';
+import {
+  DISCOVERY_SOURCE_ACCEPTED_KEYS,
+  DISCOVERY_SOURCE_DETAIL_KEYS,
+  DISCOVERY_SOURCE_REQUIRED_DETAIL_KEYS,
+} from './discovery-sources.js';
 
 export const MAX_FILES = 3;
 export const MIN_FILES = 1;
@@ -20,31 +25,9 @@ const ACCEPTED_PRIVACY_NOTICE_VERSIONS = new Set([
 
 export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 export const ALLOWED_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp']);
-export const ALLOWED_DISCOVERY_SOURCES = new Set([
-  'instagram',
-  'google',
-  'ai',
-  'referral',
-  'convention',
-  'returning_client',
-  'other',
-  // Rolling-deploy compatibility with 0140-era forms. Migration 0141
-  // canonicalises these values before persistence.
-  'chatgpt',
-  'other_ai',
-  'friend_referral',
-  'tattoo_convention',
-]);
-
-const ALLOWED_DISCOVERY_DETAIL_SOURCES = new Set([
-  'ai',
-  'referral',
-  'other',
-  // Legacy rolling-deploy equivalents of ai/referral.
-  'chatgpt',
-  'other_ai',
-  'friend_referral',
-]);
+export const ALLOWED_DISCOVERY_SOURCES = DISCOVERY_SOURCE_ACCEPTED_KEYS;
+const ALLOWED_DISCOVERY_DETAIL_SOURCES = DISCOVERY_SOURCE_DETAIL_KEYS;
+const REQUIRED_DISCOVERY_DETAIL_SOURCES = DISCOVERY_SOURCE_REQUIRED_DETAIL_KEYS;
 
 const EXTENSION_FOR_MIME = {
   'image/jpeg': 'jpg',
@@ -208,7 +191,7 @@ export function parseEnquiryFields(form) {
     );
   }
 
-  if (enquiry.discoverySource === 'other' && !enquiry.discoverySourceDetail) {
+  if (REQUIRED_DISCOVERY_DETAIL_SOURCES.has(enquiry.discoverySource) && !enquiry.discoverySourceDetail) {
     throw new RequestError(
       'missing_discovery_source_detail',
       'Please tell us where you found the artist.'
