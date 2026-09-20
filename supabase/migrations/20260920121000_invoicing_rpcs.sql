@@ -27,7 +27,7 @@ language plpgsql
 stable
 security definer
 set search_path = pg_catalog, public, crm_private
-as $$
+as $
 declare
   v_invoice public.invoices%rowtype;
   v_totals record;
@@ -35,7 +35,7 @@ declare
   v_client public.clients%rowtype;
   v_project public.projects%rowtype;
 begin
-  select * into v_invoice from public.invoices where id = p_invoice_id for update;
+  select * into v_invoice from public.invoices where id = p_invoice_id;
   if not found then
     raise exception 'invoice % does not exist', p_invoice_id using errcode = '23503';
   end if;
@@ -601,13 +601,14 @@ as $$
 declare
   v_request public.payment_requests%rowtype;
   v_invoice public.invoices%rowtype;
+  v_totals record;
 begin
   select * into v_request from public.payment_requests where id = p_payment_request_id for update;
   if not found then
     raise exception 'payment request % does not exist', p_payment_request_id using errcode = '23503';
   end if;
 
-  select * into v_invoice from public.invoices where id = p_invoice_id;
+  select * into v_invoice from public.invoices where id = p_invoice_id for update;
   if not found then
     raise exception 'invoice % does not exist', p_invoice_id using errcode = '23503';
   end if;
@@ -634,15 +635,11 @@ begin
 
   -- The table trigger repeats this invariant for every write path. Checking it
   -- here gives the operator an immediate, domain-specific refusal.
-  declare
-    v_totals record;
-  begin
-    select * into v_totals from crm_private.invoice_totals(p_invoice_id);
-    if v_request.amount > coalesce(v_totals.amount_outstanding, 0) then
-      raise exception 'that payment request is more than the invoice still asks for'
-        using errcode = '23514';
-    end if;
-  end;
+  select * into v_totals from crm_private.invoice_totals(p_invoice_id);
+  if v_request.amount > coalesce(v_totals.amount_outstanding, 0) then
+    raise exception 'that payment request is more than the invoice still asks for'
+      using errcode = '23514';
+  end if;
 
   update public.payment_requests
   set invoice_id = p_invoice_id
