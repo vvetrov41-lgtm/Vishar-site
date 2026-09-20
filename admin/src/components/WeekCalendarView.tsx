@@ -1,14 +1,13 @@
-// The week and day grid, and the one place an appointment can be moved by
-// dragging it.
+// The week and day grid, and the interaction surface for moving an
+// appointment or changing its duration.
 //
-// Two ways in, on purpose. A pointer drags the block onto a slot; a keyboard
-// presses "Move", which turns every slot into a button and completes on the
-// second press. The second path is not a fallback bolted on afterwards - it is
-// how the interaction is tested, and it is the only one that works on a phone
-// screen reader.
+// Both gestures have equivalent pointer and keyboard/touch paths. Moving a
+// block exposes slot targets for its new start; activating the lower resize
+// handle exposes valid end-time targets. Those accessible target paths are
+// first-class interactions rather than test-only fallbacks.
 //
-// Nothing here decides whether a move is allowed. The page asks the server,
-// and puts the block back where it was if the server says no.
+// Nothing here decides whether a move or resize is allowed. The page asks the
+// server and restores the authoritative window when the server says no.
 
 import { useState, type CSSProperties } from 'react';
 import type { Language } from '../lib/i18n';
