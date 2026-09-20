@@ -35,7 +35,7 @@ declare
   v_client public.clients%rowtype;
   v_project public.projects%rowtype;
 begin
-  select * into v_invoice from public.invoices where id = p_invoice_id;
+  select * into v_invoice from public.invoices where id = p_invoice_id for update;
   if not found then
     raise exception 'invoice % does not exist', p_invoice_id using errcode = '23503';
   end if;
@@ -229,20 +229,21 @@ begin
   perform crm_private.require_artist_access(v_project.artist_id, 'manage_finance');
   perform pg_advisory_xact_lock(hashtextextended('invoice:' || p_idempotency_key::text, 0));
 
-  -- A double tap returns the invoice that already exists rather than a second
-  -- document with a second number.
+  -- Idempotency is keyed by the caller-supplied UUID, not by fuzzy draft
+  -- similarity. Two legitimate invoices may have identical terms; only a
+  -- retry of the same request is a replay.
   select * into v_existing
   from public.invoices i
-  where i.project_id = p_project_id
-    and i.created_by is not distinct from auth.uid()
-    and i.status = 'draft'
-    and i.created_at > now() - interval '1 day'
-    and i.notes is not distinct from p_notes
-    and i.due_date is not distinct from p_due_date
-  order by i.created_at desc
-  limit 1;
+  where i.idempotency_key = p_idempotency_key;
 
   if found then
+    if v_existing.project_id <> p_project_id
+       or v_existing.due_date is distinct from p_due_date
+       or v_existing.notes is distinct from nullif(btrim(coalesce(p_notes, '')), '') then
+      raise exception 'that invoice reference was already used for different terms'
+        using errcode = '22023';
+    end if;
+
     return jsonb_build_object(
       'invoice_id', v_existing.id,
       'invoice_number', v_existing.invoice_number,
@@ -254,10 +255,10 @@ begin
   v_number := crm_private.next_invoice_number();
 
   insert into public.invoices (
-    artist_id, client_id, project_id, invoice_number,
+    idempotency_key, artist_id, client_id, project_id, invoice_number,
     currency, due_date, notes, created_by
   ) values (
-    v_project.artist_id, v_project.client_id, p_project_id, v_number,
+    p_idempotency_key, v_project.artist_id, v_project.client_id, p_project_id, v_number,
     v_project.currency, p_due_date, nullif(btrim(coalesce(p_notes, '')), ''), auth.uid()
   )
   returning id into v_invoice_id;
@@ -631,6 +632,18 @@ begin
     raise exception 'a draft invoice takes no payments; issue it first' using errcode = '42501';
   end if;
 
+  -- The table trigger repeats this invariant for every write path. Checking it
+  -- here gives the operator an immediate, domain-specific refusal.
+  declare
+    v_totals record;
+  begin
+    select * into v_totals from crm_private.invoice_totals(p_invoice_id);
+    if v_request.amount > coalesce(v_totals.amount_outstanding, 0) then
+      raise exception 'that payment request is more than the invoice still asks for'
+        using errcode = '23514';
+    end if;
+  end;
+
   update public.payment_requests
   set invoice_id = p_invoice_id
   where id = p_payment_request_id;
@@ -714,7 +727,9 @@ begin
 
   if found then
     if v_existing.invoice_id is distinct from p_invoice_id
-       or v_existing.amount <> round(p_amount, 2) then
+       or v_existing.amount <> round(p_amount, 2)
+       or v_existing.payment_method_code is distinct from nullif(btrim(coalesce(p_method_code, '')), '')
+       or v_existing.external_reference is distinct from nullif(btrim(coalesce(p_external_reference, '')), '') then
       raise exception 'that payment reference was already used for different terms'
         using errcode = '22023';
     end if;
@@ -818,7 +833,9 @@ begin
 
   select * into v_existing from public.credit_notes c where c.idempotency_key = p_idempotency_key;
   if found then
-    if v_existing.invoice_id <> p_invoice_id or v_existing.amount <> round(p_amount, 2) then
+    if v_existing.invoice_id <> p_invoice_id
+       or v_existing.amount <> round(p_amount, 2)
+       or v_existing.reason <> btrim(p_reason) then
       raise exception 'that credit note reference was already used for different terms'
         using errcode = '22023';
     end if;
