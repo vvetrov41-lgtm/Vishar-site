@@ -50,7 +50,25 @@ function googleErrorReason(payload) {
   return '';
 }
 
-function peopleError(status, reason = '') {
+function googleErrorStatus(payload) {
+  const status = typeof payload?.error?.status === 'string'
+    ? payload.error.status.trim().toUpperCase()
+    : '';
+  return /^[A-Z][A-Z0-9_]{2,31}$/.test(status) ? status : '';
+}
+
+function providerDiagnosticCode(status, apiStatus = '') {
+  if (!Number.isInteger(status) || status < 400 || status >= 500) {
+    return 'google_contacts_provider_rejected';
+  }
+  const suffix = apiStatus ? `_${apiStatus.toLowerCase()}` : '';
+  const code = `google_contacts_provider_rejected_http_${status}${suffix}`;
+  return code.length <= 63
+    ? code
+    : `google_contacts_provider_rejected_http_${status}`;
+}
+
+function peopleError(status, reason = '', apiStatus = '') {
   if (status === 401) return new CalendarConnectorError('calendar_oauth_expired');
   if (status === 403) {
     if (reason === 'SERVICE_DISABLED') {
@@ -64,12 +82,16 @@ function peopleError(status, reason = '') {
   if (status === 429 || status >= 500) {
     return new CalendarConnectorError('google_contacts_provider_unavailable');
   }
-  return new CalendarConnectorError('google_contacts_provider_rejected');
+  return new CalendarConnectorError(providerDiagnosticCode(status, apiStatus));
 }
 
 async function peopleResponseError(response) {
   const payload = await response.json().catch(() => null);
-  return peopleError(response.status, googleErrorReason(payload));
+  return peopleError(
+    response.status,
+    googleErrorReason(payload),
+    googleErrorStatus(payload),
+  );
 }
 
 async function peopleFetch(fetchImpl, url, init) {
@@ -254,6 +276,8 @@ export const __testing = {
   normalizedEmail,
   cleanName,
   googleErrorReason,
+  googleErrorStatus,
+  providerDiagnosticCode,
   peopleError,
   peopleResponseError,
 };
