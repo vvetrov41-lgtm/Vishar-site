@@ -6,7 +6,7 @@
 // scoped to the client server-side rather than being filtered in the browser.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { App } from '../App';
 import {
   CLIENT_ID,
@@ -81,6 +81,33 @@ describe('client workspace', () => {
 
     // The last thing actually said, inline.
     expect(screen.getByText('Do you do cover ups?')).toBeInTheDocument();
+  });
+
+  it('switches the mobile workspace locally without refetching the client record', async () => {
+    const queryCalls: { table: string; method: string; args: unknown[] }[] = [];
+    renderWithSession(<App />, { role: 'owner', path: `/clients/${CLIENT_ID}`, queryCalls });
+
+    await screen.findByText('Fixture Client');
+
+    const work = screen.getByTestId('client-tab-work');
+    const messages = screen.getByTestId('client-tab-messages');
+    const detailsPanel = screen.getByTestId('client-tab-details');
+
+    expect(work).toHaveAttribute('data-active', 'true');
+    expect(messages).toHaveAttribute('data-active', 'false');
+
+    const readsBeforeTabChange = queryCalls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Messages' }));
+    expect(work).toHaveAttribute('data-active', 'false');
+    expect(messages).toHaveAttribute('data-active', 'true');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    expect(detailsPanel).toHaveAttribute('data-active', 'true');
+    expect(screen.getByText('Contact details').closest('details')).toHaveAttribute('open');
+
+    // The tabs are presentation state. The same already-loaded workspace stays
+    // mounted, so switching sections cannot repeat Supabase reads.
+    expect(queryCalls).toHaveLength(readsBeforeTabChange);
   });
 
   it('keeps contact details available but out of the way', async () => {
