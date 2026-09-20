@@ -760,6 +760,11 @@ insert into expected_function_acl values
   ('public.retry_enquiry_ai(uuid)', false, true, false),
   ('public.edit_email_draft(uuid,text,timestamptz)', false, true, false),
 
+  -- Statistics exclusion is a narrow artist-manage mutation. It never grants
+  -- direct UPDATE on enquiries and cannot be called anonymously or by the
+  -- service backend.
+  ('public.set_enquiry_analytics_exclusion(uuid,boolean)', false, true, false),
+
   -- Derived CRM AI client state. Orchestration is service-only; the artist
   -- surface reads its own scope and resolves or recomputes a recommendation.
   -- No API role reaches the four derived tables directly.
