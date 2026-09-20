@@ -4,7 +4,12 @@ import { AppointmentRow } from '../components/AppointmentRow';
 import { BookingPanel } from '../components/BookingPanel';
 import { ClientPicker } from '../components/ClientPicker';
 import { MonthCalendarView, dayHeading, timeOffLabel } from '../components/MonthCalendarView';
-import { WeekCalendarView, weekHeading, type WeekMoveRequest } from '../components/WeekCalendarView';
+import {
+  WeekCalendarView,
+  weekHeading,
+  type WeekMoveRequest,
+  type WeekResizeRequest,
+} from '../components/WeekCalendarView';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
 import { buildMonthCalendar, calendarMonthWindow, startOfLocalDay, startOfLocalMonth } from '../lib/calendar-month';
@@ -13,6 +18,7 @@ import {
   addZonedDays,
   buildWeekCalendar,
   rescheduleTarget,
+  resizeTarget,
   startOfZonedDay,
   startOfZonedWeek,
   zonedTimeLabel,
@@ -161,10 +167,62 @@ export function AppointmentsPage() {
   }
 
   /**
-   * A dropped appointment. The block sits at the new time while the server
-   * decides; a conflict or a refusal drops the held position and the block
-   * returns to where the server still says it is.
+   * A moved or resized appointment. The optimistic block reflects the proposed
+   * window while the server decides; any conflict or refusal drops that hold
+   * and the grid returns to the authoritative stored window.
    */
+  async function applyAppointmentWindow(
+    appointment: Appointment,
+    target: { startAt: string; endAt: string },
+    kind: 'move' | 'resize',
+  ) {
+    if (
+      Date.parse(target.startAt) === Date.parse(appointment.start_at)
+      && Date.parse(target.endAt) === Date.parse(appointment.end_at)
+    ) return;
+    // A second change while the first is still in flight would send another
+    // reschedule for the same row and make the optimistic block ambiguous.
+    if (changingAppointmentId !== null) return;
+
+    setStatusError(null);
+    setOptimisticMove({ appointmentId: appointment.id, startAt: target.startAt, endAt: target.endAt });
+    setChangingAppointmentId(appointment.id);
+    try {
+      const conflicts = await api.listAppointmentConflicts({
+        artistId: appointment.artist_id,
+        startAt: target.startAt,
+        endAt: target.endAt,
+        excludeAppointmentId: appointment.id,
+      });
+      if (conflicts.length > 0) {
+        setOptimisticMove(null);
+        setStatusError(conflictMessage(
+          conflicts[0].start_at,
+          conflicts[0].end_at,
+          timeZone,
+          language,
+          kind,
+        ));
+        return;
+      }
+      await api.rescheduleAppointment({
+        appointmentId: appointment.id,
+        startAt: target.startAt,
+        endAt: target.endAt,
+      });
+      reload();
+    } catch (cause) {
+      setOptimisticMove(null);
+      setStatusError(
+        cause instanceof Error
+          ? cause.message
+          : (kind === 'resize' ? copy.resizeFailed : copy.rescheduleFailed)
+      );
+    } finally {
+      setChangingAppointmentId(null);
+    }
+  }
+
   async function moveAppointment(request: WeekMoveRequest) {
     const target = rescheduleTarget({
       appointment: request.appointment,
@@ -173,40 +231,18 @@ export function AppointmentsPage() {
       timeZone,
     });
     if (!target) return;
-    if (target.startAt === request.appointment.start_at && target.endAt === request.appointment.end_at) return;
-    // A second drop while the first is still in flight would send a second
-    // reschedule for the same row. The server would apply both in order, so
-    // nothing is duplicated - but the operator would watch the block land
-    // somewhere they had already moved on from.
-    if (changingAppointmentId !== null) return;
+    await applyAppointmentWindow(request.appointment, target, 'move');
+  }
 
-    setStatusError(null);
-    setOptimisticMove({ appointmentId: request.appointment.id, startAt: target.startAt, endAt: target.endAt });
-    setChangingAppointmentId(request.appointment.id);
-    try {
-      const conflicts = await api.listAppointmentConflicts({
-        artistId: request.appointment.artist_id,
-        startAt: target.startAt,
-        endAt: target.endAt,
-        excludeAppointmentId: request.appointment.id,
-      });
-      if (conflicts.length > 0) {
-        setOptimisticMove(null);
-        setStatusError(conflictMessage(conflicts[0].start_at, conflicts[0].end_at, timeZone, language));
-        return;
-      }
-      await api.rescheduleAppointment({
-        appointmentId: request.appointment.id,
-        startAt: target.startAt,
-        endAt: target.endAt,
-      });
-      reload();
-    } catch (cause) {
-      setOptimisticMove(null);
-      setStatusError(cause instanceof Error ? cause.message : copy.rescheduleFailed);
-    } finally {
-      setChangingAppointmentId(null);
-    }
+  async function resizeAppointment(request: WeekResizeRequest) {
+    const target = resizeTarget({
+      appointment: request.appointment,
+      endDayStart: request.endDayStart,
+      endMinutesFromMidnight: request.endMinutesFromMidnight,
+      timeZone,
+    });
+    if (!target) return;
+    await applyAppointmentWindow(request.appointment, target, 'resize');
   }
 
   function moveGrid(offset: number) {
@@ -268,6 +304,7 @@ export function AppointmentsPage() {
             canMove={(appointment) => canManageArtistSessions(profile?.role, memberships, appointment.artist_id)}
             movingAppointmentId={changingAppointmentId}
             onMove={(request) => { void moveAppointment(request); }}
+            onResize={(request) => { void resizeAppointment(request); }}
             onPrevious={() => moveGrid(-1)}
             onNext={() => moveGrid(1)}
             onToday={showToday}
@@ -282,9 +319,16 @@ export function AppointmentsPage() {
   );
 }
 function clientName(clients: Client[], clientId: string): string | null { return clients.find((client) => client.id === clientId)?.full_name ?? null; }
-function conflictMessage(startAt: string, endAt: string, timeZone: string, language: Language): string {
+function conflictMessage(
+  startAt: string,
+  endAt: string,
+  timeZone: string,
+  language: Language,
+  kind: 'move' | 'resize',
+): string {
   const window = `${zonedTimeLabel(startAt, timeZone)}–${zonedTimeLabel(endAt, timeZone)}`;
-  return COPY[language].conflict.replace('{window}', window);
+  const template = kind === 'resize' ? COPY[language].resizeConflict : COPY[language].conflict;
+  return template.replace('{window}', window);
 }
 function appointmentTypeLabel(type: AppointmentType, language: Language): string { const labels: Record<Language, Record<AppointmentType, string>> = { en: { tattoo_session: 'Tattoo session', in_person_consultation: 'In-person consultation', video_consultation: 'Video consultation', touch_up: 'Touch-up' }, ru: { tattoo_session: 'Тату-сеанс', in_person_consultation: 'Очная консультация', video_consultation: 'Видеоконсультация', touch_up: 'Коррекция' } }; return labels[language][type]; }
-const COPY: Record<Language, Record<string, string>> = { en: { title:'Calendar', loading:'Loading appointments…', none:'No appointments yet', filterType:'Filter by type', allTypes:'All appointment types', viewLabel:'Calendar view', view_month:'Month', view_week:'Week', view_day:'Day', monthView:'Month', weekView:'Week', dayView:'Day', dayFree:'Nothing booked', allDay:'All day', findTime:'Find a time', chooseArtistFirst:'Choose an artist above to search for free times.', whoFor:'Who is this for?', thisClient:'this client', statusFailed:'Could not change that appointment.', rescheduleFailed:'Could not reschedule that appointment.', conflict:'That time is already taken ({window}). The appointment has not moved.', timeZoneNote:'Times are shown in {zone}.', calendarNotice:'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.' }, ru: { title:'Календарь', loading:'Загрузка записей…', none:'Записей пока нет', filterType:'Фильтр по типу', allTypes:'Все типы записей', viewLabel:'Вид календаря', view_month:'Месяц', view_week:'Неделя', view_day:'День', monthView:'Месяц', weekView:'Неделя', dayView:'День', dayFree:'Записей нет', allDay:'Весь день', findTime:'Подобрать время', chooseArtistFirst:'Выберите мастера выше, чтобы искать свободное время.', whoFor:'Для кого?', thisClient:'этот клиент', statusFailed:'Не удалось изменить статус записи.', rescheduleFailed:'Не удалось перенести запись.', conflict:'Это время уже занято ({window}). Запись осталась на месте.', timeZoneNote:'Время показано в зоне {zone}.', calendarNotice:'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.' } };
+const COPY: Record<Language, Record<string, string>> = { en: { title:'Calendar', loading:'Loading appointments…', none:'No appointments yet', filterType:'Filter by type', allTypes:'All appointment types', viewLabel:'Calendar view', view_month:'Month', view_week:'Week', view_day:'Day', monthView:'Month', weekView:'Week', dayView:'Day', dayFree:'Nothing booked', allDay:'All day', findTime:'Find a time', chooseArtistFirst:'Choose an artist above to search for free times.', whoFor:'Who is this for?', thisClient:'this client', statusFailed:'Could not change that appointment.', rescheduleFailed:'Could not reschedule that appointment.', resizeFailed:'Could not change that appointment duration.', conflict:'That time is already taken ({window}). The appointment has not moved.', resizeConflict:'That duration overlaps another appointment ({window}). The duration has not changed.', timeZoneNote:'Times are shown in {zone}.', calendarNotice:'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.' }, ru: { title:'Календарь', loading:'Загрузка записей…', none:'Записей пока нет', filterType:'Фильтр по типу', allTypes:'Все типы записей', viewLabel:'Вид календаря', view_month:'Месяц', view_week:'Неделя', view_day:'День', monthView:'Месяц', weekView:'Неделя', dayView:'День', dayFree:'Записей нет', allDay:'Весь день', findTime:'Подобрать время', chooseArtistFirst:'Выберите мастера выше, чтобы искать свободное время.', whoFor:'Для кого?', thisClient:'этот клиент', statusFailed:'Не удалось изменить статус записи.', rescheduleFailed:'Не удалось перенести запись.', resizeFailed:'Не удалось изменить длительность записи.', conflict:'Это время уже занято ({window}). Запись осталась на месте.', resizeConflict:'Новая длительность пересекается с другой записью ({window}). Длительность не изменена.', timeZoneNote:'Время показано в зоне {zone}.', calendarNotice:'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.' } };

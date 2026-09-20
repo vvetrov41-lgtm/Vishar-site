@@ -39,12 +39,14 @@
 .week-slot { position: relative; height: var(--week-slot-height); border-top: 1px solid rgba(255,255,255,0.045); }
 .week-slot-target { position: absolute; inset: 1px; z-index: 2; width: auto; padding: 0; border: 1px dashed rgba(76,141,255,0.38); border-radius: 4px; background: rgba(76,141,255,0.18); color: var(--muted); font-size: 0.6rem; }
 .week-slot-target:hover,.week-slot-target:focus-visible { background: rgba(76,141,255,0.32); color: var(--text); }
+.week-slot.resize-target { background: rgba(93,219,160,0.08); box-shadow: inset 0 -2px 0 rgba(93,219,160,0.5); }
+.week-slot-target.resize-target-button { border-color: rgba(93,219,160,0.46); background: rgba(93,219,160,0.16); }
 .week-day-events { position: absolute; inset: 0; pointer-events: none; }
 .week-day-events > * { pointer-events: auto; }
 /* Mid-drag the layer steps aside entirely, so the drop lands on the slot under
    the pointer rather than on whichever block happens to cover it. */
-.week-day-events.dragging { pointer-events: none; }
-.week-day-events.dragging > * { pointer-events: none; }
+.week-day-events.dragging,.week-day-events.resizing { pointer-events: none; }
+.week-day-events.dragging > *,.week-day-events.resizing > * { pointer-events: none; }
 .week-all-day { margin: 2px; padding: 3px 4px; border: 1px dashed rgba(255,204,102,0.34); border-radius: 5px; background: rgba(255,204,102,0.08); font-size: 0.6rem; }
 .week-event { position: absolute; left: 1px; right: 1px; display: flex; flex-direction: column; gap: 1px; padding: 3px 4px; border: 1px solid rgba(76,141,255,0.26); border-radius: 5px; background: rgba(76,141,255,0.22); color: var(--text); font-size: 0.62rem; line-height: 1.2; overflow: hidden; cursor: grab; }
 .week-event[draggable="false"] { cursor: default; }
@@ -52,9 +54,15 @@
 .week-event.status-cancelled,.week-event.status-no_show { opacity: 0.55; }
 .week-event.time-off { border-style: dashed; border-color: rgba(255,204,102,0.34); background: rgba(255,204,102,0.08); cursor: default; }
 .week-event.picking { box-shadow: 0 0 0 2px var(--accent); }
+.week-event.resize-picking { box-shadow: 0 0 0 2px rgba(93,219,160,0.9); }
+.week-event.resizing { opacity: 0.72; }
+.week-event.resizable { padding-bottom: 20px; }
 .week-event.busy { opacity: 0.6; }
 .week-event-time { font-weight: 650; white-space: nowrap; }
 .week-event-title { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .week-event-meta { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .week-event-move { margin-top: 3px; min-height: 30px; padding: 3px 6px; font-size: 0.6rem; }
+.week-event-resize { position: absolute; left: 50%; bottom: 1px; z-index: 2; width: 44px; min-width: 44px; height: 18px; min-height: 18px; padding: 0; transform: translateX(-50%); border-color: rgba(93,219,160,0.5); background: rgba(14,22,31,0.82); color: var(--muted); font-size: 0.72rem; line-height: 1; cursor: ns-resize; touch-action: manipulation; }
+.week-event-resize:hover,.week-event-resize:focus-visible,.week-event-resize[aria-pressed="true"] { background: rgba(93,219,160,0.22); color: var(--text); border-color: rgba(93,219,160,0.8); }
+.week-event-resize:disabled { cursor: default; }
 @media (min-width: 640px) { .week-grid { --week-slot-height: 40px; } .week-day-head { font-size: 0.7rem; } .week-event { font-size: 0.68rem; } }

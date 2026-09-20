@@ -1,14 +1,13 @@
-// The week and day grid, and the one place an appointment can be moved by
-// dragging it.
+// The week and day grid, and the interaction surface for moving an
+// appointment or changing its duration.
 //
-// Two ways in, on purpose. A pointer drags the block onto a slot; a keyboard
-// presses "Move", which turns every slot into a button and completes on the
-// second press. The second path is not a fallback bolted on afterwards - it is
-// how the interaction is tested, and it is the only one that works on a phone
-// screen reader.
+// Both gestures have equivalent pointer and keyboard/touch paths. Moving a
+// block exposes slot targets for its new start; activating the lower resize
+// handle exposes valid end-time targets. Those accessible target paths are
+// first-class interactions rather than test-only fallbacks.
 //
-// Nothing here decides whether a move is allowed. The page asks the server,
-// and puts the block back where it was if the server says no.
+// Nothing here decides whether a move or resize is allowed. The page asks the
+// server and restores the authoritative window when the server says no.
 
 import { useState, type CSSProperties } from 'react';
 import type { Language } from '../lib/i18n';
@@ -16,8 +15,11 @@ import type { Client, Project } from '../lib/types';
 import type { Appointment } from '../lib/appointment-api';
 import {
   SLOT_MINUTES,
+  addZonedDays,
+  resizeTarget,
   slotLabel,
   slotsFor,
+  startOfZonedDay,
   zonedParts,
   zonedTimeLabel,
   type WeekCalendar,
@@ -33,6 +35,12 @@ export interface WeekMoveRequest {
   minutesFromMidnight: number;
 }
 
+export interface WeekResizeRequest {
+  appointment: Appointment;
+  endDayStart: number;
+  endMinutesFromMidnight: number;
+}
+
 export function WeekCalendarView({
   calendar,
   language,
@@ -43,6 +51,7 @@ export function WeekCalendarView({
   canMove,
   movingAppointmentId,
   onMove,
+  onResize,
   onPrevious,
   onNext,
   onToday,
@@ -57,6 +66,7 @@ export function WeekCalendarView({
   canMove: (appointment: Appointment) => boolean;
   movingAppointmentId: string | null;
   onMove: (request: WeekMoveRequest) => void;
+  onResize: (request: WeekResizeRequest) => void;
   onPrevious: () => void;
   onNext: () => void;
   onToday: () => void;
@@ -65,17 +75,47 @@ export function WeekCalendarView({
   const copy = COPY[language];
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const slots = slotsFor(calendar);
+  const [resizePickingId, setResizePickingId] = useState<string | null>(null);
+  const [resizingId, setResizingId] = useState<string | null>(null);
+  // If the latest appointment already ends on the grid boundary, the normal
+  // ruler has no row below its edge. While resize is active, reveal two more
+  // hours (capped at local midnight) so the edge can be extended as well as
+  // shortened. After the save/reload the normal grid contracts around the new
+  // authoritative window again.
+  const resizeActive = resizePickingId !== null || resizingId !== null;
+  const slots = slotsFor({
+    startHour: calendar.startHour,
+    endHour: resizeActive ? Math.min(24, calendar.endHour + 2) : calendar.endHour,
+  });
   const picking = pickingId
     ? calendar.days
       .flatMap((day) => day.entries)
       .find((entry) => entry.kind === 'appointment' && entry.appointment.id === pickingId)
     : undefined;
+  const resizePicking = resizePickingId
+    ? calendar.days
+      .flatMap((day) => day.entries)
+      .find((entry) => entry.kind === 'appointment' && entry.appointment.id === resizePickingId)
+    : undefined;
 
   function complete(appointment: Appointment, day: WeekCalendarDay, minutes: number) {
     setPickingId(null);
+    setResizePickingId(null);
     setDraggingId(null);
+    setResizingId(null);
     onMove({ appointment, dayStart: day.date, minutesFromMidnight: minutes });
+  }
+
+  function completeResize(appointment: Appointment, day: WeekCalendarDay, slotStart: number) {
+    setPickingId(null);
+    setResizePickingId(null);
+    setDraggingId(null);
+    setResizingId(null);
+    onResize({
+      appointment,
+      endDayStart: day.date,
+      endMinutesFromMidnight: slotStart + SLOT_MINUTES,
+    });
   }
 
   function appointmentFor(id: string): Appointment | null {
@@ -85,6 +125,16 @@ export function WeekCalendarView({
       }
     }
     return null;
+  }
+
+  function canResizeTo(appointment: Appointment, day: WeekCalendarDay, slotStart: number): boolean {
+    if (!appointmentFitsSingleDay(appointment, day.date, calendar.timeZone)) return false;
+    return resizeTarget({
+      appointment,
+      endDayStart: day.date,
+      endMinutesFromMidnight: slotStart + SLOT_MINUTES,
+      timeZone: calendar.timeZone,
+    }) !== null;
   }
 
   return (
@@ -102,6 +152,12 @@ export function WeekCalendarView({
         <p className="notice" role="status">
           {copy.pickSlot.replace('{name}', describe(picking.appointment, clients, language))}{' '}
           <button type="button" onClick={() => setPickingId(null)}>{copy.cancelMove}</button>
+        </p>
+      ) : null}
+      {resizePicking && resizePicking.kind === 'appointment' ? (
+        <p className="notice" role="status">
+          {copy.pickEnd.replace('{name}', describe(resizePicking.appointment, clients, language))}{' '}
+          <button type="button" onClick={() => setResizePickingId(null)}>{copy.cancelResize}</button>
         </p>
       ) : null}
 
@@ -135,43 +191,80 @@ export function WeekCalendarView({
                 float above, positioned by time. */}
             <div className="week-day-body">
               <div className="week-slots">
-                {slots.map((minutes) => (
-                  <div
-                    key={minutes}
-                    className="week-slot"
-                    onDragOver={(event) => {
-                      if (!draggingId) return;
-                      event.preventDefault();
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      const id = draggingId
-                        ?? (event.dataTransfer ? event.dataTransfer.getData('text/plain') : '');
-                      if (!id) return;
-                      const appointment = appointmentFor(id);
-                      if (!appointment || !canMove(appointment)) return;
-                      complete(appointment, day, minutes);
-                    }}
-                  >
-                    {picking && picking.kind === 'appointment' ? (
-                      <button
-                        type="button"
-                        className="week-slot-target"
-                        aria-label={copy.moveHere
-                          .replace('{day}', dayColumnHeading(day.date, calendar.timeZone, language))
-                          .replace('{time}', slotLabel(minutes))}
-                        onClick={() => complete(picking.appointment, day, minutes)}
-                      >
-                        {slotLabel(minutes)}
-                      </button>
-                    ) : null}
-                  </div>
-                ))}
+                {slots.map((minutes) => {
+                  const pointerResize = resizingId ? appointmentFor(resizingId) : null;
+                  const selectedResize = resizePicking && resizePicking.kind === 'appointment'
+                    ? resizePicking.appointment
+                    : null;
+                  const resizeAppointment = pointerResize ?? selectedResize;
+                  const resizeAllowed = resizeAppointment
+                    ? canResizeTo(resizeAppointment, day, minutes)
+                    : false;
+
+                  return (
+                    <div
+                      key={minutes}
+                      className={`week-slot${resizingId && resizeAllowed ? ' resize-target' : ''}`}
+                      onDragOver={(event) => {
+                        if (resizingId) {
+                          if (resizeAllowed) event.preventDefault();
+                          return;
+                        }
+                        if (!draggingId) return;
+                        event.preventDefault();
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const raw = event.dataTransfer ? event.dataTransfer.getData('text/plain') : '';
+                        const resizeId = resizingId ?? (raw.startsWith('resize:') ? raw.slice(7) : '');
+                        if (resizeId) {
+                          const appointment = appointmentFor(resizeId);
+                          if (!appointment || !canMove(appointment) || !canResizeTo(appointment, day, minutes)) {
+                            setResizingId(null);
+                            return;
+                          }
+                          completeResize(appointment, day, minutes);
+                          return;
+                        }
+
+                        const id = draggingId ?? (raw.startsWith('move:') ? raw.slice(5) : raw);
+                        if (!id) return;
+                        const appointment = appointmentFor(id);
+                        if (!appointment || !canMove(appointment)) return;
+                        complete(appointment, day, minutes);
+                      }}
+                    >
+                      {resizePicking && resizePicking.kind === 'appointment' && resizeAllowed ? (
+                        <button
+                          type="button"
+                          className="week-slot-target resize-target-button"
+                          aria-label={copy.resizeHere
+                            .replace('{day}', dayColumnHeading(day.date, calendar.timeZone, language))
+                            .replace('{time}', boundaryLabel(minutes + SLOT_MINUTES))}
+                          onClick={() => completeResize(resizePicking.appointment, day, minutes)}
+                        >
+                          {boundaryLabel(minutes + SLOT_MINUTES)}
+                        </button>
+                      ) : picking && picking.kind === 'appointment' ? (
+                        <button
+                          type="button"
+                          className="week-slot-target"
+                          aria-label={copy.moveHere
+                            .replace('{day}', dayColumnHeading(day.date, calendar.timeZone, language))
+                            .replace('{time}', slotLabel(minutes))}
+                          onClick={() => complete(picking.appointment, day, minutes)}
+                        >
+                          {slotLabel(minutes)}
+                        </button>
+                      ) : null}
+                    </div>
+                  );
+                })}
               </div>
               {/* While something is being dragged the whole layer stops taking
                   pointer events, so the drop lands on the slot underneath
                   rather than on whatever block happens to cover it. */}
-              <div className={`week-day-events${draggingId ? ' dragging' : ''}`}>
+              <div className={`week-day-events${draggingId ? ' dragging' : ''}${resizingId ? ' resizing' : ''}`}>
                 {day.entries
                   .filter((entry) => !(entry.kind === 'time_off' && entry.allDay))
                   .map((entry) => ({ entry, placement: placeEntry(entry, calendar) }))
@@ -194,15 +287,39 @@ export function WeekCalendarView({
                       picking={
                         entry.kind === 'appointment' && pickingId === entry.appointment.id
                       }
+                      resizePicking={
+                        entry.kind === 'appointment' && resizePickingId === entry.appointment.id
+                      }
+                      resizing={
+                        entry.kind === 'appointment' && resizingId === entry.appointment.id
+                      }
+                      resizeEnabled={
+                        entry.kind === 'appointment'
+                        && canMove(entry.appointment)
+                        && appointmentFitsSingleDay(entry.appointment, day.date, calendar.timeZone)
+                      }
                       timeZone={calendar.timeZone}
-                      onStartPick={(appointment) => setPickingId(
-                        pickingId === appointment.id ? null : appointment.id
-                      )}
+                      onStartPick={(appointment) => {
+                        setResizePickingId(null);
+                        setPickingId(pickingId === appointment.id ? null : appointment.id);
+                      }}
                       onDragStart={(appointment, dataTransfer) => {
+                        setResizePickingId(null);
                         setDraggingId(appointment.id);
-                        try { dataTransfer?.setData('text/plain', appointment.id); } catch { /* jsdom */ }
+                        try { dataTransfer?.setData('text/plain', `move:${appointment.id}`); } catch { /* jsdom */ }
                       }}
                       onDragEnd={() => setDraggingId(null)}
+                      onStartResizePick={(appointment) => {
+                        setPickingId(null);
+                        setResizePickingId(resizePickingId === appointment.id ? null : appointment.id);
+                      }}
+                      onResizeDragStart={(appointment, dataTransfer) => {
+                        setPickingId(null);
+                        setResizePickingId(null);
+                        setResizingId(appointment.id);
+                        try { dataTransfer?.setData('text/plain', `resize:${appointment.id}`); } catch { /* jsdom */ }
+                      }}
+                      onResizeDragEnd={() => setResizingId(null)}
                     />
                   ))}
               </div>
@@ -246,10 +363,16 @@ function EntryBlock({
   canMove,
   busy,
   picking,
+  resizePicking,
+  resizing,
+  resizeEnabled,
   timeZone,
   onStartPick,
   onDragStart,
   onDragEnd,
+  onStartResizePick,
+  onResizeDragStart,
+  onResizeDragEnd,
 }: {
   entry: WeekEntry;
   placement: { offsetSlots: number; spanSlots: number };
@@ -261,10 +384,16 @@ function EntryBlock({
   canMove: (appointment: Appointment) => boolean;
   busy: boolean;
   picking: boolean;
+  resizePicking: boolean;
+  resizing: boolean;
+  resizeEnabled: boolean;
   timeZone: string;
   onStartPick: (appointment: Appointment) => void;
   onDragStart: (appointment: Appointment, dataTransfer: DataTransfer | null) => void;
   onDragEnd: () => void;
+  onStartResizePick: (appointment: Appointment) => void;
+  onResizeDragStart: (appointment: Appointment, dataTransfer: DataTransfer | null) => void;
+  onResizeDragEnd: () => void;
 }) {
   const copy = COPY[language];
   const style = {
@@ -289,11 +418,17 @@ function EntryBlock({
 
   return (
     <div
-      className={`week-event status-${appointment.status}${busy ? ' busy' : ''}${picking ? ' picking' : ''}`}
+      className={`week-event status-${appointment.status}${busy ? ' busy' : ''}${picking ? ' picking' : ''}${resizePicking ? ' resize-picking' : ''}${resizing ? ' resizing' : ''}${resizeEnabled ? ' resizable' : ''}`}
       style={style}
-      draggable={movable && !busy}
+      draggable={movable && !busy && !resizing}
       data-appointment-id={appointment.id}
-      onDragStart={(event) => onDragStart(appointment, event.dataTransfer ?? null)}
+      onDragStart={(event) => {
+        if ((event.target as HTMLElement).closest('.week-event-resize')) {
+          event.preventDefault();
+          return;
+        }
+        onDragStart(appointment, event.dataTransfer ?? null);
+      }}
       onDragEnd={onDragEnd}
     >
       <span className="week-event-time">
@@ -316,8 +451,48 @@ function EntryBlock({
           {busy ? copy.saving : copy.move}
         </button>
       ) : null}
+      {resizeEnabled ? (
+        <button
+          type="button"
+          className="week-event-resize"
+          draggable={!busy}
+          disabled={busy}
+          aria-pressed={resizePicking}
+          aria-label={`${copy.resize}: ${describe(appointment, clients, language)}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onStartResizePick(appointment);
+          }}
+          onDragStart={(event) => {
+            event.stopPropagation();
+            onResizeDragStart(appointment, event.dataTransfer ?? null);
+          }}
+          onDragEnd={(event) => {
+            event.stopPropagation();
+            onResizeDragEnd();
+          }}
+        >
+          <span aria-hidden="true">↕</span>
+        </button>
+      ) : null}
     </div>
   );
+}
+
+function appointmentFitsSingleDay(
+  appointment: Appointment,
+  dayStart: number,
+  timeZone: string
+): boolean {
+  const start = Date.parse(appointment.start_at);
+  const end = Date.parse(appointment.end_at);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return false;
+  const dayEnd = startOfZonedDay(addZonedDays(dayStart, 1, timeZone), timeZone);
+  return start >= dayStart && start < dayEnd && end <= dayEnd;
+}
+
+function boundaryLabel(minutes: number): string {
+  return minutes === 24 * 60 ? '24:00' : slotLabel(minutes);
 }
 
 function describe(appointment: Appointment, clients: Client[], language: Language): string {
@@ -359,6 +534,10 @@ const COPY: Record<Language, Record<string, string>> = {
     moveHere: 'Move to {day} at {time}',
     pickSlot: 'Choose a new time for {name}.',
     cancelMove: 'Cancel',
+    resize: 'Change duration',
+    resizeHere: 'Set end on {day} at {time}',
+    pickEnd: 'Choose a new end time for {name}.',
+    cancelResize: 'Cancel',
     saving: 'Saving…',
     noClient: 'No client',
   },
@@ -370,6 +549,10 @@ const COPY: Record<Language, Record<string, string>> = {
     moveHere: 'Перенести на {day}, {time}',
     pickSlot: 'Выберите новое время для «{name}».',
     cancelMove: 'Отмена',
+    resize: 'Изменить длительность',
+    resizeHere: 'Закончить {day} в {time}',
+    pickEnd: 'Выберите новое время окончания для «{name}».',
+    cancelResize: 'Отмена',
     saving: 'Сохраняем…',
     noClient: 'Без клиента',
   },

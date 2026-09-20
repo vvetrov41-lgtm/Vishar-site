@@ -12,6 +12,7 @@ import {
   SLOT_MINUTES,
   minutesOfZonedDay,
   rescheduleTarget,
+  resizeTarget,
   slotsFor,
   startOfZonedDay,
   startOfZonedWeek,
@@ -141,6 +142,48 @@ describe('where a dragged appointment lands', () => {
       minutesFromMidnight: 600,
       timeZone: LONDON,
     })).toBeNull();
+  });
+});
+
+describe('where a resized appointment ends', () => {
+  it('keeps the start fixed and uses the chosen wall-clock end', () => {
+    const target = resizeTarget({
+      appointment: appointment('2026-09-01T10:00:00Z', '2026-09-01T16:00:00Z'),
+      endDayStart: startOfZonedDay(Date.parse('2026-09-01T12:00:00Z'), LONDON),
+      endMinutesFromMidnight: 18 * 60,
+      timeZone: LONDON,
+    });
+
+    expect(target).toEqual({
+      startAt: '2026-09-01T10:00:00Z',
+      endAt: '2026-09-01T17:00:00.000Z',
+    });
+  });
+
+  it('refuses an end that would make the appointment shorter than one grid slot', () => {
+    const target = resizeTarget({
+      appointment: appointment('2026-09-01T10:15:00Z', '2026-09-01T16:00:00Z'),
+      endDayStart: startOfZonedDay(Date.parse('2026-09-01T12:00:00Z'), LONDON),
+      // 11:30 BST is only fifteen minutes after the 11:15 BST start.
+      endMinutesFromMidnight: 11 * 60 + 30,
+      timeZone: LONDON,
+    });
+
+    expect(target).toBeNull();
+  });
+
+  it('uses the real elapsed duration when the chosen end crosses the autumn clock change', () => {
+    const target = resizeTarget({
+      // Local 00:00 BST on the day the clocks go back.
+      appointment: appointment('2026-10-24T23:00:00Z', '2026-10-25T05:00:00Z'),
+      endDayStart: startOfZonedDay(Date.parse('2026-10-25T12:00:00Z'), LONDON),
+      endMinutesFromMidnight: 6 * 60,
+      timeZone: LONDON,
+    });
+
+    expect(target?.endAt).toBe('2026-10-25T06:00:00.000Z');
+    expect(Date.parse(target!.endAt) - Date.parse(target!.startAt)).toBe(7 * 3_600_000);
+    expect(zonedTimeLabel(target!.endAt, LONDON)).toBe('06:00');
   });
 });
 

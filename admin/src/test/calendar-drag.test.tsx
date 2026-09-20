@@ -25,6 +25,8 @@ const NOW = new Date('2026-09-01T08:00:00Z');
 const TARGET_SLOT = 'Move to Wed 2 Sept at 13:00';
 const EXPECTED_START = '2026-09-02T12:00:00.000Z';
 const EXPECTED_END = '2026-09-02T18:00:00.000Z';
+const RESIZE_TARGET = 'Set end on Tue 1 Sept at 18:00';
+const RESIZED_END = '2026-09-01T17:00:00.000Z';
 
 const CLASHING_APPOINTMENT = {
   appointment_id: '77777777-7777-4777-8777-777777777777',
@@ -35,6 +37,12 @@ const CLASHING_APPOINTMENT = {
   client_id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
   enquiry_id: null,
   project_id: null,
+};
+
+const RESIZE_CLASH = {
+  ...CLASHING_APPOINTMENT,
+  start_at: '2026-09-01T16:30:00Z',
+  end_at: '2026-09-01T17:30:00Z',
 };
 
 beforeEach(() => {
@@ -133,6 +141,105 @@ describe('the manager week grid', () => {
     expect(block).toHaveTextContent('11:00–17:00');
   });
 
+  it('reveals trailing end-time targets so the latest appointment can be extended', async () => {
+    await openWeek({ role: 'booking_manager' });
+
+    // The ordinary grid ends at the default 20:00 boundary for this fixture.
+    // Activating resize must expose rows below that boundary, otherwise an
+    // appointment ending at 20:00 could only be shortened.
+    fireEvent.click(await screen.findByRole('button', { name: /^Change duration: Tattoo session/ }));
+    expect(await screen.findByRole('button', { name: 'Set end on Tue 1 Sept at 22:00' }))
+      .toBeInTheDocument();
+  });
+
+  it('changes duration through the keyboard/touch target path', async () => {
+    const { rpcCalls } = await openWeek({ role: 'booking_manager' });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Change duration: Tattoo session/ }));
+    fireEvent.click(await screen.findByRole('button', { name: RESIZE_TARGET }));
+
+    await waitFor(() => {
+      expect(rpcCalls.some((call) => call.name === 'reschedule_appointment')).toBe(true);
+    });
+
+    const conflictCall = rpcCalls.find((entry) => entry.name === 'list_appointment_conflicts');
+    expect(conflictCall?.args).toMatchObject({
+      p_artist_id: VLADIMIR_ARTIST_ID,
+      p_start_at: SESSION.start_at,
+      p_end_at: RESIZED_END,
+      p_exclude_appointment_id: SESSION_ID,
+    });
+
+    const call = rpcCalls.find((entry) => entry.name === 'reschedule_appointment');
+    expect(call?.args).toMatchObject({
+      p_appointment_id: SESSION_ID,
+      p_start_at: SESSION.start_at,
+      p_end_at: RESIZED_END,
+    });
+  });
+
+  it('keeps the old duration when the resized window conflicts', async () => {
+    const { rpcCalls } = await openWeek({
+      role: 'booking_manager',
+      appointmentConflicts: [RESIZE_CLASH],
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Change duration: Tattoo session/ }));
+    fireEvent.click(await screen.findByRole('button', { name: RESIZE_TARGET }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'That duration overlaps another appointment (17:30–18:30). The duration has not changed.'
+    );
+    expect(rpcCalls.some((call) => call.name === 'reschedule_appointment')).toBe(false);
+    const block = (await screen.findByText('Fixture Client')).closest('.week-event');
+    expect(block).toHaveTextContent('11:00–17:00');
+  });
+
+  it('rolls the duration back when the server refuses the resize', async () => {
+    await openWeek({
+      role: 'booking_manager',
+      failRpc: 'reschedule_appointment',
+      failRpcError: {
+        code: '22023',
+        message: 'artist availability blocks this time',
+        hint: 'SLOT_NO_LONGER_AVAILABLE',
+      },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Change duration: Tattoo session/ }));
+    fireEvent.click(await screen.findByRole('button', { name: RESIZE_TARGET }));
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    const block = (await screen.findByText('Fixture Client')).closest('.week-event');
+    expect(block).toHaveTextContent('11:00–17:00');
+  });
+
+  it('changes duration by dragging the lower edge onto a slot', async () => {
+    const { rpcCalls } = await openWeek({ role: 'owner' });
+
+    const handle = await screen.findByRole('button', { name: /^Change duration: Tattoo session/ });
+    fireEvent.click(handle);
+    const slot = screen.getByRole('button', { name: RESIZE_TARGET }).parentElement as HTMLElement;
+
+    fireEvent.dragStart(handle, {
+      dataTransfer: {
+        setData: () => {},
+        getData: () => `resize:${SESSION_ID}`,
+      },
+    });
+    fireEvent.drop(slot, {
+      dataTransfer: {
+        getData: () => `resize:${SESSION_ID}`,
+      },
+    });
+
+    await waitFor(() => {
+      expect(rpcCalls.some((call) => call.name === 'reschedule_appointment')).toBe(true);
+    });
+    expect(rpcCalls.find((entry) => entry.name === 'reschedule_appointment')?.args)
+      .toMatchObject({ p_end_at: RESIZED_END });
+  });
+
   it('moves an appointment dropped on a slot with a pointer', async () => {
     const { container, rpcCalls } = await openWeek({ role: 'owner' });
 
@@ -228,6 +335,7 @@ describe('who may move an appointment', () => {
 
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Move: / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Change duration: / })).not.toBeInTheDocument();
     const block = (screen.getByText('Fixture Client')).closest('.week-event');
     expect(block).toHaveAttribute('draggable', 'false');
   });
@@ -249,6 +357,7 @@ describe('who may move an appointment', () => {
 
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Move: / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Change duration: / })).not.toBeInTheDocument();
   });
 
   it('keeps Vladimir and Kristina apart: a Kristina-only manager cannot move a Vladimir booking', async () => {
@@ -268,12 +377,14 @@ describe('who may move an appointment', () => {
 
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Move: / })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Change duration: / })).not.toBeInTheDocument();
   });
 
   it('offers the move to the owner, who holds every artist', async () => {
     await openWeek({ role: 'owner' });
 
     expect(await screen.findByRole('button', { name: /^Move: Tattoo session/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /^Change duration: Tattoo session/ })).toBeInTheDocument();
     expect(OWNER_ID).toBeTruthy();
   });
 });
