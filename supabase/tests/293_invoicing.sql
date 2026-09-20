@@ -198,7 +198,7 @@ select throws_ok(
       'd9111111-1111-4111-8111-111111111111',
       '60000000-0000-4000-8000-000000000001',
       current_date + 7
-    )$,
+    )$$,
   '22023', null,
   'an invoice idempotency key cannot be reused for different terms'
 );
