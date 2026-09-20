@@ -80,13 +80,12 @@ set provider = excluded.provider,
     is_enabled = excluded.is_enabled;
 
 insert into public.clients
-  (id, full_name, phone, phone_normalized, workspace_id)
+  (id, full_name, phone, workspace_id)
 values
   (
     'ca611111-1111-4111-8111-111111111111',
     'Google Contact Reconcile Fixture',
     '+44 7700 919611',
-    '+447700919611',
     (select workspace_id from public.artists where id='a1111111-1111-4111-8111-111111111111')
   );
 
@@ -128,13 +127,12 @@ select is(
 );
 
 insert into public.clients
-  (id, full_name, phone, phone_normalized, workspace_id)
+  (id, full_name, phone, workspace_id)
 values
   (
     'ca612222-2222-4222-8222-222222222222',
     'Google Contact Trigger Fixture',
     '+44 7700 919612',
-    '+447700919612',
     (select workspace_id from public.artists where id='a1111111-1111-4111-8111-111111111111')
   );
 
