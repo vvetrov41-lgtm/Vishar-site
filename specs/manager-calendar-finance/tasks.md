@@ -95,9 +95,12 @@ staging environment is required before merge.
 - [x] T034 Route resize through the existing conflict pre-check,
       `reschedule_appointment`, optimistic hold and rollback; add DST, conflict,
       refusal and permission coverage.
-- [ ] T035 Verify exact-head CI for the resize branch.
-- [ ] T036 Re-check base drift and merge the proven resize head.
-- [ ] T037 Verify post-merge CI, deploy the CRM Pages revision through the
-      existing private release path, and read back the deployed revision.
-- [ ] T038 Perform read-only production acceptance without creating customer
-      data.
+- [x] T035 Verify exact-head CI for the resize branch.
+- [x] T036 Re-check base drift and merge the proven resize head as PR #826
+      (merge commit `30aa5da9d0ce57ecdda885fff1ceedc79c58ef9c`).
+- [x] T037 Verify post-merge CI and deploy the exact CRM revision to the
+      operator Pages project through the guarded host-split release path.
+- [x] T038 Read production back without creating customer data: the
+      `vishar-crm-internal` Pages project reports `30aa5da9`, while
+      `app.vishartattoo.com` and the Pages subdomain both preserve the
+      expected Cloudflare Access redirect.
