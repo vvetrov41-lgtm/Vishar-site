@@ -52,7 +52,10 @@ export function FollowUpsPage() {
       api.listFollowUps({ artistId, statuses: ['open'], dueDescending: false, limit: 100 }),
       api.listFollowUps({ artistId, statuses: ['done', 'cancelled'], dueDescending: true, limit: 25 }),
     ]);
-    const followUps = [...open, ...completed];
+    const followUps = [
+      ...open.filter((followUp) => followUp.status === 'open'),
+      ...completed.filter((followUp) => followUp.status !== 'open'),
+    ];
     const clients = await api.listClientsByIds(
       followUps.map((followUp) => followUp.client_id ?? '').filter(Boolean)
     );
