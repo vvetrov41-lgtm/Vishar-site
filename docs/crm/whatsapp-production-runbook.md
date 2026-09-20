@@ -5,12 +5,13 @@ Vishar CRM.
 
 It is intentionally split into independent gates. Database migrations, Meta
 onboarding, Cloudflare Worker provisioning, webhook exposure, scheduled drain
-activation and private CRM deployment are separate production changes. Passing
-one gate does not authorise the next.
+activation and private CRM deployment are separate production changes.
 
-Nothing in this document is permission to modify production. Every step marked
-**manual** or every workflow run with `deploy=true` requires a separate explicit
-production approval immediately before it is performed.
+The WhatsApp drain now has a fail-closed automatic release path. An isolated
+`release/private-crm-rc*-backend-auth-whatsapp-drain-*` ref may activate the
+drain only when it points at the exact current canonical CRM SHA and the required
+exact-head CI is already green. The legacy `workflow_dispatch` path remains for
+manual validation, emergency deployment and rollback.
 
 Never paste access tokens, app secrets, webhook verify tokens, Supabase backend
 keys, OAuth codes, cookies or other secret values into chat, Git, a PR body or a
@@ -313,40 +314,54 @@ disabled.
 
 ---
 
-## 8. Outbound drain activation - separate approval
+## 8. Outbound drain activation
 
-Run validation-only first:
+### 8.1 Primary automatic path
+
+Create an isolated release ref at the exact current canonical CRM SHA:
 
 ```text
-Workflow: Deploy private production WhatsApp drain
-Branch:   release/private-crm-rc<N>
-Inputs:   approved_sha = <exact current release HEAD>
-          deploy = false
-          approval_phrase = (empty)
+release/private-crm-rc<N>-backend-auth-whatsapp-drain-<reason>
 ```
 
-For real activation, temporarily set:
+The push-triggered production workflow fails closed unless all of these are true:
+
+- the ref SHA exactly equals `agent/platform-telegram-self-service`;
+- the actor is the repository owner and this is the first run attempt;
+- Static Validation, CRM and booking validation, and WhatsApp production
+  onboarding validation are green on that exact SHA;
+- the canonical production Supabase backend key passes a production Auth canary;
+- the Worker secret inventory contains only the fixed Supabase binding plus
+  well-formed artist-scoped WhatsApp bindings;
+- the source ref is unchanged immediately before credential reconciliation and
+  again immediately before the Worker deploy.
+
+The workflow then generates the active config, deploys only
+`vishar-whatsapp-drain-production`, reads back the deployed Worker version, and
+requires exactly one Cloudflare cron:
+
+```text
+*/5 * * * *
+```
+
+The tracked Wrangler template remains inert with
+`WHATSAPP_DRAIN_ENABLED=false` and no cron.
+
+### 8.2 Manual emergency path
+
+`workflow_dispatch` remains available from an approved
+`release/private-crm-rc*` branch. A manual production deployment still
+requires:
 
 ```text
 CRM_PRODUCTION_WHATSAPP_DEPLOY_ENABLED=true
-```
-
-and run with:
-
-```text
 deploy = true
 approval_phrase = ENABLE_PRIVATE_CRM_WHATSAPP_DRAIN
 ```
 
-The generated deploy config changes only the approved WhatsApp drain activation
-surface: `WHATSAPP_DRAIN_ENABLED=true` and the exact five-minute cron. The
-tracked template remains inert.
-
-Return the enable variable to `false` immediately after the run.
-
 Do not queue a real client message as a deployment test. First verify Worker
-version evidence, cron configuration, database route metadata and empty outbox
-state. A real message is a separate business action.
+version evidence, cron readback, database route metadata and empty outbox state.
+A real message is a separate business action.
 
 ---
 
