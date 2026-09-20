@@ -224,6 +224,50 @@ await test('People create sends the minimal body and ambiguous POST outcome is r
   );
 });
 
+await test('People create retries an explicit 400 once with the minimal documented payload', async () => {
+  const createCalls = [];
+  const provider = createGoogleContactsProvider({
+    accessToken: 'access-token',
+    sleepImpl: async () => {},
+    fetchImpl: async (url, init = {}) => {
+      const parsed = new URL(String(url));
+      if (!parsed.pathname.endsWith('/people:createContact')) {
+        return Response.json({ results: [] });
+      }
+
+      createCalls.push({
+        personFields: parsed.searchParams.get('personFields'),
+        body: JSON.parse(init.body),
+      });
+      if (createCalls.length === 1) {
+        return Response.json({
+          error: {
+            code: 400,
+            status: 'INVALID_ARGUMENT',
+            message: 'rejected primary create payload',
+          },
+        }, { status: 400 });
+      }
+      return Response.json({ resourceName: 'people/fallback' });
+    },
+  });
+
+  await provider.createContact(job());
+
+  assert.equal(createCalls.length, 2);
+  assert.deepEqual(createCalls[0], {
+    personFields: 'metadata,names,phoneNumbers,emailAddresses',
+    body: buildGoogleContact(job()).body,
+  });
+  assert.deepEqual(createCalls[1], {
+    personFields: 'names,phoneNumbers',
+    body: {
+      names: [{ givenName: 'Safe Client' }],
+      phoneNumbers: [{ value: '+447700900123' }],
+    },
+  });
+});
+
 await test('drain creates once and treats the same phone in the same artist batch as existing', async () => {
   const tokenEnvelope = await encryptTokenRecord({
     refreshToken: 'refresh-vladimir',
