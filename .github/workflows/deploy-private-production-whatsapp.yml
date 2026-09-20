@@ -187,7 +187,31 @@ jobs:
             sb_secret_*) ;;
             *) echo 'The canonical production Supabase backend key is absent or malformed.' >&2; exit 1 ;;
           esac
-          if ! printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" | grep -Eq '^sb_secret_[A-Za-z0-9._~-]{16,512}        env:
+          if ! printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" | grep -Eq '^sb_secret_[A-Za-z0-9._~-]{16,512}$'; then
+            echo 'The canonical production Supabase backend key is not safe as an HTTP header.' >&2
+            exit 1
+          fi
+
+          probe_status="$(curl --silent --show-error --max-time 20 \
+            --output "$RUNNER_TEMP/whatsapp-supabase-auth-probe.json" \
+            --write-out '%{http_code}' \
+            --header "apikey: $CANONICAL_SUPABASE_SECRET_KEY" \
+            --header 'authorization: Bearer synthetic.session.token-abcdefghijklmnop' \
+            --header 'accept: application/json' \
+            'https://vfjexhfdbrjmuxfdvbdx.supabase.co/auth/v1/user')"
+          case "$probe_status" in
+            401|403) ;;
+            *) echo "Production Supabase backend key canary returned $probe_status." >&2; exit 1 ;;
+          esac
+
+          printf '%s' "$CANONICAL_SUPABASE_SECRET_KEY" \
+            | npx wrangler secret put SUPABASE_SECRET_KEY \
+                --config wrangler.whatsapp-drain.production.toml \
+                --name "$WORKER_NAME"
+
+      - name: Verify bounded pre-provisioned production Worker secret names
+        if: ${{ github.event_name == 'push' || inputs.deploy }}
+        env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
         shell: bash
@@ -307,10 +331,10 @@ jobs:
           NODE
 
       - name: Upload safe WhatsApp production evidence
-        if: ${{ always() && inputs.deploy }}
+        if: ${{ always() && (github.event_name == 'push' || inputs.deploy) }}
         uses: actions/upload-artifact@v4
         with:
-          name: whatsapp-production-${{ inputs.approved_sha }}
+          name: whatsapp-production-${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
           path: ${{ runner.temp }}/whatsapp-production-evidence/safe-summary.json
           if-no-files-found: warn
           retention-days: 30
