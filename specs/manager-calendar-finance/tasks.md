@@ -85,8 +85,19 @@ Staging is intentionally not part of this rollout. Pointer/print behaviour is
 covered by the existing keyboard/synthetic interaction tests and print CSS; no
 staging environment is required before merge.
 
-## Deferred
+## Duration resize extension
 
-- [ ] T032 Duration editing by dragging a block's edge. Needs its own
-      conflict-preview behaviour, touch target and keyboard equivalent; duration
-      is edited today through the appointment row's start/end fields.
+- [x] T032 Restore duration resizing to the agreed calendar scope and update the
+      durable spec/plan instead of treating the agent's earlier deferral as a
+      product decision.
+- [x] T033 Add a zone-aware lower-edge resize interaction with a 30-minute
+      minimum, same-day guard, desktop drag and keyboard/touch target path.
+- [x] T034 Route resize through the existing conflict pre-check,
+      `reschedule_appointment`, optimistic hold and rollback; add DST, conflict,
+      refusal and permission coverage.
+- [ ] T035 Verify exact-head CI for the resize branch.
+- [ ] T036 Re-check base drift and merge the proven resize head.
+- [ ] T037 Verify post-merge CI, deploy the CRM Pages revision through the
+      existing private release path, and read back the deployed revision.
+- [ ] T038 Perform read-only production acceptance without creating customer
+      data.
