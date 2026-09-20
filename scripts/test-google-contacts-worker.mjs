@@ -219,6 +219,37 @@ await test('People search warms first and exact E.164 match suppresses create', 
   ]);
 });
 
+await test('People exact-phone search treats omitted empty results as no match', async () => {
+  const calls = [];
+  const provider = createGoogleContactsProvider({
+    accessToken: 'access-token',
+    sleepImpl: async () => {},
+    fetchImpl: async (url, init = {}) => {
+      const parsed = new URL(String(url));
+      calls.push({
+        pathname: parsed.pathname,
+        query: parsed.searchParams.get('query'),
+        method: init.method || 'GET',
+      });
+      if (parsed.pathname.endsWith('/people:searchContacts')) {
+        return Response.json({});
+      }
+      if (parsed.pathname.endsWith('/people:createContact')) {
+        return Response.json({ resourceName: 'people/new-contact' });
+      }
+      throw new Error('unexpected People API request');
+    },
+  });
+
+  assert.equal(await provider.hasExactPhone('+447700900123'), false);
+  await provider.createContact(job());
+  assert.deepEqual(calls.map((call) => [call.pathname, call.query, call.method]), [
+    ['/v1/people:searchContacts', '', 'GET'],
+    ['/v1/people:searchContacts', '+447700900123', 'GET'],
+    ['/v1/people:createContact', null, 'POST'],
+  ]);
+});
+
 await test('People create sends the minimal body and ambiguous POST outcome is retryable-as-unknown', async () => {
   let captured = null;
   const provider = createGoogleContactsProvider({
