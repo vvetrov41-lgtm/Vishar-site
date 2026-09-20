@@ -3,11 +3,11 @@
 // Three properties this module has to hold, in order of how much it would cost
 // to get them wrong.
 //
-// 1. It never widens access. Every read is an ordinary artist-scoped select on
-//    a table the CRM already reads elsewhere. Row level security decides what
-//    comes back; the optional `artistId` narrows the answer for the person
-//    looking, it does not grant them anything. There is no SECURITY DEFINER
-//    aggregate here and no view added for convenience.
+// 1. It never widens access. Counted business rows come from dedicated
+//    security_invoker projections. Existing row level security still decides
+//    what comes back; the projections only remove explicitly excluded analytics
+//    lineage. The optional `artistId` narrows the answer for the person looking,
+//    it does not grant them anything. There is no SECURITY DEFINER aggregate.
 //
 // 2. It never truncates. The list reads the rest of the CRM uses cap at 200 or
 //    300 rows, which is right for a working queue and wrong for a count: a
@@ -15,9 +15,9 @@
 //    read here pages until the source is exhausted, bounded by an explicit
 //    date window and a hard ceiling that is reported rather than hidden.
 //
-// 3. Finance fails closed and fails quietly. `payment_transactions`,
-//    `payment_requests` and `projects_finance` are refused by the database to
-//    anybody without finance access on the artist. That refusal is the
+// 3. Finance fails closed and fails quietly. The exclusion-aware payment
+//    projections and `projects_finance` remain subject to the caller's database
+//    permissions and are refused to anybody without finance access on the artist. That refusal is the
 //    boundary; this module treats it as "no finance block", never as an error
 //    that takes the rest of the page down with it.
 
@@ -161,7 +161,7 @@ export function createStatisticsApi(client: CrmClient) {
 
     const transactions = await readAllOptional<StatisticsTransaction>(
       () => scoped(
-        'payment_transactions',
+        'statistics_payment_transactions',
         'id, artist_id, transaction_type, direction, amount, currency, status, occurred_at',
         artistId,
       )
@@ -172,7 +172,7 @@ export function createStatisticsApi(client: CrmClient) {
 
     const requests = await readAllOptional<StatisticsPaymentRequest>(
       () => scoped(
-        'payment_requests',
+        'statistics_payment_requests',
         'id, artist_id, purpose, amount, currency, status, created_at',
         artistId,
       )
@@ -224,13 +224,15 @@ export function createStatisticsApi(client: CrmClient) {
         return result;
       };
 
-      // Enquiries created in the window. `intake_state = 'complete'` matches
+      // Enquiries created in the window. The security_invoker projection has
+      // already removed explicitly excluded test/internal lineage.
+      // `intake_state = 'complete'` matches
       // the working queue exactly: a half-submitted intake is not an enquiry
       // the artist ever saw, so counting it would inflate every source and
       // depress every conversion rate.
       const enquiries = note(
         await readAll<StatisticsEnquiryWithDiscovery>(
-          () => scoped('enquiries', ENQUIRY_COLUMNS, artistId)
+          () => scoped('statistics_enquiries', ENQUIRY_COLUMNS, artistId)
             .is('archived_at', null)
             .eq('intake_state', 'complete')
             .gte('created_at', window.from)
@@ -244,7 +246,7 @@ export function createStatisticsApi(client: CrmClient) {
       // window, so one read serves the period figures and the upcoming load.
       const windowSessions = note(
         await readAll<StatisticsSession>(
-          () => scoped('sessions', SESSION_COLUMNS, artistId)
+          () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
             .gte('start_at', window.from)
             .lt('start_at', forwardTo)
             .order('start_at', { ascending: true }),
@@ -255,7 +257,7 @@ export function createStatisticsApi(client: CrmClient) {
       // Projects created in the window.
       const windowProjects = note(
         await readAll<StatisticsProject>(
-          () => scoped('projects', PROJECT_COLUMNS, artistId)
+          () => scoped('statistics_projects', PROJECT_COLUMNS, artistId)
             .is('archived_at', null)
             .gte('created_at', window.from)
             .lt('created_at', window.to)
@@ -274,7 +276,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsProject>(
-            () => scoped('projects', PROJECT_COLUMNS, artistId)
+            () => scoped('statistics_projects', PROJECT_COLUMNS, artistId)
               .is('archived_at', null)
               .in('enquiry_id', enquiryIds)
               .order('created_at', { ascending: true }),
@@ -285,7 +287,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsSession>(
-            () => scoped('sessions', SESSION_COLUMNS, artistId)
+            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
               .in('enquiry_id', enquiryIds)
               .order('start_at', { ascending: true }),
             'load statistics',
@@ -300,7 +302,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsSession>(
-            () => scoped('sessions', SESSION_COLUMNS, artistId)
+            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
               .in('project_id', projectIds)
               .order('start_at', { ascending: true }),
             'load statistics',
@@ -315,7 +317,7 @@ export function createStatisticsApi(client: CrmClient) {
         ? []
         : note(
           await readAll<StatisticsSession>(
-            () => scoped('sessions', SESSION_COLUMNS, artistId)
+            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
               .in('client_id', clientIds)
               .order('start_at', { ascending: true }),
             'load statistics',
