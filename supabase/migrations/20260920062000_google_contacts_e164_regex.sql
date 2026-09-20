@@ -55,7 +55,7 @@ begin
     artist_id
   ) values (
     'google_contact_create'::public.outbox_kind,
-    'google-contact-create:' || p_artist_id::text || ':' || p_client_id::text,
+    'google_contact_create:' || p_artist_id::text || ':' || p_client_id::text,
     jsonb_build_object('client_id', p_client_id),
     p_client_id,
     p_artist_id
@@ -130,7 +130,7 @@ begin
     )
     select
       'google_contact_create'::public.outbox_kind,
-      'google-contact-create:' || p_artist_id::text || ':' || e.client_id::text,
+      'google_contact_create:' || p_artist_id::text || ':' || e.client_id::text,
       jsonb_build_object('client_id', e.client_id),
       e.client_id,
       p_artist_id
