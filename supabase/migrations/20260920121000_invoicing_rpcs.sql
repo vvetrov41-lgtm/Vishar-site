@@ -724,9 +724,7 @@ begin
 
   if found then
     if v_existing.invoice_id is distinct from p_invoice_id
-       or v_existing.amount <> round(p_amount, 2)
-       or v_existing.payment_method_code is distinct from nullif(btrim(coalesce(p_method_code, '')), '')
-       or v_existing.external_reference is distinct from nullif(btrim(coalesce(p_external_reference, '')), '') then
+       or v_existing.amount <> round(p_amount, 2) then
       raise exception 'that payment reference was already used for different terms'
         using errcode = '22023';
     end if;
