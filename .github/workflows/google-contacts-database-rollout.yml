@@ -28,7 +28,7 @@ jobs:
       PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
       EXPECTED_PROJECT_REF: vfjexhfdbrjmuxfdvbdx
-      EXPECTED_MIGRATION: 20260920062000_google_contacts_e164_regex.sql
+      EXPECTED_MIGRATION: 20260920095000_google_contacts_claim_e164_requeue.sql
 
     steps:
       - name: Checkout exact release snapshot
