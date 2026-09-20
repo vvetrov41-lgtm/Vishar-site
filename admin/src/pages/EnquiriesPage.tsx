@@ -2,11 +2,12 @@ import { useState, type FormEvent } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
+import { EnquiryBoard } from '../components/EnquiryBoard';
 import { Link } from '../lib/router';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
-import type { Enquiry, EnquiryStatus } from '../lib/types';
+import type { Enquiry, EnquiryStatus, StatusTransition } from '../lib/types';
 import { useArtistScope } from '../lib/artist-scope';
 import { useDebouncedValue } from '../lib/use-debounced-value';
 
@@ -63,9 +64,19 @@ export function EnquiriesPage() {
   const copy = MANUAL_COPY[language];
   const [status, setStatus] = useState<'' | EnquiryStatus>('');
   const [search, setSearch] = useState('');
+  const [view, setView] = useState<'list' | 'board'>(() => {
+    try {
+      return window.localStorage.getItem('vishar-crm-enquiries-view') === 'board' ? 'board' : 'list';
+    } catch {
+      return 'list';
+    }
+  });
+  const [movingEnquiryId, setMovingEnquiryId] = useState<string | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search.trim());
   const { selectedArtistId } = useArtistScope();
   const mayCreate = can(profile?.role, 'createEnquiry');
+  const mayTransition = can(profile?.role, 'transitionEnquiry');
 
   const [manual, setManual] = useState<ManualForm>(EMPTY_MANUAL_FORM);
   const [manualKey, setManualKey] = useState(() => crypto.randomUUID());
@@ -77,12 +88,16 @@ export function EnquiriesPage() {
   const { data, loading, error, reload } = useAsync<{
     enquiries: Enquiry[];
     clientNames: Map<string, string>;
+    transitions: StatusTransition[];
   }>(async () => {
-    const enquiries = await api.listEnquiries({
-      status: status || undefined,
-      search: debouncedSearch || undefined,
-      artistId: selectedArtistId ?? undefined,
-    });
+    const [enquiries, transitions] = await Promise.all([
+      api.listEnquiries({
+        status: view === 'list' ? status || undefined : undefined,
+        search: debouncedSearch || undefined,
+        artistId: selectedArtistId ?? undefined,
+      }),
+      mayTransition ? api.listStatusTransitions() : Promise.resolve([] as StatusTransition[]),
+    ]);
     // The queue used to identify an enquiry by its reference number alone, so
     // triaging cost one navigation per enquiry just to learn who it was from.
     const clients = await api.listClientsByIds(
@@ -91,8 +106,33 @@ export function EnquiriesPage() {
     return {
       enquiries,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
+      transitions,
     };
-  }, [api, status, debouncedSearch, selectedArtistId]);
+  }, [api, status, debouncedSearch, selectedArtistId, view, mayTransition]);
+
+  function changeView(next: 'list' | 'board') {
+    setView(next);
+    setMoveError(null);
+    try {
+      window.localStorage.setItem('vishar-crm-enquiries-view', next);
+    } catch {
+      // View choice still applies for this session.
+    }
+  }
+
+  async function moveEnquiry(enquiry: Enquiry, to: EnquiryStatus) {
+    if (movingEnquiryId) return;
+    setMovingEnquiryId(enquiry.id);
+    setMoveError(null);
+    try {
+      await api.transitionEnquiry(enquiry.id, to);
+      reload();
+    } catch (cause) {
+      setMoveError(cause instanceof Error ? cause.message : t('enquiries.boardMoveFailed'));
+    } finally {
+      setMovingEnquiryId(null);
+    }
+  }
 
   function updateManual<K extends keyof ManualForm>(field: K, value: ManualForm[K]) {
     setManual((current) => ({ ...current, [field]: value }));
@@ -295,6 +335,25 @@ export function EnquiriesPage() {
       ) : null}
 
       <div className="card">
+        <div className="enquiry-view-toggle" role="group" aria-label={t('enquiries.viewLabel')}>
+          <button
+            type="button"
+            aria-pressed={view === 'list'}
+            className={view === 'list' ? 'active' : ''}
+            onClick={() => changeView('list')}
+          >
+            {t('enquiries.viewList')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'board'}
+            className={view === 'board' ? 'active' : ''}
+            onClick={() => changeView('board')}
+          >
+            {t('enquiries.viewBoard')}
+          </button>
+        </div>
+
         <div className="field-row">
           <div>
             <label htmlFor="enquiry-search">{t('enquiries.searchByReference')}</label>
@@ -305,33 +364,52 @@ export function EnquiriesPage() {
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
-          <div>
-            <label htmlFor="enquiry-status">{t('enquiries.status')}</label>
-            <select
-              id="enquiry-status" value={status}
-              onChange={(event) => setStatus(event.target.value as '' | EnquiryStatus)}
-            >
-              {FILTERS.map((filter) => (
-                <option key={filter || 'all'} value={filter}>
-                  {filter ? label('enquiryStatus', filter) : t('enquiries.all')}
-                </option>
-              ))}
-            </select>
-          </div>
+          {view === 'list' ? (
+            <div>
+              <label htmlFor="enquiry-status">{t('enquiries.status')}</label>
+              <select
+                id="enquiry-status" value={status}
+                onChange={(event) => setStatus(event.target.value as '' | EnquiryStatus)}
+              >
+                {FILTERS.map((filter) => (
+                  <option key={filter || 'all'} value={filter}>
+                    {filter ? label('enquiryStatus', filter) : t('enquiries.all')}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="enquiry-board-scope">
+              <span>{t('enquiries.status')}</span>
+              <p className="meta">{t('enquiries.boardActiveOnly')}</p>
+            </div>
+          )}
         </div>
       </div>
 
-      {loading ? <LoadingState label={t('enquiries.loading')} /> : null}
+      {loading && !data ? <LoadingState label={t('enquiries.loading')} /> : null}
       {error ? <ErrorState message={error} onRetry={reload} /> : null}
+      {moveError ? <p className="notice warn" role="alert">{moveError}</p> : null}
 
-      {!loading && !error && data && data.enquiries.length === 0 ? (
+      {!error && data && data.enquiries.length === 0 ? (
         <EmptyState
           title={t('enquiries.noMatch')}
           hint={t('enquiries.noMatchHint')}
         />
       ) : null}
 
-      {!loading && !error && data && data.enquiries.length > 0 ? (
+      {!error && data && data.enquiries.length > 0 && view === 'board' ? (
+        <EnquiryBoard
+          enquiries={data.enquiries}
+          clientNames={data.clientNames}
+          transitions={data.transitions}
+          role={profile?.role}
+          movingEnquiryId={movingEnquiryId}
+          onMove={moveEnquiry}
+        />
+      ) : null}
+
+      {!error && data && data.enquiries.length > 0 && view === 'list' ? (
         <div className="list">
           {data.enquiries.map((enquiry) => (
             <Link key={enquiry.id} to={`/enquiries/${enquiry.id}`} className="row">
