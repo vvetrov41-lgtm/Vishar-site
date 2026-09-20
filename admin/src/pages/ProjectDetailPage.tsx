@@ -6,6 +6,7 @@ import { DetailBackLink, RecordArtistContext } from '../components/DetailContext
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
+import { ProjectInvoicesPanel } from '../components/ProjectInvoicesPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
 import { ProjectEstimatePanel } from '../components/ProjectEstimatePanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -299,6 +300,16 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         </details>
       </Section>
 
+      {mayViewFinance ? (
+        <Section title={copy.invoices}>
+          <ProjectInvoicesPanel
+            projectId={project.id}
+            currency={project.currency}
+            mayManage={mayManageFinance}
+          />
+        </Section>
+      ) : null}
+
       {mayManageFinance ? (
         <Section title={copy.deposit}>
           <ProjectDepositRequirementControl project={project} onChanged={reload} />
@@ -375,6 +386,7 @@ function depositStatusLabel(
 const COPY = {
   en: {
     deposit: 'Deposit',
+    invoices: 'Invoices',
     next: 'Next',
     projectStatus: 'Project status',
     cancelProjectConfirm: 'Mark this project cancelled?',
@@ -389,6 +401,7 @@ const COPY = {
   },
   ru: {
     deposit: 'Депозит',
+    invoices: 'Счета',
     next: 'Следующий сеанс',
     projectStatus: 'Статус проекта',
     cancelProjectConfirm: 'Отметить этот проект отменённым?',

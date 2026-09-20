@@ -776,6 +776,22 @@ insert into expected_function_acl values
   ('public.service_telegram_client_ai_digest(text,integer)', false, false, true),
   ('public.service_record_gmail_client_message(uuid,uuid,uuid,text,text,text,text,text)', false, false, true),
 
+  -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
+  -- of these re-derives the artist from the record it is given and requires
+  -- manage_finance on that artist, except the two reads, which require
+  -- view_finance. None is reachable by anon or by the service backend.
+  ('public.get_invoice(uuid)', false, true, false),
+  ('public.list_invoices(uuid,uuid,uuid,public.invoice_status,integer)', false, true, false),
+  ('public.create_invoice(uuid,uuid,date,text)', false, true, false),
+  ('public.set_invoice_line_item(uuid,text,numeric,numeric,uuid,uuid,integer)', false, true, false),
+  ('public.remove_invoice_line_item(uuid)', false, true, false),
+  ('public.set_invoice_details(uuid,date,numeric,text)', false, true, false),
+  ('public.issue_invoice(uuid,date)', false, true, false),
+  ('public.void_invoice(uuid,text)', false, true, false),
+  ('public.attach_payment_request_to_invoice(uuid,uuid)', false, true, false),
+  ('public.record_invoice_payment(uuid,uuid,numeric,timestamptz,text,text)', false, true, false),
+  ('public.create_credit_note(uuid,uuid,numeric,text)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
@@ -837,7 +853,8 @@ select ok(
        'automation_jobs', 'automation_kill_switches',
        'message_template_purposes', 'message_template_variables',
        'message_templates', 'client_marketing_consent',
-       'communication_suppressions')),
+       'communication_suppressions',
+       'invoices', 'invoice_line_items', 'credit_notes')),
   'every CRM table has row level security enabled and forced'
 );
 

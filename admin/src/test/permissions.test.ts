@@ -10,6 +10,7 @@ import {
   availableTransitions,
   can,
   canAccess,
+  canManageArtistSessions,
   capabilitiesFor,
   navItemsFor,
   type Capability,
@@ -114,6 +115,7 @@ describe('navigation', () => {
       '/availability',
       '/statistics',
       '/automations',
+      '/invoices',
       '/payments',
       '/integrations',
       '/notifications',
@@ -127,6 +129,7 @@ describe('navigation', () => {
   it('hides scoped sections from a booking manager until a membership grants them', () => {
     const paths = navItemsFor('booking_manager').map((item) => item.path);
     expect(paths).not.toContain('/payments');
+    expect(paths).not.toContain('/invoices');
     expect(paths).not.toContain('/integrations');
     expect(paths).not.toContain('/users');
     expect(paths).toContain('/enquiries');
@@ -142,7 +145,19 @@ describe('navigation', () => {
       can_manage_integrations: false,
     })]).map((item) => item.path);
     expect(paths).toContain('/payments');
+    // Invoices follow view_finance, so a membership that can only look still
+    // gets the list without the Payments screen's write controls.
+    expect(paths).toContain('/invoices');
     expect(paths).not.toContain('/integrations');
+  });
+
+  it('shows Invoices to a membership that may view finance but not manage it', () => {
+    const paths = navItemsFor('booking_manager', [membership({
+      can_view_finance: true,
+      can_manage_finance: false,
+    })]).map((item) => item.path);
+    expect(paths).toContain('/invoices');
+    expect(paths).not.toContain('/payments');
   });
 
   it('shows the integrations hub for a booking manager with integration membership', () => {
@@ -193,5 +208,41 @@ describe('status transitions', () => {
   it('offers read_only nothing', () => {
     expect(availableTransitions(TRANSITIONS, 'new', 'read_only')).toEqual([]);
     expect(availableTransitions(TRANSITIONS, 'new', null)).toEqual([]);
+  });
+});
+
+describe('who may move one artist schedule', () => {
+  it('lets the owner move any artist appointments', () => {
+    expect(canManageArtistSessions('owner', [], 'artist-1')).toBe(true);
+  });
+
+  it('lets a manager move the schedule their membership allows', () => {
+    expect(canManageArtistSessions('booking_manager', [membership()], 'artist-1')).toBe(true);
+  });
+
+  it('refuses a manager whose membership cannot manage sessions', () => {
+    expect(canManageArtistSessions(
+      'booking_manager',
+      [membership({ can_manage_sessions: false })],
+      'artist-1'
+    )).toBe(false);
+  });
+
+  it('refuses a manager holding another artist only', () => {
+    expect(canManageArtistSessions(
+      'booking_manager',
+      [membership({ artist_id: 'artist-2' })],
+      'artist-1'
+    )).toBe(false);
+  });
+
+  it('refuses a deactivated membership and read_only outright', () => {
+    expect(canManageArtistSessions(
+      'booking_manager',
+      [membership({ is_active: false })],
+      'artist-1'
+    )).toBe(false);
+    expect(canManageArtistSessions('read_only', [membership()], 'artist-1')).toBe(false);
+    expect(canManageArtistSessions(null, [membership()], 'artist-1')).toBe(false);
   });
 });

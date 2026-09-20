@@ -83,7 +83,40 @@ const ADDED_OPERATIONS = Object.freeze([
   }),
 ]);
 
+function financeGap(key, capability, consequence, serverContracts) {
+  return Object.freeze({
+    key,
+    actionDomain: 'Project Finance',
+    capabilityDomain: 'Finance',
+    capability,
+    consequence,
+    ui: 'available',
+    serverContracts: Object.freeze(serverContracts),
+    gpt: Object.freeze({ status: 'gap', operationId: null }),
+    mcp: 'candidate',
+    note: 'The CRM now exposes this bounded invoicing action, but no reviewed GPT wrapper exists yet.',
+  });
+}
+
+// PR #818 adds meaningful operator actions to the CRM UI. They stay explicit
+// gaps until a separately reviewed GPT/MCP contract is added; hiding them from
+// parity would make the inventory lie even though the transport is unchanged.
+const INVOICING_GAPS = Object.freeze([
+  financeGap('finance.invoices.list', 'view_finance', 'read', ['public.list_invoices']),
+  financeGap('finance.invoices.get', 'view_finance', 'read', ['public.get_invoice']),
+  financeGap('finance.invoices.create', 'manage_finance', 'write', ['public.create_invoice']),
+  financeGap('finance.invoices.line_item.set', 'manage_finance', 'write', ['public.set_invoice_line_item']),
+  financeGap('finance.invoices.line_item.remove', 'manage_finance', 'write', ['public.remove_invoice_line_item']),
+  financeGap('finance.invoices.details.set', 'manage_finance', 'write', ['public.set_invoice_details']),
+  financeGap('finance.invoices.issue', 'manage_finance', 'money', ['public.issue_invoice']),
+  financeGap('finance.invoices.void', 'manage_finance', 'money', ['public.void_invoice']),
+  financeGap('finance.invoices.payment_request.attach', 'manage_finance', 'money', ['public.attach_payment_request_to_invoice']),
+  financeGap('finance.invoices.payment.record', 'manage_finance', 'money', ['public.record_invoice_payment']),
+  financeGap('finance.invoices.credit_note.create', 'manage_finance', 'money', ['public.create_credit_note']),
+]);
+
 export const OPERATOR_PARITY = Object.freeze([
   ...SNAPSHOT_OPERATOR_PARITY.map(applyOverride),
   ...ADDED_OPERATIONS,
+  ...INVOICING_GAPS,
 ]);

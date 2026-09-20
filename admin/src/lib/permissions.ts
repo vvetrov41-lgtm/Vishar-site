@@ -94,7 +94,11 @@ const CAPABILITIES: Record<CrmRole, ReadonlySet<Capability>> = {
 
 type ScopedMembership = Pick<
   ArtistMembership,
-  'is_active' | 'can_view_finance' | 'can_manage_finance' | 'can_manage_integrations'
+  | 'is_active'
+  | 'can_view_finance'
+  | 'can_manage_finance'
+  | 'can_manage_sessions'
+  | 'can_manage_integrations'
 >;
 
 /**
@@ -131,6 +135,16 @@ export function canAccess(
     );
   }
 
+  // Mirrors `crm_private.has_artist_capability(..., 'manage_sessions')`. A
+  // manager may hold the coarse role and still not be allowed to move this
+  // artist's diary, which is what the drag affordance has to ask before it
+  // offers itself.
+  if (capability === 'manageSessions') {
+    return can(role, capability) && memberships.some(
+      (membership) => membership.is_active && membership.can_manage_sessions
+    );
+  }
+
   if (capability === 'manageIntegrations') {
     return can(role, capability) && memberships.some(
       (membership) => membership.is_active && membership.can_manage_integrations
@@ -138,6 +152,29 @@ export function canAccess(
   }
 
   return can(role, capability);
+}
+
+/**
+ * Whether this person may move one named artist's appointments.
+ *
+ * Call sites hold every membership the account has, not the ones for the
+ * artist in question, so the narrowing happens here rather than at each of
+ * them. Still not a security control: `reschedule_appointment` re-checks
+ * `manage_sessions` on the appointment's own artist and refuses regardless.
+ */
+export function canManageArtistSessions(
+  role: CrmRole | null | undefined,
+  memberships: ArtistMembership[] | undefined,
+  artistId: string | null | undefined
+): boolean {
+  if (!role) return false;
+  if (role === 'owner') return can(role, 'manageSessions');
+  if (!artistId) return false;
+  return canAccess(
+    role,
+    'manageSessions',
+    (memberships ?? []).filter((membership) => membership.artist_id === artistId)
+  );
 }
 
 export function capabilitiesFor(role: CrmRole | null | undefined): Capability[] {
@@ -202,6 +239,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/statistics', label: 'Statistics', capability: 'viewEnquiries' },
   { path: '/automations', label: 'Automations', capability: 'viewAutomations' },
+  { path: '/invoices', label: 'nav.invoices', capability: 'viewFinance' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   // One entry. Calendar, WhatsApp and Instagram were three peers here, which
   // stopped scaling at three; the hub at /integrations lists every channel and
