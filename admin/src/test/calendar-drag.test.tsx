@@ -141,6 +141,17 @@ describe('the manager week grid', () => {
     expect(block).toHaveTextContent('11:00–17:00');
   });
 
+  it('reveals trailing end-time targets so the latest appointment can be extended', async () => {
+    await openWeek({ role: 'booking_manager' });
+
+    // The ordinary grid ends at the default 20:00 boundary for this fixture.
+    // Activating resize must expose rows below that boundary, otherwise an
+    // appointment ending at 20:00 could only be shortened.
+    fireEvent.click(await screen.findByRole('button', { name: /^Change duration: Tattoo session/ }));
+    expect(await screen.findByRole('button', { name: 'Set end on Tue 1 Sept at 22:00' }))
+      .toBeInTheDocument();
+  });
+
   it('changes duration through the keyboard/touch target path', async () => {
     const { rpcCalls } = await openWeek({ role: 'booking_manager' });
 
