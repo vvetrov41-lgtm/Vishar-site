@@ -687,6 +687,7 @@ function tableResult(
       return { data: role ? PROFILES[role] : null, error: null };
     case 'clients':
       return { data: [CLIENT], error: null };
+    case 'statistics_enquiries':
     case 'enquiries':
       return {
         data: [
@@ -700,11 +701,13 @@ function tableResult(
       return { data: canManage ? [ENQUIRY_FILE] : [], error: null };
     case 'enquiry_status_transitions':
       return { data: TRANSITIONS, error: null };
+    case 'statistics_projects':
     case 'projects':
       return { data: [PROJECT], error: null };
     case 'projects_finance':
       // Owner-only view: a non-owner selects zero rows, not an error.
       return { data: role === 'owner' ? [PROJECT_FINANCE] : [], error: null };
+    case 'statistics_sessions':
     case 'sessions':
       return { data: [SESSION, ...extraSessions], error: null };
     case 'sessions_finance':
@@ -728,10 +731,12 @@ function tableResult(
       return { data: [{ id: 'fu-1', artist_id: VLADIMIR_ARTIST_ID, status: 'open', due_at: '2026-07-05T09:00:00Z', subject: 'Chase references', details: null, client_id: CLIENT_ID, enquiry_id: ENQUIRY_ID, project_id: null, assigned_to: null }], error: null };
     case 'activity_log':
       return { data: canManage ? ACTIVITY : [], error: null };
+    case 'statistics_payment_transactions':
     case 'payment_transactions':
       // RLS is can_view_artist_finance(artist_id): a viewer without finance
       // access reads zero rows, not an error.
       return { data: role === 'owner' ? PAYMENT_TRANSACTIONS : [], error: null };
+    case 'statistics_payment_requests':
     case 'payment_requests':
       return { data: role === 'owner' ? PAYMENT_REQUESTS : [], error: null };
     case 'integration_outbox':
