@@ -48,6 +48,13 @@ function fakeClient(options: {
   const calls: Call[] = [];
   const rows = options.rows ?? {};
   const deny = new Set(options.deny ?? []);
+  const sourceTable: Record<string, string> = {
+    statistics_enquiries: 'enquiries',
+    statistics_projects: 'projects',
+    statistics_sessions: 'sessions',
+    statistics_payment_requests: 'payment_requests',
+    statistics_payment_transactions: 'payment_transactions',
+  };
 
   const from = vi.fn((table: string) => {
     const call: Call = { table, columns: '', filters: [], range: null };
@@ -65,7 +72,8 @@ function fakeClient(options: {
         if (deny.has(table)) {
           return Promise.resolve({ data: null, error: { code: '42501', message: 'permission denied' } });
         }
-        return Promise.resolve({ data: (rows[table] ?? []).slice(start, end + 1), error: null });
+        const sourceRows = rows[table] ?? rows[sourceTable[table]] ?? [];
+        return Promise.resolve({ data: sourceRows.slice(start, end + 1), error: null });
       },
     };
     return builder;
