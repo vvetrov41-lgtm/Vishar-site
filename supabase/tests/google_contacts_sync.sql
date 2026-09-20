@@ -1,6 +1,6 @@
 begin;
 
-select plan(19);
+select plan(21);
 
 select ok(
   'google_contact_create' = any(enum_range(null::public.outbox_kind)::text[]),
@@ -41,16 +41,125 @@ select ok(
 );
 
 select ok(
-  '+447700900123' ~ E'^\\+[1-9][0-9]{7,14}$',
+  '+447700919611' ~ E'^\\+[1-9][0-9]{7,14}$',
   'explicit E.164 regex matches a valid canonical phone'
 );
 
-select ok(
-  pg_get_functiondef('crm_private.enqueue_google_contact_create(uuid,uuid)'::regprocedure)
-    like '%phone_normalized ~ E''^\\+[1-9][0-9]{7,14}$''%'
-  and pg_get_functiondef('crm_private.reconcile_google_contact_sync(uuid)'::regprocedure)
-    like '%phone_normalized ~ E''^\\+[1-9][0-9]{7,14}$''%',
-  'enqueue and reconciliation use the explicit E.164 escape string'
+insert into public.artist_integrations
+  (id, artist_id, integration_type, provider, integration_key, configuration, is_enabled)
+values
+  (
+    'dc611111-1111-4111-8111-111111111111',
+    'a1111111-1111-4111-8111-111111111111',
+    'calendar',
+    'google',
+    'google_calendar_vladimir',
+    '{"google_contacts_sync":false}'::jsonb,
+    true
+  )
+on conflict (artist_id, integration_type, integration_key) do update
+set provider = excluded.provider,
+    configuration = excluded.configuration,
+    is_enabled = excluded.is_enabled;
+
+insert into public.artist_integrations
+  (id, artist_id, integration_type, provider, integration_key, configuration, is_enabled)
+values
+  (
+    'dc612222-2222-4222-8222-222222222222',
+    'a1111111-1111-4111-8111-111111111111',
+    'whatsapp',
+    'meta_cloud_api',
+    'vladimir-production',
+    '{}'::jsonb,
+    true
+  )
+on conflict (artist_id, integration_type, integration_key) do update
+set provider = excluded.provider,
+    configuration = excluded.configuration,
+    is_enabled = excluded.is_enabled;
+
+insert into public.clients
+  (id, full_name, phone, phone_normalized, workspace_id)
+values
+  (
+    'ca611111-1111-4111-8111-111111111111',
+    'Google Contact Reconcile Fixture',
+    '+44 7700 919611',
+    '+447700919611',
+    (select workspace_id from public.artists where id='a1111111-1111-4111-8111-111111111111')
+  );
+
+insert into public.communication_conversations
+  (id, artist_id, channel, integration_key, external_contact_id, client_id, link_state)
+values
+  (
+    'cc611111-1111-4111-8111-111111111111',
+    'a1111111-1111-4111-8111-111111111111',
+    'whatsapp',
+    'vladimir-production',
+    '447700919611',
+    'ca611111-1111-4111-8111-111111111111',
+    'linked'
+  );
+
+select is(
+  (
+    select count(*)::integer
+    from public.integration_outbox
+    where kind='google_contact_create'::public.outbox_kind
+      and client_id='ca611111-1111-4111-8111-111111111111'
+  ),
+  0,
+  'disabled Google Contacts capability does not enqueue a linked WhatsApp client'
+);
+
+update public.artist_integrations
+set configuration = jsonb_set(configuration, '{google_contacts_sync}', 'true'::jsonb, true)
+where artist_id='a1111111-1111-4111-8111-111111111111'
+  and integration_type='calendar'::public.artist_integration_type
+  and provider='google'
+  and integration_key='google_calendar_vladimir';
+
+select is(
+  crm_private.reconcile_google_contact_sync('a1111111-1111-4111-8111-111111111111'::uuid),
+  1,
+  'reconciliation enqueues a valid E.164 linked WhatsApp client'
+);
+
+insert into public.clients
+  (id, full_name, phone, phone_normalized, workspace_id)
+values
+  (
+    'ca612222-2222-4222-8222-222222222222',
+    'Google Contact Trigger Fixture',
+    '+44 7700 919612',
+    '+447700919612',
+    (select workspace_id from public.artists where id='a1111111-1111-4111-8111-111111111111')
+  );
+
+insert into public.communication_conversations
+  (id, artist_id, channel, integration_key, external_contact_id, client_id, link_state)
+values
+  (
+    'cc612222-2222-4222-8222-222222222222',
+    'a1111111-1111-4111-8111-111111111111',
+    'whatsapp',
+    'vladimir-production',
+    '447700919612',
+    'ca612222-2222-4222-8222-222222222222',
+    'linked'
+  );
+
+select is(
+  (
+    select count(*)::integer
+    from public.integration_outbox
+    where kind='google_contact_create'::public.outbox_kind
+      and client_id='ca612222-2222-4222-8222-222222222222'
+  ),
+  1,
+  'linked WhatsApp trigger enqueues a valid E.164 client when capability is enabled'
 );
 
 select ok(
