@@ -114,6 +114,7 @@ describe('navigation', () => {
       '/availability',
       '/statistics',
       '/automations',
+      '/invoices',
       '/payments',
       '/integrations',
       '/notifications',
@@ -127,6 +128,7 @@ describe('navigation', () => {
   it('hides scoped sections from a booking manager until a membership grants them', () => {
     const paths = navItemsFor('booking_manager').map((item) => item.path);
     expect(paths).not.toContain('/payments');
+    expect(paths).not.toContain('/invoices');
     expect(paths).not.toContain('/integrations');
     expect(paths).not.toContain('/users');
     expect(paths).toContain('/enquiries');
@@ -142,7 +144,19 @@ describe('navigation', () => {
       can_manage_integrations: false,
     })]).map((item) => item.path);
     expect(paths).toContain('/payments');
+    // Invoices follow view_finance, so a membership that can only look still
+    // gets the list without the Payments screen's write controls.
+    expect(paths).toContain('/invoices');
     expect(paths).not.toContain('/integrations');
+  });
+
+  it('shows Invoices to a membership that may view finance but not manage it', () => {
+    const paths = navItemsFor('booking_manager', [membership({
+      can_view_finance: true,
+      can_manage_finance: false,
+    })]).map((item) => item.path);
+    expect(paths).toContain('/invoices');
+    expect(paths).not.toContain('/payments');
   });
 
   it('shows the integrations hub for a booking manager with integration membership', () => {

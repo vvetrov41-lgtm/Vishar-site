@@ -77,6 +77,7 @@ describe('responsive navigation shell', () => {
       'Statistics',
     ]);
     expect(within(money).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Invoices',
       'Payments',
     ]);
     expect(within(setup).getAllByRole('link').map((link) => link.textContent)).toEqual([

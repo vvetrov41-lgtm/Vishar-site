@@ -37,6 +37,8 @@ import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { FocusedAppointmentPage } from './pages/FocusedAppointmentPage';
 import { InboxPage } from './pages/InboxPage';
+import { InvoiceDetailPage } from './pages/InvoiceDetailPage';
+import { InvoicesPage } from './pages/InvoicesPage';
 import { InstagramConnectionsPage } from './pages/InstagramConnectionsPage';
 import { IntegrationsPage } from './pages/IntegrationsPage';
 import { LifecycleAutomationStudioPage } from './pages/LifecycleAutomationStudioPage';
@@ -200,6 +202,15 @@ function Routes() {
     return <ArtistOnboardingPage artistId={artistDetail.id} />;
   }
 
+  const invoiceDetail = matchRoute('/invoices/:id', path);
+  if (invoiceDetail) {
+    return (
+      <RequireCapability capability="viewFinance">
+        <InvoiceDetailPage invoiceId={invoiceDetail.id} />
+      </RequireCapability>
+    );
+  }
+
   const projectDetail = matchRoute('/projects/:id', path);
   if (projectDetail) {
     return (
@@ -252,6 +263,8 @@ function Routes() {
       return <RequireCapability capability="viewAutomations"><ClientMessagesPage /></RequireCapability>;
     case '/automations/advanced':
       return <RequireCapability capability="viewAutomations"><LifecycleAutomationStudioPage /></RequireCapability>;
+    case '/invoices':
+      return <RequireCapability capability="viewFinance"><InvoicesPage /></RequireCapability>;
     case '/payments':
       return <RequireCapability capability="manageFinance"><PaymentsPage /></RequireCapability>;
     case '/integrations':

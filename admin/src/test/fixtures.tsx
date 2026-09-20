@@ -28,6 +28,21 @@ export const SESSION_ID = '55555555-5555-4555-8555-555555555555';
 export const FILE_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 /** The id `schedule_appointment` hands back, so a success message can link to it. */
 export const SCHEDULED_APPOINTMENT_ID = '66666666-6666-4666-8666-666666666666';
+/** The invoice `create_invoice` hands back, so a panel can navigate to it. */
+export const INVOICE_ID = '99999999-9999-4999-8999-999999999999';
+
+/** Every invoicing RPC that writes. All of them require manage_finance. */
+const INVOICE_WRITE_RPCS = [
+  'create_invoice',
+  'set_invoice_line_item',
+  'remove_invoice_line_item',
+  'set_invoice_details',
+  'issue_invoice',
+  'void_invoice',
+  'attach_payment_request_to_invoice',
+  'record_invoice_payment',
+  'create_credit_note',
+];
 
 export const ARTISTS = [
   { id: VLADIMIR_ARTIST_ID, slug: 'vladimir', display_name: 'Vladimir Vishar', timezone: 'Europe/London', default_currency: 'GBP', is_active: true },
@@ -479,6 +494,15 @@ export interface FakeClientOptions {
    * single `capabilityPreview` list cannot express.
    */
   capabilityPreviewByProfile?: Record<string, ControlPlaneCapability[]>;
+  /**
+   * Invoice rows `list_invoices` answers with, and the document `get_invoice`
+   * answers with. Both are supplied rather than derived: the totals and the
+   * refusals belong to the database, and pgTAP 293 owns them. What the fake
+   * models is the finance visibility boundary, so a screen cannot "pass" for a
+   * viewer the database would show nothing to.
+   */
+  invoices?: Record<string, unknown>[];
+  invoiceDocument?: Record<string, unknown> | null;
   /** RPC names that must refuse, so a test can prove a section collapses. */
   denyRpc?: string[];
   /**
@@ -775,6 +799,22 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
    * elsewhere: `session.tsx` reads its own scoped capabilities through this
    * table directly, without any RPC, so the fake must model it directly too.
    */
+  /**
+   * Mirrors `crm_private.has_artist_capability(..., 'view_finance' |
+   * 'manage_finance')`: the owner always, a manager only through an active
+   * membership flag, read_only never.
+   */
+  function financeVisibility(): { view: boolean; manage: boolean } {
+    if (effectiveRole === 'owner') return { view: true, manage: true };
+    if (effectiveRole !== 'booking_manager') return { view: false, manage: false };
+    const mine = (options.membershipOverrides ?? MEMBERSHIPS)
+      .filter((membership) => membership.profile_id === profile?.id && membership.is_active);
+    return {
+      view: mine.some((membership) => membership.can_view_finance || membership.can_manage_finance),
+      manage: mine.some((membership) => membership.can_manage_finance),
+    };
+  }
+
   function artistMembershipsResult() {
     if (options.failTable === 'artist_memberships') {
       return { data: null, error: { code: 'PGRST000', message: 'boom' } };
@@ -1029,6 +1069,41 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
           error: null,
         };
       }
+      // --- Invoicing -------------------------------------------------------
+      // `can_view_artist_finance` is the gate on both reads, and
+      // `can_manage_artist_finance` on every write, exactly as the RPCs check.
+      if (name === 'list_invoices') {
+        if (!financeVisibility().view) return { data: [], error: null };
+        const status = (args as any)?.p_status ?? null;
+        const projectId = (args as any)?.p_project_id ?? null;
+        return {
+          data: (options.invoices ?? []).filter((invoice: any) => (
+            (!status || invoice.status === status)
+            && (!projectId || invoice.project_id === projectId)
+          )),
+          error: null,
+        };
+      }
+      if (name === 'get_invoice') {
+        if (!financeVisibility().view) return { data: null, error: DENIED };
+        return { data: options.invoiceDocument ?? null, error: null };
+      }
+      if (INVOICE_WRITE_RPCS.includes(name)) {
+        if (!financeVisibility().manage) return { data: null, error: DENIED };
+        if (name === 'create_invoice') {
+          return {
+            data: {
+              invoice_id: INVOICE_ID,
+              invoice_number: 'INV-2026-00001',
+              status: 'draft',
+              replayed: false,
+            },
+            error: null,
+          };
+        }
+        return { data: { ok: true }, error: null };
+      }
+
       if (name === 'list_accessible_artists') {
         return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
       }

@@ -238,6 +238,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/statistics', label: 'Statistics', capability: 'viewEnquiries' },
   { path: '/automations', label: 'Automations', capability: 'viewAutomations' },
+  { path: '/invoices', label: 'nav.invoices', capability: 'viewFinance' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },
   // One entry. Calendar, WhatsApp and Instagram were three peers here, which
   // stopped scaling at three; the hub at /integrations lists every channel and

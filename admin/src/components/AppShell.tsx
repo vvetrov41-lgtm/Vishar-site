@@ -32,6 +32,7 @@ const NAV_KEYS: Record<string, string> = {
   '/availability': 'nav.availability',
   '/statistics': 'nav.statistics',
   '/automations': 'nav.automations',
+  '/invoices': 'nav.invoices',
   '/payments': 'nav.payments',
   '/integrations': 'nav.integrations',
   '/notifications': 'nav.notifications',
@@ -579,6 +580,7 @@ export function groupNavItems(items: NavItem[]): { id: NavGroupId; items: NavIte
  */
 export function navGroupFor(path: string): NavGroupId {
   if (path === '/finance' || path === '/payments') return 'money';
+  if (path === '/invoices' || path.startsWith('/invoices/')) return 'money';
   // Statistics reads the work rather than the money: its finance block is one
   // section of it and appears only where the database returns finance rows.
   if (path === '/statistics') return 'work';

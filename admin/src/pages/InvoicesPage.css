@@ -1,0 +1,29 @@
+.invoice-list .row + .row { margin-top: 10px; }
+.invoice-row .title a { font-weight: 650; }
+.invoice-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.invoice-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.invoice-figures div { padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-raised); }
+.invoice-figures dt { margin: 0; color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.025em; }
+.invoice-figures dd { margin: 2px 0 0; font-size: 0.95rem; font-weight: 650; }
+.invoice-figures .outstanding { border-color: rgba(76,141,255,0.4); }
+.invoice-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.invoice-table th, .invoice-table td { padding: 7px 6px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.invoice-table thead th { color: var(--muted); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.025em; }
+.invoice-table tfoot th { text-align: left; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* The printable document. Hidden on screen because everything it says is
+   already on the page above it in a form the operator can act on; it exists so
+   that Print produces a document rather than a screenshot of the CRM. */
+.invoice-document { display: none; }
+
+@media print {
+  body * { visibility: hidden; }
+  .invoice-document, .invoice-document * { visibility: visible; }
+  .invoice-document { display: block; position: absolute; inset: 0; padding: 24px; background: #fff; color: #000; font-size: 12pt; }
+  .invoice-document header h2 { margin: 0 0 4px; }
+  .invoice-document section { margin: 16px 0; }
+  .invoice-document .invoice-table { font-size: 11pt; }
+  .invoice-document .invoice-table th, .invoice-document .invoice-table td { border-bottom: 1px solid #999; }
+  .invoice-document footer { margin-top: 20px; font-size: 10pt; }
+}
