@@ -33,7 +33,7 @@ import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { BookingPanel } from '../components/BookingPanel';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
-import { CollapsibleActivityLog } from '../components/CollapsibleActivityLog';
+import { ActivityFeed } from '../components/ActivityFeed';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { SignedImage } from '../components/SignedImage';
 import { Link, useRouter } from '../lib/router';
@@ -47,7 +47,7 @@ import type { ClientAiState } from '../lib/ai-intake-api';
 import type { Appointment } from '../lib/appointment-api';
 import type { ClientConversation } from '../lib/communications-api';
 import type {
-  ActivityEntry, Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
+  Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
 } from '../lib/types';
 
 interface DetailData {
@@ -57,7 +57,6 @@ interface DetailData {
   files: EnquiryFile[];
   notes: InternalNote[];
   followUps: FollowUp[];
-  activity: ActivityEntry[];
   transitions: StatusTransition[];
   colleagues: Pick<Profile, 'id' | 'display_name' | 'role'>[];
   /** Newest email thread on this enquiry, or null when there is none. */
@@ -92,12 +91,12 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
     const enquiry = await api.getEnquiry(enquiryId);
     if (!enquiry) {
       return {
-        enquiry: null, client: null, aiState: null, files: [], notes: [], followUps: [], activity: [],
+        enquiry: null, client: null, aiState: null, files: [], notes: [], followUps: [],
         transitions: [], colleagues: [], emailThread: null, appointments: [], conversations: [],
       };
     }
 
-    const [client, aiState, files, notes, followUps, activity, transitions, colleagues, clientAppointments] = await Promise.all([
+    const [client, aiState, files, notes, followUps, transitions, colleagues, clientAppointments] = await Promise.all([
       api.getClient(enquiry.client_id),
       // Five Pillars is a derived read. Failure or absence never blocks the
       // enquiry page, and this call cannot schedule or retry model work.
@@ -105,7 +104,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       can(role, 'viewEnquiryFiles') ? api.listEnquiryFiles(enquiryId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ enquiryId }) : Promise.resolve([]),
       api.listFollowUps({ enquiryId }),
-      can(role, 'viewActivity') ? api.listActivity({ enquiryId }) : Promise.resolve([]),
       can(role, 'transitionEnquiry') ? api.listStatusTransitions() : Promise.resolve([]),
       can(role, 'assignEnquiry') ? api.listAssignableProfiles() : Promise.resolve([]),
       can(role, 'viewSessions')
@@ -123,7 +121,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       : [];
 
     return {
-      enquiry, client, aiState, files, notes, followUps, activity, transitions, colleagues, emailThread,
+      enquiry, client, aiState, files, notes, followUps, transitions, colleagues, emailThread,
       appointments: clientAppointments.filter((appointment) => appointment.enquiry_id === enquiryId),
       conversations,
     };
@@ -152,7 +150,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   }
 
   const {
-    enquiry, client, aiState, files, notes, followUps, activity, transitions, colleagues,
+    enquiry, client, aiState, files, notes, followUps, transitions, colleagues,
     emailThread, appointments, conversations,
   } = data;
   const { transitionOptions, canConvert } = enquiryWorkflowActions(transitions, enquiry.status, role);
@@ -566,9 +564,13 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       ) : null}
 
       {can(role, 'viewActivity') ? (
-        <CollapsedSection title={t('enquiry.activity')} count={activity.length}>
-          <CollapsibleActivityLog activity={activity} />
-        </CollapsedSection>
+        <Section title={t('enquiry.activity')}>
+          <ActivityFeed
+            filter={{ enquiryId: enquiry.id }}
+            emptyTitle={t('enquiry.noActivity')}
+            initiallyCollapsed
+          />
+        </Section>
       ) : null}
     </>
   );
