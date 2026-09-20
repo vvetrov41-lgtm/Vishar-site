@@ -216,8 +216,8 @@ comment on table public.credit_notes is
 --
 -- Nullable on purpose. Every payment request that exists today - every deposit
 -- - keeps `invoice_id is null` and behaves exactly as before. Nothing is
--- backfilled by this migration; see docs/manager-calendar-finance-plan.md for
--- the separate backfill plan.
+-- backfilled by this migration; see specs/manager-calendar-finance/plan.md for
+-- the backfill position and the rollback order.
 -- ---------------------------------------------------------------------------
 
 alter table public.payment_requests
