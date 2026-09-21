@@ -34,6 +34,7 @@ const encryptionKey = base64Url(Uint8Array.from({ length: 32 }, (_, index) => in
 const vladimirId = 'a1111111-1111-4111-8111-111111111111';
 const kristinaId = 'a2222222-2222-4222-8222-222222222222';
 const blockId = 'f1111111-1111-4111-8111-111111111111';
+const sharedCalendarId = 'info@labeltattooprivate.co.uk';
 
 const env = {
   GOOGLE_OAUTH_CLIENT_ID: 'test-client-id',
@@ -146,6 +147,24 @@ await test('new Time Off create retries reuse one deterministic event id', async
   assert.equal(result.providerEventId, calls[0].body.id);
 });
 
+await test('shared Time Off projection also removes the old deterministic primary copy', async () => {
+  const calls = [];
+  const provider = createGoogleAvailabilityProvider({
+    accessToken: 'access',
+    calendarId: sharedCalendarId,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      if (init.method === 'POST') return Response.json({ id: JSON.parse(init.body).id, status: 'confirmed' });
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      throw new Error(`unexpected ${init.method}`);
+    },
+  });
+  await provider.createEvent(job());
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /calendars\/info%40labeltattooprivate\.co\.uk\/events/);
+  assert.match(calls[1].url, /calendars\/primary\/events/);
+});
+
 await test('Time Off update can recover a provider event even when the local event id was never acknowledged', async () => {
   const calls = [];
   const fetchImpl = async (_url, init) => {
@@ -195,6 +214,9 @@ await test('Kristina Time Off route remains exact with no Vladimir fallback', as
     kind: 'calendar_availability_create',
   });
   assert.equal(validateCalendarRoute(routeFor(kristinaId), kristinaJob, env).calendarId, 'primary');
+  const sharedRoute = routeFor(kristinaId);
+  sharedRoute.configuration.calendar_id = sharedCalendarId;
+  assert.equal(validateCalendarRoute(sharedRoute, kristinaJob, env).calendarId, sharedCalendarId);
   await assert.rejects(
     async () => validateCalendarRoute(routeFor(vladimirId), kristinaJob, env),
     (error) => error.code === 'provider_route_invalid',
