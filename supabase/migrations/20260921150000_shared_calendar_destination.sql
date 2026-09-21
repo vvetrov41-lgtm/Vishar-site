@@ -131,12 +131,15 @@ begin
     v_external_account_label,
     jsonb_build_object(
       'calendar_id', v_calendar_id,
-      'destination_event_label_id', v_destination_event_label_id,
       'oauth_scope', 'calendar.events',
       'connection_mode', 'worker_oauth',
       'artist_slug', v_artist_slug,
       'presentation', v_presentation
-    ),
+    ) || case
+      when v_destination_event_label_id is not null then
+        jsonb_build_object('destination_event_label_id', v_destination_event_label_id)
+      else '{}'::jsonb
+    end,
     p_is_enabled
   )
   on conflict (artist_id, integration_type, integration_key) do update
