@@ -1,0 +1,162 @@
+name: Shared Calendar destination database rollout
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-shared-calendar-db-*'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-private-production-crm-database
+  cancel-in-progress: false
+
+jobs:
+  migration:
+    name: Apply exact lineage repair and shared Calendar destination
+    if: github.actor == github.repository_owner && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: crm-production
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      PROJECT_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
+      EXPECTED_PROJECT_REF: vfjexhfdbrjmuxfdvbdx
+      OPERATOR_FILE: .github/workflows/shared-calendar-destination-database-rollout.yml
+      EXPECTED_OLDER: 20260920185000_google_contacts_whatsapp_preferred_enquiry.sql
+      EXPECTED_CALENDAR: 20260921150000_shared_calendar_destination.sql
+
+    steps:
+      - name: Checkout exact operator commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Gate release-only operator and exact canonical source
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-shared-calendar-db-[a-z0-9-]+$ ]]
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$GITHUB_RUN_ATTEMPT" = '1' ]
+          [ "$DEPLOY_ENABLED" = 'true' ]
+          [ "$PROJECT_REF" = "$EXPECTED_PROJECT_REF" ]
+          [ "$PROJECT_URL" = "https://${PROJECT_REF}.supabase.co" ]
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          parent_count="$(git rev-list --parents -n 1 "$GITHUB_SHA" | awk '{print NF-1}')"
+          [ "$parent_count" = '1' ]
+          approved_sha="$(git rev-parse "$GITHUB_SHA^")"
+          [[ "$approved_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          mapfile -t changed < <(git diff --name-only "$approved_sha" "$GITHUB_SHA")
+          [ "${#changed[@]}" = '1' ]
+          [ "${changed[0]}" = "$OPERATOR_FILE" ]
+
+          release_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          canonical_sha="$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')"
+          [ "$release_sha" = "$GITHUB_SHA" ]
+          [ "$canonical_sha" = "$approved_sha" ] || {
+            echo 'Canonical CRM moved after operator creation; refusing database mutation.' >&2
+            exit 1
+          }
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$approved_sha&per_page=100"             --jq '.workflow_runs[] | {name,head_sha,status,conclusion}' | jq -s . > "$RUNNER_TEMP/exact-head-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation' 'Booking host validation' 'WhatsApp production onboarding validation'; do
+            jq -e --arg name "$workflow" --arg sha "$approved_sha"               'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")'               "$RUNNER_TEMP/exact-head-ci.json" >/dev/null || {
+                echo "Required exact-head workflow is not green: $workflow" >&2
+                exit 1
+              }
+          done
+
+          git checkout --detach "$approved_sha"
+          [ "$(git rev-parse HEAD)" = "$approved_sha" ]
+          [ -z "$(git status --short)" ]
+          test -f "supabase/migrations/$EXPECTED_OLDER"
+          test -f "supabase/migrations/$EXPECTED_CALENDAR"
+          echo "approved_sha=$approved_sha" >> "$GITHUB_OUTPUT"
+
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.110.0
+
+      - name: Link exact production project
+        run: supabase link --project-ref "$PROJECT_REF"
+
+      - name: Read production migration state before mutation
+        run: supabase migration list
+
+      - name: Dry-run exact two pending migrations including lineage repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          dry_run="$(supabase db push --dry-run --include-all 2>&1)"
+          printf '%s\n' "$dry_run"
+          DRY_RUN="$dry_run" node <<'NODE'
+          const output = process.env.DRY_RUN || '';
+          const expected = [
+            process.env.EXPECTED_OLDER,
+            process.env.EXPECTED_CALENDAR,
+          ];
+          const migrations = Array.from(new Set(
+            output.match(/\d{14}_[a-z0-9_]+\.sql/g) || []
+          ));
+          if (JSON.stringify(migrations.sort()) !== JSON.stringify(expected.sort())) {
+            throw new Error(`Pending migration set mismatch: ${migrations.join(', ')}`);
+          }
+          NODE
+
+      - name: Recheck immutable canonical and operator refs before mutation
+        shell: bash
+        env:
+          APPROVED_SHA: ${{ steps.gate.outputs.approved_sha }}
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR == 1 {print $1}')" = "$APPROVED_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+
+      - name: Apply exactly the proven pending migration set
+        run: supabase db push --include-all --yes
+
+      - name: Read back migration convergence
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list
+          after="$(supabase db push --dry-run --include-all 2>&1)"
+          printf '%s\n' "$after"
+          AFTER="$after" node <<'NODE'
+          const output = process.env.AFTER || '';
+          const pending = Array.from(new Set(output.match(/\d{14}_[a-z0-9_]+\.sql/g) || []));
+          if (pending.length) throw new Error(`Pending migrations remain: ${pending.join(', ')}`);
+          if (!/Remote database is up to date/i.test(output)) {
+            throw new Error('Post-deploy dry-run did not prove migration convergence.');
+          }
+          NODE
+
+      - name: Rollout summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Shared Calendar database rollout'
+            echo
+            echo "- Canonical source SHA: `${{ steps.gate.outputs.approved_sha }}`"
+            echo "- Release-only operator SHA: `$GITHUB_SHA`"
+            echo "- Production project: `$PROJECT_REF`"
+            echo "- Lineage repair: `$EXPECTED_OLDER`"
+            echo "- Calendar destination migration: `$EXPECTED_CALENDAR`"
+            echo '- Mutation scope: Supabase migrations only; no CRM Pages or Worker deployment'
+            echo '- Readback: migration ledger plus zero pending migrations'
+          } >> "$GITHUB_STEP_SUMMARY"
