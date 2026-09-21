@@ -37,6 +37,8 @@ const vladimirId = 'a1111111-1111-4111-8111-111111111111';
 const kristinaId = 'a2222222-2222-4222-8222-222222222222';
 const sessionId = 'b1111111-1111-4111-8111-111111111111';
 const wisteriaLabelId = '0df5fe2d-13a3-42ae-8e07-8dc2c62c97a1';
+const sharedCalendarId = 'info@labeltattooprivate.co.uk';
+const sharedWisteriaLabelId = 'bfbf0ae9-bf7f-4035-9e96-b66cbf2648df';
 
 // The Worker no longer carries per-artist bindings: every artist-specific value
 // arrives on the backend-only outbox route, so onboarding an artist adds a
@@ -191,11 +193,33 @@ await test('artist route validation is exact and keeps each artist its own styli
   assert.equal(kristina.artist.eventLabelName, 'Wisteria');
   assert.equal(kristina.artist.eventLabelColor, '#b39ddb');
 
+  const sharedKristina = validateCalendarRoute(
+    routeFor(kristinaId, 'outbox-shared', 'calendar_create', {
+      configuration: {
+        calendar_id: sharedCalendarId,
+        destination_event_label_id: sharedWisteriaLabelId,
+      },
+    }),
+    job({ artist_id: kristinaId, outbox_id: 'outbox-shared' }),
+  );
+  assert.equal(sharedKristina.calendarId, sharedCalendarId);
+  assert.equal(sharedKristina.eventLabelId, sharedWisteriaLabelId);
+
   const wrong = routeFor(kristinaId);
   wrong.outbox_id = 'outbox-1';
   await assert.rejects(
     async () => validateCalendarRoute(wrong, job()),
     (error) => error.code === 'provider_route_invalid',
+  );
+});
+
+await test('invalid shared calendar targets fail closed before a provider request', async () => {
+  const route = routeFor(kristinaId, 'outbox-bad-target', 'calendar_create', {
+    configuration: { calendar_id: 'bad target' },
+  });
+  await assert.rejects(
+    async () => validateCalendarRoute(route, job({ artist_id: kristinaId, outbox_id: 'outbox-bad-target' })),
+    (error) => error.code === 'calendar_target_invalid',
   );
 });
 
@@ -388,6 +412,30 @@ await test('create retries reuse one deterministic event id and preserve Blueber
   assert.equal(calls[0].body.summary, 'Vladimir · Tattoo session · Synthetic Client');
   assert.equal(result.providerEventId, calls[0].body.id);
   assert.match(calls[1].url, new RegExp(`${calls[0].body.id}\\?sendUpdates=none$`));
+});
+
+await test('shared destination writes there first and removes the old deterministic primary projection', async () => {
+  const calls = [];
+  const provider = createGoogleCalendarProvider({
+    accessToken: 'access',
+    calendarId: sharedCalendarId,
+    eventVisibility: 'public',
+    artistDisplayName: 'Kristina',
+    eventLabelId: sharedWisteriaLabelId,
+    fetchImpl: async (url, init) => {
+      calls.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      if (init.method === 'POST') return Response.json({ id: init.body ? JSON.parse(init.body).id : null, status: 'confirmed' });
+      if (init.method === 'DELETE') return new Response(null, { status: 204 });
+      throw new Error(`unexpected ${init.method}`);
+    },
+  });
+  const result = await provider.createEvent(job({ artist_id: kristinaId }));
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /calendars\/info%40labeltattooprivate\.co\.uk\/events/);
+  assert.equal(calls[0].body.eventLabelId, sharedWisteriaLabelId);
+  assert.match(calls[1].url, /calendars\/primary\/events/);
+  assert.equal(calls[1].method, 'DELETE');
+  assert.ok(result.providerEventId);
 });
 
 await test('Wisteria uses eventLabelId with eventLabelVersion=1 instead of legacy Grape', async () => {

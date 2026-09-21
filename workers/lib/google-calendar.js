@@ -6,6 +6,7 @@ const TOKEN_ENVELOPE_VERSION = 1;
 const EVENT_ID_PREFIX = 'vishar';
 const CALENDAR_KEY_PREFIX = 'google_calendar_';
 const ARTIST_SLUG_PATTERN = /^[a-z][a-z0-9-]{1,62}$/;
+const GOOGLE_CALENDAR_ID_MAX_LENGTH = 1024;
 const GOOGLE_EVENT_VISIBILITIES = new Set(['default', 'public', 'private']);
 const GOOGLE_EVENT_COLOR_IDS = new Set(Array.from({ length: 11 }, (_, index) => String(index + 1)));
 const GOOGLE_EVENT_LABEL_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -117,6 +118,21 @@ function normalizeEmail(value) {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+export function normalizeCalendarId(value) {
+  if (typeof value !== 'string') {
+    throw new CalendarConnectorError('calendar_target_invalid');
+  }
+  const normalized = value.trim();
+  if (
+    !normalized
+    || normalized.length > GOOGLE_CALENDAR_ID_MAX_LENGTH
+    || /[\s\u0000-\u001f\u007f]/.test(normalized)
+  ) {
+    throw new CalendarConnectorError('calendar_target_invalid');
+  }
+  return normalized;
+}
+
 function normalizeEventVisibility(value) {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string') {
@@ -221,6 +237,8 @@ export function artistCalendarConfig(route, artistId) {
     artistId,
     integrationKey,
     expectedEmail,
+    calendarId: normalizeCalendarId(configuration.calendar_id),
+    destinationEventLabelId: normalizeEventLabelId(configuration.destination_event_label_id),
     eventVisibility: normalizeEventVisibility(presentation.event_visibility),
     eventDisplayName: normalizeArtistDisplayName(presentation.event_display_name),
     eventColorId: normalizeEventColorId(presentation.event_color_id),
@@ -245,8 +263,7 @@ export function validateCalendarRoute(route, job) {
   const configuration = route.configuration;
 
   if (
-    configuration.calendar_id !== 'primary'
-    || configuration.connection_mode !== 'worker_oauth'
+    configuration.connection_mode !== 'worker_oauth'
     || configuration.oauth_scope !== 'calendar.events'
   ) {
     throw new CalendarConnectorError('provider_route_invalid');
@@ -254,7 +271,8 @@ export function validateCalendarRoute(route, job) {
 
   return {
     artist,
-    calendarId: 'primary',
+    calendarId: artist.calendarId,
+    eventLabelId: artist.destinationEventLabelId,
     eventVisibility: artist.eventVisibility,
     eventDisplayName: artist.eventDisplayName,
     eventColorId: artist.eventColorId,
@@ -469,15 +487,17 @@ export function createGoogleCalendarProvider({
   eventLabelId = null,
   fetchImpl = fetch,
 }) {
-  if (!accessToken || calendarId !== 'primary') {
+  if (!accessToken) {
     throw new CalendarConnectorError('calendar_not_configured');
   }
+  const targetCalendarId = normalizeCalendarId(calendarId);
   const visibility = normalizeEventVisibility(eventVisibility);
   const displayName = normalizeArtistDisplayName(artistDisplayName);
   const colorId = normalizeEventColorId(eventColorId);
   const labelId = normalizeEventLabelId(eventLabelId);
 
-  const calendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`;
+  const calendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(targetCalendarId)}/events`;
+  const primaryCalendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/primary/events`;
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
@@ -527,26 +547,42 @@ export function createGoogleCalendarProvider({
     return providerEventResult(body, eventId);
   }
 
+  async function cleanupPrimaryEvent(eventId) {
+    if (targetCalendarId === 'primary' || !eventId) return;
+    const response = await fetchImpl(
+      `${primaryCalendarPath}/${encodeURIComponent(eventId)}?sendUpdates=none`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (response.ok || response.status === 404 || response.status === 410) return;
+    throw providerError(response.status, await readProviderJson(response));
+  }
+
   return {
     async createEvent(job) {
-      return insertEvent(job);
+      const result = await insertEvent(job);
+      await cleanupPrimaryEvent(result.providerEventId);
+      return result;
     },
 
     async updateEvent(job) {
       if (!job.calendar_event_id) {
         throw new CalendarConnectorError('calendar_event_missing');
       }
+      let result;
       try {
-        return await patchEvent(job.calendar_event_id, job);
+        result = await patchEvent(job.calendar_event_id, job);
       } catch (error) {
         if (
           error instanceof CalendarConnectorError
           && error.code === 'calendar_event_not_found'
         ) {
-          return insertEvent(job);
+          result = await insertEvent(job);
+        } else {
+          throw error;
         }
-        throw error;
       }
+      await cleanupPrimaryEvent(result.providerEventId);
+      return result;
     },
 
     async cancelEvent(job) {
@@ -557,10 +593,11 @@ export function createGoogleCalendarProvider({
         `${calendarPath}/${encodeURIComponent(job.calendar_event_id)}?sendUpdates=none`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
       );
-      if (response.ok || response.status === 404 || response.status === 410) {
-        return { cancelled: true };
+      if (!response.ok && response.status !== 404 && response.status !== 410) {
+        throw providerError(response.status, await readProviderJson(response));
       }
-      throw providerError(response.status, await readProviderJson(response));
+      await cleanupPrimaryEvent(job.calendar_event_id);
+      return { cancelled: true };
     },
   };
 }
@@ -573,6 +610,7 @@ export const __testing = {
   GOOGLE_EVENT_LABEL_ID_PATTERN,
   TRANSIENT_PROVIDER_REASONS,
   normalizeEmail,
+  normalizeCalendarId,
   normalizeEventVisibility,
   normalizeEventColorId,
   normalizeEventLabelId,

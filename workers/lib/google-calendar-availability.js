@@ -1,4 +1,4 @@
-import { CalendarConnectorError } from './google-calendar.js';
+import { CalendarConnectorError, normalizeCalendarId } from './google-calendar.js';
 
 const GOOGLE_CALENDAR_BASE_URL = 'https://www.googleapis.com/calendar/v3';
 const EVENT_ID_PREFIX = 'vishar';
@@ -144,11 +144,13 @@ export function createGoogleAvailabilityProvider({
   calendarId = 'primary',
   fetchImpl = fetch,
 }) {
-  if (!accessToken || calendarId !== 'primary') {
+  if (!accessToken) {
     throw new CalendarConnectorError('calendar_not_configured');
   }
 
-  const calendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(calendarId)}/events`;
+  const targetCalendarId = normalizeCalendarId(calendarId);
+  const calendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/${encodeURIComponent(targetCalendarId)}/events`;
+  const primaryCalendarPath = `${GOOGLE_CALENDAR_BASE_URL}/calendars/primary/events`;
   const headers = {
     Authorization: `Bearer ${accessToken}`,
     'Content-Type': 'application/json',
@@ -184,25 +186,41 @@ export function createGoogleAvailabilityProvider({
     return providerEventResult(body, eventId);
   }
 
+  async function cleanupPrimaryEvent(eventId) {
+    if (targetCalendarId === 'primary' || !eventId) return;
+    const response = await fetchImpl(
+      `${primaryCalendarPath}/${encodeURIComponent(eventId)}?sendUpdates=none`,
+      { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (response.ok || response.status === 404 || response.status === 410) return;
+    throw providerError(response.status, await readProviderJson(response));
+  }
+
   return {
     async createEvent(job) {
-      return insertEvent(job);
+      const result = await insertEvent(job);
+      await cleanupPrimaryEvent(result.providerEventId);
+      return result;
     },
 
     async updateEvent(job) {
       const eventId = job.calendar_event_id
         || await stableGoogleAvailabilityEventId(job.artist_id, job.availability_block_id);
+      let result;
       try {
-        return await patchEvent(eventId, job);
+        result = await patchEvent(eventId, job);
       } catch (error) {
         if (
           error instanceof CalendarConnectorError
           && error.code === 'calendar_event_not_found'
         ) {
-          return insertEvent(job);
+          result = await insertEvent(job);
+        } else {
+          throw error;
         }
-        throw error;
       }
+      await cleanupPrimaryEvent(result.providerEventId);
+      return result;
     },
 
     async cancelEvent(job) {
@@ -212,10 +230,11 @@ export function createGoogleAvailabilityProvider({
         `${calendarPath}/${encodeURIComponent(eventId)}?sendUpdates=none`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${accessToken}` } },
       );
-      if (response.ok || response.status === 404 || response.status === 410) {
-        return { cancelled: true, providerEventId: eventId };
+      if (!response.ok && response.status !== 404 && response.status !== 410) {
+        throw providerError(response.status, await readProviderJson(response));
       }
-      throw providerError(response.status, await readProviderJson(response));
+      await cleanupPrimaryEvent(eventId);
+      return { cancelled: true, providerEventId: eventId };
     },
   };
 }

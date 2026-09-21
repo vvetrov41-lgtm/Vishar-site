@@ -113,6 +113,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
   const route = firstRow(resolved);
   const {
     calendarId,
+    eventLabelId,
     eventVisibility,
     eventDisplayName,
     eventColorId,
@@ -126,7 +127,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
     eventVisibility,
     artistDisplayName: eventDisplayName,
     eventColorId,
-    eventLabelId: tokenRecord.eventLabelId,
+    eventLabelId: eventLabelId || tokenRecord.eventLabelId,
     fetchImpl,
   });
 
