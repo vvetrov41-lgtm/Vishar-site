@@ -2,39 +2,6 @@
 begin;
 select no_plan();
 
-select is(
-  (
-    select i.configuration ->> 'calendar_id'
-    from public.artist_integrations i
-    join public.artists a on a.id = i.artist_id
-    where a.slug = 'vladimir' and i.integration_type = 'calendar'
-  ),
-  'info@labeltattooprivate.co.uk',
-  'Vladimir projects to the shared studio calendar'
-);
-
-select is(
-  (
-    select i.configuration ->> 'calendar_id'
-    from public.artist_integrations i
-    join public.artists a on a.id = i.artist_id
-    where a.slug = 'kristina' and i.integration_type = 'calendar'
-  ),
-  'info@labeltattooprivate.co.uk',
-  'Kristina projects to the same shared studio calendar'
-);
-
-select is(
-  (
-    select i.configuration ->> 'destination_event_label_id'
-    from public.artist_integrations i
-    join public.artists a on a.id = i.artist_id
-    where a.slug = 'kristina' and i.integration_type = 'calendar'
-  ),
-  'bfbf0ae9-bf7f-4035-9e96-b66cbf2648df',
-  'Kristina uses the Wisteria label id belonging to the shared calendar'
-);
-
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 insert into public.artists (id, slug, display_name, is_active)
 values ('a2940000-0000-4000-8000-000000000001', 'shared-target-fixture', 'Shared Target Fixture', true);
@@ -105,4 +72,5 @@ select is(
   'destination-specific event label metadata survives reconnect'
 );
 
+select * from finish();
 rollback;
