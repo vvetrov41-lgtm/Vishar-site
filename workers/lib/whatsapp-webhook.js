@@ -301,7 +301,8 @@ async function ingestStatuses(value, route, supabase) {
 }
 
 async function processPayload(payload, routes, matchedBindings, supabase) {
-  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload?.entry)) return;
+  const summary = { unrouted: 0 };
+  if (payload?.object !== 'whatsapp_business_account' || !Array.isArray(payload?.entry)) return summary;
 
   for (const entry of payload.entry) {
     const wabaId = typeof entry?.id === 'string' ? entry.id.trim() : '';
@@ -316,7 +317,12 @@ async function processPayload(payload, routes, matchedBindings, supabase) {
       if (!PROVIDER_ID.test(phoneNumberId)) continue;
 
       const route = resolveSignedRoute(routes, matchedBindings, wabaId, phoneNumberId);
-      if (!route) continue;
+      if (!route) {
+        // Audit M-4: Meta receives 200 for this event and will not resend it.
+        // Count it so a phone-number or WABA drift is visible in Worker logs.
+        summary.unrouted += 1;
+        continue;
+      }
 
       await ingestMessages(value, route, supabase);
       await ingestStatuses(value, route, supabase);
@@ -324,6 +330,7 @@ async function processPayload(payload, routes, matchedBindings, supabase) {
       // interpreted here. Unknown change content is ignored without persistence.
     }
   }
+  return summary;
 }
 
 export async function handleWhatsappWebhook(request, env, supabase = null) {
@@ -377,7 +384,10 @@ export async function handleWhatsappWebhook(request, env, supabase = null) {
       throw new WhatsappWebhookError('whatsapp_webhook_json_invalid', 400);
     }
 
-    await processPayload(payload, routes, matchedBindings, supabase);
+    const summary = await processPayload(payload, routes, matchedBindings, supabase);
+    if (summary.unrouted > 0) {
+      console.warn('whatsapp webhook unrouted changes', JSON.stringify({ unrouted: summary.unrouted }));
+    }
     return new Response('EVENT_RECEIVED', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   } catch (error) {
     if (error instanceof WhatsappWebhookError) return jsonError(error.status);
