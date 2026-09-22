@@ -12,6 +12,19 @@ on:
       - '!release/private-crm-rc*-tattooai-worker'
       - '!release/private-crm-rc*-mcp-meta-activation'
       - '!release/private-crm-rc*-whatsapp-webhook-only'
+      - '!release/private-crm-rc*-cloudflare-gateway'
+      - '!release/private-crm-rc*-calendar-oauth-access-*'
+      - '!release/private-crm-rc*-ai-drain-probe'
+      - '!release/private-crm-rc*-gmail-bootstrap'
+      - '!release/private-crm-rc*-gmail-vladimir-read'
+      - '!release/private-crm-rc*-gmail-vladimir-send'
+      - '!release/private-crm-rc*-gmail-kristina-read'
+      - '!release/private-crm-rc*-gmail-kristina-send'
+      - '!release/private-crm-rc*-sentry-observability'
+      - '!release/private-crm-rc26-gpt-actions'
+      - '!release/private-crm-rc28-gpt-pkce-bridge'
+      - '!release/private-crm-rc32-gpt-operations-domain'
+      - '!release/private-crm-rc558-gpt-communications-domain'
   workflow_dispatch:
 
 permissions:
@@ -69,6 +82,10 @@ jobs:
               ;;
             release/private-crm-rc*-whatsapp-webhook-only)
               echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-inventory-*|release/private-crm-rc*-mcp-meta-activation|release/private-crm-rc26-gpt-actions|release/private-crm-rc28-gpt-pkce-bridge|release/private-crm-rc32-gpt-operations-domain|release/private-crm-rc558-gpt-communications-domain|release/private-crm-rc*-cloudflare-gateway|release/private-crm-rc*-calendar-oauth-access-*|release/private-crm-rc*-ai-drain-probe|release/private-crm-rc*-gmail-bootstrap|release/private-crm-rc*-gmail-vladimir-read|release/private-crm-rc*-gmail-vladimir-send|release/private-crm-rc*-gmail-kristina-read|release/private-crm-rc*-gmail-kristina-send|release/private-crm-rc*-sentry-observability)
+              echo 'Specialized rollout refs are handled by their bounded workflow only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
@@ -149,6 +166,10 @@ jobs:
               echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
               exit 1
               ;;
+            release/private-crm-rc*-inventory-*|release/private-crm-rc*-mcp-meta-activation|release/private-crm-rc26-gpt-actions|release/private-crm-rc28-gpt-pkce-bridge|release/private-crm-rc32-gpt-operations-domain|release/private-crm-rc558-gpt-communications-domain|release/private-crm-rc*-cloudflare-gateway|release/private-crm-rc*-calendar-oauth-access-*|release/private-crm-rc*-ai-drain-probe|release/private-crm-rc*-gmail-bootstrap|release/private-crm-rc*-gmail-vladimir-read|release/private-crm-rc*-gmail-vladimir-send|release/private-crm-rc*-gmail-kristina-read|release/private-crm-rc*-gmail-kristina-send|release/private-crm-rc*-sentry-observability)
+              echo 'Specialized rollout refs are handled by their bounded workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
@@ -217,6 +238,10 @@ jobs:
               ;;
             release/private-crm-rc*-whatsapp-webhook-only)
               echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-inventory-*|release/private-crm-rc*-mcp-meta-activation|release/private-crm-rc26-gpt-actions|release/private-crm-rc28-gpt-pkce-bridge|release/private-crm-rc32-gpt-operations-domain|release/private-crm-rc558-gpt-communications-domain|release/private-crm-rc*-cloudflare-gateway|release/private-crm-rc*-calendar-oauth-access-*|release/private-crm-rc*-ai-drain-probe|release/private-crm-rc*-gmail-bootstrap|release/private-crm-rc*-gmail-vladimir-read|release/private-crm-rc*-gmail-vladimir-send|release/private-crm-rc*-gmail-kristina-read|release/private-crm-rc*-gmail-kristina-send|release/private-crm-rc*-sentry-observability)
+              echo 'Specialized rollout refs are handled by their bounded workflow only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;
@@ -327,6 +352,10 @@ jobs:
               ;;
             release/private-crm-rc*-whatsapp-webhook-only)
               echo 'WhatsApp webhook-only refs are handled by the bounded webhook workflow only.' >&2
+              exit 1
+              ;;
+            release/private-crm-rc*-inventory-*|release/private-crm-rc*-mcp-meta-activation|release/private-crm-rc26-gpt-actions|release/private-crm-rc28-gpt-pkce-bridge|release/private-crm-rc32-gpt-operations-domain|release/private-crm-rc558-gpt-communications-domain|release/private-crm-rc*-cloudflare-gateway|release/private-crm-rc*-calendar-oauth-access-*|release/private-crm-rc*-ai-drain-probe|release/private-crm-rc*-gmail-bootstrap|release/private-crm-rc*-gmail-vladimir-read|release/private-crm-rc*-gmail-vladimir-send|release/private-crm-rc*-gmail-kristina-read|release/private-crm-rc*-gmail-kristina-send|release/private-crm-rc*-sentry-observability)
+              echo 'Specialized rollout refs are handled by their bounded workflow only.' >&2
               exit 1
               ;;
             release/private-crm-rc*) ;;

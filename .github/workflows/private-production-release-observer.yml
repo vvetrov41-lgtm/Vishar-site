@@ -7,9 +7,24 @@ on:
       - '!release/private-crm-rc*-booking-host*'
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
+      - '!release/private-crm-rc*-calendar-public-oauth-rollout-*'
+      - '!release/private-crm-rc*-gpt-worker'
+      - '!release/private-crm-rc*-tattooai-worker'
       - '!release/private-crm-rc*-mcp-meta-activation'
       - '!release/private-crm-rc*-whatsapp-webhook-only'
-      - '!release/private-crm-rc*-tattooai-worker*'
+      - '!release/private-crm-rc*-cloudflare-gateway'
+      - '!release/private-crm-rc*-calendar-oauth-access-*'
+      - '!release/private-crm-rc*-ai-drain-probe'
+      - '!release/private-crm-rc*-gmail-bootstrap'
+      - '!release/private-crm-rc*-gmail-vladimir-read'
+      - '!release/private-crm-rc*-gmail-vladimir-send'
+      - '!release/private-crm-rc*-gmail-kristina-read'
+      - '!release/private-crm-rc*-gmail-kristina-send'
+      - '!release/private-crm-rc*-sentry-observability'
+      - '!release/private-crm-rc26-gpt-actions'
+      - '!release/private-crm-rc28-gpt-pkce-bridge'
+      - '!release/private-crm-rc32-gpt-operations-domain'
+      - '!release/private-crm-rc558-gpt-communications-domain'
 
 permissions:
   contents: read
@@ -39,6 +54,10 @@ jobs:
             release/private-crm-rc*-inventory-*) exit 1 ;;
             release/private-crm-rc*-whatsapp-webhook-only*) exit 1 ;;
             release/private-crm-rc*-tattooai-worker*) exit 1 ;;
+            release/private-crm-rc26-gpt-actions|release/private-crm-rc28-gpt-pkce-bridge|release/private-crm-rc32-gpt-operations-domain|release/private-crm-rc558-gpt-communications-domain|release/private-crm-rc*-gpt-worker|release/private-crm-rc*-calendar-public-oauth-rollout-*|release/private-crm-rc*-mcp-meta-activation|release/private-crm-rc*-cloudflare-gateway|release/private-crm-rc*-calendar-oauth-access-*|release/private-crm-rc*-ai-drain-probe|release/private-crm-rc*-gmail-bootstrap|release/private-crm-rc*-gmail-vladimir-read|release/private-crm-rc*-gmail-vladimir-send|release/private-crm-rc*-gmail-kristina-read|release/private-crm-rc*-gmail-kristina-send|release/private-crm-rc*-sentry-observability)
+              echo 'Specialized rollout refs are handled by their bounded workflow only.' >&2
+              exit 1
+              ;;
             release/private-crm-rc*) ;;
             *) exit 1 ;;
           esac
