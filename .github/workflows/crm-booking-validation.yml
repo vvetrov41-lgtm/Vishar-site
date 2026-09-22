@@ -197,7 +197,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Verify migration version order and production DB release paths
+      - name: Verify migration order, production DB release paths and release ref routing
         shell: bash
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -206,6 +206,8 @@ jobs:
           set -euo pipefail
           node scripts/check-migration-order.mjs --self-test
           node scripts/check-production-db-release-paths.mjs
+          node scripts/check-release-ref-routing.mjs --self-test
+          node scripts/check-release-ref-routing.mjs
           if [ -n "$BASE_REF" ]; then
             node scripts/check-migration-order.mjs "origin/$BASE_REF"
           elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != '0000000000000000000000000000000000000000' ] \
