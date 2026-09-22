@@ -83,6 +83,8 @@ export const LIFECYCLE_ALERT_RPCS = new Set([
   'service_sweep_lifecycle_failure_alerts',
   // Audit H-1: bounded one-shot revival of outage dead letters. Counts only.
   'service_recover_transient_dead_outbox',
+  // Audit H-5: daily operator alerts for dead outbox and failed AI jobs.
+  'service_sweep_operational_failure_alerts',
 ]);
 
 /** Appointment client-action capability surface, kept separate from booking resolvers. */

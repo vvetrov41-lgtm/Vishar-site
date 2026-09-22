@@ -7,6 +7,7 @@ export const OBSERVED_RPCS = Object.freeze({
   service_record_automation_scheduler_heartbeat: 'scheduler_heartbeat',
   service_sweep_lifecycle_failure_alerts: 'lifecycle_alerts',
   service_recover_transient_dead_outbox: 'outbox_recovery',
+  service_sweep_operational_failure_alerts: 'operational_alerts',
   claim_calendar_outbox: 'calendar_outbox',
   claim_calendar_availability_outbox: 'calendar_availability',
   claim_email_outbox: 'gmail_outbox',

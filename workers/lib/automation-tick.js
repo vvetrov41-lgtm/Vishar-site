@@ -81,3 +81,15 @@ export async function runTransientOutboxRecovery(env, fetchImpl = fetch) {
   }
   return { scanned, recovered };
 }
+
+/** Audit H-5: turn dead outbox jobs and failed AI jobs into operator alerts. */
+export async function runOperationalFailureAlerts(env, fetchImpl = fetch) {
+  const supabase = createSupabaseClient(env, fetchImpl);
+  const created = await supabase.rpc('service_sweep_operational_failure_alerts', { p_limit: 100 });
+  if (!Number.isSafeInteger(created) || created < 0 || created > 100) {
+    throw Object.assign(new Error('invalid operational alert summary'), {
+      code: 'operational_alert_summary_invalid',
+    });
+  }
+  return { created };
+}
