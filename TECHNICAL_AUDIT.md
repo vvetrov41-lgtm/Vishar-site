@@ -1,3 +1,117 @@
+# Vishar CRM — статус ремедиации (обновлено 2026-09-22)
+
+Каждый пункт перепроверен на текущем состоянии кода и production перед исправлением. Где production не совпал с выводом аудита, вывод исправлен здесь, а исходный текст аудита ниже оставлен без изменений.
+
+| ID | Статус | PR / коммит | Production |
+|---|---|---|---|
+| C-1 | Исправлено | #841 → `main` `36436ab` | `tattooai` не тронут; форма записи пишет в CRM (7 заявок за 3 дня, последняя 2026-09-22 08:44 UTC); preflight интейка 204 |
+| C-2 | Исправлено, релиз подтверждён | #842 → trunk `48c8f3c` | см. раздел «Канонический релиз» |
+| H-1 | Переоценено, исправлено | #843 → trunk `fa15226` | см. ниже |
+| H-2 | Переоценено: намеренное поведение, нужно ваше решение | — | 2 сессии (27 и 28 окт.) без напоминаний |
+| H-3 | Переоценено: продуктовое решение и действие в дашборде | — | регистрация открыта намеренно |
+| H-4 | Исправлено (сервер), нужен переимпорт схемы GPT | #844 → trunk `c9b58b0`; rollout-фикс #850 | GPT Worker: см. «Релиз» |
+| H-5 | Исправлено (алерты владельцу через Telegram) | #846 → trunk `9d0200d` | см. ниже |
+| H-6 | Исправлено | #845 → trunk `03d44cc` | gateway задеплоен и прочитан обратно; запись в production выключена |
+| M-1 | Исправлено | #847 → trunk `f26232f` | tattooai задеплоен, маркер в бандле |
+| M-2 | Принято как известное ограничение | — | дубли не наблюдались |
+| M-3 | Переоценено: продуктовое решение | — | |
+| M-4 | Исправлено | #849 → trunk `705d58f` | webhook задеплоен, маркер в бандле |
+| M-5 | Исправлено | #848 → trunk | CRM Pages: `daysAgoIso` в бандле |
+| M-6 | Смягчено через H-5 | — | |
+| M-7 | Исправлено (изоляция очередей Calendar) | #849 → trunk `705d58f` | Calendar Worker задеплоен, маркер в бандле |
+| M-8 | Переоценено: `workers.dev` — действующий endpoint формы | — | нужен перенос на домен |
+| M-9 | Нужна ревизия оператором | — | финансовые данные не трогались |
+
+## Релиз в production
+
+Всё прошло канонические release-workflow. Exact-head CI был зелёным на каждом выпускаемом SHA.
+
+| Что | Ветка / SHA | Run | Результат |
+|---|---|---|---|
+| Private production release (миграции `20260922200000`, `20260922210000`, CRM Pages, Telegram scheduler) | `release/private-crm-rc850-audit-remediation` @ `705d58f` | 35782693634 | success: dry-run → apply → post-apply dry-run |
+| TattooAI Worker (H-1, M-1) | `rc850-tattooai-worker` | 35782709639 | success; в бандле `scheduled_drain_owns_delivery`, `database_rejected` |
+| Calendar/backend Worker (M-7) | `rc850-backend-auth-calendar-redeploy-audit-remediation` | 35782715232 | success; в бандле `calendar scheduled drain failed` |
+| WhatsApp webhook (M-4) | `rc850-whatsapp-webhook-only` | 35782718607 | success; в бандле счётчик unrouted |
+| Cloudflare gateway (H-6) | `rc850-cloudflare-gateway` | 35783417819 | success; в production-коде `sandboxWorkerName`, `assertExistingSandboxDnsRecord`, `assertExistingSandboxRoute`, `protected_dns_record → 409` |
+| GPT Worker (H-4) | `rc851-gpt-worker` @ `7f950f2` | 35794344030 | success; в production-коде `carriesCrmData`, `MAX_URL_QUERY_CHARS`, проверка `%40` |
+
+Readback production БД: 196 миграций, последняя `20260922210000`. Обе новые функции существуют, heartbeat scheduler обновляется. Тестовый H-5-алерт создан и доставлен в Telegram. Форма записи отвечает 200, preflight интейка 204, заявки продолжают поступать.
+
+Что пошло не так по дороге и как исправлено:
+
+- **GPT rollout (run 35783407786) отказал в preflight.** 3 сентября к Worker добавили 4-й домен `gpt-cloudflare.vishartattoo.com` (run 33788051078), а generic rollout так и остался на 3 доменах. Из-за этого любой деплой GPT Worker после 3 сентября был невозможен. PR #850 перевёл rollout на 4-доменный baseline: preflight, readback и оба пути rollback, плюс probe `/privacy` 200 и `/v1/cloudflare/*` 401. Топология, биндинги и секреты не менялись.
+- **Private release run 35783411205 — штатный отказ, мутаций не было.** Ветка `-cloudflare-gateway` не исключена из шаблона private release. После push no-op коммита guard «Release branch moved after this workflow started» остановил run до любых действий. Канонический release того же SHA уже прошёл успешно.
+- **«Private production release observer» падает на каждой `-gpt-worker` ветке**, так же было и 2 сентября (rc635). Observer ждёт private release, который такие ветки намеренно не запускают. Это ложный красный статус без последствий для production. Поправить можно отдельно, исключив `-gpt-worker` и `-cloudflare-gateway` из observer и из шаблона private release.
+
+## C-1. Legacy-деплой `tattooai` из `main`
+
+- **Корень.** В `main` оставались `.github/workflows/deploy-tattooai.yml` (`workflow_dispatch`, без environment, репо-секреты Cloudflare) и корневой `wrangler.toml` (`name = "tattooai"`, `main = "workers/tattooai.js"`). Workflow уже запускали из feature-веток в июле–августе (runs 11–15).
+- **Исправление.** Оба файла удалены. `npm run validate:site` падает, если конфиг или workflow, способный задеплоить legacy `workers/tattooai.js`, появится снова. `docs/tattooai-deploy.md` указывает на канонический `tattooai-production-release.yml`.
+- **Тесты.** `validate:site` 33/33; negative-проверка — возврат любого из файлов даёт 1 failure; `test:booking` пройден.
+- **Production.** Worker `tattooai` не изменялся (modified 2026-09-20 08:45). После merge форма `vishartattoo.com/booking/` отвечает 200, CORS preflight интейка — 204 с корректным origin. Заявки продолжают поступать в CRM.
+
+## C-2. Канонический релиз
+
+- **Корень (уточнён).** `20260920185324_analytics_exclusion` имеет версию, равную моменту применения (18:53:24): так ставит версию Supabase MCP `apply_migration`. Миграцию применили в production напрямую, пока более старая `20260920185000` ещё ждала очереди. PR #838 затем переименовал файл под production. Канонический `supabase db push` после этого отказался работать, и миграции докатывали одноразовыми workflow через `--include-all`.
+- **Исправление.**
+  - удалены 5 одноразовых workflow, способных менять схему production мимо канона (`five-pillars-production-backfill`, `gmail-deposit-database-release`, `google-contacts-database-rollout`, `gpt-production-enquiry-rollout`, `gpt-production-full-management-rollout`);
+  - `scripts/check-production-db-release-paths.mjs`: CI падает, если production-схему может менять любой workflow, кроме `private-production-release.yml` и `deploy-private-production-database.yml`, или если где-то используется `--include-all`;
+  - `scripts/check-migration-order.mjs`: CI падает, если новая миграция не новее всех миграций base-ветки, дублирует версию или переименовывает существующую;
+  - `AGENTS.md`: запрет применять production-миграции через MCP, SQL editor или ad-hoc workflow.
+- **Тесты.** Guard'ы плюс self-test на реальном случае 185324/185000; pgTAP, release-boundary тесты — зелёные.
+
+## H-1. Dead-задачи outbox
+
+- **Переоценка.** Все 4 dead-задачи с `database_unavailable` (3 Telegram-уведомления, 1 `calendar_create`) принадлежат self-service артистам (Dmitriy, Olegtattooing, удалённый аккаунт) без единого Telegram-назначения и без подключённого Calendar. Это не потеря из-за сбоя БД: общий Supabase-клиент помечал **любой** non-2xx как `database_unavailable`, поэтому постоянные 4xx-отказы сжигали 8 попыток. Восстанавливать некуда: получателя не существует, сессия `e716ae38` прошла 2026-09-07. С 2026-09-08 таких dead нет. Реальный остаточный риск прежний: сбой дольше ~2 часов навсегда убивает задачи.
+- **Исправление.**
+  - `workers/lib/supabase.js`: 4xx, кроме 401/403/408/429, теперь `database_rejected`;
+  - миграция `20260922200000_transient_outbox_dead_letter_recovery`: `service_recover_transient_dead_outbox` один раз оживляет задачи с настоящим `database_unavailable` не старше 7 дней. Telegram идёт через существующий gate с проверкой evidence доставки и получателя. Calendar — только confirmed будущие сессии актуальной версии; eventId детерминирован, дубля не будет. Email и WhatsApp не переотправляются никогда;
+  - sweep запускается scheduler'ом вместе с automation tick.
+- **Тесты.** Unit-тест классификации; pgTAP `1001` (ACL, оживление, one-shot, отказ для `database_rejected`, stale-версия); полный pgTAP локально 145 файлов / 4501 тест.
+- **Существующие данные.** 4 исторические dead-задачи оставлены как есть: получателя нет, повторная отправка невозможна и не нужна.
+
+## H-2. Напоминания для записей, созданных до активации
+
+- **Переоценка.** Пропуск намеренный: в `0097_lifecycle_v1_production_activation.sql` прямо сказано, что активация не записывает уже забронированных клиентов в автоматическую email-рассылку. Сейчас таких сессий 2: 27 и 28 октября (Vladimir, созданы 17 авг.). Все остальные будущие confirmed-сессии имеют jobs (3 для tattoo, 1 для консультации).
+- **Нужно ваше решение.** Если этим двум клиентам нужны автоматические напоминания, их можно записать штатным путём: событие `appointment.scheduled` → tick материализует jobs. Первое письмо (72h) ушло бы 24 октября. До вашего решения ничего не меняется.
+- **Замечание.** Путь отправки lifecycle-писем в production ещё ни разу не выполнялся: первые jobs запланированы на 4 ноября. H-5 теперь сообщит о сбое.
+
+## H-3. Регистрация и MFA
+
+- **Переоценка.** Публичная регистрация включена владельцем 2026-09-02 (`self_service_settings.is_open = true`), и self-service артисты реально работают. Это продуктовое решение, а не дефект. UI для MFA в CRM нет, это новая функциональность (по AGENTS.md нужен spec). Leaked-password protection включается только в Supabase Dashboard.
+- **Действия за вами.** 1) Supabase Dashboard → Authentication → включить leaked password protection. 2) Решить, нужна ли MFA для owner; если да — отдельная задача через spec-workflow.
+
+## H-4. Эксфильтрация через web research
+
+- **Исправление.** `gpt-web-research.js` отклоняет scrape-URL, в path/query/fragment которых есть email (включая `%40`), последовательность из 7+ цифр или query длиннее 256 символов — до авторизации и вызова провайдера. `scrapeWebPage` помечен `x-openai-isConsequential: true`.
+- **Ограничение.** Флаг consequential действует только после переимпорта `docs/gpt-actions/openapi.production.operations.yaml` в редакторе GPT — это действие за вами.
+
+## H-5. Наблюдаемость
+
+- **Исправление.** Миграция `20260922210000_operational_failure_alerts`: `service_sweep_operational_failure_alerts` раз в сутки создаёт high-уведомление на артиста, категорию и получателя — о dead-задачах outbox (кроме отмен оператором и устаревших deposit-писем) и упавших AI-задачах. Существующая доставка пересылает его в личный Telegram. Только счётчики, без данных клиентов.
+- **Тесты.** pgTAP `1002`; тесты scheduler.
+- **Ограничение.** Умерший scheduler не может сообщить о себе сам — нужен внешний монитор heartbeat. Sentry DSN в Workers по-прежнему не подключён.
+
+## H-6. GPT и Cloudflare
+
+- **Переоценка.** GPT Worker деплоится из tracked-конфига без `--keep-vars`, где `CLOUDFLARE_CONTROL_WRITE_ENABLED = "false"`, поэтому запись в production сейчас выключена.
+- **Исправление (независимо от флага).** Deploy/delete и цели routes — только Worker'ы с префиксом `gpt-sandbox-`. Изменение и удаление route или DNS-записи сначала проверяет существующий объект. DNS — только A/AAAA/CNAME с первой меткой `gpt-sandbox-*`. Отказ — 409 до любого мутирующего вызова.
+
+## Medium
+
+- **M-1.** В production все 43 inline-попытки Telegram из интейка упали (`provider_binding_missing` / `provider_route_unavailable`), все 43 доставки сделал drain. Inline-путь в production отключён; preview и staging сохраняют legacy-путь.
+- **M-2.** At-least-once с возможным дублем при сбое записи результата после успешной отправки. Дублей в production не обнаружено; Calendar идемпотентен. Оставлено как известное ограничение.
+- **M-3.** Отказ «угадывать» страну для `07…` — задокументированное решение (`normalize_phone`; например, японские `070…` подходят под тот же шаблон). Смена правила меняет сопоставление клиентов: решение за вами. Затронуто 9 клиентов.
+- **M-4.** WhatsApp webhook теперь логирует счётчик неразмаршрутизированных событий (без PII).
+- **M-5.** Чтение сессий ограничено окнами; deep link читает запись по `id`.
+- **M-6.** Автоповтор AI не добавлен: стоимость и повторные вызовы модели — продуктовое решение. Сбои теперь видны через H-5, повтор доступен вручную.
+- **M-7.** Очереди Calendar, Availability и Contacts изолированы друг от друга.
+- **M-8.** `tattooai.vvetrov41.workers.dev` — действующий endpoint формы записи и AI-инструментов сайта (`booking/index.html:318`, `book/index.html:552`, `components.js:19`). Выключать `workers_dev` нельзя; перенос на собственный домен с rate-limit — отдельное скоординированное изменение. Worker'ы вне repo (`vishar-monzo-bridge`, `hikerapi-mcp`, `vishar-gsc-mcp`, `vishar-monzo-api-staging`, `kisa`) требуют вашей инвентаризации.
+- **M-9.** 4 входящих перевода (£581.44, £725.42, 2×£500) по-прежнему unmatched. Финансовые записи без доказательств не сопоставлялись.
+
+
+---
+
 # Vishar CRM — полный технический аудит (2026-09-22)
 
 Report-only. Production-код, конфигурация, данные и секреты не менялись. Все запросы к production были read-only (`select`, чтение кода Workers, публичные HTTP GET).
