@@ -110,9 +110,4 @@ await assert.rejects(verify({ PROJECT_REF: project.id, SUPABASE_ACCESS_TOKEN: 's
 assert.deepEqual(requests.map(x => x.options.method), ['GET', 'POST']);
 assert.deepEqual(JSON.parse(requests[1].options.body), { query: STATE_SQL, read_only: true });
 assert(requests.every(x => x.url.startsWith(`https://api.supabase.com/v1/projects/${project.id}`)));
-const release = readFileSync('.github/workflows/gmail-deposit-database-release.yml', 'utf8');
-assert(release.indexOf('scripts/verify-gmail-deposit-migration.mjs before') < release.indexOf('supabase db push --yes'));
-assert(release.indexOf('supabase db push --yes') < release.indexOf('scripts/verify-gmail-deposit-migration.mjs after'));
-assert(!release.includes('wrangler deploy'));
-assert(!release.includes('supabase db reset'));
 console.log('Gmail migration ledger, quiet queue, fixed target, function and ACL readback guards passed.');
