@@ -59,3 +59,25 @@ export async function runLifecycleFailureAlerts(env, fetchImpl = fetch) {
   }
   return { created };
 }
+
+/**
+ * Audit H-1: give Telegram enquiry alerts and future Calendar projections that
+ * were dead-lettered by a genuine backend outage one more retry budget. The
+ * database decides what is safe to replay; this returns counts only.
+ */
+export async function runTransientOutboxRecovery(env, fetchImpl = fetch) {
+  const supabase = createSupabaseClient(env, fetchImpl);
+  const rows = await supabase.rpc('service_recover_transient_dead_outbox', { p_limit: 20 });
+  const row = Array.isArray(rows) ? rows[0] : rows;
+  const scanned = Number(row?.scanned);
+  const recovered = Number(row?.recovered);
+  if (
+    !Number.isSafeInteger(scanned) || scanned < 0 || scanned > 20
+    || !Number.isSafeInteger(recovered) || recovered < 0 || recovered > scanned
+  ) {
+    throw Object.assign(new Error('invalid outbox recovery summary'), {
+      code: 'outbox_recovery_summary_invalid',
+    });
+  }
+  return { scanned, recovered };
+}

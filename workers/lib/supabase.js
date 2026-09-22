@@ -81,6 +81,8 @@ export const AUTOMATION_HEARTBEAT_RPCS = new Set([
 
 export const LIFECYCLE_ALERT_RPCS = new Set([
   'service_sweep_lifecycle_failure_alerts',
+  // Audit H-1: bounded one-shot revival of outage dead letters. Counts only.
+  'service_recover_transient_dead_outbox',
 ]);
 
 /** Appointment client-action capability surface, kept separate from booking resolvers. */
@@ -228,7 +230,15 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     }
 
     if (!response.ok) {
-      const error = new SupabaseError('database_unavailable', response.status);
+      // A 4xx that is not about credentials, timeouts or throttling is the
+      // database refusing this request (RPC raise, constraint, missing route).
+      // Retrying cannot change the answer, so it must not be recorded as an
+      // outage: audit H-1 found permanent "no destination" refusals burning
+      // every retry and dead-lettering as `database_unavailable`.
+      const rejected = response.status >= 400
+        && response.status < 500
+        && ![401, 403, 408, 429].includes(response.status);
+      const error = new SupabaseError(rejected ? 'database_rejected' : 'database_unavailable', response.status);
       error.supabaseCode = diagnostics.supabase_code;
       throw error;
     }

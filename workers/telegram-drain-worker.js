@@ -2,7 +2,11 @@ import {
   drainPersonalTelegramNotifications,
   drainTelegramOutbox,
 } from './lib/telegram-drain.js';
-import { runAutomationTick, runLifecycleFailureAlerts } from './lib/automation-tick.js';
+import {
+  runAutomationTick,
+  runLifecycleFailureAlerts,
+  runTransientOutboxRecovery,
+} from './lib/automation-tick.js';
 import { ConfigurationError } from './lib/http.js';
 import { createSupabaseClient, SupabaseError } from './lib/supabase.js';
 import {
@@ -143,6 +147,19 @@ async function runScheduledLifecycleAlerts(env) {
   } catch (error) {
     console.error('lifecycle failure alerts failed', JSON.stringify({
       code: safeFailureCode(error, 'lifecycle_alert_error'),
+    }));
+    throw error;
+  }
+}
+
+async function runScheduledOutboxRecovery(env) {
+  try {
+    const summary = await runTransientOutboxRecovery(env);
+    console.log('transient outbox recovery', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    console.error('transient outbox recovery failed', JSON.stringify({
+      code: safeFailureCode(error, 'outbox_recovery_error'),
     }));
     throw error;
   }
@@ -330,6 +347,8 @@ export default {
       // Independent of the tick and provider drains: observe already-recorded
       // failures even if another responsibility fails during this cron window.
       tasks.push(runScheduledLifecycleAlerts(env));
+      // Audit H-1: revive outage dead letters the database proves safe.
+      tasks.push(runScheduledOutboxRecovery(env));
     }
     else console.log('automation tick disabled');
 
@@ -347,6 +366,7 @@ export const __testing = {
   readWebhookJson,
   runScheduledAutomationTick,
   runScheduledDrain,
+  runScheduledOutboxRecovery,
   runSharedGmailDrain,
   runTelegramWebhookReconcile,
   safeFailureCode,
