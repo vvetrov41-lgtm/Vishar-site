@@ -413,7 +413,14 @@ async function handleEnquiryIntakeInternal(
     scheduleEnquiryAi(env, enquiryId, schedule, { supabase, fetchImpl });
     const outboxId = finalization?.outbox_id;
     let notification = { delivered: false, errorCode: 'outbox_route_missing' };
-    if (outboxId) {
+    // Audit M-1: production delivers enquiry alerts only through the scheduled
+    // Telegram drain and the destination registry. The inline legacy attempt
+    // never succeeded there (no legacy bot binding) and its unleased
+    // record_outbox_attempt could clear a lease the drain already held.
+    const inlineLegacyTelegram = env?.VISHAR_ENVIRONMENT !== 'production';
+    if (outboxId && !inlineLegacyTelegram) {
+      notification = { delivered: false, errorCode: 'scheduled_drain_owns_delivery' };
+    } else if (outboxId) {
       try {
         const resolved = await supabase.rpc('resolve_outbox_route', { p_outbox_id: outboxId });
         const route = Array.isArray(resolved) ? resolved[0] : resolved;
@@ -444,7 +451,7 @@ async function handleEnquiryIntakeInternal(
       }
     }
 
-    if (!notification.delivered) {
+    if (!notification.delivered && inlineLegacyTelegram) {
       logger.warn('enquiry.notification_failed', {
         route: 'enquiries',
         enquiryId,

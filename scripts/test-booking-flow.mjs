@@ -278,6 +278,22 @@ for (const count of [1, 2, 3]) {
   });
 }
 
+await test('production leaves enquiry Telegram delivery to the scheduled drain (audit M-1)', async () => {
+  const calls = stubBackend();
+  const files = [imageFile(JPEG, 'image/jpeg', 'reference-1.jpg')];
+  const { response, payload } = await send(enquiryForm({ files }), {
+    env: { ...env, VISHAR_ENVIRONMENT: 'production' },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(calls.rpc.filter((c) => c.name === 'finalize_enquiry_intake').length, 1);
+  assert.equal(calls.telegram, 0, 'no inline Telegram send in production');
+  assert.equal(calls.rpc.some((c) => c.name === 'record_outbox_attempt'), false,
+    'the durable outbox job stays untouched for the drain');
+  assert.equal(calls.rpc.some((c) => c.name === 'resolve_outbox_route'), false);
+});
+
 await test('PNG and WebP references are accepted', async () => {
   stubBackend();
   const { response, payload } = await send(enquiryForm({
