@@ -21,6 +21,7 @@ import { useArtistScope } from '../lib/artist-scope';
 import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
 import { summariseToday, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
 import { typeLabel } from './AppointmentsPage';
+import { daysAgoIso } from '../lib/appointment-api';
 import type { Appointment } from '../lib/appointment-api';
 import type { ConversationSummary } from '../lib/communications-api';
 import type { MonzoReconciliationCandidate } from '../lib/payment-api';
@@ -67,7 +68,9 @@ export function DashboardPage() {
     // Each read is asked for only where the role could hold the capability.
     // The database still decides what comes back.
     const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity, acknowledgements] = await Promise.all([
-      can(role, 'viewSessions') ? api.listAppointments({ artistId }) : Promise.resolve([]),
+      // Audit M-5: Today reads current and upcoming sessions (plus recent history
+      // for engagement checks), never the earliest 300 ever booked.
+      can(role, 'viewSessions') ? api.listAppointments({ artistId, from: daysAgoIso(90) }) : Promise.resolve([]),
       mayViewEnquiries ? api.listEnquiries({ artistId }) : Promise.resolve([]),
       can(role, 'viewProjects') ? api.listProjects(undefined, artistId) : Promise.resolve([]),
       can(role, 'viewFollowUps') ? api.listFollowUps({ open: true, artistId }) : Promise.resolve([]),
