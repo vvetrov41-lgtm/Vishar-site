@@ -5,6 +5,7 @@ import {
 import {
   runAutomationTick,
   runLifecycleFailureAlerts,
+  runOperationalFailureAlerts,
   runTransientOutboxRecovery,
 } from './lib/automation-tick.js';
 import { ConfigurationError } from './lib/http.js';
@@ -160,6 +161,19 @@ async function runScheduledOutboxRecovery(env) {
   } catch (error) {
     console.error('transient outbox recovery failed', JSON.stringify({
       code: safeFailureCode(error, 'outbox_recovery_error'),
+    }));
+    throw error;
+  }
+}
+
+async function runScheduledOperationalAlerts(env) {
+  try {
+    const summary = await runOperationalFailureAlerts(env);
+    console.log('operational failure alerts', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    console.error('operational failure alerts failed', JSON.stringify({
+      code: safeFailureCode(error, 'operational_alert_error'),
     }));
     throw error;
   }
@@ -349,6 +363,8 @@ export default {
       tasks.push(runScheduledLifecycleAlerts(env));
       // Audit H-1: revive outage dead letters the database proves safe.
       tasks.push(runScheduledOutboxRecovery(env));
+      // Audit H-5: surface failures to operators through personal Telegram.
+      tasks.push(runScheduledOperationalAlerts(env));
     }
     else console.log('automation tick disabled');
 
@@ -366,6 +382,7 @@ export const __testing = {
   readWebhookJson,
   runScheduledAutomationTick,
   runScheduledDrain,
+  runScheduledOperationalAlerts,
   runScheduledOutboxRecovery,
   runSharedGmailDrain,
   runTelegramWebhookReconcile,
