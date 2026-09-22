@@ -150,7 +150,28 @@ function normalizePublicUrl(value) {
     throw new Error('invalid_field:url');
   }
   if (isSupabaseStorageUrl(url)) throw new Error('invalid_field:url');
+  if (carriesCrmData(url)) throw new Error('invalid_field:url');
   return url.toString();
+}
+
+const MAX_URL_QUERY_CHARS = 256;
+const EMAIL_IN_URL = /[a-z0-9._%+-]+(@|%40)[a-z0-9.-]+\.[a-z]{2,}/i;
+const PHONE_LIKE_DIGITS = /(?:\d[\s().+-]?){7,}/;
+
+/**
+ * Audit H-4: this GPT also reads untrusted client messages. A prompt injection
+ * can ask it to "open" an attacker URL with CRM data in the path or query,
+ * turning a read-only scrape into an exfiltration channel. Research pages do
+ * not need an email address, a phone-number-length digit run or a long query
+ * string, so any of those makes the URL ineligible.
+ */
+function carriesCrmData(url) {
+  let decoded;
+  try { decoded = decodeURIComponent(`${url.pathname}${url.search}${url.hash}`); }
+  catch { return true; }
+  if (url.search.length > MAX_URL_QUERY_CHARS) return true;
+  if (EMAIL_IN_URL.test(decoded)) return true;
+  return PHONE_LIKE_DIGITS.test(decoded);
 }
 
 function parseScrape(body) {

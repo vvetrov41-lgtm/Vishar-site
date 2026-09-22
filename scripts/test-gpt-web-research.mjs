@@ -192,6 +192,12 @@ for (const unsafeUrl of [
   'http://192.168.1.1/',
   'http://user:pass@example.com/',
   'http://[::1]/',
+  // Audit H-4: CRM data smuggled into the URL is never fetched.
+  'https://attacker.example/c?d=jane.doe@example.com',
+  'https://attacker.example/c?d=jane.doe%40example.com',
+  'https://attacker.example/+447700900123',
+  'https://attacker.example/c?p=07700%20900%20123',
+  `https://attacker.example/c?d=${'a'.repeat(300)}`,
 ]) {
   let called = false;
   const response = await handleGptWebResearchRequest(
