@@ -1,32 +1,13 @@
 # tattooai Worker deployment
 
-This workflow deploys the existing `tattooai` Cloudflare Worker.
+The production `tattooai` Worker owns durable CRM booking intake, enquiry AI
+and CRM agent drains. Its source is `workers/tattooai-entry.js` on the CRM
+trunk (`agent/platform-telegram-self-service`), and it is released only by the
+guarded CRM release workflow `tattooai-production-release.yml` from an exact,
+immutable release SHA.
 
-## Deployment mode
-
-- Manual only (`workflow_dispatch`).
-- Run deployment only after PR review and merge.
-
-## Required GitHub secrets
-
-Set these repository secrets before running the workflow:
-
-- `CLOUDFLARE_API_TOKEN`
-- `CLOUDFLARE_ACCOUNT_ID`
-
-## Existing Cloudflare Worker runtime configuration that must remain in place
-
-- Workers AI binding: `AI` (binding name must be `AI`)
-- `TELEGRAM_BOT_TOKEN`
-- `TELEGRAM_CHAT_ID`
-
-Do not commit any secrets to the repository.
-
-## Post-deploy checks
-
-After deployment, test:
-
-1. Aftercare assistant response.
-2. Idea assistant response.
-3. Lead submission and Telegram delivery (if possible).
-4. CORS behavior from `vishartattoo.com`.
+This public-site branch intentionally contains no Worker config and no deploy
+workflow for `tattooai`. The legacy `workers/tattooai.js` here is a
+Telegram-only handler kept for `npm run test:booking`; deploying it would
+bypass the CRM entirely. `npm run validate:site` fails if a `wrangler.toml`
+or workflow that can deploy it is reintroduced (audit finding C-1).

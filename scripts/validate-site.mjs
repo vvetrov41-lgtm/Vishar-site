@@ -171,6 +171,38 @@ async function listFiles(dir, predicate = () => true) {
   return files;
 }
 
+// C-1 (Vishar CRM technical audit, 2026-09-22): the production `tattooai`
+// Worker owns durable CRM booking intake and AI queues. It is released only by
+// the CRM release workflows (tattooai-production-release.yml). This public
+// site branch must never again carry a config or workflow that can deploy the
+// legacy Telegram-only `workers/tattooai.js` over that Worker.
+async function checkNoLegacyTattooaiDeploy() {
+  const wranglerPath = path.join(rootDir, 'wrangler.toml');
+  if (await pathExists(wranglerPath)) {
+    const source = await readFile(wranglerPath, 'utf8');
+    const targetsProduction = /^\s*name\s*=\s*"tattooai"\s*$/m.test(source);
+    const usesLegacyEntry = /^\s*main\s*=\s*"workers\/tattooai\.js"\s*$/m.test(source);
+    if (targetsProduction && usesLegacyEntry) {
+      fail('wrangler.toml would deploy legacy workers/tattooai.js over the production tattooai Worker.');
+      return;
+    }
+  }
+
+  const workflowDir = path.join(rootDir, '.github', 'workflows');
+  const workflows = (await pathExists(workflowDir))
+    ? await listFiles(workflowDir, (file) => /\.ya?ml$/.test(file))
+    : [];
+  for (const file of workflows) {
+    const source = await readFile(file, 'utf8');
+    const deploysWorker = /cloudflare\/wrangler-action|wrangler\s+deploy/.test(source);
+    if (deploysWorker && /workers\/tattooai\.js/.test(source)) {
+      fail(`${rel(file)} can deploy legacy workers/tattooai.js to Cloudflare.`);
+      return;
+    }
+  }
+  pass('No config or workflow can deploy legacy workers/tattooai.js over the production tattooai Worker.');
+}
+
 async function checkTailwindArtifact() {
   const cssPath = path.join(rootDir, 'assets/css/tailwind.css');
   if (!await pathExists(cssPath)) {
@@ -1444,6 +1476,7 @@ async function main() {
   await checkVendorFontFiles();
   await checkPagesReferenceLocalFontStylesheets(htmlFiles);
   await checkNoRuntimeGoogleFontsReferences();
+  await checkNoLegacyTattooaiDeploy();
   await checkHeadersCsp();
   await checkCanonicalTags(htmlFiles);
   await checkSitemapConsistency(htmlFiles);
