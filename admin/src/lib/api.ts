@@ -52,6 +52,7 @@ import type {
   TeammateInviteResult,
   StaffInviteResult,
 } from './types';
+import type { MfaAuth } from './mfa';
 
 /**
  * The slice of the Supabase client this application uses. Typing it this
@@ -84,6 +85,10 @@ export interface CrmClient {
       email: string;
       options?: { emailRedirectTo?: string; captchaToken?: string };
     }) => Promise<{ data: any; error: any }>;
+    // Two-factor authentication. Optional for the same reason: a client
+    // without it cannot offer enrolment, and the database still enforces an
+    // enrolled factor on its own.
+    mfa?: MfaAuth;
   };
 }
 

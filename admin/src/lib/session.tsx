@@ -46,6 +46,7 @@ import { createPlatformApi, type PlatformApi } from './platform-api';
 import { createSignupApi, type BootstrapResult, type SignupApi } from './signup-api';
 import { createStatisticsApi, type StatisticsApi } from './statistics-api';
 import { createTelegramConnectionsApi, type TelegramConnectionsApi } from './telegram-connections-api';
+import { hasMfa, needsChallenge, verifiedFactors, verifyCode, type MfaAuth } from './mfa';
 import { passwordProblem } from './password';
 import { clearStaffInviteUrl, signupRedirectUrl } from './supabase';
 import type { ArtistMembership, Profile } from './types';
@@ -62,6 +63,10 @@ export type AccessState =
   // widened; both outcomes deny identically.
   | 'deactivated'
   | 'password_setup'
+  // Signed in with a password, and the account has a verified second factor.
+  // The database refuses this session everything until the code is entered,
+  // so the CRM asks for it before trying to read anything.
+  | 'mfa_challenge'
   // Signed in through public signup, email address not confirmed yet. Held
   // here rather than shown the CRM: the bootstrap refuses an unconfirmed
   // address anyway, so offering the setup form would be a dead end.
@@ -106,6 +111,12 @@ export interface SessionValue {
     timezone?: string | null;
   }) => Promise<BootstrapResult>;
   refresh: () => Promise<void>;
+  /** Supabase MFA controls, or null when this client cannot offer them. */
+  mfa: MfaAuth | null;
+  /** Whether the signed-in account has a verified second factor. Null while
+   *  unknown, so nothing nags an account before the answer arrives. */
+  mfaEnrolled: boolean | null;
+  verifyMfa: (code: string) => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
@@ -128,6 +139,8 @@ export function SessionProvider({
   const [error, setError] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [inviteMode, setInviteMode] = useState(staffInviteMode);
+  const [mfaEnrolled, setMfaEnrolled] = useState<boolean | null>(null);
+  const mfa = useMemo<MfaAuth | null>(() => (client && hasMfa(client.auth) ? client.auth.mfa : null), [client]);
 
   const api = useMemo<CrmApi | null>(() => {
     if (!client) return null;
@@ -180,6 +193,22 @@ export function SessionProvider({
       return;
     }
     setEmail(typeof user?.email === 'string' ? user.email : null);
+
+    if (mfa) {
+      try {
+        if (await needsChallenge(mfa)) {
+          setProfile(null);
+          setMemberships([]);
+          setAccount(null);
+          setMfaEnrolled(true);
+          setState('mfa_challenge');
+          return;
+        }
+      } catch {
+        // The assurance level is read from the local session. If even that
+        // fails, carry on: the database still refuses an unverified session.
+      }
+    }
 
     try {
       const found = await api.currentProfile(userId);
@@ -243,6 +272,14 @@ export function SessionProvider({
         setAccount(null);
       }
 
+      if (mfa) {
+        try {
+          setMfaEnrolled((await verifiedFactors(mfa)).length > 0);
+        } catch {
+          setMfaEnrolled(null);
+        }
+      }
+
       setState(inviteMode ? 'password_setup' : 'active');
     } catch {
       // A profile that cannot be read is treated as no access rather than as a
@@ -253,7 +290,7 @@ export function SessionProvider({
       setAccount(null);
       setState('no_profile');
     }
-  }, [client, api, inviteMode]);
+  }, [client, api, inviteMode, mfa]);
 
   useEffect(() => {
     void load();
@@ -275,6 +312,12 @@ export function SessionProvider({
     await load();
   }, [client, load]);
 
+  const verifyMfa = useCallback(async (code: string) => {
+    if (!mfa) throw new Error('two_factor_unavailable');
+    await verifyCode(mfa, code);
+    await load();
+  }, [mfa, load]);
+
   const signOut = useCallback(async () => {
     if (!client) return;
     await client.auth.signOut();
@@ -286,6 +329,7 @@ export function SessionProvider({
     setMemberships([]);
     setAccount(null);
     setEmail(null);
+    setMfaEnrolled(null);
     setState('signed_out');
   }, [client, inviteMode]);
 
@@ -422,11 +466,15 @@ export function SessionProvider({
       resendVerification,
       completeArtistSetup,
       refresh: load,
+      mfa,
+      mfaEnrolled,
+      verifyMfa,
     }),
     [
       state, profile, memberships, account, api, error, email,
       signIn, signOut, completePasswordSetup,
       signUp, resendVerification, completeArtistSetup, load,
+      mfa, mfaEnrolled, verifyMfa,
     ]
   );
 

@@ -17,6 +17,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
+import { TwoFactorSection } from '../components/TwoFactorSection';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
 import { useSession } from '../lib/session';
@@ -146,6 +147,8 @@ export function AccountPage() {
           {roleHintKey ? <small>{t(roleHintKey)}</small> : null}
         </div>
       </section>
+
+      <TwoFactorSection />
 
       <section className="card" aria-labelledby="account-language">
         <h3 id="account-language">{t('account.languageTitle')}</h3>
