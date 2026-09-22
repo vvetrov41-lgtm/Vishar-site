@@ -77,10 +77,33 @@ insert into public.artist_integrations (
   'vvetrov41@gmail.com',
   '{"calendar_id":"primary","oauth_scope":"calendar.events","connection_mode":"worker_oauth"}'::jsonb,
   true
-) on conflict do nothing;
+);
 
 insert into public.clients (id, full_name, email) values
   ('e1031111-1111-4111-8111-111111111111', 'Synthetic Transient Client', 'transient-client@example.test');
+
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key,
+  intake_fingerprint, status, intake_state, submitted_full_name,
+  submitted_email, privacy_notice_version, privacy_acknowledged_at
+) values (
+  'e1041111-1111-4111-8111-111111111111',
+  'e1031111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'PENDING', 'e1051111-1111-4111-8111-111111111111', repeat('e', 64),
+  'accepted', 'complete', 'Synthetic Transient Client',
+  'transient-client@example.test', '2026-08-05', now()
+);
+
+insert into public.projects (
+  id, client_id, enquiry_id, artist_id, title, status, currency
+) values (
+  'e1061111-1111-4111-8111-111111111111',
+  'e1031111-1111-4111-8111-111111111111',
+  'e1041111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'Transient recovery project', 'active', 'GBP'
+);
 
 select set_config(
   'request.jwt.claims',
@@ -95,7 +118,10 @@ select (public.schedule_appointment(
   'tattoo_session',
   '2027-03-09T09:00:00Z',
   '2027-03-09T16:00:00Z',
-  'confirmed', null, null, 'Synthetic transient recovery test'
+  'confirmed',
+  'e1041111-1111-4111-8111-111111111111',
+  'e1061111-1111-4111-8111-111111111111',
+  'Synthetic transient recovery test'
 ) ->> 'appointment_id')::uuid as id;
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
