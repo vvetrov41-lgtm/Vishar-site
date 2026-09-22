@@ -1,0 +1,45 @@
+name: CRM scheduler watchdog
+
+# External heartbeat monitor for the Vishar CRM production scheduler
+# (audit H-5 follow-up). It runs where cron fires, on GitHub rather than on
+# Cloudflare or Supabase, so it keeps working when the scheduler it watches is
+# dead. It holds no production credential: it reads the anonymous
+# get_scheduler_heartbeat_status() projection with the public publishable key
+# (the same key the CRM browser bundle ships) and it cannot write to the CRM.
+# See scripts/crm-scheduler-watchdog.mjs for the dedupe/recovery contract.
+
+on:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: crm-scheduler-watchdog
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/crm-scheduler-watchdog.mjs
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the production scheduler heartbeat
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CRM_SUPABASE_URL: https://vfjexhfdbrjmuxfdvbdx.supabase.co
+          CRM_SUPABASE_PUBLISHABLE_KEY: sb_publishable_c-0ZoGd5j8OfpC1NL5ehMg_4LB5t79M
+        run: |
+          node scripts/crm-scheduler-watchdog.mjs --self-test
+          node scripts/crm-scheduler-watchdog.mjs
