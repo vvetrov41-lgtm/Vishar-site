@@ -240,6 +240,7 @@ try {
       return Response.json('2026-08-27T09:55:00Z');
     }
     if (value.endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts')) return Response.json(0);
+    if (value.endsWith('/rest/v1/rpc/service_recover_transient_dead_outbox')) return Response.json([{ scanned: 0, recovered: 0 }]);
     throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
@@ -256,10 +257,11 @@ try {
   assert.equal(automationTickCalls, 1);
   assert.equal(automationHeartbeatCalls, 1);
   assert.ok(messages.includes('lifecycle failure alerts {"created":0}'));
+  assert.ok(messages.includes('transient outbox recovery {"scanned":0,"recovered":0}'));
   const diagnosticLines = messages.filter(line => line.startsWith('{"event":"supabase_backend_response"'));
-  assert.equal(diagnosticLines.length, 3);
+  assert.equal(diagnosticLines.length, 4);
   assert.ok(diagnosticLines.every(line => JSON.parse(line).status === 200));
-  assert.deepEqual(messages.filter((line) => !line.startsWith('lifecycle failure alerts') && !diagnosticLines.includes(line)), [
+  assert.deepEqual(messages.filter((line) => !line.startsWith('lifecycle failure alerts') && !line.startsWith('transient outbox recovery') && !diagnosticLines.includes(line)), [
     'telegram outbox drain disabled',
     'gmail outbox shared drain disabled',
     'automation tick {"materialised":0,"withdrawn":0,"executed":0,"notified":0}',
@@ -278,6 +280,7 @@ try {
       return Response.json('should-not-be-written');
     }
     if (value.endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts')) return Response.json(0);
+    if (value.endsWith('/rest/v1/rpc/service_recover_transient_dead_outbox')) return Response.json([{ scanned: 0, recovered: 0 }]);
     throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {
@@ -319,6 +322,7 @@ try {
       return Response.json('2026-08-27T09:55:00Z');
     }
     if (value.endsWith('/rest/v1/rpc/service_sweep_lifecycle_failure_alerts')) return Response.json(0);
+    if (value.endsWith('/rest/v1/rpc/service_recover_transient_dead_outbox')) return Response.json([{ scanned: 0, recovered: 0 }]);
     throw new Error(`unexpected automation backend call: ${value}`);
   };
   worker.scheduled({}, {

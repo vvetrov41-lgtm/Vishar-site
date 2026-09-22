@@ -15,7 +15,7 @@ const expectExcludes = (text, needle, label) => { if (text.includes(needle)) thr
 const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
 const expectedTelegramRpcSurface = ['service_claim_telegram_notifications','service_complete_telegram_link','service_record_telegram_notification_result','service_resolve_telegram_destination','service_route_telegram_enquiry_notification'].sort();
 if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSurface)) throw new Error('Telegram self-service Worker RPC surface changed');
-if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts'])) throw new Error('Lifecycle alert backend Worker RPC surface changed');
+if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts', 'service_recover_transient_dead_outbox'])) throw new Error('Lifecycle alert backend Worker RPC surface changed');
 if (JSON.stringify([...AUTOMATION_BACKEND_RPCS].sort()) !== JSON.stringify(['service_run_automation_tick'])) throw new Error('Automation backend Worker RPC surface changed');
 
 const sessionId = '55555555-5555-4555-8555-555555555555';
