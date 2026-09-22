@@ -531,3 +531,16 @@ if (failures > 0) {
 }
 
 console.log(`WhatsApp webhook tests passed: ${passes} cases covering verification, raw-body signatures, artist routing, status ingestion and fail-closed boundaries.`);
+
+// Audit M-4: a signed change for an unknown phone number is counted, not silently lost.
+{
+  const { __testing: webhookTesting } = await import('../workers/lib/whatsapp-webhook.js');
+  const summary = await webhookTesting.processPayload(
+    { object: 'whatsapp_business_account', entry: [{ id: '1234567890', changes: [{ field: 'messages', value: { metadata: { phone_number_id: '9876543210' }, messages: [] } }] }] },
+    [],
+    new Set(),
+    { rpc: async () => { throw new Error('must not persist an unrouted change'); } },
+  );
+  assert.equal(summary.unrouted, 1);
+  console.log('WhatsApp unrouted change visibility passed.');
+}

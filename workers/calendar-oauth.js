@@ -484,10 +484,32 @@ async function disconnect(request, artistRef, env, fetchImpl = fetch) {
   return Response.redirect(disconnectReturnUrl(env, config.alias, revoked), 303);
 }
 
+const EMPTY_DRAIN = Object.freeze({
+  claimed: 0, succeeded: 0, obsolete: 0, failed: 0, unrecorded: 0,
+  created: 0, existing: 0, skippedInvalid: 0,
+});
+
+// Audit M-7: one queue failing must not stop the other two. Each drain runs to
+// completion; the first failure is rethrown only after all three have run so
+// the cron invocation still reports the error.
+async function isolatedDrain(name, drain, env, failures) {
+  try {
+    return await drain(env);
+  } catch (error) {
+    failures.push(error);
+    const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.code)
+      ? error.code
+      : 'calendar_drain_error';
+    console.error('calendar scheduled drain failed', JSON.stringify({ queue: name, code }));
+    return EMPTY_DRAIN;
+  }
+}
+
 async function runScheduledDrain(env) {
-  const appointments = await drainCalendarOutbox(env);
-  const availability = await drainCalendarAvailabilityOutbox(env);
-  const contacts = await drainGoogleContactsOutbox(env);
+  const failures = [];
+  const appointments = await isolatedDrain('appointments', drainCalendarOutbox, env, failures);
+  const availability = await isolatedDrain('availability', drainCalendarAvailabilityOutbox, env, failures);
+  const contacts = await isolatedDrain('contacts', drainGoogleContactsOutbox, env, failures);
   console.log('calendar outbox drain', JSON.stringify({
     appointments: {
       claimed: appointments.claimed,
@@ -512,6 +534,7 @@ async function runScheduledDrain(env) {
       unrecorded: contacts.unrecorded,
     },
   }));
+  if (failures.length) throw failures[0];
 }
 
 function errorResponse(error) {
