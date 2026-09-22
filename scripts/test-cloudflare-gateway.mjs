@@ -50,6 +50,22 @@ const mockFetch = async (url, init = {}) => {
     assert.ok(init.body.get('worker.js'));
     return cf({ id: 'crm-worker', modified_on: '2026-09-01' });
   }
+  if (u.pathname.endsWith(`/client/v4/accounts/${accountId}/workers/scripts/gpt-sandbox-demo/content`)) {
+    assert.equal(init.method, 'PUT');
+    return cf({ id: 'gpt-sandbox-demo', modified_on: '2026-09-22' });
+  }
+  if (u.pathname.endsWith(`/client/v4/zones/${zoneId}/dns_records/${recordId}`)) {
+    assert.ok(!init.method || init.method === 'GET', 'a protected record must be inspected, never mutated');
+    return cf({ id: recordId, type: 'A', name: 'crm.vishartattoo.com', content: '203.0.113.10' });
+  }
+  if (u.pathname.endsWith(`/client/v4/zones/${zoneId}/workers/routes/${routeId}`)) {
+    assert.ok(!init.method || init.method === 'GET', 'a production route must be inspected, never mutated');
+    return cf({ id: routeId, pattern: 'vishartattoo.com/*', script: 'crm-worker' });
+  }
+  if (u.pathname.endsWith(`/client/v4/zones/${zoneId}/dns_records`) && init.method === 'POST') {
+    const payload = JSON.parse(init.body);
+    return cf({ id: 'ffffffffffffffffffffffffffffffff', ...payload });
+  }
   if (u.pathname.endsWith('/client/v4/zones')) {
     assert.equal(u.searchParams.get('account.id'), accountId);
     return cf([{ id: zoneId, name: 'vishartattoo.com', account: { id: accountId }, status: 'active' }]);
@@ -88,10 +104,57 @@ const mockFetch = async (url, init = {}) => {
 }
 
 {
-  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/worker/deploy', { script_name: 'crm-worker', code: 'export default { fetch(){ return new Response("ok") } };' }), env, mockFetch);
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/worker/deploy', { script_name: 'gpt-sandbox-demo', code: 'export default { fetch(){ return new Response("ok") } };' }), env, mockFetch);
   assert.equal(response.status, 200);
   assert.equal((await response.json()).deployed, true);
-  assert.ok(calls.some((call) => call.url.endsWith(`/workers/scripts/crm-worker/content`) && call.init.method === 'PUT'));
+  assert.ok(calls.some((call) => call.url.endsWith(`/workers/scripts/gpt-sandbox-demo/content`) && call.init.method === 'PUT'));
+}
+
+// Audit H-6: production Workers, routes and DNS are never writable by the GPT.
+for (const scriptName of ['crm-worker', 'tattooai', 'vishar-gpt-actions-production', 'vishar-telegram-drain-production']) {
+  const before = calls.length;
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/worker/deploy', { script_name: scriptName, code: 'export default {};' }), env, mockFetch);
+  assert.equal(response.status, 409, `deploy over ${scriptName} must be refused`);
+  assert.deepEqual(await response.json(), { error: 'protected_worker' });
+  assert.equal(calls.length, before, 'a refused deploy makes no provider call');
+}
+
+{
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/worker/delete', { script_name: 'tattooai', confirm: 'tattooai' }), env, mockFetch);
+  assert.equal(response.status, 409);
+}
+
+for (const record of [
+  { type: 'A', name: 'crm.vishartattoo.com', content: '203.0.113.9' },
+  { type: 'A', name: 'vishartattoo.com', content: '203.0.113.9' },
+  { type: 'MX', name: 'gpt-sandbox-mail.vishartattoo.com', content: 'mx.attacker.example' },
+  { type: 'TXT', name: 'gpt-sandbox-x.vishartattoo.com', content: 'v=spf1 include:attacker.example' },
+  { type: 'CNAME', name: 'www.gpt-sandbox-x.vishartattoo.com', content: 'attacker.example' },
+]) {
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/dns/upsert', { zone: 'vishartattoo.com', ...record }), env, mockFetch);
+  assert.equal(response.status, 409, `DNS write ${record.type} ${record.name} must be refused`);
+  assert.deepEqual(await response.json(), { error: 'protected_dns_record' });
+}
+
+{
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/dns/upsert', { zone: 'vishartattoo.com', type: 'CNAME', name: 'gpt-sandbox-demo.vishartattoo.com', content: 'gpt-sandbox-demo.workers.dev' }), env, mockFetch);
+  assert.equal(response.status, 200);
+}
+
+{
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/dns/delete', { zone: 'vishartattoo.com', record_id: recordId, confirm: recordId }), env, mockFetch);
+  assert.equal(response.status, 409, 'deleting an existing production record is refused');
+  assert.ok(!calls.some((call) => call.init.method === 'DELETE'));
+}
+
+{
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/routes/delete', { zone: 'vishartattoo.com', route_id: routeId, confirm: routeId }), env, mockFetch);
+  assert.equal(response.status, 409, 'deleting a production route is refused');
+}
+
+{
+  const response = await handleCloudflareGatewayRequest(req('/internal/cloudflare/routes/upsert', { zone: 'vishartattoo.com', pattern: 'vishartattoo.com/book/*', script_name: 'gpt-sandbox-demo', route_id: routeId }), env, mockFetch);
+  assert.equal(response.status, 409, 'repointing a production route is refused');
 }
 
 {

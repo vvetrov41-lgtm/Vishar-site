@@ -7,7 +7,25 @@ const MAX_WORKER_SOURCE_BYTES = 512 * 1024;
 const MAX_PROVIDER_BYTES = 768 * 1024;
 const MAX_TEXT_FIELD = 4096;
 const MAX_LIST_ITEMS = 250;
-const PROTECTED_WORKERS = new Set(['vishar-cloudflare-gateway', 'vishar-gpt-actions-production']);
+// Audit H-6: GPT write access is confined to its own sandbox. Every production
+// Worker, route and DNS record stays out of reach even if the write kill switch
+// is enabled, because the same GPT also reads untrusted client content.
+const SANDBOX_WORKER_PREFIX = 'gpt-sandbox-';
+const SANDBOX_DNS_LABEL = /^gpt-sandbox-[a-z0-9-]{1,40}$/;
+const SANDBOX_DNS_TYPES = new Set(['A', 'AAAA', 'CNAME']);
+
+function sandboxWorkerName(value) {
+  const name = workerName(value);
+  if (!name.startsWith(SANDBOX_WORKER_PREFIX)) throw new Error('protected_worker');
+  return name;
+}
+
+function assertSandboxDnsRecord(type, name, zone) {
+  if (!SANDBOX_DNS_TYPES.has(type)) throw new Error('protected_dns_record');
+  if (!name.endsWith(`.${zone}`)) throw new Error('protected_dns_record');
+  const labels = name.slice(0, -(zone.length + 1)).split('.');
+  if (!SANDBOX_DNS_LABEL.test(labels[0])) throw new Error('protected_dns_record');
+}
 
 const JSON_HEADERS = Object.freeze({
   'content-type': 'application/json; charset=utf-8',
@@ -227,6 +245,7 @@ function dnsRecordPayload(body, zone) {
   if (!['A', 'AAAA', 'CNAME', 'TXT', 'MX', 'CAA', 'NS'].includes(type)) throw new Error('invalid_field:type');
   const name = cleanString(body.name, 'name', 255).toLowerCase().replace(/\.$/, '');
   if (!DNS_NAME_RE.test(name) || !(name === zone || name.endsWith(`.${zone}`))) throw new Error('invalid_field:name');
+  assertSandboxDnsRecord(type, name, zone);
   const content = cleanString(body.content, 'content', 4096);
   const payload = { type, name, content };
   if (body.ttl != null) {
@@ -279,6 +298,20 @@ function publicUrlInZone(value, zone) {
   const host = url.hostname.toLowerCase().replace(/\.$/, '');
   if (!(host === zone || host.endsWith(`.${zone}`))) throw new Error('invalid_field:urls');
   return url.toString();
+}
+
+async function assertExistingSandboxDnsRecord(env, fetchImpl, zone, recordId) {
+  const parsed = await cloudflareJson(env, fetchImpl, `/zones/${zone.id}/dns_records/${recordId}`);
+  const record = parsed?.result;
+  const type = typeof record?.type === 'string' ? record.type.toUpperCase() : '';
+  const name = typeof record?.name === 'string' ? record.name.toLowerCase().replace(/\.$/, '') : '';
+  assertSandboxDnsRecord(type, name, zone.name);
+}
+
+async function assertExistingSandboxRoute(env, fetchImpl, zone, routeId) {
+  const parsed = await cloudflareJson(env, fetchImpl, `/zones/${zone.id}/workers/routes/${routeId}`);
+  const script = typeof parsed?.result?.script === 'string' ? parsed.result.script : '';
+  if (!script.startsWith(SANDBOX_WORKER_PREFIX)) throw new Error('protected_worker');
 }
 
 async function dispatch(request, env, fetchImpl) {
@@ -348,8 +381,7 @@ async function dispatch(request, env, fetchImpl) {
   }
   if (path === '/internal/cloudflare/worker/deploy') {
     exactObject(body, ['script_name', 'code'], ['script_name', 'code']);
-    const name = workerName(body.script_name);
-    if (name === 'vishar-cloudflare-gateway') throw new Error('protected_worker');
+    const name = sandboxWorkerName(body.script_name);
     if (typeof body.code !== 'string' || !body.code.trim() || utf8Bytes(body.code) > MAX_WORKER_SOURCE_BYTES) throw new Error('invalid_field:code');
     const account = await resolveAccount(env, fetchImpl);
     const form = new FormData();
@@ -362,8 +394,7 @@ async function dispatch(request, env, fetchImpl) {
   }
   if (path === '/internal/cloudflare/worker/delete') {
     exactObject(body, ['script_name', 'confirm'], ['script_name', 'confirm']);
-    const name = workerName(body.script_name);
-    if (PROTECTED_WORKERS.has(name)) throw new Error('protected_worker');
+    const name = sandboxWorkerName(body.script_name);
     if (body.confirm !== name) throw new Error('confirmation_mismatch');
     const account = await resolveAccount(env, fetchImpl);
     await cloudflareJson(env, fetchImpl, `/accounts/${account.id}/workers/scripts/${encodeURIComponent(name)}`, { method: 'DELETE' });
@@ -380,6 +411,7 @@ async function dispatch(request, env, fetchImpl) {
     const zone = await resolveZone(env, fetchImpl, body.zone);
     const payload = dnsRecordPayload(body, zone.name);
     const recordId = body.record_id == null ? null : cloudflareId(body.record_id, 'record_id');
+    if (recordId) await assertExistingSandboxDnsRecord(env, fetchImpl, zone, recordId);
     const parsed = await cloudflareJson(env, fetchImpl,
       recordId ? `/zones/${zone.id}/dns_records/${recordId}` : `/zones/${zone.id}/dns_records`, {
         method: recordId ? 'PATCH' : 'POST',
@@ -393,6 +425,7 @@ async function dispatch(request, env, fetchImpl) {
     const zone = await resolveZone(env, fetchImpl, body.zone);
     const recordId = cloudflareId(body.record_id, 'record_id');
     if (body.confirm !== recordId) throw new Error('confirmation_mismatch');
+    await assertExistingSandboxDnsRecord(env, fetchImpl, zone, recordId);
     await cloudflareJson(env, fetchImpl, `/zones/${zone.id}/dns_records/${recordId}`, { method: 'DELETE' });
     return { zone: zone.name, record_id: recordId, deleted: true };
   }
@@ -422,8 +455,9 @@ async function dispatch(request, env, fetchImpl) {
   if (path === '/internal/cloudflare/routes/upsert') {
     exactObject(body, ['zone', 'route_id', 'pattern', 'script_name'], ['zone', 'pattern', 'script_name']);
     const zone = await resolveZone(env, fetchImpl, body.zone);
-    const payload = { pattern: routePattern(body.pattern, zone.name), script: workerName(body.script_name) };
+    const payload = { pattern: routePattern(body.pattern, zone.name), script: sandboxWorkerName(body.script_name) };
     const routeId = body.route_id == null ? null : cloudflareId(body.route_id, 'route_id');
+    if (routeId) await assertExistingSandboxRoute(env, fetchImpl, zone, routeId);
     const parsed = await cloudflareJson(env, fetchImpl,
       routeId ? `/zones/${zone.id}/workers/routes/${routeId}` : `/zones/${zone.id}/workers/routes`, {
         method: routeId ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
@@ -435,6 +469,7 @@ async function dispatch(request, env, fetchImpl) {
     const zone = await resolveZone(env, fetchImpl, body.zone);
     const routeId = cloudflareId(body.route_id, 'route_id');
     if (body.confirm !== routeId) throw new Error('confirmation_mismatch');
+    await assertExistingSandboxRoute(env, fetchImpl, zone, routeId);
     await cloudflareJson(env, fetchImpl, `/zones/${zone.id}/workers/routes/${routeId}`, { method: 'DELETE' });
     return { zone: zone.name, route_id: routeId, deleted: true };
   }
@@ -453,7 +488,7 @@ function mapError(error) {
   if (reason === 'unsupported_media_type') return json(415, { error: reason });
   if (reason === 'cloudflare_account_scope_invalid') return json(503, { error: reason });
   if (reason === 'zone_not_found' || reason === 'worker_not_found') return json(404, { error: reason });
-  if (reason === 'zone_ambiguous' || reason === 'confirmation_mismatch' || reason === 'protected_worker') return json(409, { error: reason });
+  if (reason === 'zone_ambiguous' || reason === 'confirmation_mismatch' || reason === 'protected_worker' || reason === 'protected_dns_record') return json(409, { error: reason });
   if (reason === 'provider_response_too_large') return json(502, { error: 'cloudflare_response_too_large' });
   const [kind, field] = reason.split(':', 2);
   if (['unexpected_field', 'forbidden_field', 'required_field', 'invalid_field'].includes(kind)) {
