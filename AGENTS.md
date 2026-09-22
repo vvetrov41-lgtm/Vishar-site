@@ -77,6 +77,22 @@ Investigation permission is not write permission. Unless explicitly authorized, 
 
 When implementation is authorized, prefer a separate bounded branch or the explicitly named task branch from the verified target. Parallel engineering tasks should use isolated cloud checkouts, branches, or worktrees and independently verify their own `HEAD`.
 
+## Production database changes
+
+Production schema changes reach Supabase through exactly one path: the private
+production release (`private-production-release.yml`) or its database-only
+twin (`deploy-private-production-database.yml`), from an exact immutable SHA.
+
+- Never apply a migration to production with Supabase MCP `apply_migration`,
+  `execute_sql` DDL, the dashboard SQL editor, or an ad-hoc workflow. MCP
+  `apply_migration` stamps the version with the current time, which breaks the
+  repository order and makes the canonical `supabase db push` refuse to run.
+- Never use `supabase db push --include-all`.
+- A new migration version must be newer than every migration on the base
+  branch; `scripts/check-migration-order.mjs` enforces this in CI.
+- `scripts/check-production-db-release-paths.mjs` fails CI if any other
+  workflow can mutate the production schema.
+
 ## GEO Topic Agent
 
 The installed GEO Topic Agent is available for explicitly requested GEO/AEO
