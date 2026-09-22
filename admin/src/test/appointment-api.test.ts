@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createAppointmentApi } from '../lib/appointment-api';
+import { createAppointmentApi, daysAgoIso } from '../lib/appointment-api';
 import type { CrmClient } from '../lib/api';
 
 function clientWithRpc() {
@@ -67,5 +67,42 @@ describe('appointment API boundary', () => {
       p_appointment_id: 'appointment-1',
       p_status: 'confirmed',
     });
+  });
+});
+
+describe('appointment list bounds (audit M-5)', () => {
+  function recordingClient() {
+    const calls: Array<[string, unknown[]]> = [];
+    const builder: Record<string, unknown> = {};
+    for (const method of ['select', 'order', 'limit', 'eq', 'gt', 'lt']) {
+      builder[method] = (...args: unknown[]) => {
+        calls.push([method, args]);
+        return builder;
+      };
+    }
+    builder.then = (resolve: (value: unknown) => void) => resolve({ data: [], error: null });
+    const client = { from: () => builder } as unknown as CrmClient;
+    return { client, calls };
+  }
+
+  it('reads one exact session by id instead of the earliest 300', async () => {
+    const { client, calls } = recordingClient();
+    await createAppointmentApi(client).listAppointments({ id: 'appointment-301' });
+    expect(calls).toContainEqual(['eq', ['id', 'appointment-301']]);
+  });
+
+  it('bounds a window read on end_at and start_at', async () => {
+    const { client, calls } = recordingClient();
+    await createAppointmentApi(client).listAppointments({
+      artistId: 'artist-1',
+      from: '2026-09-01T00:00:00.000Z',
+      to: '2026-09-15T00:00:00.000Z',
+    });
+    expect(calls).toContainEqual(['gt', ['end_at', '2026-09-01T00:00:00.000Z']]);
+    expect(calls).toContainEqual(['lt', ['start_at', '2026-09-15T00:00:00.000Z']]);
+  });
+
+  it('computes a bounded look-back timestamp', () => {
+    expect(daysAgoIso(90, new Date('2026-09-22T12:00:00.000Z'))).toBe('2026-06-24T12:00:00.000Z');
   });
 });

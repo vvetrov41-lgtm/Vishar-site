@@ -214,7 +214,8 @@ export function BookingPanel({
       to.setDate(to.getDate() + SEARCH_DAYS);
 
       const [appointments, timeOff, prefs, dayOverrides] = await Promise.all([
-        api.listAppointments({ artistId }),
+        // Audit M-5: bound the conflict view to the window being searched.
+        api.listAppointments({ artistId, from: from.toISOString(), to: to.toISOString() }),
         api.listAvailabilityBlocks({
           artistId,
           from: from.toISOString(),

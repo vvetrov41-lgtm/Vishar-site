@@ -163,6 +163,7 @@ export function createAppointmentApi(client: CrmClient) {
      * as an operator pages forward far enough.
      */
     async listAppointments(filters: {
+      id?: string;
       artistId?: string;
       projectId?: string;
       clientId?: string;
@@ -176,6 +177,7 @@ export function createAppointmentApi(client: CrmClient) {
         .order('start_at', { ascending: true })
         .limit(300);
 
+      if (filters.id) query = query.eq('id', filters.id);
       if (filters.artistId) query = query.eq('artist_id', filters.artistId);
       if (filters.projectId) query = query.eq('project_id', filters.projectId);
       if (filters.clientId) query = query.eq('client_id', filters.clientId);
@@ -261,3 +263,8 @@ export function createAppointmentApi(client: CrmClient) {
 }
 
 export type AppointmentApi = ReturnType<typeof createAppointmentApi>;
+
+/** ISO timestamp `days` days before now, for bounding appointment reads. */
+export function daysAgoIso(days: number, now: Date = new Date()): string {
+  return new Date(now.getTime() - days * 86_400_000).toISOString();
+}

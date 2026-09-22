@@ -29,7 +29,8 @@ export function FocusedAppointmentPage({ appointmentId }: { appointmentId: strin
   // then render only the exact session encoded by the notification entity id.
   const state = useAsync<PageData>(async () => {
     const [appointments, projects, enquiries, clients] = await Promise.all([
-      api.listAppointments({}),
+      // Audit M-5: read the exact session instead of the first 300 by start.
+      api.listAppointments({ id: appointmentId }),
       api.listProjects(),
       api.listEnquiries({}),
       api.listClients(),

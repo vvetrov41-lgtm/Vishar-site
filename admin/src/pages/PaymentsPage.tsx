@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LoadingState } from '../components/StateViews';
+import { daysAgoIso } from '../lib/appointment-api';
 import type { Appointment } from '../lib/appointment-api';
 import { useArtistScope } from '../lib/artist-scope';
 import {
@@ -264,7 +265,8 @@ export function PaymentsPage() {
     try {
       const [nextSettings, nextAppointments, nextCandidates, nextCatalogue, nextPolicy] = await Promise.all([
         api.getMonzoDepositSettings(artistId),
-        api.listAppointments({ artistId, appointmentType: 'tattoo_session' }),
+        // Audit M-5: recent and upcoming sessions, not the earliest 300 ever booked.
+        api.listAppointments({ artistId, appointmentType: 'tattoo_session', from: daysAgoIso(180) }),
         canViewReconciliation ? api.listMonzoReconciliationCandidates(artistId) : Promise.resolve([]),
         canManageReconciliation
           ? api.listMonzoPaymentDestinations(artistId).then((value) => value.destinations).catch(() => [])
