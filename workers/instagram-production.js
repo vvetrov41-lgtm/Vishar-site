@@ -9,6 +9,10 @@
 //   GET  /webhook                    Meta verification challenge
 //   POST /webhook                    signed Meta notifications
 //   scheduled                        token renewal, outbound drain, enrichment
+//   POST instagram.internal/internal/instagram/maintain
+//                                    webhook subscription + token renewal,
+//                                    called only over the shared scheduler's
+//                                    Service Binding
 //
 // Why a dedicated Worker rather than extending the live WhatsApp webhook
 // Worker (see docs/crm/adr/0007):
@@ -32,6 +36,7 @@ import {
   REFRESH_WHEN_REMAINING_SECONDS,
   authorizationUrl,
   deleteToken,
+  enableWebhookSubscription,
   exchangeAuthorizationCode,
   exchangeLongLivedToken,
   getConnectedAccount,
@@ -59,6 +64,14 @@ const CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const STATE_PREFIX = 'instagram:state:';
 const STATE_TTL_SECONDS = 600;
 const MAX_BODY_BYTES = 4 * 1024;
+export const INTERNAL_MAINTENANCE_HOST = 'instagram.internal';
+export const INTERNAL_MAINTENANCE_PATH = '/internal/instagram/maintain';
+// Meta is asked again at most this often per account once it has confirmed the
+// subscription. An account with an error is retried sooner, but not every tick:
+// a lasting refusal (app mode, access level) must not become 288 calls a day.
+const SUBSCRIPTION_RECHECK_MS = 12 * 60 * 60 * 1000;
+const SUBSCRIPTION_RETRY_MS = 30 * 60 * 1000;
+const MAX_MAINTENANCE_TARGETS = 10;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const INTEGRATION_KEY = /^[a-z][a-z0-9_-]{2,79}$/;
@@ -408,6 +421,15 @@ async function oauthCallback(request, url, env, db, fetchImpl) {
       throw error;
     }
 
+    // Without this Meta delivers no webhook for the account, however the app
+    // is configured. A failure does not undo the connection: the maintenance
+    // pass retries it and the recorded error code says why it is pending.
+    await ensureWebhookSubscription(env, db, {
+      artist_id: pending.artist_id,
+      integration_key: pending.integration_key,
+      instagram_user_id: account.instagramUserId,
+    }, fetchImpl);
+
     return html(200, 'Instagram connected',
       `The Instagram professional account @${account.username} is now connected to this artist. `
       + 'Messages will appear in the CRM inbox.');
@@ -587,6 +609,89 @@ function instagramDeliver(env, db, fetchImpl) {
   };
 }
 
+function safeCode(error, fallback) {
+  const code = error?.code;
+  return typeof code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(code) ? code : fallback;
+}
+
+/**
+ * Enables webhook delivery for one connected account and records what Meta
+ * reports. Uses the stored token, renewing it first when it is inside the
+ * refresh window, so the same pass also keeps an idle connection alive.
+ */
+export async function ensureWebhookSubscription(env, db, target, fetchImpl = fetch) {
+  let fields = [];
+  let errorCode = null;
+  try {
+    const token = await usableToken(env, db, target.artist_id, fetchImpl);
+    if (token.instagram_user_id !== target.instagram_user_id) {
+      throw Object.assign(new Error('token account mismatch'), {
+        code: 'instagram_token_account_mismatch',
+      });
+    }
+    const result = await enableWebhookSubscription(token.access_token, fetchImpl);
+    fields = result.fields;
+    if (result.missing.length > 0) errorCode = 'instagram_subscription_incomplete';
+  } catch (error) {
+    errorCode = safeCode(error, 'instagram_subscription_failed');
+  }
+
+  try {
+    await db.rpc('service_record_instagram_webhook_subscription', {
+      p_artist_id: target.artist_id,
+      p_integration_key: target.integration_key,
+      p_subscribed_fields: fields,
+      p_error_code: errorCode,
+    });
+  } catch (error) {
+    // The Meta-side state is what matters; a lost record only means the next
+    // pass asks Meta again.
+    console.error('instagram subscription record failed', JSON.stringify({
+      code: safeCode(error, 'instagram_subscription_record_failed'),
+    }));
+  }
+  return { fields, errorCode };
+}
+
+function subscriptionDue(target, now) {
+  const checked = Date.parse(target.webhook_subscription_checked_at ?? '');
+  if (!Number.isFinite(checked)) return true;
+  const interval = target.webhook_subscription_error ? SUBSCRIPTION_RETRY_MS : SUBSCRIPTION_RECHECK_MS;
+  return now - checked >= interval;
+}
+
+export async function runInstagramMaintenance(env, fetchImpl = fetch, now = Date.now()) {
+  const db = createInstagramSupabase(env, fetchImpl);
+  const listed = await db.rpc('service_list_instagram_maintenance_targets', {});
+  const targets = (Array.isArray(listed) ? listed : [])
+    .filter((row) => UUID.test(row?.artist_id ?? '')
+      && INTEGRATION_KEY.test(row?.integration_key ?? '')
+      && INSTAGRAM_USER_ID.test(row?.instagram_user_id ?? ''))
+    .slice(0, MAX_MAINTENANCE_TARGETS);
+
+  const summary = { ok: true, targets: targets.length, checked: 0, subscribed: 0, failed: 0 };
+  for (const target of targets) {
+    if (!subscriptionDue(target, now)) continue;
+    summary.checked += 1;
+    const result = await ensureWebhookSubscription(env, db, target, fetchImpl);
+    if (result.errorCode) summary.failed += 1;
+    else summary.subscribed += 1;
+  }
+  return summary;
+}
+
+async function internalMaintenance(request, url, env) {
+  if (url.hostname !== INTERNAL_MAINTENANCE_HOST || url.pathname !== INTERNAL_MAINTENANCE_PATH) {
+    return null;
+  }
+  if (request.method !== 'POST') return json(405, { ok: false, errorCode: 'method_not_allowed' });
+  try {
+    return json(200, await runInstagramMaintenance(env));
+  } catch (error) {
+    return json(200, { ok: false, errorCode: safeCode(error, 'instagram_maintenance_failed') });
+  }
+}
+
 export async function runInstagramDrain(env, fetchImpl = fetch) {
   const db = createInstagramSupabase(env, fetchImpl);
   return drainCommunicationOutbox({
@@ -684,6 +789,11 @@ export default {
     if (!configured(env)) return json(404, { error: 'not_found' });
     const url = new URL(request.url);
 
+    // Only the shared scheduler reaches this host, over its Service Binding;
+    // no public route resolves to instagram.internal.
+    const maintained = await internalMaintenance(request, url, env);
+    if (maintained) return maintained;
+
     // The Meta callback must not sit behind the same rate limiter as the
     // operator surface: Meta bursts, and a dropped notification is a lost
     // message.
@@ -743,6 +853,9 @@ export const __testing = Object.freeze({
   instagramDeliver,
   runScheduled,
   safeFailureCode,
+  ensureWebhookSubscription,
+  runInstagramMaintenance,
+  subscriptionDue,
   REDIRECT_URI,
   INSTAGRAM_PUBLIC_HOST,
 });

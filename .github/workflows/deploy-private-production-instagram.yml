@@ -146,6 +146,7 @@ jobs:
         run: |
           node scripts/test-instagram-webhook.mjs
           node scripts/test-instagram-connector.mjs
+          node scripts/test-instagram-webhook-subscription.mjs
           node scripts/test-instagram-production-config.mjs
           npm run check:instagram-production-bundle
           npm run scan:secrets

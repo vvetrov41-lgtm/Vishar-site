@@ -343,6 +343,45 @@ export async function processPayload(payload, supabase) {
   return counters;
 }
 
+/**
+ * Adds this delivery's outcome counts to the hourly evidence table.
+ *
+ * Worker logs are not retained anywhere an operator can query, so without this
+ * "Meta never delivered" and "Meta delivered but every event was rejected or
+ * unrouted" look identical: an empty inbox. Counts only; recording can never
+ * change the response Meta receives.
+ */
+async function recordDelivery(supabase, counts) {
+  if (!supabase || typeof supabase.rpc !== 'function') return;
+  const payload = {};
+  for (const [key, value] of Object.entries(counts)) {
+    if (Number.isInteger(value) && value > 0) payload[key] = Math.min(value, 1000);
+  }
+  if (Object.keys(payload).length === 0) return;
+  try {
+    await supabase.rpc('service_record_instagram_webhook_delivery', { p_counts: payload });
+  } catch {
+    // Evidence is best effort.
+  }
+}
+
+/**
+ * An unsigned request is anyone on the internet, so it is counted only while
+ * the Worker's rate limiter allows it. The first few per minute are enough to
+ * show a secret mismatch with Meta; a flood cannot turn into database writes.
+ */
+async function recordRejectedSignature(env, supabase) {
+  const limiter = env?.INSTAGRAM_RATE_LIMIT;
+  if (!limiter || typeof limiter.limit !== 'function') return;
+  try {
+    const { success } = await limiter.limit({ key: 'webhook:signature_invalid' });
+    if (!success) return;
+  } catch {
+    return;
+  }
+  await recordDelivery(supabase, { signature_invalid: 1 });
+}
+
 export async function handleInstagramWebhook(request, env, supabase = null) {
   const url = new URL(request.url);
   if (url.pathname !== INSTAGRAM_WEBHOOK_PATH) return new Response('Not found', { status: 404 });
@@ -387,7 +426,10 @@ export async function handleInstagramWebhook(request, env, supabase = null) {
       request.headers.get('X-Hub-Signature-256'),
       appSecret,
     );
-    if (!signed) throw new InstagramWebhookError('instagram_webhook_signature_invalid', 401);
+    if (!signed) {
+      await recordRejectedSignature(env, supabase);
+      throw new InstagramWebhookError('instagram_webhook_signature_invalid', 401);
+    }
 
     let payload;
     try {
@@ -396,7 +438,23 @@ export async function handleInstagramWebhook(request, env, supabase = null) {
       throw new InstagramWebhookError('instagram_webhook_json_invalid', 400);
     }
 
-    await processPayload(payload, supabase);
+    let counters;
+    try {
+      counters = await processPayload(payload, supabase);
+    } catch (error) {
+      // A persistence failure is answered 503 so Meta retries the delivery.
+      await recordDelivery(supabase, { accepted: 1, failed: 1 });
+      throw error;
+    }
+    await recordDelivery(supabase, {
+      accepted: 1,
+      inbound: counters.inbound,
+      echo: counters.echoes,
+      read: counters.read,
+      ignored: counters.ignored,
+      skipped: counters.skipped,
+      unrouted: counters.unrouted,
+    });
     return new Response('EVENT_RECEIVED', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   } catch (error) {
     if (error instanceof InstagramWebhookError) return jsonError(error.status);
@@ -407,5 +465,6 @@ export async function handleInstagramWebhook(request, env, supabase = null) {
 export const __testing = Object.freeze({
   ingestEvent,
   resolveRoute,
+  recordDelivery,
   MAX_EVENTS_PER_REQUEST,
 });
