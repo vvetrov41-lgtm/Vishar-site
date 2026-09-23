@@ -220,8 +220,22 @@ jobs:
         with:
           version: 2.110.0
 
+      # pgTAP needs Postgres plus the services that own the auth, storage and
+      # realtime schemas. The dashboard, edge runtime, image proxy, logging and
+      # mail containers are never used here, and pulling them from ghcr.io is
+      # what hits its rate limit. A throttled pull is retried with backoff.
       - name: Start local Supabase stack
-        run: supabase start
+        shell: bash
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3; do
+            if supabase start -x studio,edge-runtime,imgproxy,logflare,vector,mailpit,supavisor; then
+              exit 0
+            fi
+            supabase stop --no-backup || true
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 60))
+          done
+          exit 1
 
       - name: Reset canonical test database without development seed
         run: supabase db reset --local --no-seed
