@@ -37,6 +37,9 @@ jobs:
       - name: Validate static site
         run: npm run validate:site
 
+      - name: CRM scheduler watchdog self-test
+        run: node scripts/crm-scheduler-watchdog.mjs --self-test
+
       - name: Compile GEO runtime and launcher
         run: python -m compileall .geo-topic-agent-runtime scripts
 
