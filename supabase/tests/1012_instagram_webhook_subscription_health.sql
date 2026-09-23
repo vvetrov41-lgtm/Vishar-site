@@ -66,6 +66,9 @@ select lives_ok(
 select lives_ok(
   $$select public.service_record_instagram_webhook_delivery('{"accepted": 1, "unrouted": 1, "read": 0}'::jsonb)$$,
   'counts accumulate in the same hour and zeros are skipped');
+select lives_ok(
+  $$select public.service_record_instagram_webhook_delivery('{"recipient_alias": 1, "skipped_cross_account": 0}'::jsonb)$$,
+  'skip reasons and the recipient alias are recordable outcomes');
 select throws_ok(
   $$select public.service_record_instagram_webhook_delivery('{"sender_id": 1}'::jsonb)$$,
   '22023', null, 'an unknown outcome key is refused, so nothing identifying can be stored');
@@ -77,7 +80,7 @@ reset role;
 select set_eq(
   $$select outcome, count from crm_private.instagram_webhook_delivery_counters
     where bucket_hour = date_trunc('hour', now())$$,
-  $$values ('accepted', 2::bigint), ('inbound', 2::bigint), ('unrouted', 1::bigint)$$,
+  $$values ('accepted', 2::bigint), ('inbound', 2::bigint), ('unrouted', 1::bigint), ('recipient_alias', 1::bigint)$$,
   'hourly counters hold only outcome counts');
 
 select ok(

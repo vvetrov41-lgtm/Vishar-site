@@ -30,7 +30,8 @@ export const INSTAGRAM_WEBHOOK_PATH = '/webhook';
 export const MAX_WEBHOOK_BYTES = 256 * 1024;
 
 const PROVIDER_ID = /^[0-9]{5,40}$/;
-const MESSAGE_ID = /^[A-Za-z0-9_=./-]{8,255}$/;
+// Meta message ids are base64; the standard alphabet includes '+'.
+const MESSAGE_ID = /^[A-Za-z0-9_=+./-]{8,255}$/;
 const SIGNATURE = /^sha256=([0-9a-f]{64})$/i;
 const MESSAGE_TYPE = /^[a-z][a-z0-9_]{1,31}$/;
 const REF = /^[A-Za-z0-9_.:|-]{1,120}$/;
@@ -229,12 +230,47 @@ async function resolveRoute(supabase, cache, instagramUserId) {
   return route;
 }
 
-async function ingestEvent(event, entryAccountId, route, supabase, counters) {
+function skip(counters, reason) {
+  counters.skipped += 1;
+  counters[`skipped_${reason}`] = (counters[`skipped_${reason}`] ?? 0) + 1;
+}
+
+/**
+ * Decides whether the business-side id on an event belongs to the entry's
+ * account.
+ *
+ * Meta's reference shows `recipient.id` (inbound) and `sender.id` (echo) equal
+ * to the entry's professional account id, and for many accounts they are. For
+ * Instagram Login accounts linked to a Facebook Page, Meta instead sends a
+ * different, persistent id for the same business account (observed in
+ * production on 2026-09-23: signed deliveries for both artists, every event
+ * dropped). The entry id is what Meta signs and what routes the event, so it
+ * stays authoritative. An alias is accepted only when it resolves to no CRM
+ * account at all; an id that is another artist's account is still refused, so
+ * one artist's entry can never file a message under the other.
+ */
+async function businessSideMatches(businessId, entryAccountId, supabase, routeCache, counters) {
+  if (businessId === entryAccountId) return true;
+  const other = await resolveRoute(supabase, routeCache, businessId);
+  if (other) return false;
+  counters.recipient_alias += 1;
+  return true;
+}
+
+async function ingestEvent(event, entryAccountId, route, supabase, counters, routeCache = new Map()) {
   const senderId = typeof event?.sender?.id === 'string' ? event.sender.id.trim() : '';
   const recipientId = typeof event?.recipient?.id === 'string' ? event.recipient.id.trim() : '';
   const providerTimestamp = parseProviderTimestamp(event?.timestamp);
-  if (!PROVIDER_ID.test(senderId) || !PROVIDER_ID.test(recipientId) || !providerTimestamp) {
-    counters.skipped += 1;
+  if (!PROVIDER_ID.test(senderId) || !PROVIDER_ID.test(recipientId)) {
+    skip(counters, 'ids');
+    return;
+  }
+  if (!providerTimestamp) {
+    skip(counters, 'timestamp');
+    return;
+  }
+  if (senderId === recipientId) {
+    skip(counters, 'ids');
     return;
   }
 
@@ -242,7 +278,7 @@ async function ingestEvent(event, entryAccountId, route, supabase, counters) {
   if (event?.read && typeof event.read === 'object') {
     const mid = typeof event.read.mid === 'string' ? event.read.mid.trim() : '';
     if (!MESSAGE_ID.test(mid) || senderId === entryAccountId) {
-      counters.skipped += 1;
+      skip(counters, 'read');
       return;
     }
     await supabase.rpc('record_communication_read_receipt', {
@@ -267,7 +303,7 @@ async function ingestEvent(event, entryAccountId, route, supabase, counters) {
 
   const normalised = normaliseMessage(event.message);
   if (!normalised) {
-    counters.skipped += 1;
+    skip(counters, 'message');
     return;
   }
 
@@ -275,8 +311,9 @@ async function ingestEvent(event, entryAccountId, route, supabase, counters) {
     // On an echo the business account is the sender and the participant is the
     // recipient. An echo that does not come from the account this entry names
     // is not this artist's message.
-    if (senderId !== entryAccountId) {
-      counters.skipped += 1;
+    if (recipientId === entryAccountId
+        || !(await businessSideMatches(senderId, entryAccountId, supabase, routeCache, counters))) {
+      skip(counters, 'cross_account');
       return;
     }
     await supabase.rpc('record_communication_outbound_echo', {
@@ -294,9 +331,11 @@ async function ingestEvent(event, entryAccountId, route, supabase, counters) {
     return;
   }
 
-  // An inbound message is addressed to the account this entry names.
-  if (recipientId !== entryAccountId) {
-    counters.skipped += 1;
+  // An inbound message is addressed to the account this entry names, never
+  // sent by it.
+  if (senderId === entryAccountId
+      || !(await businessSideMatches(recipientId, entryAccountId, supabase, routeCache, counters))) {
+    skip(counters, 'cross_account');
     return;
   }
 
@@ -316,7 +355,9 @@ async function ingestEvent(event, entryAccountId, route, supabase, counters) {
 }
 
 export async function processPayload(payload, supabase) {
-  const counters = { inbound: 0, echoes: 0, read: 0, skipped: 0, ignored: 0, unrouted: 0 };
+  const counters = {
+    inbound: 0, echoes: 0, read: 0, skipped: 0, ignored: 0, unrouted: 0, recipient_alias: 0,
+  };
   if (payload?.object !== 'instagram' || !Array.isArray(payload?.entry)) return counters;
 
   const routeCache = new Map();
@@ -336,7 +377,7 @@ export async function processPayload(payload, supabase) {
     for (const event of entry.messaging) {
       if (processed >= MAX_EVENTS_PER_REQUEST) return counters;
       processed += 1;
-      await ingestEvent(event, accountId, route, supabase, counters);
+      await ingestEvent(event, accountId, route, supabase, counters, routeCache);
     }
   }
 
@@ -454,6 +495,12 @@ export async function handleInstagramWebhook(request, env, supabase = null) {
       ignored: counters.ignored,
       skipped: counters.skipped,
       unrouted: counters.unrouted,
+      recipient_alias: counters.recipient_alias,
+      skipped_ids: counters.skipped_ids,
+      skipped_timestamp: counters.skipped_timestamp,
+      skipped_read: counters.skipped_read,
+      skipped_message: counters.skipped_message,
+      skipped_cross_account: counters.skipped_cross_account,
     });
     return new Response('EVENT_RECEIVED', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   } catch (error) {
