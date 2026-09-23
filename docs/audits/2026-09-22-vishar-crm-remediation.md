@@ -53,6 +53,34 @@
 - **L-5, M-9, резервный MFA-фактор:** без действий. **Импорт GPT Actions схемы:** отложен, серверной защиты H-4 достаточно.
 - **CI:** на PR #864 ghcr.io 3 раза подряд вернул `toomanyrequests` до запуска тестов. Шаг `supabase start` в `crm-booking-validation.yml` и `private-production-release.yml` теперь поднимает только нужные pgTAP сервисы, сначала тянет образы из зеркала `public.ecr.aws` и повторяет с backoff. Тесты не пропускаются.
 
+## Instagram DM ingestion (2026-09-23, после аудита)
+
+Факты production на момент проверки:
+- 2 включённые интеграции `instagram_login`: Владимир `17841406930678029` (@vladimir_vishar), Кристина `17841408196370494` (@kristina_vishar);
+- `service_resolve_instagram_route` находит обоих;
+- Worker `vishar-instagram-production` живой, код совпадает с репозиторием: неверный verify token даёт 403, неподписанный POST 401;
+- Instagram-разговоров и сообщений 0, вызовов Instagram RPC за 24 ч 0.
+
+| Этап | Статус |
+|---|---|
+| Custom domain `instagram.vishartattoo.com/webhook` | работает |
+| Проверка подписи | работает (401 на неподписанный) |
+| Маршрут аккаунт → артист | работает для обоих |
+| `record_communication_inbound_message` → conversations/messages | путь в коде есть, в production не вызывался ни разу |
+| Подписка аккаунтов на вебхуки Meta (`POST /me/subscribed_apps`) | **не выполнялась никогда**: коннектор её не вызывал, в runbook шага не было |
+| Продление токенов | только при отправке, а отправок нет; токены истекли бы ~29.10 |
+
+Корневая причина: для Instagram API with Instagram Login Meta шлёт вебхуки аккаунту только после `POST /me/subscribed_apps` с его токеном. Подписки полей в App Dashboard для этого недостаточно.
+
+Исправление:
+- **#865.** Подписка в OAuth callback и в обслуживании через общий scheduler (`INSTAGRAM_SERVICE`) раз в 12 ч, продление токенов, почасовые счётчики доставок (`get_instagram_webhook_health`).
+- **#866.** Понятная ошибка проверки секретов.
+- **Раскатка.** rc859 и rc860 прошли: миграция `20260923100000`, scheduler с binding.
+
+Блокер деплоя Instagram Worker: на нём лежат посторонние секреты `TELEGRAM_BOT_TOKEN` и `TELEGRAM_WEBHOOK_SECRET`. Автоматизация репозитория их не пишет, код Instagram их не использует. Проверка точного набора секретов справедливо останавливает деплой. Их нужно удалить вручную в Cloudflare.
+
+История: коннектор работает только на вебхуках. Старые переписки не импортируются, в CRM появятся только сообщения после включения подписки.
+
 ## Что осталось и почему
 
 - **Instagram outbound** получит send intent при следующем релизе Instagram (исходящих сообщений в production не было ни одного).
