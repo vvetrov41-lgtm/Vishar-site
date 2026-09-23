@@ -32,6 +32,7 @@ expectIncludes('length == 0', 'zero-schedule readback gate');
 expectIncludes('.name == "AI" and .type == "ai"', 'Workers AI binding readback');
 expectIncludes('.name == "CRM_AI_IMAGES_ENABLED" and .text == "false"', 'images remain disabled');
 expectIncludes("endpoint='https://tattooai.vvetrov41.workers.dev/'", 'live Worker boundary');
+expectIncludes("host='https://api.vishartattoo.com/'", 'first-party API host readback');
 expectIncludes('node scripts/probe-kristina-live-booking-contract.mjs', 'Kristina live booking release guard');
 
 const kristinaProbeRuns = workflow.match(/node scripts\/probe-kristina-live-booking-contract\.mjs/g) || [];
