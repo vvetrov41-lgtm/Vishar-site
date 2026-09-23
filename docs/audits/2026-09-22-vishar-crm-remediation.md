@@ -25,6 +25,7 @@
 | M-7 | Исправлено | #849 | изоляция очередей Calendar |
 | M-8 | Исправлено (шаг 1–2 из 3) | #856, #861 | сайт ходит на `api.vishartattoo.com` с rate limit; `workers.dev` оставлен для серверных прокси |
 | M-9 | Нужно решение | — | 4 платежа без сопоставления, доказательств недостаточно |
+| WA-1 | Исправлено (найдено при ремедиации) | #862, #863 | исходящий WhatsApp не отправлялся с 20.09: деплой drain упирался в лимит 5 cron на Workers Free. Drain теперь вызывается существующим cron scheduler'а через Service Binding; с 09:00 23.09 `claim_whatsapp_outbox` каждые 5 минут, HTTP 200. 3 dead-сообщения от 20.09 не переотправлялись |
 | L-1 | Частично | #860 | `search_path` у 2 функций, дубль индекса удалён; initplan/FK/неиспользуемые индексы оставлены |
 | L-2 | Частично | #860 | `may_contact_client` больше не оракул; `queue_whatsapp_message` сохраняет контракт 42501 |
 | L-3 | Нужно решение | — | срок хранения данных (UK GDPR) |
@@ -45,23 +46,8 @@
 
 ## Что осталось и почему
 
-- **WhatsApp outbound не работает с 20 сентября.** Деплой drain падает: аккаунт Cloudflare упёрся в лимит 5 cron-триггеров на бесплатном плане. Код с send intent загружен, но без cron он не запускается; 3 сообщения 20 сентября ушли в dead. Это не регрессия ремедиации.
-- **`hikerapi-mcp` открыт без авторизации.** Любой, кто знает `hikerapi-mcp.vvetrov41.workers.dev/mcp`, может вызывать HikerAPI за счёт владельца. Это тот же Worker, что используется коннектором Hiker_instagram; добавление секрета сломает коннектор до обновления URL.
-- **`vishar-monzo-bridge`** передаёт секрет в URL (`?secret=`, `/mcp/{secret}`) и не синхронизирует Monzo с июля (токен, вероятно, истёк).
 - **Instagram outbound** получит send intent при следующем релизе Instagram (исходящих сообщений в production не было ни одного).
 - **`workers.dev`** остаётся для серверных прокси `public-booking-edge` и `booking-host`; отключение — отдельный шаг после перевода их на Service Binding.
-
-## Инвентаризация Worker'ов вне репозитория
-
-| Worker | Назначение | Используется | Данные | Рекомендация |
-|---|---|---|---|---|
-| `vishar-monzo-bridge` | Monzo + Acuity → D1, MCP для анализа | коннектор Vishar_Monzo_Bridge; данных за сентябрь нет | банковские транзакции, ПДн клиентов | перенести секрет из URL в заголовок; переподключить Monzo или вывести из эксплуатации |
-| `hikerapi-mcp` | MCP-прокси к HikerAPI | коннектор Hiker_instagram | данные Instagram, платный API | **срочно** добавить секрет/OAuth и обновить URL коннектора |
-| `vishar-gsc-mcp` | MCP для Search Console + анализ | коннектор Vishar_GSC | данные GSC, ключ OpenAI | OAuth уже есть; держать, исходник перенести в repo |
-| `vishar-monzo-api-staging` | staging Monzo OAuth-коннектора | staging | зашифрованные токены | исходник есть в repo (`wrangler.monzo-api.toml`); оставить |
-| `kisa` | сайт и форма Кристины | kristinavishar.com | ПДн заявок | исходник в отдельном репозитории `kisa`; оставить |
-
-Ничего не удалялось: у каждого Worker есть живой потребитель.
 
 ## Финансы (M-9)
 
@@ -78,20 +64,38 @@ CRM по дизайну хранит только хэш payload вебхука,
 
 | Что | Результат |
 |---|---|
-| CRM trunk | `08694cf`, exact-head CI зелёный (5/5 обязательных workflow) |
+| CRM trunk | `fb64b49`, exact-head CI зелёный (5/5 обязательных workflow) |
 | `main` | `2e182f7`, сайт задеплоен Cloudflare Pages |
 | Миграции production | 203, последняя `20260923060000` |
-| Релизы | rc850–rc855: release и observer — success |
+| Релизы | rc850–rc857: release и observer — success; WhatsApp drain rc857 — success, 0 cron |
 | Scheduler | heartbeat 2 мин назад; watchdog: healthy |
 | Операционные алерты | 1 системное уведомление за 2 дня, 0 dead outbox за 24 ч, очереди outbox пусты |
-| Интейк | последняя заявка 2026-09-23 07:24 UTC; сайт на `api.vishartattoo.com` с ~07:55, preflight и CORS проверены |
+| Интейк | последняя заявка 2026-09-23 07:24 UTC; сайт на `api.vishartattoo.com` с ~07:55; контрольный honeypot-запрос через новый хост прошёл весь путь (CORS, multipart, rate limit, маршрут интейка) и ничего не записал в БД |
 | Calendar | 16 успешных проекций за 7 дней |
 | Telegram | 7 доставок за 3 дня |
 | Google Contacts | 22 контакта за 14 дней |
-| WhatsApp | входящий webhook работает; исходящий drain без cron (см. «Что осталось») |
+| WhatsApp | входящий webhook работает; исходящий drain через scheduler, `claim_whatsapp_outbox` каждые 5 мин (200) |
 | GPT Actions / gateway | `carriesCrmData` и ограничения `gpt-sandbox-*` в production; маршруты требуют OAuth (401) |
 | Auth / MFA | TOTP включён; владелец подключил фактор 07:40, сессия подтверждена aal2; leaked-password protection требует платного плана |
 | Advisors | `function_search_path_mutable` исчез; остались намеренные anon RPC и leaked-password |
+
+## External infrastructure findings / backlog
+
+Отдельные проекты, **не входят** в scope ремедиации CRM, в процент готовности и в статус Critical/High/Medium/Low. В этой работе не изменялись.
+
+- `hikerapi-mcp`: `/mcp` отвечает без авторизации; любой может вызывать HikerAPI за счёт владельца. Тот же Worker использует коннектор Hiker_instagram.
+- `vishar-monzo-bridge`: секрет передаётся в URL (`?secret=`, `/mcp/{secret}`); Monzo не синхронизирован с июля.
+
+
+| Worker | Назначение | Используется | Данные | Рекомендация |
+|---|---|---|---|---|
+| `vishar-monzo-bridge` | Monzo + Acuity → D1, MCP для анализа | коннектор Vishar_Monzo_Bridge; данных за сентябрь нет | банковские транзакции, ПДн клиентов | перенести секрет из URL в заголовок; переподключить Monzo или вывести из эксплуатации |
+| `hikerapi-mcp` | MCP-прокси к HikerAPI | коннектор Hiker_instagram | данные Instagram, платный API | **срочно** добавить секрет/OAuth и обновить URL коннектора |
+| `vishar-gsc-mcp` | MCP для Search Console + анализ | коннектор Vishar_GSC | данные GSC, ключ OpenAI | OAuth уже есть; держать, исходник перенести в repo |
+| `vishar-monzo-api-staging` | staging Monzo OAuth-коннектора | staging | зашифрованные токены | исходник есть в repo (`wrangler.monzo-api.toml`); оставить |
+| `kisa` | сайт и форма Кристины | kristinavishar.com | ПДн заявок | исходник в отдельном репозитории `kisa`; оставить |
+
+Ничего не удалялось: у каждого Worker есть живой потребитель.
 
 ---
 
