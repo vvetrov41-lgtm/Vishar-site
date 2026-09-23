@@ -526,6 +526,97 @@ export async function sendInstagramMessage({
   return { delivered: true, providerMessageId };
 }
 
+// Webhook delivery for an Instagram Login account is enabled per account.
+// Subscribing the app to fields in the App Dashboard only says which fields the
+// app wants; Meta sends nothing for an account until that account's token has
+// called `POST /me/subscribed_apps`. These are exactly the fields the webhook
+// interprets.
+export const INSTAGRAM_WEBHOOK_FIELDS = Object.freeze([
+  'messages',
+  'message_reactions',
+  'messaging_seen',
+]);
+
+const WEBHOOK_FIELD = /^[a-z][a-z0-9_]{1,63}$/;
+
+async function subscriptionFailure(response) {
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  const code = Number(payload?.error?.code);
+  // 190: the token is invalid, expired or revoked. 10/200-299: the account or
+  // app lacks the permission (App Review / Advanced Access / app mode).
+  if (response.status === 401 || code === 190) {
+    return new InstagramError('instagram_credentials_rejected');
+  }
+  if (response.status === 403 || code === 10 || (code >= 200 && code <= 299)) {
+    return new InstagramError('instagram_subscription_permission_denied');
+  }
+  return new InstagramError('instagram_subscription_failed');
+}
+
+/** Fields Meta currently reports as enabled for the token's account. */
+export function parseSubscribedFields(payload) {
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const fields = new Set();
+  for (const row of rows) {
+    const listed = Array.isArray(row?.subscribed_fields) ? row.subscribed_fields : [];
+    for (const field of listed) {
+      const name = typeof field === 'string' ? field : field?.name;
+      if (typeof name === 'string' && WEBHOOK_FIELD.test(name)) fields.add(name);
+    }
+  }
+  return [...fields].sort();
+}
+
+export async function readWebhookSubscription(accessToken, fetchImpl = fetch) {
+  const url = new URL(`/${INSTAGRAM_GRAPH_VERSION}/me/subscribed_apps`, GRAPH_ORIGIN);
+  let response;
+  try {
+    response = await fetchImpl(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      redirect: 'manual',
+    });
+  } catch {
+    throw new InstagramError('instagram_unreachable');
+  }
+  if (!response.ok) throw await subscriptionFailure(response);
+  return parseSubscribedFields(await readJson(response, 'instagram_response_invalid'));
+}
+
+/**
+ * Enables webhook delivery for the token's account and reads back what Meta
+ * actually recorded. Idempotent: repeating it for an enabled account changes
+ * nothing on Meta's side.
+ */
+export async function enableWebhookSubscription(accessToken, fetchImpl = fetch) {
+  if (typeof accessToken !== 'string' || !accessToken) {
+    throw new InstagramError('instagram_token_missing');
+  }
+  const url = new URL(`/${INSTAGRAM_GRAPH_VERSION}/me/subscribed_apps`, GRAPH_ORIGIN);
+  url.searchParams.set('subscribed_fields', INSTAGRAM_WEBHOOK_FIELDS.join(','));
+  let response;
+  try {
+    response = await fetchImpl(url.toString(), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+      redirect: 'manual',
+    });
+  } catch {
+    throw new InstagramError('instagram_unreachable');
+  }
+  if (!response.ok) throw await subscriptionFailure(response);
+  const parsed = await readJson(response, 'instagram_response_invalid');
+  if (parsed?.success !== true) throw new InstagramError('instagram_subscription_failed');
+
+  const fields = await readWebhookSubscription(accessToken, fetchImpl);
+  const missing = INSTAGRAM_WEBHOOK_FIELDS.filter((field) => !fields.includes(field));
+  return { fields, missing };
+}
+
 export const __testing = Object.freeze({
   b64urlEncode,
   b64urlDecode,

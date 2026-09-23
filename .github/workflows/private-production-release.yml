@@ -672,6 +672,9 @@ jobs:
           grep -Fq 'binding = "WHATSAPP_SERVICE"' "$deploy_config"
           grep -Fq 'service = "vishar-whatsapp-drain-production"' "$deploy_config"
           grep -Fq 'WHATSAPP_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'binding = "INSTAGRAM_SERVICE"' "$deploy_config"
+          grep -Fq 'service = "vishar-instagram-production"' "$deploy_config"
+          grep -Fq 'INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "true"' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
           npx wrangler deploy \
             --config "$deploy_config" \

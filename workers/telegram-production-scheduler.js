@@ -6,6 +6,8 @@ const AI_DRAIN_URL = 'https://tattooai.internal/internal/enquiry-ai/drain';
 const CRM_AGENT_DRAIN_URL = 'https://tattooai.internal/internal/crm-agent/drain';
 const WHATSAPP_DRAIN_URL = 'https://whatsapp.internal/internal/whatsapp/drain';
 const MAX_WHATSAPP_JOBS_PER_TICK = 20;
+const INSTAGRAM_MAINTENANCE_URL = 'https://instagram.internal/internal/instagram/maintain';
+const MAX_INSTAGRAM_TARGETS = 10;
 
 function failure(code, message) {
   return Object.assign(new Error(message), { code });
@@ -130,6 +132,55 @@ export async function runSharedWhatsappDrain(env) {
   }
 }
 
+export function assertInstagramMaintenanceSummary(value) {
+  const count = (n) => Number.isInteger(n) && n >= 0 && n <= MAX_INSTAGRAM_TARGETS;
+  if (!value || typeof value !== 'object') {
+    throw failure('instagram_maintenance_summary_invalid', 'invalid Instagram maintenance summary');
+  }
+  if (value.ok !== true) {
+    const code = typeof value.errorCode === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(value.errorCode)
+      ? value.errorCode
+      : 'instagram_maintenance_failed';
+    throw failure(code, 'Instagram maintenance failed');
+  }
+  if (![value.targets, value.checked, value.subscribed, value.failed].every(count)
+      || value.checked > value.targets
+      || value.subscribed + value.failed !== value.checked) {
+    throw failure('instagram_maintenance_summary_invalid', 'invalid Instagram maintenance summary');
+  }
+  return {
+    targets: value.targets,
+    checked: value.checked,
+    subscribed: value.subscribed,
+    failed: value.failed,
+  };
+}
+
+// Instagram webhook delivery must be enabled per connected account, and the
+// account's long-lived token must be renewed before it lapses even when nobody
+// replies from the CRM. The Instagram Worker has no cron of its own (the
+// account's cron triggers are exhausted), so this rides the existing cron over
+// a Service Binding. The Worker asks Meta at most every 12 hours per healthy
+// account, so most ticks are a single database read.
+export async function runSharedInstagramMaintenance(env) {
+  try {
+    if (!env?.INSTAGRAM_SERVICE || typeof env.INSTAGRAM_SERVICE.fetch !== 'function') {
+      throw failure('instagram_service_binding_unavailable', 'Instagram service binding unavailable');
+    }
+    const response = await env.INSTAGRAM_SERVICE.fetch(INSTAGRAM_MAINTENANCE_URL, { method: 'POST' });
+    if (!response?.ok) throw failure('instagram_service_unavailable', 'Instagram service unavailable');
+    const summary = assertInstagramMaintenanceSummary(await response.json());
+    if (summary.checked > 0) console.log('instagram shared maintenance', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.code)
+      ? error.code
+      : 'instagram_shared_maintenance_error';
+    console.error('instagram shared maintenance failed', JSON.stringify({ code }));
+    throw error;
+  }
+}
+
 export async function runSharedGmailMetadataRefresh(env) {
   try {
     if (!env?.GMAIL_SERVICE || typeof env.GMAIL_SERVICE.refreshClientMetadataSnapshot !== 'function') {
@@ -218,6 +269,12 @@ export function createProductionScheduler(baseWorker = telegramWorker) {
         tasks.push(runSharedWhatsappDrain(env));
       }
 
+      // Instagram webhook subscription and token renewal.
+      if (env?.VISHAR_ENVIRONMENT === 'production'
+          && env?.INSTAGRAM_SHARED_MAINTENANCE_ENABLED === 'true') {
+        tasks.push(runSharedInstagramMaintenance(env));
+      }
+
       // Meta CAPI is isolated from Telegram/Gmail/automation. A provider outage
       // can fail this task without suppressing any sibling task or invalidating
       // the already-committed CRM event.
@@ -238,6 +295,7 @@ export const __testing = Object.freeze({
   AI_DRAIN_URL,
   CRM_AGENT_DRAIN_URL,
   WHATSAPP_DRAIN_URL,
+  INSTAGRAM_MAINTENANCE_URL,
   MAX_AI_JOBS_PER_TICK,
   runMetaAdsDrain,
   runSharedGmailMetadataRefresh,

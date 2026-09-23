@@ -148,6 +148,47 @@ Do not subscribe to fields the connector does not interpret. Unknown events are
 ignored safely, but every extra subscription is extra untrusted traffic on a
 public endpoint.
 
+### 2.5a Per-account webhook enablement (automatic)
+
+Subscribing the app to fields in 2.5 is necessary but not sufficient. Meta
+sends webhooks for an Instagram Login account only after that account's token
+has called `POST /me/subscribed_apps?subscribed_fields=messages,message_reactions,messaging_seen`.
+Production ran without this until 2026-09-23: both artist accounts were
+connected, and no Instagram message ever reached the CRM.
+
+The connector now does it itself:
+
+- the OAuth callback enables delivery for the account it just bound and reads
+  back what Meta recorded;
+- the shared `*/5` scheduler calls `POST instagram.internal/internal/instagram/maintain`
+  over the `INSTAGRAM_SERVICE` binding. For each enabled route the Worker
+  re-enables delivery when it was never confirmed, 30 minutes after a failure,
+  or every 12 hours, renewing the long-lived token first when it has less than
+  7 days left. Idle connections therefore no longer lapse after 60 days.
+
+The result is stored in `artist_integrations.configuration`
+(`webhook_subscribed_fields`, `webhook_subscription_checked_at`,
+`webhook_subscription_error`). Error codes:
+`instagram_subscription_permission_denied` (App Review, Advanced Access or app
+mode), `instagram_credentials_rejected` (token revoked or expired; reconnect),
+`instagram_subscription_incomplete` (Meta accepted but reports fewer fields).
+
+Delivery evidence: every webhook POST adds hourly outcome counts to
+`crm_private.instagram_webhook_delivery_counters` (`accepted`, `inbound`,
+`echo`, `read`, `ignored`, `skipped`, `unrouted`, `failed`, and a rate-limited
+`signature_invalid`). No payload, account id or content is stored. The owner
+reads it with `select * from get_instagram_webhook_health(72)`. Zero `accepted`
+rows with a confirmed subscription means Meta is not sending (app mode or
+access level); `signature_invalid` means the Worker's `INSTAGRAM_APP_SECRET`
+does not match what Meta signs with.
+
+### History
+
+The connector is webhook-only. Only messages sent after delivery is enabled
+for an account reach the CRM; earlier Instagram conversations are not
+backfilled. Importing history would need Meta's Conversations API and is a
+separate feature.
+
 ### 2.6 App Review and Business Verification
 
 `instagram_business_manage_messages` needs **Advanced Access** for any
