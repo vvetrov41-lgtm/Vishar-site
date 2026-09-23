@@ -2,7 +2,7 @@
 
 Единственный источник истины по техническому аудиту Vishar CRM от 2026-09-22 и его исправлению. Исторические аудиты публичного сайта (PageSpeed, hero, Tailwind, CSP) лежат отдельно в [`website-performance-history.md`](website-performance-history.md) и **не входят** в scope ремедиации CRM.
 
-Статус на 2026-09-23. Канонический trunk: `agent/platform-telegram-self-service`. Последняя миграция production: см. раздел «Финальная проверка».
+Статус на 2026-09-23, после релиза rc858. Канонический trunk: `agent/platform-telegram-self-service`. Последняя миграция production: см. раздел «Финальная проверка».
 
 ## Сводка по находкам
 
@@ -11,9 +11,9 @@
 | C-1 | Исправлено | #841 | legacy-деплой `tattooai` из `main` удалён, guard в `validate:site` |
 | C-2 | Исправлено | #842, #851 | канонический релиз работает (rc850–rc855); `check-migration-order`, `check-production-db-release-paths`, `check-release-ref-routing` в CI |
 | H-1 | Исправлено | #843 | `service_recover_transient_dead_outbox` в scheduler; `database_rejected` отделён от `database_unavailable` |
-| H-2 | Нужно решение | — | 2 сессии 27 и 28 окт. без напоминаний; ничего не отправлено |
+| H-2 | Исправлено (решение владельца) | #864 | сессии 27 и 28 окт. записаны в lifecycle штатным событием `appointment.scheduled`: 6 pending-job'ов (72h 24–25.10, 24h 26–27.10, post-session после сессии), дублей нет, писем при включении 0 |
 | H-3 | Исправлено (код), 1 решение | #854 | TOTP-2FA в CRM, AAL2 в БД для всех с фактором; TOTP включён в Supabase Auth. Leaked-password protection отклонён Supabase (HTTP 402, нужен платный план) |
-| H-4 | Исправлено (сервер), нужен импорт схемы | #844, #850 | `carriesCrmData` в GPT Worker; `x-openai-isConsequential: true` в схеме |
+| H-4 | Исправлено (сервер); импорт схемы отложен владельцем | #844, #850 | `carriesCrmData` в GPT Worker; `x-openai-isConsequential: true` в схеме |
 | H-5 | Исправлено | #846, #852, #853 | ежедневные алерты в Telegram + внешний watchdog на GitHub Actions |
 | H-6 | Исправлено | #845 | gateway разрешает мутации только `gpt-sandbox-*` |
 | M-1 | Исправлено | #847 | inline Telegram-отправка из интейка в production выключена |
@@ -24,13 +24,13 @@
 | M-6 | Исправлено | #858 | `input_invalid` без повтора, backoff 5→30 мин, лимит 3 попытки не изменён |
 | M-7 | Исправлено | #849 | изоляция очередей Calendar |
 | M-8 | Исправлено (шаг 1–2 из 3) | #856, #861 | сайт ходит на `api.vishartattoo.com` с rate limit; `workers.dev` оставлен для серверных прокси |
-| M-9 | Нужно решение | — | 4 платежа без сопоставления, доказательств недостаточно |
+| M-9 | Закрыто владельцем | — | владелец пометил 4 платежа как ignored; дальше не сопоставляются и не меняются |
 | WA-1 | Исправлено (найдено при ремедиации) | #862, #863 | исходящий WhatsApp не отправлялся с 20.09: деплой drain упирался в лимит 5 cron на Workers Free. Drain теперь вызывается существующим cron scheduler'а через Service Binding; с 09:00 23.09 `claim_whatsapp_outbox` каждые 5 минут, HTTP 200. 3 dead-сообщения от 20.09 не переотправлялись |
 | L-1 | Частично | #860 | `search_path` у 2 функций, дубль индекса удалён; initplan/FK/неиспользуемые индексы оставлены |
 | L-2 | Частично | #860 | `may_contact_client` больше не оракул; `queue_whatsapp_message` сохраняет контракт 42501 |
-| L-3 | Нужно решение | — | срок хранения данных (UK GDPR) |
-| L-4 | Нужно решение оператора | — | 2 прошедшие сессии без итогового статуса |
-| L-5 | Нужно решение оператора | — | 26 email-черновиков |
+| L-3 | Решение записано | #864 | 5 лет (1825 дней) после последней активности для заявок без проекта и их референсов; scope в `enquiry_retention_scope`. Удаление выключено: исполнителя retention в коде нет. Кандидатов сегодня 0, первые возможны с 08.2031 |
+| L-4 | Исправлено (решение владельца) | #864 | 2 тестовые сессии (7 и 8 сент.) переведены в `cancelled` с аудит-записью; 0 outbox, ничего не удалено; заявки уже исключены из статистики |
+| L-5 | Оставлено (решение владельца) | — | AI-черновики остаются черновиками: не отправляются и не удаляются |
 | L-6 | Оставлено | — | одноразовые `pr1xx` workflow: guards надёжны, удаление не даёт выигрыша в безопасности |
 | L-7 | Оставлено | — | Node 20 warning: GitHub уже запускает на Node 24 |
 | L-8 | Оставлено | — | нет UI для исключения из аналитики, это фича |
@@ -43,6 +43,15 @@
 - **MFA.** Экран «Аккаунт → Двухфакторная защита»: подключение TOTP, запасной аутентификатор, удаление через aal2. При входе аккаунт с фактором получает экран кода. `crm_private.caller_mfa_satisfied()` встроен в 7 центральных функций авторизации; сессия aal1 у аккаунта с фактором не видит ни одной строки. Сервисный backend и OAuth-токены GPT (`client_id`) не затронуты. Сейчас ни у кого нет фактора, поэтому поведение не изменилось до первого подключения.
 - **Телефоны.** `07…`/`04…` конвертируются только при явной стране в `travelling_from` (все части адреса известны и согласны), без имён и IP. Исходное значение хранится в `phone_input`, основание — в `phone_normalization_basis`, журнал `client.phone_country_normalized`. Невидимые символы (U+202C и т. п.) удаляются.
 - **api.vishartattoo.com.** Custom Domain того же Worker `tattooai`, rate limit POST 20/мин и остальное 300/мин на IP; egress Cloudflare Workers не считается. TLS, preflight 204, CORS проверены извне; все страницы сайта и CSP переключены.
+
+## Решения владельца (2026-09-23)
+
+- **Branch protection:** включён владельцем, активные rulesets на `main` и `agent/platform-telegram-self-service`.
+- **H-2:** напоминания включены. Миграция `20260923070000` использует тот же путь, что новая запись: одна audited-строка `appointment.scheduled` (actor `system`, reason `audit_h2_owner_approved`), дальше проекция и тик. Хелпер отказывает неподтверждённым сессиям, сессиям ближе 72 ч и уже записанным.
+- **L-4:** `20260923080000` повторяет переход `set_appointment_status → cancelled`. Хелпер отказывает, если сессия в будущем, если заявка не исключена из статистики или если есть событие в календаре.
+- **L-3:** `20260923090000` записывает срок и scope в `system_settings`, `retention_enabled = false`, `retention_dry_run_only = true`. Включать удаление нужно вместе с исполнителем (dry-run, `retention_holds`, аудит, отдельные проходы БД и Storage); это отдельная фича, не часть аудита.
+- **L-5, M-9, резервный MFA-фактор:** без действий. **Импорт GPT Actions схемы:** отложен, серверной защиты H-4 достаточно.
+- **CI:** на PR #864 ghcr.io 3 раза подряд вернул `toomanyrequests` до запуска тестов. Шаг `supabase start` в `crm-booking-validation.yml` и `private-production-release.yml` теперь поднимает только нужные pgTAP сервисы, сначала тянет образы из зеркала `public.ecr.aws` и повторяет с backoff. Тесты не пропускаются.
 
 ## Что осталось и почему
 
@@ -60,21 +69,23 @@
 
 CRM по дизайну хранит только хэш payload вебхука, без плательщика; Monzo bridge не синхронизирован с июля. Сопоставление не выполнено.
 
-## Финальная проверка (2026-09-23)
+## Финальная проверка (2026-09-23, после rc858)
 
 | Что | Результат |
 |---|---|
-| CRM trunk | `fb64b49`, exact-head CI зелёный (5/5 обязательных workflow) |
+| Хосты | `crm.vishartattoo.com` 200, `vishartattoo.com` 200, `api.vishartattoo.com` preflight 204 |
+| Решения владельца | H-2: 6 pending-job'ов, 0 писем; L-4: 2 сессии `cancelled`, 0 outbox; L-3: 1825/1825, scope записан, удаление выключено, 1 аудит-строка |
+| CRM trunk | `e86234c`, exact-head CI зелёный (5/5 обязательных workflow) |
 | `main` | `2e182f7`, сайт задеплоен Cloudflare Pages |
-| Миграции production | 203, последняя `20260923060000` |
-| Релизы | rc850–rc857: release и observer — success; WhatsApp drain rc857 — success, 0 cron |
-| Scheduler | heartbeat 2 мин назад; watchdog: healthy |
-| Операционные алерты | 1 системное уведомление за 2 дня, 0 dead outbox за 24 ч, очереди outbox пусты |
+| Миграции production | 206, последняя `20260923090000` |
+| Релизы | rc850–rc858: release и observer — success; WhatsApp drain rc857 — success, 0 cron |
+| Scheduler | heartbeat 113 с назад (после rc858), не stale; watchdog: healthy |
+| Операционные алерты | 0 dead и 0 pending outbox за 24 ч (calendar_create, google_contact_create, 2× telegram — succeeded) |
 | Интейк | последняя заявка 2026-09-23 07:24 UTC; сайт на `api.vishartattoo.com` с ~07:55; контрольный honeypot-запрос через новый хост прошёл весь путь (CORS, multipart, rate limit, маршрут интейка) и ничего не записал в БД |
 | Calendar | 16 успешных проекций за 7 дней |
 | Telegram | 7 доставок за 3 дня |
 | Google Contacts | 22 контакта за 14 дней |
-| WhatsApp | входящий webhook работает; исходящий drain через scheduler, `claim_whatsapp_outbox` каждые 5 мин (200) |
+| WhatsApp | входящий webhook работает; исходящий drain через scheduler, `claim_whatsapp_outbox` 12 вызовов за последний час, все 200 |
 | GPT Actions / gateway | `carriesCrmData` и ограничения `gpt-sandbox-*` в production; маршруты требуют OAuth (401) |
 | Auth / MFA | TOTP включён; владелец подключил фактор 07:40, сессия подтверждена aal2; leaked-password protection требует платного плана |
 | Advisors | `function_search_path_mutable` исчез; остались намеренные anon RPC и leaked-password |
