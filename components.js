@@ -16,7 +16,7 @@ shared accessibility wiring.
 const BOOKING_URL = '/booking/';
 // Single source of truth for availability. Change only this line; HTML uses a neutral fallback.
 const BOOKING_WINDOW = 'London bookings now open';
-const AI_WORKER_URL = 'https://tattooai.vvetrov41.workers.dev/';
+const AI_WORKER_URL = 'https://api.vishartattoo.com/';
 
 const GA_MEASUREMENT_ID = 'G-2LLK879TRG';
 const CONSENT_KEY = 'vishar-cookie-consent';
