@@ -18,9 +18,9 @@ name: Deploy private production Instagram connector
 # management fields (zone_name, enabled, previews_enabled) the local `routes`
 # entry never declares, so --strict reports them as a conflict and aborts
 # before uploading. See docs/crm/instagram-production-runbook.md section 3.
-# Once this workflow has deployed the Worker once, its Custom Domain is
-# wrangler-managed and every later deploy compares cleanly, the same as
-# whatsapp.vishartattoo.com and gmail.vishartattoo.com.
+# Once the Custom Domain exists, the tracked route declares the same management
+# fields (zone_name, enabled, previews_enabled) the API reports, so every later
+# --strict deploy compares cleanly, the same as whatsapp.vishartattoo.com.
 #
 # Capabilities are activated in order: onboarding first, so the artists can
 # connect their accounts, and only then the outbound drain. Enabling the drain
