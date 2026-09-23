@@ -321,10 +321,13 @@ jobs:
             "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$WORKER_NAME/schedules")"
           SCHEDULES="$schedules" node <<'NODE'
           const body = JSON.parse(process.env.SCHEDULES || '{}');
-          if (body.success !== true || !Array.isArray(body.result)) {
+          // The schedules endpoint returns { schedules: [...] }; accept a bare
+          // array too, as the TattooAI release readback does.
+          const entries = Array.isArray(body.result) ? body.result : body.result?.schedules;
+          if (body.success !== true || !Array.isArray(entries)) {
             throw new Error('WhatsApp Worker cron readback failed');
           }
-          const crons = body.result.map((entry) => entry?.cron).filter(Boolean).sort();
+          const crons = entries.map((entry) => entry?.cron).filter(Boolean).sort();
           // Driven by the shared production scheduler's Service Binding.
           if (crons.length !== 0) {
             throw new Error(`Unexpected WhatsApp Worker cron readback: ${crons.join(', ')}`);
