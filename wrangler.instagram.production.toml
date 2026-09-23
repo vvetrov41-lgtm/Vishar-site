@@ -5,7 +5,7 @@ workers_dev = false
 preview_urls = false
 
 routes = [
-  { pattern = "instagram.vishartattoo.com", custom_domain = true }
+  { pattern = "instagram.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }
 ]
 
 [[ratelimits]]

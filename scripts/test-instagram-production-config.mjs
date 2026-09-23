@@ -66,6 +66,12 @@ test('exactly one Custom Domain is declared, on the reviewed hostname', () => {
   assert.equal(entries.length, 1);
   assert.match(entries[0], /pattern = "instagram\.vishartattoo\.com"/);
   assert.match(entries[0], /custom_domain = true/);
+  // Once the Custom Domain exists, the Cloudflare API reports these management
+  // fields; `wrangler deploy --strict` refuses any deploy whose local route
+  // omits them (rc860 did exactly that).
+  assert.match(entries[0], /zone_name = "vishartattoo\.com"/);
+  assert.match(entries[0], /enabled = true/);
+  assert.match(entries[0], /previews_enabled = false/);
 });
 
 test('no cron trigger is declared in the tracked config', () => {
