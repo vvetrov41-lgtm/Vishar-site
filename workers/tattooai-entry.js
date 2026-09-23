@@ -24,6 +24,47 @@ import {
 } from './routes/ai-router-probe.js';
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
+
+// Public per-IP rate limits (audit M-8). Every browser-reachable request is
+// counted: POST (enquiries, AI tools, client actions) against the write
+// limiter, everything else against the generous read limiter. CORS preflights
+// are never counted. Subrequests from Cloudflare Workers all share one egress
+// address, so the first-party booking edges that proxy to this Worker would
+// otherwise throttle every visitor together; they are not counted here.
+// A missing or failing limiter never blocks a request.
+const WORKER_EGRESS_PREFIX = '2a06:98c0:3600:';
+
+export function rateLimitClass(request) {
+  const method = String(request?.method || '').toUpperCase();
+  if (method === 'OPTIONS') return null;
+  return method === 'POST' ? 'write' : 'read';
+}
+
+async function enforcePublicRateLimit(request, env) {
+  const kind = rateLimitClass(request);
+  if (!kind) return null;
+  const limiter = kind === 'write' ? env?.PUBLIC_WRITE_RATE_LIMIT : env?.PUBLIC_READ_RATE_LIMIT;
+  if (!limiter || typeof limiter.limit !== 'function') return null;
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (!ip || ip.startsWith(WORKER_EGRESS_PREFIX)) return null;
+  let success = true;
+  try {
+    ({ success } = await limiter.limit({ key: `${kind}:${ip}` }));
+  } catch {
+    return null;
+  }
+  if (success) return null;
+  const origin = request.headers.get('Origin') || '';
+  return Response.json({ ok: false, code: 'rate_limited' }, {
+    status: 429,
+    headers: {
+      ...getCorsHeaders(origin, env, request),
+      'cache-control': 'no-store',
+      'retry-after': '60',
+      'x-content-type-options': 'nosniff',
+    },
+  });
+}
 const AI_DRAIN_PATH = '/internal/enquiry-ai/drain';
 const CRM_AGENT_DRAIN_PATH = '/internal/crm-agent/drain';
 const AI_DRAIN_HOST = 'tattooai.internal';
@@ -96,6 +137,9 @@ export default {
 
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.
+    const limited = await enforcePublicRateLimit(request, env);
+    if (limited) return limited;
+
     if (isAiRouterProbePath(request)) {
       return handleAiRouterProbeRequest(request, env, { fetchImpl: fetch });
     }
@@ -132,4 +176,5 @@ export const __testing = Object.freeze({
   handleInternalCrmAgentDrain,
   isInternalAiDrainRequest,
   isInternalCrmAgentDrainRequest,
+  enforcePublicRateLimit,
 });

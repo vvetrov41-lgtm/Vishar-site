@@ -141,5 +141,27 @@ jobs:
           grep -Fq 'Use POST request' /tmp/tattooai-get.txt
           test "$(curl -sS -o /tmp/tattooai-json.txt -w '%{http_code}' -X POST "$endpoint" -H 'content-type: application/json' --data '{"type":"tattoo-enquiry"}')" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
+      - name: Read back first-party API host
+        # Audit M-8. The Custom Domain is created by this deploy; its
+        # certificate can take a few minutes on the first run, so the probe
+        # waits a bounded time before judging it.
+        shell: bash
+        run: |
+          set -euo pipefail
+          host='https://api.vishartattoo.com/'
+          for attempt in $(seq 1 30); do
+            code="$(curl -sS -o /tmp/tattooai-api-get.txt -w '%{http_code}' --max-time 10 "$host" || true)"
+            [ "$code" = '405' ] && break
+            [ "$attempt" = 30 ] && { echo "api.vishartattoo.com did not become ready (last HTTP $code)" >&2; exit 1; }
+            sleep 10
+          done
+          grep -Fq 'Use POST request' /tmp/tattooai-api-get.txt
+          headers="$(curl -sS -D - -o /dev/null -X OPTIONS "$host" \
+            -H 'Origin: https://vishartattoo.com' \
+            -H 'Access-Control-Request-Method: POST')"
+          printf '%s' "$headers" | grep -Eq '^HTTP/[0-9.]+ 204'
+          printf '%s' "$headers" | grep -Fiq 'access-control-allow-origin: https://vishartattoo.com'
+          test "$(curl -sS -o /dev/null -w '%{http_code}' -X POST "$host" -H 'content-type: application/json' --data '{"type":"tattoo-enquiry"}')" = '415'
+          echo 'api.vishartattoo.com serves the production TattooAI Worker with the expected CORS boundary.'
       - name: Verify Kristina public booking contract after deployment
         run: node scripts/probe-kristina-live-booking-contract.mjs
