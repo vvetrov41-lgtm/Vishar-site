@@ -228,7 +228,7 @@ jobs:
           [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
           [ "$(git ls-remote origin "refs/heads/$PRODUCT_BRANCH" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
 
-      - name: Generate and deploy only the scheduled WhatsApp drain Worker
+      - name: Generate and deploy only the WhatsApp drain Worker
         if: ${{ github.event_name == 'push' || inputs.deploy }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
@@ -242,7 +242,7 @@ jobs:
           rm -f "$deploy_output"
           node scripts/generate-whatsapp-production-deploy-config.mjs "$deploy_config"
           grep -Fq 'WHATSAPP_DRAIN_ENABLED = "true"' "$deploy_config"
-          grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
+          grep -Fq 'crons = []' "$deploy_config"
 
           XDG_CONFIG_HOME=.wrangler/config \
           WRANGLER_LOG_PATH=.wrangler/whatsapp-production-wrangler.log \
@@ -325,7 +325,8 @@ jobs:
             throw new Error('WhatsApp Worker cron readback failed');
           }
           const crons = body.result.map((entry) => entry?.cron).filter(Boolean).sort();
-          if (crons.length !== 1 || crons[0] !== '*/5 * * * *') {
+          // Driven by the shared production scheduler's Service Binding.
+          if (crons.length !== 0) {
             throw new Error(`Unexpected WhatsApp Worker cron readback: ${crons.join(', ')}`);
           }
           NODE

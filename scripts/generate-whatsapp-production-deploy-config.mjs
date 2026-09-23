@@ -51,5 +51,9 @@ if (!text.includes('WHATSAPP_DRAIN_ENABLED = "true"')) {
   throw new Error('failed to enable the production drain in generated config');
 }
 
-text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n# Artist-scoped secrets are discovered dynamically after the guarded workflow\n# validates every live name against ARTIST_WHATSAPP_<ROUTE>_HPRODUCTION.\n[secrets]\nrequired = ["SUPABASE_SECRET_KEY"]\n`;
+// The account is on the Workers Free plan, which allows five cron triggers
+// per account, and they are all in use. The drain runs on the existing shared
+// production scheduler through a Service Binding instead; an explicit empty
+// cron list keeps this Worker unscheduled on every deploy.
+text += `\n[triggers]\ncrons = []\n\n# Artist-scoped secrets are discovered dynamically after the guarded workflow\n# validates every live name against ARTIST_WHATSAPP_<ROUTE>_HPRODUCTION.\n[secrets]\nrequired = ["SUPABASE_SECRET_KEY"]\n`;
 fs.writeFileSync(output, text, { mode: 0o600 });

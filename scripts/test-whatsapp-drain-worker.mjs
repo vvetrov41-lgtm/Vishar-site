@@ -2,7 +2,33 @@ import assert from 'node:assert/strict';
 import worker from '../workers/whatsapp-drain-worker.js';
 
 assert.equal(typeof worker.scheduled, 'function');
-assert.equal('fetch' in worker, false, 'the dedicated drain Worker has no public HTTP handler');
+// The only HTTP surface is the exact synthetic Service Binding host.
+{
+  const env = { VISHAR_ENVIRONMENT: 'production', WHATSAPP_DRAIN_ENABLED: 'true' };
+  for (const [url, method] of [
+    ['https://vishar-whatsapp-drain-production.vvetrov41.workers.dev/internal/whatsapp/drain', 'POST'],
+    ['https://whatsapp.internal/internal/whatsapp/drain', 'GET'],
+    ['https://whatsapp.internal/internal/whatsapp/drain?x=1', 'POST'],
+    ['https://whatsapp.internal/', 'POST'],
+    ['http://whatsapp.internal/internal/whatsapp/drain', 'POST'],
+  ]) {
+    const response = await worker.fetch(new Request(url, { method }), env);
+    assert.equal(response.status, 404, `${method} ${url} is not a drain surface`);
+  }
+  const { handleInternalDrain } = await import('../workers/whatsapp-drain-worker.js');
+  const disabled = await (await handleInternalDrain({ VISHAR_ENVIRONMENT: 'production', WHATSAPP_DRAIN_ENABLED: 'false' },
+    async () => { throw new Error('must not drain'); })).json();
+  assert.deepEqual(disabled, { ok: true, skipped: true, claimed: 0, succeeded: 0, failed: 0, unrecorded: 0 });
+  const preview = await (await handleInternalDrain({ VISHAR_ENVIRONMENT: 'preview', WHATSAPP_DRAIN_ENABLED: 'true' },
+    async () => { throw new Error('must not drain'); })).json();
+  assert.equal(preview.skipped, true, 'only production drains');
+  const ran = await (await handleInternalDrain(env, async () => ({ claimed: 2, succeeded: 1, failed: 1, unrecorded: 0 }))).json();
+  assert.deepEqual(ran, { ok: true, skipped: false, claimed: 2, succeeded: 1, failed: 1, unrecorded: 0 });
+  const quiet = console.error; console.error = () => {};
+  const failed = await (await handleInternalDrain(env, async () => { throw Object.assign(new Error('x'), { code: 'database_unavailable' }); })).json();
+  console.error = quiet;
+  assert.deepEqual(failed, { ok: false, errorCode: 'database_unavailable' }, 'failures return a safe code, never details');
+}
 
 const originalLog = console.log;
 const originalError = console.error;
@@ -66,4 +92,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('WhatsApp drain Worker tests passed: scheduled-only, disabled by default and aggregate-only logging.');
+console.log('WhatsApp drain Worker tests passed: Service-Binding-only internal drain, disabled by default, production-only and aggregate-only logging.');

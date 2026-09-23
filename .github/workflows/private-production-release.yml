@@ -653,6 +653,9 @@ jobs:
           grep -Fq 'TELEGRAM_LINKING_ENABLED = "true"' "$deploy_config"
           grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
           grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
+          grep -Fq 'binding = "WHATSAPP_SERVICE"' "$deploy_config"
+          grep -Fq 'service = "vishar-whatsapp-drain-production"' "$deploy_config"
+          grep -Fq 'WHATSAPP_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
           npx wrangler deploy \
             --config "$deploy_config" \
