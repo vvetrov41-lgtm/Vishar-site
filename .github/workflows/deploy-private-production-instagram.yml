@@ -170,7 +170,12 @@ jobs:
             'SUPABASE_SECRET_KEY',
           ].sort();
           if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`Production Instagram secret-name set is not exact; expected ${expected.join(', ')}`);
+            // Names only, never values: a bare mismatch gives the operator
+            // nothing to act on.
+            const missing = expected.filter((name) => !actual.includes(name));
+            const unexpected = actual.filter((name) => !expected.includes(name));
+            throw new Error(`Production Instagram secret-name set is not exact; expected ${expected.join(', ')}; `
+              + `missing: ${missing.join(', ') || 'none'}; unexpected: ${unexpected.join(', ') || 'none'}`);
           }
           NODE
 
