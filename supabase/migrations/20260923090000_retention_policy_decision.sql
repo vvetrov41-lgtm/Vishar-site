@@ -57,11 +57,15 @@ begin
       and s.enquiry_retention_days = 1825
       and s.file_retention_days = 1825
       and not s.retention_enabled
+      and s.retention_decided_by is not null
   ) and not exists (
     select 1 from public.activity_log l
     where l.event_type = 'settings.retention_updated'
       and l.metadata ->> 'decision' = 'audit_l3_owner_decision'
   ) then
+    -- Audited against the owner the decision is recorded for. A database
+    -- with no owner yet (a fresh test stack) records the policy unattributed
+    -- and writes no activity row.
     perform crm_private.log_activity(
       'settings.retention_updated', 'system', null,
       null, null, null, null, null, null, null, null,

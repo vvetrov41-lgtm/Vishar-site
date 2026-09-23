@@ -268,8 +268,24 @@ jobs:
         with:
           version: 2.110.0
 
+      # Same registry-throttling hardening as CRM and booking validation:
+      # only the services pgTAP needs, public.ecr.aws mirror first.
       - name: Start clean local Supabase stack
-        run: supabase start
+        shell: bash
+        run: |
+          set -uo pipefail
+          registries=(public.ecr.aws ghcr.io public.ecr.aws)
+          for attempt in 1 2 3; do
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY="${registries[$((attempt - 1))]}"
+            echo "Starting Supabase from $SUPABASE_INTERNAL_IMAGE_REGISTRY (attempt $attempt)"
+            if supabase start -x studio,edge-runtime,imgproxy,logflare,vector,mailpit,supavisor; then
+              echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=$SUPABASE_INTERNAL_IMAGE_REGISTRY" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            supabase stop --no-backup || true
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 60))
+          done
+          exit 1
 
       - name: Reset local database without development seed
         run: supabase db reset --local --no-seed

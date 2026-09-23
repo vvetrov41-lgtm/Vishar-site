@@ -180,8 +180,10 @@ select ok((select retention_decided_at is not null from public.system_settings),
           'the retention decision is recorded with its time');
 select is((select count(*)::int from public.activity_log
            where event_type = 'settings.retention_updated'
-             and metadata ->> 'decision' = 'audit_l3_owner_decision'), 1,
-          'the recorded decision is audited once');
+             and metadata ->> 'decision' = 'audit_l3_owner_decision'),
+          (select case when retention_decided_by is null then 0 else 1 end
+           from public.system_settings),
+          'the recorded decision is audited once when an owner holds it');
 select is((select default_currency from public.system_settings), 'GBP',
           'the default currency is GBP and is stored explicitly');
 
