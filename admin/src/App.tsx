@@ -20,6 +20,8 @@ import { captureEvent, screenForPath } from './lib/product-analytics';
 import { isPathAvailableOnSurface, useSurface } from './lib/surface';
 import { useSession } from './lib/session';
 import { AccountPage } from './pages/AccountPage';
+import { MfaChallengePage } from './pages/MfaChallengePage';
+import { OwnerTwoFactorBanner } from './components/OwnerTwoFactorBanner';
 import { ActivityPage } from './pages/ActivityPage';
 import { ArtistOnboardingPage } from './pages/ArtistOnboardingPage';
 import { ArtistSetupPage } from './pages/ArtistSetupPage';
@@ -76,6 +78,7 @@ export function App() {
 
   if (state === 'loading') return <LoadingState label={t('app.checkingAccess')} />;
   if (state === 'signed_out') return <SignedOutRoutes />;
+  if (state === 'mfa_challenge') return <MfaChallengePage />;
   if (state === 'password_setup') return <PasswordSetupPage />;
   if (state === 'verify_email') return <VerifyEmailPage />;
   if (state === 'setup') return <ArtistSetupPage />;
@@ -98,6 +101,7 @@ export function App() {
     <ArtistScopeProvider>
       <ControlPlaneAccessProvider>
         <AppShell>
+          <OwnerTwoFactorBanner />
           <Routes />
         </AppShell>
       </ControlPlaneAccessProvider>

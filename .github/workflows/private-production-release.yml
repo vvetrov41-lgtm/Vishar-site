@@ -538,6 +538,52 @@ jobs:
           }
           NODE
 
+      - name: Reconcile production Auth account hardening
+        # Audit H-3. TOTP enrolment/verification backs the CRM two-factor
+        # screen; leaked-password (HIBP) checking needs a paid Supabase plan.
+        # Each setting is applied on its own and read back. A plan refusal is
+        # reported, not fatal, so it can never block the CRM deploy below.
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.supabase.com/v1/projects/${PROJECT_REF}/config/auth"
+          apply() {
+            local label="$1" payload="$2" status
+            status="$(curl -sS -o "$RUNNER_TEMP/auth-hardening.json" -w '%{http_code}' -X PATCH "$api" \
+              -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json' \
+              --data "$payload")"
+            rm -f "$RUNNER_TEMP/auth-hardening.json"
+            if [ "${status:0:1}" = 2 ]; then
+              echo "$label: applied"
+            else
+              echo "::warning::$label was refused by Supabase (HTTP $status); left unchanged"
+            fi
+          }
+          apply 'TOTP two-factor' '{"mfa_totp_enroll_enabled":true,"mfa_totp_verify_enabled":true}'
+          apply 'Leaked-password protection' '{"password_hibp_enabled":true}'
+          after="$(curl -fsS \
+            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            -H 'Accept: application/json' \
+            "$api")"
+          AUTH_AFTER="$after" node <<'NODE'
+          const after = JSON.parse(process.env.AUTH_AFTER || '{}');
+          const line = (name, value) => `- ${name}: ${value === true ? 'on' : value === false ? 'off' : 'unknown'}`;
+          const summary = [
+            '### Production Auth hardening readback',
+            line('TOTP enrolment', after.mfa_totp_enroll_enabled),
+            line('TOTP verification', after.mfa_totp_verify_enabled),
+            line('Leaked-password protection', after.password_hibp_enabled),
+          ].join('\n');
+          console.log(summary);
+          require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
+          if (after.mfa_totp_verify_enabled === false) {
+            // Verification off would strand an enrolled account at the code prompt.
+            console.log('::warning::Production Auth TOTP verification is disabled');
+          }
+          NODE
+
       - name: Deploy private CRM Pages project
         working-directory: admin
         run: >-

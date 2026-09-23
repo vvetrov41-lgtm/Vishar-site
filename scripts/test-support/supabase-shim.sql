@@ -134,7 +134,12 @@ create table if not exists auth.identities (
 );
 create table if not exists auth.mfa_factors (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid
+  user_id uuid,
+  friendly_name text,
+  factor_type text not null default 'totp',
+  status text not null default 'unverified',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 create table if not exists auth.one_time_tokens (
   id uuid primary key default gen_random_uuid(),
