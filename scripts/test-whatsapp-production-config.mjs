@@ -151,6 +151,12 @@ const workerSource = read('workers/whatsapp-drain-worker.js');
 expectIncludes(workerSource, "env.WHATSAPP_DRAIN_ENABLED !== 'true'", 'drain Worker');
 expectExcludes(workerSource, 'async fetch(', 'drain Worker');
 
+{
+  const workflow = read('.github/workflows/deploy-private-production-whatsapp.yml');
+  expectIncludes(workflow, 'body.result?.schedules', 'deploy workflow');
+  expectIncludes(workflow, 'if (crons.length !== 0)', 'deploy workflow');
+}
+
 console.log(
   'WhatsApp production config tests passed: tracked template stays inert, the generated config activates '
   + 'exactly one drain with one cron, and automatic production activation remains exact-head, '
