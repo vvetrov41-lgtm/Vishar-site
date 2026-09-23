@@ -220,8 +220,28 @@ jobs:
         with:
           version: 2.110.0
 
+      # pgTAP needs Postgres plus the services that own the auth, storage and
+      # realtime schemas. The dashboard, edge runtime, image proxy, logging and
+      # mail containers are never used here, and pulling them from ghcr.io is
+      # what hits its rate limit. The same images are mirrored on
+      # public.ecr.aws; a throttled pull alternates registries with backoff.
       - name: Start local Supabase stack
-        run: supabase start
+        shell: bash
+        run: |
+          set -uo pipefail
+          registries=(public.ecr.aws ghcr.io public.ecr.aws)
+          for attempt in 1 2 3; do
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY="${registries[$((attempt - 1))]}"
+            echo "Starting Supabase from $SUPABASE_INTERNAL_IMAGE_REGISTRY (attempt $attempt)"
+            if supabase start -x studio,edge-runtime,imgproxy,logflare,vector,mailpit,supavisor; then
+              # Later steps (pg_prove, lint) pull their images from the same registry.
+              echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=$SUPABASE_INTERNAL_IMAGE_REGISTRY" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            supabase stop --no-backup || true
+            [ "$attempt" -lt 3 ] && sleep $((attempt * 60))
+          done
+          exit 1
 
       - name: Reset canonical test database without development seed
         run: supabase db reset --local --no-seed

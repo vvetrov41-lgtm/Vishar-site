@@ -163,16 +163,27 @@ select is((select retention_enabled from public.system_settings), false,
           'retention is DISABLED by default');
 select is((select retention_dry_run_only from public.system_settings), true,
           'retention starts in dry-run-only mode');
-select is((select enquiry_retention_days from public.system_settings), null,
-          'no enquiry retention duration is invented');
+-- Audit L-3: the owner's recorded decision (20260923090000), scoped to
+-- enquiries that never became a project, with deletion still switched off.
+select is((select enquiry_retention_days from public.system_settings), 1825,
+          'never-converted enquiries are kept 5 years after last activity');
+select is((select enquiry_retention_scope from public.system_settings),
+          'never_converted_after_last_activity',
+          'the enquiry duration records what it applies to');
 select is((select client_retention_days from public.system_settings), null,
           'no client retention duration is invented');
-select is((select file_retention_days from public.system_settings), null,
-          'no file retention duration is invented');
+select is((select file_retention_days from public.system_settings), 1825,
+          'their reference files follow the same 5-year decision');
 select is((select activity_retention_days from public.system_settings), null,
           'no activity retention duration is invented');
-select is((select retention_decided_by from public.system_settings), null,
-          'no retention decision has been recorded');
+select ok((select retention_decided_at is not null from public.system_settings),
+          'the retention decision is recorded with its time');
+select is((select count(*)::int from public.activity_log
+           where event_type = 'settings.retention_updated'
+             and metadata ->> 'decision' = 'audit_l3_owner_decision'),
+          (select case when retention_decided_by is null then 0 else 1 end
+           from public.system_settings),
+          'the recorded decision is audited once when an owner holds it');
 select is((select default_currency from public.system_settings), 'GBP',
           'the default currency is GBP and is stored explicitly');
 
@@ -192,7 +203,9 @@ reset role;
 
 -- The schema refuses to be switched on without a policy.
 select throws_ok(
-  $$update public.system_settings set retention_enabled = true where id$$,
+  $$update public.system_settings
+      set retention_enabled = true, enquiry_retention_days = null, file_retention_days = null
+    where id$$,
   '23514', null,
   'retention cannot be enabled without a duration and a recorded decision'
 );
@@ -215,7 +228,8 @@ select is((select retention_enabled from public.system_settings), true,
 select ok((select retention_decided_by is not null and retention_decided_at is not null
            from public.system_settings),
           'enabling retention records who decided it and when');
-select is((select count(*)::int from public.activity_log where event_type = 'settings.retention_updated'), 1,
+select is((select count(*)::int from public.activity_log where event_type = 'settings.retention_updated'
+             and actor_kind = 'owner'), 1,
           'the retention decision is audited');
 reset role;
 
