@@ -182,6 +182,18 @@ rows with a confirmed subscription means Meta is not sending (app mode or
 access level); `signature_invalid` means the Worker's `INSTAGRAM_APP_SECRET`
 does not match what Meta signs with.
 
+### Recipient alias
+
+Meta's reference shows the inbound `recipient.id` (and an echo's `sender.id`)
+equal to the entry's professional account id. For Instagram Login accounts
+linked to a Facebook Page it can instead be a different, persistent id for the
+same business account. The first production DMs (2026-09-23) arrived signed and
+routed but were all dropped for that reason. The signed `entry.id` remains
+authoritative: an alias that resolves to no CRM account is accepted and counted
+as `recipient_alias`; an id that is another artist's account is refused as
+`skipped_cross_account`. Other skips are counted by reason (`skipped_ids`,
+`skipped_timestamp`, `skipped_read`, `skipped_message`).
+
 ### History
 
 The connector is webhook-only. Only messages sent after delivery is enabled

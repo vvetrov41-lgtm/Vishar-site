@@ -444,5 +444,85 @@ await test('a persistence failure is still answered 503 so Meta retries, and is 
   assert.deepEqual(db.recorded('service_record_instagram_webhook_delivery')[0].p_counts, { accepted: 1, failed: 1 });
 });
 
+// ---------------------------------------------------------------------------
+// Meta's alternate business-account id (production, 2026-09-23)
+// ---------------------------------------------------------------------------
+
+const ALIAS = '1234567890123456';
+
+await test('an inbound DM whose recipient is Meta\'s alias for the entry account is recorded', async () => {
+  const db = dbDouble();
+  const payload = inboundPayload();
+  payload.entry[0].messaging[0].recipient.id = ALIAS;
+  const response = await handleInstagramWebhook(signedRequest(payload), env(), db);
+  assert.equal(response.status, 200);
+  const [ingest] = db.recorded('record_communication_inbound_message');
+  assert.equal(ingest.p_artist_id, V_ARTIST, 'the signed entry id decides the artist');
+  assert.equal(ingest.p_external_contact_id, PARTICIPANT);
+  assert.deepEqual(db.recorded('service_record_instagram_webhook_delivery')[0].p_counts,
+    { accepted: 1, inbound: 1, recipient_alias: 1 });
+});
+
+await test('a recipient that is another CRM artist account is still refused', async () => {
+  const db = dbDouble();
+  // In this double only V_ACCOUNT routes; make the entry an alias-free
+  // Kristina-shaped case by addressing Vladimir's real account from an entry
+  // that is not Vladimir's.
+  const payload = inboundPayload();
+  payload.entry[0].id = '17841400000000002';
+  const routing = {
+    ...db,
+    async rpc(name, args) {
+      if (name === 'service_resolve_instagram_route' && args.p_instagram_user_id === '17841400000000002') {
+        db.calls.push({ name, args });
+        return [{ artist_id: K_ARTIST, integration_key: 'kristina-instagram', instagram_user_id: '17841400000000002' }];
+      }
+      return db.rpc(name, args);
+    },
+  };
+  const response = await handleInstagramWebhook(signedRequest(payload), env(), routing);
+  assert.equal(response.status, 200);
+  assert.equal(db.recorded('record_communication_inbound_message').length, 0);
+  assert.deepEqual(db.recorded('service_record_instagram_webhook_delivery')[0].p_counts,
+    { accepted: 1, skipped: 1, skipped_cross_account: 1 });
+});
+
+await test('a message sent by the entry account itself without the echo flag is not inbound', async () => {
+  const db = dbDouble();
+  const payload = inboundPayload();
+  payload.entry[0].messaging[0].sender.id = V_ACCOUNT;
+  payload.entry[0].messaging[0].recipient.id = ALIAS;
+  await handleInstagramWebhook(signedRequest(payload), env(), db);
+  assert.equal(db.recorded('record_communication_inbound_message').length, 0);
+});
+
+await test('an echo sent from Meta\'s alias for the entry account is recorded against the participant', async () => {
+  const db = dbDouble();
+  const payload = inboundPayload();
+  const event = payload.entry[0].messaging[0];
+  event.sender.id = ALIAS;
+  event.recipient.id = PARTICIPANT;
+  event.message = { mid: 'aWdfZAG1faXRlbToxOklHTWVzc2FnZAUlEOjE4', text: 'Yes, 27 October works', is_echo: true };
+  await handleInstagramWebhook(signedRequest(payload), env(), db);
+  const [echo] = db.recorded('record_communication_outbound_echo');
+  assert.equal(echo.p_external_contact_id, PARTICIPANT);
+  assert.equal(echo.p_artist_id, V_ARTIST);
+});
+
+await test('base64 message ids with + are accepted and skip reasons are named', async () => {
+  const db = dbDouble();
+  const payload = inboundPayload();
+  payload.entry[0].messaging[0].message.mid = 'aWdfZAG1+aXRlbToxOklHTWVzc2FnZ+UlEOjE3ODQx==';
+  await handleInstagramWebhook(signedRequest(payload), env(), db);
+  assert.equal(db.recorded('record_communication_inbound_message').length, 1);
+
+  const stale = dbDouble();
+  const bad = inboundPayload();
+  bad.entry[0].messaging[0].timestamp = Date.now() + 60 * 60 * 1000;
+  await handleInstagramWebhook(signedRequest(bad), env(), stale);
+  assert.deepEqual(stale.recorded('service_record_instagram_webhook_delivery')[0].p_counts,
+    { accepted: 1, skipped: 1, skipped_timestamp: 1 });
+});
+
 console.log(`instagram webhook subscription: ${passes} passed, ${failures} failed`);
 if (failures > 0) process.exit(1);
