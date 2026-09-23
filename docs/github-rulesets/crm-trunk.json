@@ -1,0 +1,40 @@
+{
+  "name": "CRM trunk protection",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/agent/platform-telegram-self-service"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": ["merge", "squash"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": false,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          { "context": "static-validation", "integration_id": 15368 },
+          { "context": "Public site and Worker", "integration_id": 15368 },
+          { "context": "Private CRM", "integration_id": 15368 },
+          { "context": "Supabase migrations and pgTAP", "integration_id": 15368 }
+        ]
+      }
+    }
+  ],
+  "bypass_actors": []
+}

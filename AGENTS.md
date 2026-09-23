@@ -13,6 +13,11 @@ When auditing, create or update only:
 
 TECHNICAL_AUDIT.md
 
+`TECHNICAL_AUDIT.md` is an index. The Vishar CRM audit and remediation record
+of 2026-09-22 is `docs/audits/2026-09-22-vishar-crm-remediation.md`; historical
+website performance audits are in `docs/audits/website-performance-history.md`
+and are not CRM remediation scope.
+
 Always be specific.
 Reference files and lines when possible.
 Do not invent Lighthouse, GA4, Search Console, or production results if they were not actually checked.
