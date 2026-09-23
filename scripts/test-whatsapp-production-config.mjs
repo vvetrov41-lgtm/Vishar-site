@@ -159,6 +159,6 @@ expectExcludes(workerSource, 'async fetch(', 'drain Worker');
 
 console.log(
   'WhatsApp production config tests passed: tracked template stays inert, the generated config activates '
-  + 'exactly one drain with one cron, and automatic production activation remains exact-head, '
+  + 'exactly one drain with no cron of its own, and automatic production activation remains exact-head, '
   + 'artist-binding-preserving and Meta-account neutral.'
 );
