@@ -63,7 +63,10 @@ try {
   const generated = directivesOf(generatedRaw);
   expectIncludes(generated, 'WHATSAPP_DRAIN_ENABLED = "true"', 'generated config');
   expectIncludes(generated, '[triggers]', 'generated config');
-  expectIncludes(generated, 'crons = ["*/5 * * * *"]', 'generated config');
+  // No cron of its own: the shared production scheduler drives it over a
+  // Service Binding because the account's cron triggers are exhausted.
+  expectIncludes(generated, 'crons = []', 'generated config');
+  expectExcludes(generated, '*/5', 'generated config');
   expectIncludes(generated, '[secrets]', 'generated config');
   expectIncludes(generated, '"SUPABASE_SECRET_KEY"', 'generated config');
   expectIncludes(generatedRaw, 'ARTIST_WHATSAPP_<ROUTE>_HPRODUCTION', 'generated config');

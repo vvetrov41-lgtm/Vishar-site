@@ -4,6 +4,8 @@ import { drainMetaConversionOutbox } from './lib/meta-ads.js';
 const MAX_AI_JOBS_PER_TICK = 3;
 const AI_DRAIN_URL = 'https://tattooai.internal/internal/enquiry-ai/drain';
 const CRM_AGENT_DRAIN_URL = 'https://tattooai.internal/internal/crm-agent/drain';
+const WHATSAPP_DRAIN_URL = 'https://whatsapp.internal/internal/whatsapp/drain';
+const MAX_WHATSAPP_JOBS_PER_TICK = 20;
 
 function failure(code, message) {
   return Object.assign(new Error(message), { code });
@@ -80,6 +82,52 @@ export async function runSharedCrmAgentDrain(env) {
     label: 'crm agent shared drain',
     errorCode: 'crm_agent_shared_drain_error',
   });
+}
+
+export function assertWhatsappSummary(value) {
+  const count = (n) => Number.isInteger(n) && n >= 0 && n <= MAX_WHATSAPP_JOBS_PER_TICK;
+  if (!value || typeof value !== 'object') {
+    throw failure('whatsapp_shared_drain_summary_invalid', 'invalid WhatsApp drain summary');
+  }
+  if (value.ok !== true) {
+    const code = typeof value.errorCode === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(value.errorCode)
+      ? value.errorCode
+      : 'whatsapp_shared_drain_failed';
+    throw failure(code, 'WhatsApp drain failed');
+  }
+  if (![value.claimed, value.succeeded, value.failed, value.unrecorded].every(count)
+      || value.succeeded + value.failed + value.unrecorded !== value.claimed) {
+    throw failure('whatsapp_shared_drain_summary_invalid', 'invalid WhatsApp drain summary');
+  }
+  return {
+    skipped: value.skipped === true,
+    claimed: value.claimed,
+    succeeded: value.succeeded,
+    failed: value.failed,
+    unrecorded: value.unrecorded,
+  };
+}
+
+// Audit follow-up: the WhatsApp outbound drain has no cron of its own (the
+// account's cron triggers are exhausted), so it rides this existing cron over
+// a Service Binding, exactly like the TattooAI drains above.
+export async function runSharedWhatsappDrain(env) {
+  try {
+    if (!env?.WHATSAPP_SERVICE || typeof env.WHATSAPP_SERVICE.fetch !== 'function') {
+      throw failure('whatsapp_service_binding_unavailable', 'WhatsApp service binding unavailable');
+    }
+    const response = await env.WHATSAPP_SERVICE.fetch(WHATSAPP_DRAIN_URL, { method: 'POST' });
+    if (!response?.ok) throw failure('whatsapp_service_unavailable', 'WhatsApp service unavailable');
+    const summary = assertWhatsappSummary(await response.json());
+    console.log('whatsapp shared drain', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    const code = typeof error?.code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.code)
+      ? error.code
+      : 'whatsapp_shared_drain_error';
+    console.error('whatsapp shared drain failed', JSON.stringify({ code }));
+    throw error;
+  }
 }
 
 export async function runSharedGmailMetadataRefresh(env) {
@@ -164,6 +212,12 @@ export function createProductionScheduler(baseWorker = telegramWorker) {
         tasks.push(runSharedGmailMetadataRefresh(env));
       }
 
+      // Outbound WhatsApp replies queued by operators in the CRM.
+      if (env?.VISHAR_ENVIRONMENT === 'production'
+          && env?.WHATSAPP_SHARED_DRAIN_ENABLED === 'true') {
+        tasks.push(runSharedWhatsappDrain(env));
+      }
+
       // Meta CAPI is isolated from Telegram/Gmail/automation. A provider outage
       // can fail this task without suppressing any sibling task or invalidating
       // the already-committed CRM event.
@@ -183,6 +237,7 @@ export default createProductionScheduler();
 export const __testing = Object.freeze({
   AI_DRAIN_URL,
   CRM_AGENT_DRAIN_URL,
+  WHATSAPP_DRAIN_URL,
   MAX_AI_JOBS_PER_TICK,
   runMetaAdsDrain,
   runSharedGmailMetadataRefresh,

@@ -42,6 +42,7 @@ const required = [
   'AUTOMATION_TICK_ENABLED = "false"',
   'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"',
   'CRM_AGENT_SHARED_DRAIN_ENABLED = "false"',
+  'WHATSAPP_SHARED_DRAIN_ENABLED = "false"',
   'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"',
   'TELEGRAM_LINKING_ENABLED = "false"',
 ];
@@ -87,6 +88,7 @@ text = text.replace('GMAIL_SHARED_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_
 text = text.replace('AUTOMATION_TICK_ENABLED = "false"', 'AUTOMATION_TICK_ENABLED = "true"');
 text = text.replace('ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"');
 text = text.replace('CRM_AGENT_SHARED_DRAIN_ENABLED = "false"', 'CRM_AGENT_SHARED_DRAIN_ENABLED = "true"');
+text = text.replace('WHATSAPP_SHARED_DRAIN_ENABLED = "false"', 'WHATSAPP_SHARED_DRAIN_ENABLED = "true"');
 text = text.replace('CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"', 'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "true"');
 if (enableLinking) {
   text = text.replace('TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"');
@@ -102,6 +104,7 @@ for (const needle of [
   'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "true"',
   'CRM_AGENT_SHARED_DRAIN_ENABLED = "true"',
   'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "true"',
+  'WHATSAPP_SHARED_DRAIN_ENABLED = "true"',
 ]) {
   if (!text.includes(needle)) throw new Error(`failed to generate ${needle}`);
 }
@@ -112,5 +115,6 @@ if (!text.includes(`TELEGRAM_LINKING_ENABLED = "${expectedLinking}"`)) {
 
 text += `\n[[services]]\nbinding = "GMAIL_SERVICE"\nservice = "vishar-gmail-production"\n`;
 text += `\n[[services]]\nbinding = "TATTOOAI_SERVICE"\nservice = "tattooai"\n`;
+text += `\n[[services]]\nbinding = "WHATSAPP_SERVICE"\nservice = "vishar-whatsapp-drain-production"\n`;
 text += `\n[triggers]\ncrons = ["*/5 * * * *"]\n\n[secrets]\nrequired = [\n  "SUPABASE_SECRET_KEY",\n  "ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION",\n  "ARTIST_TELEGRAM_KRISTINA_HPRODUCTION",\n  "TELEGRAM_BOT_TOKEN",\n  "TELEGRAM_WEBHOOK_SECRET",\n]\n`;
 fs.writeFileSync(output, text, { mode: 0o600 });
