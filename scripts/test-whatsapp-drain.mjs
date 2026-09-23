@@ -109,15 +109,19 @@ function makeFetch({
   graphStatus = 200,
   graphBody = { messages: [{ id: 'wamid.SYNTHETICSEND0001' }] },
   acknowledgementStatus = 200,
+  sendIntent = { proceed: true },
 } = {}) {
   const rpcCalls = [];
   const graphCalls = [];
+  const sequence = [];
   const fetchImpl = async (url, init = {}) => {
     const value = String(url);
     if (value.includes('/rest/v1/rpc/')) {
       const name = value.split('/').pop();
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
+      sequence.push(name);
+      if (name === 'service_begin_communication_send') return Response.json(sendIntent);
       if (name === 'claim_whatsapp_outbox_by_id') return Response.json(claim);
       if (name === 'claim_whatsapp_outbox') return Response.json(automaticClaim);
       if (name === 'resolve_outbox_route') {
@@ -132,6 +136,7 @@ function makeFetch({
       throw new Error(`unexpected RPC ${name}`);
     }
     if (value.startsWith('https://graph.facebook.com/')) {
+      sequence.push('graph');
       graphCalls.push({
         url: value,
         authorization: init.headers?.Authorization,
@@ -141,7 +146,7 @@ function makeFetch({
     }
     throw new Error(`unexpected URL ${value}`);
   };
-  return { fetchImpl, rpcCalls, graphCalls };
+  return { fetchImpl, rpcCalls, graphCalls, sequence };
 }
 
 await test('a successful send acknowledges with the provider message id', async () => {
@@ -273,6 +278,32 @@ await test('a failed acknowledgement is reported as unrecorded, not as success',
   const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
   assert.equal(result.outcome, 'unrecorded');
   assert.equal(result.errorCode, 'whatsapp_acknowledgement_failed');
+});
+
+await test('a durable send intent is recorded before Meta is contacted', async () => {
+  const { fetchImpl, rpcCalls, sequence } = makeFetch();
+  await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  const intent = rpcCalls.find((call) => call.name === 'service_begin_communication_send');
+  assert.equal(intent.args.p_outbox_id, VLADIMIR_OUTBOX);
+  assert.ok(sequence.indexOf('service_begin_communication_send') < sequence.indexOf('graph'),
+    'the intent must be durable before the provider call');
+});
+
+await test('a job retried after an unrecorded send is dead-lettered, never resent', async () => {
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({ sendIntent: { proceed: false, reason: 'send_result_unknown' } });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(graphCalls.length, 0, 'the client must not receive the message twice');
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'communication_send_result_unknown');
+  const ack = rpcCalls.find((call) => call.name === 'record_whatsapp_outbox_result');
+  assert.equal(ack.args.p_error_code, 'communication_send_result_unknown');
+});
+
+await test('an unavailable intent store fails the attempt before any send', async () => {
+  const { fetchImpl, graphCalls } = makeFetch({ sendIntent: { message: 'down' } });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(graphCalls.length, 0);
+  assert.equal(result.outcome, 'failed');
 });
 
 await test('an unclaimed job performs no provider call', async () => {

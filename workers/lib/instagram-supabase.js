@@ -23,6 +23,7 @@ const BACKEND_RPCS = new Set([
   'claim_communication_outbox',
   'record_communication_outbox_result',
   'resolve_outbox_route',
+  'service_begin_communication_send',
 ]);
 
 // Retained as an explicit empty surface so tests can prove no browser-scoped RPC

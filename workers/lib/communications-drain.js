@@ -5,10 +5,11 @@
 // thin Worker half — validate the claimed job, resolve the artist route, hand
 // exactly one message to a provider adapter, then acknowledge under the lease.
 //
-// Delivery is at least once. If a provider accepts a message and the
-// acknowledgement then fails, the lease is left to expire and a later attempt
-// may resend rather than silently losing the message; that outcome is reported
-// as `unrecorded` instead of being claimed as a rollback.
+// Delivery is at most once per recorded intent. A durable send intent is
+// written before the provider call; if a provider accepts a message and the
+// acknowledgement then fails, the next claim finds the intent and
+// dead-letters the job as `communication_send_result_unknown` for the owner
+// instead of resending. That outcome is reported as `unrecorded`.
 //
 // The adapter contract is deliberately narrow. An adapter receives the
 // artist's safe route metadata and the message, and returns either
@@ -164,6 +165,15 @@ export async function processClaimedJob({
   try {
     const resolved = await supabase.rpc('resolve_outbox_route', { p_outbox_id: job.outbox_id });
     const route = validateRoute(firstRow(resolved), job, channel);
+    // Durable send intent (audit M-2): an outcome that was never recorded is
+    // dead-lettered for the owner rather than sent to the client twice.
+    const intent = firstRow(await supabase.rpc('service_begin_communication_send', {
+      p_outbox_id: job.outbox_id,
+      p_worker_id: workerId,
+    }));
+    if (intent?.proceed !== true) {
+      return recordFailure(supabase, job.outbox_id, workerId, 'communication_send_result_unknown');
+    }
     delivery = await deliver(route, {
       recipientId: job.external_contact_id,
       body: job.body,
@@ -188,9 +198,8 @@ export async function processClaimedJob({
     });
     return { outcome: 'succeeded' };
   } catch {
-    // The provider has already accepted the message. Letting the lease expire
-    // keeps delivery at least once, so a later attempt may duplicate the
-    // message rather than silently dropping it.
+    // The provider has already accepted the message. The recorded send intent
+    // stops the next claim from sending it again.
     return { outcome: 'unrecorded', errorCode: 'communication_acknowledgement_failed' };
   }
 }

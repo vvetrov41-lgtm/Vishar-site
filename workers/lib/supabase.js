@@ -35,6 +35,7 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_inbound_message',
   'record_whatsapp_message_status',
   'record_whatsapp_outbox_result',
+  'service_begin_communication_send',
 ]);
 
 /** Meta Ads is deliberately separate from the legacy intake RPC surface. */
