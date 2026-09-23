@@ -158,6 +158,16 @@ export async function processClaimedWhatsappJob(env, {
       p_outbox_id: job.outbox_id,
     });
     const route = validateWhatsappRoute(firstRow(resolved), job);
+    // Durable send intent (audit M-2). A job that already carries one came
+    // back without a recorded result: the client may have the message, so it
+    // is dead-lettered for the owner instead of being sent a second time.
+    const intent = firstRow(await supabase.rpc('service_begin_communication_send', {
+      p_outbox_id: job.outbox_id,
+      p_worker_id: workerId,
+    }));
+    if (intent?.proceed !== true) {
+      return recordFailure(supabase, job.outbox_id, workerId, 'communication_send_result_unknown');
+    }
     delivery = await sendWhatsappMessage(
       env,
       route,
@@ -183,9 +193,9 @@ export async function processClaimedWhatsappJob(env, {
     });
     return { outcome: 'succeeded' };
   } catch {
-    // Meta has already accepted the message. Letting the lease expire keeps
-    // delivery at least once, so a later attempt may duplicate the WhatsApp
-    // message rather than silently dropping it.
+    // Meta has already accepted the message. The send intent recorded above
+    // makes the next claim dead-letter the job for the owner instead of
+    // sending the client a duplicate.
     return { outcome: 'unrecorded', errorCode: 'whatsapp_acknowledgement_failed' };
   }
 }

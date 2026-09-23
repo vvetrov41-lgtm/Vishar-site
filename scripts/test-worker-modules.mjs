@@ -331,6 +331,8 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'record_whatsapp_message_status',
     'record_whatsapp_outbox_result',
     'resolve_outbox_route',
+    // Durable WhatsApp send intent (audit M-2).
+    'service_begin_communication_send',
   ]);
 });
 

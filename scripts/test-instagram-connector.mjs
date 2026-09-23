@@ -921,6 +921,7 @@ function drainDouble({ jobs = [claimedJob()], routeRow = route() } = {}) {
     async rpc(name, args) {
       calls.push({ name, args });
       if (name === 'claim_communication_outbox') return jobs;
+      if (name === 'service_begin_communication_send') return { proceed: true };
       if (name === 'resolve_outbox_route') return [routeRow];
       return { changed: true };
     },
@@ -1062,6 +1063,7 @@ await test('an acknowledgement failure after a provider accept is reported as un
     async rpc(name, args) {
       this.calls.push({ name, args });
       if (name === 'claim_communication_outbox') return [claimedJob()];
+      if (name === 'service_begin_communication_send') return { proceed: true };
       if (name === 'resolve_outbox_route') return [route()];
       if (name === 'record_communication_outbox_result') throw new Error('synthetic ack failure');
       return {};
@@ -1078,6 +1080,30 @@ await test('an acknowledgement failure after a provider accept is reported as un
   });
   assert.equal(result.unrecorded, 1);
   assert.equal(result.succeeded, 0);
+});
+
+await test('a job retried after an unrecorded send is dead-lettered, never resent', async () => {
+  const calls = [];
+  let delivered = 0;
+  const db = {
+    async rpc(name, args) {
+      calls.push({ name, args });
+      if (name === 'claim_communication_outbox') return [claimedJob()];
+      if (name === 'resolve_outbox_route') return [route()];
+      if (name === 'service_begin_communication_send') return { proceed: false, reason: 'send_result_unknown' };
+      return { changed: true };
+    },
+  };
+  const result = await drainCommunicationOutbox({
+    supabase: db,
+    channel: 'instagram',
+    deliver: async () => { delivered += 1; return { delivered: true, providerMessageId: 'ig_mid_SHOULDNOTSEND' }; },
+    workerId: 'instagram-test-worker',
+  });
+  assert.equal(delivered, 0, 'the client must not receive the message twice');
+  assert.equal(result.failed, 1);
+  const ack = calls.find((call) => call.name === 'record_communication_outbox_result');
+  assert.equal(ack.args.p_error_code, 'communication_send_result_unknown');
 });
 
 await test('a send is refused before the provider when the message is unusable', async () => {
@@ -1108,6 +1134,7 @@ await test('the connector service credential can call only the intended RPCs', (
     'record_communication_read_receipt',
     'resolve_outbox_route',
     'service_authorize_instagram_connection',
+    'service_begin_communication_send',
     'service_disable_instagram_integration',
     'service_list_unenriched_participants',
     'service_resolve_instagram_route',
