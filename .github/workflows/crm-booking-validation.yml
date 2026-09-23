@@ -234,6 +234,8 @@ jobs:
             export SUPABASE_INTERNAL_IMAGE_REGISTRY="${registries[$((attempt - 1))]}"
             echo "Starting Supabase from $SUPABASE_INTERNAL_IMAGE_REGISTRY (attempt $attempt)"
             if supabase start -x studio,edge-runtime,imgproxy,logflare,vector,mailpit,supavisor; then
+              # Later steps (pg_prove, lint) pull their images from the same registry.
+              echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=$SUPABASE_INTERNAL_IMAGE_REGISTRY" >> "$GITHUB_ENV"
               exit 0
             fi
             supabase stop --no-backup || true
