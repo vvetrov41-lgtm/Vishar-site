@@ -24,7 +24,9 @@ import {
   MAX_IMAGES,
   MAX_IMAGE_BYTES,
   MAX_INPUT_CHARS,
+  MAX_OUTPUT_TOKENS,
   MAX_PROVIDERS_PER_REQUEST,
+  MAX_TIMEOUT_OVERRIDE_MS,
   MAX_SYSTEM_CHARS,
   TASK_NAMES,
   resolveTask,
@@ -73,7 +75,29 @@ function base64ByteLength(value) {
  * Bounds the request before any provider is contacted. Oversized prompts and
  * oversized or unsupported images are rejected here rather than being paid for.
  */
-export function normalizeRequest(plan, input) {
+export const SCHEMA_MODES = Object.freeze(['default', 'full', 'transport', 'object']);
+export const THINKING_MODES = Object.freeze(['default', 'off']);
+
+/**
+ * Request shaping for a guarded experiment. Only the token-gated probe passes
+ * one; every value is a closed choice or a clamped number, and none of them can
+ * change what a model is asked or which data it sees.
+ */
+export function normalizeExperiment(plan, experiment) {
+  if (!experiment || typeof experiment !== 'object') return null;
+  const provider = typeof experiment.provider === 'string' && PROVIDER_IDS.has(experiment.provider)
+    ? experiment.provider : null;
+  const clamp = (value, min, max) => (Number.isInteger(value) && value >= min && value <= max ? value : null);
+  return Object.freeze({
+    provider,
+    timeoutMs: clamp(experiment.timeoutMs, 1_000, MAX_TIMEOUT_OVERRIDE_MS),
+    maxOutputTokens: clamp(experiment.maxOutputTokens, 16, MAX_OUTPUT_TOKENS),
+    schemaMode: SCHEMA_MODES.includes(experiment.schemaMode) ? experiment.schemaMode : 'default',
+    thinking: THINKING_MODES.includes(experiment.thinking) ? experiment.thinking : 'default',
+  });
+}
+
+export function normalizeRequest(plan, input, experiment = null) {
   const system = typeof input?.system === 'string' ? input.system.trim() : '';
   const text = typeof input?.input === 'string' ? input.input.trim() : '';
   if (!system || system.length > MAX_SYSTEM_CHARS) return { error: 'request_invalid' };
@@ -100,10 +124,13 @@ export function normalizeRequest(plan, input) {
       system,
       input: text,
       images: Object.freeze(images),
-      maxOutputTokens: plan.maxOutputTokens,
+      maxOutputTokens: experiment?.maxOutputTokens ?? plan.maxOutputTokens,
       temperature: plan.temperature,
       responseFormat: plan.structured ? 'json' : 'text',
       responseSchema: plan.task === 'enquiry_intake' ? ENQUIRY_AI_RESPONSE_SCHEMA : null,
+      // Adapter hints. 'default' means the adapter's configured behaviour.
+      schemaMode: experiment?.schemaMode ?? 'default',
+      thinking: experiment?.thinking ?? 'default',
     }),
   };
 }
@@ -160,9 +187,9 @@ function withTimeout(timeoutMs) {
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
-async function attemptProvider({ provider, config, plan, request, fetchImpl, now }) {
+async function attemptProvider({ provider, config, plan, request, fetchImpl, now, timeoutMs }) {
   const startedAt = now();
-  const { signal, clear } = withTimeout(plan.timeoutMs);
+  const { signal, clear } = withTimeout(timeoutMs ?? plan.timeoutMs);
   try {
     const raced = await Promise.race([
       provider.invoke({ config, request, fetchImpl, signal }),
@@ -194,6 +221,7 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
     now = () => Date.now(),
     requiredKeys = [],
     validateJson = null,
+    experiment: rawExperiment = null,
   } = deps;
 
   const startedAt = now();
@@ -214,10 +242,12 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
 
   if (!plan) return fail('task_unknown');
 
-  const normalized = normalizeRequest(plan, input);
+  const experiment = plan ? normalizeExperiment(plan, rawExperiment) : null;
+  const normalized = normalizeRequest(plan, input, experiment);
   if (normalized.error) return fail(normalized.error, plan.task);
 
-  const candidates = plan.chain
+  const chain = experiment?.provider ? [experiment.provider] : plan.chain;
+  const candidates = chain
     .map((id) => {
       const provider = PROVIDERS[id];
       const config = provider ? provider.configure(env, plan.modality) : null;
@@ -237,6 +267,7 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
         request: normalized.request,
         fetchImpl,
         now,
+        timeoutMs: experiment?.timeoutMs ?? null,
       });
 
       // Per-attempt facts for telemetry. Counts and bounded codes only: never

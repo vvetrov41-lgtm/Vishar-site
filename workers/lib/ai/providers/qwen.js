@@ -11,6 +11,7 @@
 // Unlike the DeepSeek tier, Cloudflare does not gate this model behind Workers
 // Paid, so it is reachable on the account's current plan.
 
+import { ENQUIRY_AI_TRANSPORT_SCHEMA } from '../enquiry-schema.js';
 import { bindingFor, callBindingModel, resolveModel } from './workers-ai-binding.js';
 
 export const id = 'qwen';
@@ -26,7 +27,29 @@ export function configure(env, modality) {
   const model = modality === 'vision'
     ? resolveModel(env, 'AI_MODEL_QWEN_VISION', DEFAULT_VISION_MODEL)
     : resolveModel(env, 'AI_MODEL_QWEN_TEXT', DEFAULT_TEXT_MODEL);
-  return { binding, model };
+  return {
+    binding,
+    model,
+    // Server-side shaping for structured calls. Both default to the behaviour
+    // this adapter has always had; neither changes what the model is asked.
+    structuredThinking: env?.AI_QWEN_STRUCTURED_THINKING === 'off' ? 'off' : 'default',
+    enquirySchemaMode: ['full', 'transport', 'object'].includes(env?.AI_QWEN_ENQUIRY_SCHEMA)
+      ? env.AI_QWEN_ENQUIRY_SCHEMA : 'full',
+  };
+}
+
+/** The request a structured Qwen call actually sends, after config and experiment shaping. */
+export function shapeStructuredRequest(config, request) {
+  const schemaMode = request.schemaMode && request.schemaMode !== 'default'
+    ? request.schemaMode : config.enquirySchemaMode ?? 'full';
+  const thinking = request.thinking && request.thinking !== 'default'
+    ? request.thinking : config.structuredThinking ?? 'default';
+  let shaped = request;
+  if (request.responseSchema) {
+    if (schemaMode === 'transport') shaped = { ...request, responseSchema: ENQUIRY_AI_TRANSPORT_SCHEMA };
+    if (schemaMode === 'object') shaped = { ...request, responseSchema: null };
+  }
+  return { request: shaped, thinking };
 }
 
 export async function invoke({ config, request, signal }) {
@@ -36,14 +59,20 @@ export async function invoke({ config, request, signal }) {
   // return prose that failed JSON validation. Keep reasoning low and request
   // JSON mode for all structured calls, whether or not a JSON Schema is present.
   const boundedExtraction = request.responseFormat === 'json';
+  if (!boundedExtraction) {
+    return callBindingModel({ binding: config.binding, model: config.model, request, signal });
+  }
+  const shaped = shapeStructuredRequest(config, request);
   return callBindingModel({
     binding: config.binding,
     model: config.model,
-    request,
+    request: shaped.request,
     signal,
-    jsonMode: boundedExtraction,
-    reasoningEffort: boundedExtraction ? 'low' : null,
-    useMaxCompletionTokens: boundedExtraction,
+    jsonMode: true,
+    // With thinking off there is no reasoning budget to bound.
+    reasoningEffort: shaped.thinking === 'off' ? null : 'low',
+    disableThinking: shaped.thinking === 'off',
+    useMaxCompletionTokens: true,
   });
 }
 

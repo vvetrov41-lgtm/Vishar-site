@@ -1,0 +1,134 @@
+name: AI model live eval (production)
+
+# Measures candidate CRM AI request shapes against the live TattooAI Worker
+# using only the synthetic fixtures compiled into the Worker
+# (workers/lib/ai/eval-fixtures.js). The caller sends fixture IDs and closed
+# request-shape choices from scripts/ai-evals/live-variants.json; no customer
+# data is read, no CRM record is created, and no job is touched.
+#
+# The probe endpoint opens only for this run: an ephemeral token is minted on
+# the runner, never printed, and deleted in an always() step, exactly as in
+# ai-router-production-probe.yml.
+on:
+  push:
+    branches:
+      - 'probe/ai-model-eval-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-router-production-probe
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment:
+      name: production
+    env:
+      ENDPOINT: https://tattooai.vvetrov41.workers.dev/internal/ai-router
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Checkout exact eval snapshot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the eval snapshot is canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch origin agent/platform-telegram-self-service --no-tags
+          git merge-base --is-ancestor origin/agent/platform-telegram-self-service "$GITHUB_SHA"
+          echo 'Eval snapshot descends from the canonical branch.'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked tooling
+        run: npm ci
+
+      - name: Confirm the endpoint is closed before the probe window opens
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS -o /tmp/closed.json -w '%{http_code}' "$ENDPOINT")"
+          test "$status" = '404'
+          grep -Fq 'not_found' /tmp/closed.json
+          echo 'Probe endpoint is closed, as expected.'
+
+      - name: Mint an ephemeral probe token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "PROBE_TOKEN=$token" >> "$GITHUB_ENV"
+          printf '%s' "$token" | npx wrangler secret put AI_ROUTER_PROBE_TOKEN --name tattooai
+          echo 'Ephemeral probe token installed.'
+
+      - name: Wait for the probe token to propagate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            status="$(curl -sS -o /tmp/routing.json -w '%{http_code}' -H "authorization: Bearer $PROBE_TOKEN" "$ENDPOINT")"
+            if [ "$status" = '200' ]; then break; fi
+            echo "Attempt $attempt saw HTTP $status; waiting for the secret to propagate."
+            sleep 10
+          done
+          test "$status" = '200'
+
+      - name: Run the live synthetic eval
+        shell: bash
+        run: node scripts/ai-evals/run-live-eval.mjs
+
+      - name: Close the probe window
+        if: always()
+        shell: bash
+        run: |
+          set -uo pipefail
+          curl -sS -X DELETE \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/workers/scripts/tattooai/secrets/AI_ROUTER_PROBE_TOKEN" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            -o /tmp/delete.json -w 'delete status=%{http_code}\n' || true
+          node -e '
+            try {
+              const r = require("/tmp/delete.json");
+              console.log("delete success:", r.success === true);
+              if (Array.isArray(r.errors) && r.errors.length) {
+                console.log("delete errors:", r.errors.map((e) => e.code).join(","));
+              }
+            } catch { console.log("delete response was not JSON"); }
+          ' || true
+
+          if ! npx wrangler secret list --name tattooai --format json > /tmp/secrets.json 2>/dev/null; then
+            echo 'Could not list secrets; relying on the live check below.'
+          else
+            node -e '
+              const names = require("/tmp/secrets.json").map((s) => s.name);
+              console.log("remaining secrets:", JSON.stringify(names));
+              if (names.includes("AI_ROUTER_PROBE_TOKEN")) {
+                throw new Error("AI_ROUTER_PROBE_TOKEN is still installed");
+              }
+            '
+          fi
+
+          set -e
+          for attempt in 1 2 3 4 5 6; do
+            status="$(curl -sS -o /tmp/reclosed.json -w '%{http_code}' "$ENDPOINT")"
+            if [ "$status" = '404' ]; then break; fi
+            echo "Attempt $attempt saw HTTP $status; waiting for the deletion to propagate."
+            sleep 10
+          done
+          test "$status" = '404'
+          grep -Fq 'not_found' /tmp/reclosed.json
+          echo 'Probe endpoint is closed again.'
