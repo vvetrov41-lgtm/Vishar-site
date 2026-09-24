@@ -788,6 +788,9 @@ insert into expected_function_acl values
   ('public.refresh_client_ai_state(uuid,uuid)', false, true, false),
   ('public.service_telegram_client_ai_digest(text,integer)', false, false, true),
   ('public.service_record_gmail_client_message(uuid,uuid,uuid,text,text,text,text,text)', false, false, true),
+  -- AI run telemetry (20260924010000). Service-only write and aggregate read.
+  ('public.service_record_ai_run(jsonb)', false, false, true),
+  ('public.service_ai_run_summary(integer)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires

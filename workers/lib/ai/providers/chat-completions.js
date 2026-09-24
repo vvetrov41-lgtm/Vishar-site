@@ -7,6 +7,7 @@
 // in this file is imported by CRM business logic.
 
 import { ProviderError, providerErrorCodeForStatus } from '../errors.js';
+import { normalizeUsage } from './workers-ai-binding.js';
 
 /** A provider response larger than this is treated as malformed rather than parsed. */
 const MAX_RESPONSE_BYTES = 256 * 1024;
@@ -52,10 +53,12 @@ function normalize(payload) {
   const trimmed = text.trim();
   if (!trimmed) throw new ProviderError('provider_empty_response');
 
-  return {
+  const result = {
     text: trimmed,
     finishReason: typeof choice?.finish_reason === 'string' ? choice.finish_reason.slice(0, 40) : 'unknown',
   };
+  const usage = normalizeUsage(payload?.usage);
+  return usage ? { ...result, usage } : result;
 }
 
 /**

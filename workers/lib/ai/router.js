@@ -108,21 +108,51 @@ export function normalizeRequest(plan, input) {
   };
 }
 
-/** Tolerates a fenced ```json block, which several models emit despite instructions. */
-export function parseStructuredOutput(text, requiredKeys = []) {
+/**
+ * Parses a structured answer and says why it failed, as a bounded code.
+ * Tolerates a fenced ```json block, which several models emit despite instructions.
+ */
+export function inspectStructuredOutput(text, requiredKeys = []) {
   const unfenced = text.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
   let parsed;
   try {
     parsed = JSON.parse(unfenced);
   } catch {
-    return null;
+    return { json: null, failure: 'json_parse' };
   }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { json: null, failure: 'json_not_object' };
+  }
   for (const key of requiredKeys) {
-    if (!Object.prototype.hasOwnProperty.call(parsed, key)) return null;
+    if (!Object.prototype.hasOwnProperty.call(parsed, key)) return { json: null, failure: 'json_missing_key' };
   }
-  return parsed;
+  return { json: parsed, failure: null };
 }
+
+export function parseStructuredOutput(text, requiredKeys = []) {
+  return inspectStructuredOutput(text, requiredKeys).json;
+}
+
+/** Validation failure codes are telemetry: bounded, dotted, never free text. */
+const VALIDATION_CODE_RE = /^[a-z][a-z0-9_.]{2,79}$/;
+
+/**
+ * A validator may answer true/false, or a string naming what failed. A string
+ * is always a failure; one that is not a bounded code is recorded generically.
+ */
+function runValidator(validateJson, json) {
+  if (typeof validateJson !== 'function') return null;
+  try {
+    const verdict = validateJson(json);
+    if (verdict === true) return null;
+    if (typeof verdict === 'string') return VALIDATION_CODE_RE.test(verdict) ? verdict : 'contract';
+    return verdict ? null : 'contract';
+  } catch {
+    return 'validator_error';
+  }
+}
+
+const count = (value) => (Number.isSafeInteger(value) && value >= 0 ? value : null);
 
 function withTimeout(timeoutMs) {
   const controller = new AbortController();
@@ -176,7 +206,10 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
       task, errorCode, durationMs, providerAttempts: attempts.length, fallbackUsed: attempts.length > 1,
     });
     await reporter?.capture?.('ai.router.failed', { operation: task, errorCode, durationMs });
-    return Object.freeze({ ok: false, task, errorCode, attempts: Object.freeze(attempts), durationMs });
+    return Object.freeze({
+      ok: false, task, errorCode, attempts: Object.freeze(attempts), durationMs,
+      routeSource: plan?.routeSource ?? 'unknown',
+    });
   };
 
   if (!plan) return fail('task_unknown');
@@ -206,27 +239,32 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
         now,
       });
 
+      // Per-attempt facts for telemetry. Counts and bounded codes only: never
+      // the answer text, never a provider message.
       const record = {
         provider: candidate.provider.id,
         model: modelToken(candidate.config.model),
         durationMs: outcome.durationMs,
         outcome: outcome.ok ? 'succeeded' : 'failed',
         errorCode: outcome.errorCode ?? null,
+        finishReason: outcome.ok && typeof outcome.result?.finishReason === 'string'
+          ? outcome.result.finishReason.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32) || null
+          : null,
+        outputChars: outcome.ok && typeof outcome.result?.text === 'string' ? outcome.result.text.length : null,
+        promptTokens: count(outcome.result?.usage?.promptTokens),
+        completionTokens: count(outcome.result?.usage?.completionTokens),
+        reasoningTokens: count(outcome.result?.usage?.reasoningTokens),
+        validationFailure: null,
       };
 
       if (outcome.ok && plan.structured) {
-        const json = parseStructuredOutput(outcome.result.text, requiredKeys);
-        let valid = Boolean(json);
-        if (valid && typeof validateJson === 'function') {
-          try {
-            valid = Boolean(validateJson(json));
-          } catch {
-            valid = false;
-          }
-        }
-        if (!valid) {
+        const inspected = inspectStructuredOutput(outcome.result.text, requiredKeys);
+        const json = inspected.json;
+        const failure = inspected.failure ?? runValidator(validateJson, json);
+        if (failure) {
           record.outcome = 'failed';
           record.errorCode = 'output_invalid';
+          record.validationFailure = failure;
           attempts.push(record);
           logger?.warn?.('ai.router.attempt', {
             task: plan.task, provider: record.provider, model: record.model,
@@ -268,6 +306,7 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
           fallbackUsed,
           attempts: Object.freeze(attempts),
           durationMs,
+          routeSource: plan.routeSource,
         });
       }
 
@@ -315,4 +354,4 @@ export function describeRouting(env) {
   };
 }
 
-export const __testing = Object.freeze({ FALLBACK_CODES, base64ByteLength });
+export const __testing = Object.freeze({ FALLBACK_CODES, base64ByteLength, runValidator });

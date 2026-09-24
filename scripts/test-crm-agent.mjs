@@ -88,11 +88,16 @@ const job = (overrides = {}) => ({
   ...Object.fromEntries(Object.entries(overrides).filter(([key]) => key !== 'input')),
 });
 
+// Telemetry writes are recorded apart from the job RPCs so the job-sequence
+// assertions below stay exact; dedicated tests assert the telemetry itself.
 const rpcRecorder = (claim = null, results = {}) => {
   const calls = [];
+  const telemetry = [];
   return {
     calls,
+    telemetry,
     rpc: async (name, args) => {
+      if (name === 'service_record_ai_run') { telemetry.push(args.p_run); return { status: 'recorded' }; }
       calls.push({ name, args });
       if (name === 'service_claim_crm_agent_jobs') return claim ?? [];
       return results[name] ?? { status: 'succeeded' };

@@ -63,6 +63,14 @@ export const CRM_AGENT_RPCS = new Set([
   'service_telegram_client_ai_digest',
 ]);
 
+/**
+ * AI run telemetry: bounded codes and counts only, fail-open. Kept apart from
+ * the job RPCs so the job surfaces stay pinned.
+ */
+export const AI_TELEMETRY_RPCS = new Set([
+  'service_record_ai_run',
+]);
+
 /** Existing generic automation engine backend surface. Never exposed to public callers. */
 export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
@@ -199,6 +207,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       && !META_ADS_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !CRM_AGENT_RPCS.has(name)
+      && !AI_TELEMETRY_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
       && !ENQUIRY_AI_RPCS.has(name)
       && !AUTOMATION_HEARTBEAT_RPCS.has(name)
