@@ -9,10 +9,60 @@ import { normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../../workers
 
 const lower = (value) => (typeof value === 'string' ? value.toLowerCase() : '');
 
+function collectText(value, output = []) {
+  if (typeof value === 'string') {
+    output.push(value);
+    return output;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectText(item, output);
+    return output;
+  }
+  if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) collectText(item, output);
+  }
+  return output;
+}
+
 function clientStateText(answer) {
-  return [answer.summary, answer.next_action?.reason, answer.next_action?.draft_reply,
-    ...(answer.brief?.open_questions ?? []), ...(answer.brief?.constraints ?? []),
-    answer.brief?.size, answer.brief?.project_summary].map(lower).join('\n');
+  // Scan every free-text-bearing part of the validated answer. Eval exclusions
+  // must catch a false claim wherever the model places it, including arrays
+  // such as decisions_made/promises_to_client and discussed values.
+  return collectText({
+    summary: answer.summary,
+    brief: answer.brief,
+    next_action: {
+      reason: answer.next_action?.reason,
+      draft_reply: answer.next_action?.draft_reply,
+    },
+  }).map(lower).join('\n');
+}
+
+function missingTokens(value) {
+  const phrase = lower(value)
+    .normalize('NFKC')
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!phrase) return [];
+  const stem = (token) => {
+    if (token.endsWith('ies') && token.length > 4) return `${token.slice(0, -3)}y`;
+    if (token.endsWith('s') && !token.endsWith('ss') && token.length > 3) return token.slice(0, -1);
+    return token;
+  };
+  return phrase.split(' ').map(stem).filter(Boolean);
+}
+
+function sameMissingConcept(left, right) {
+  const a = new Set(missingTokens(left));
+  const b = new Set(missingTokens(right));
+  if (!a.size || !b.size) return false;
+  const subset = (x, y) => [...x].every((token) => y.has(token));
+  // Treat "reference", "reference image" and "reference images" as the same
+  // missing concept, likewise "size" and "approximate size". This keeps the
+  // eval semantic instead of depending on a model's separator/plural choice.
+  return subset(a, b) || subset(b, a);
 }
 
 export function checkClientState(answer, expect = {}) {
@@ -30,7 +80,7 @@ export function checkClientState(answer, expect = {}) {
   if (expect.action_not_in?.includes(action.action_type)) failures.push(`action:${action.action_type}`);
   if (expect.missing_nonempty && action.missing_information.length === 0) failures.push('missing_empty');
   for (const key of expect.missing_excludes ?? []) {
-    if (action.missing_information.map(lower).includes(key)) failures.push(`missing_has:${key}`);
+    if (action.missing_information.some((item) => sameMissingConcept(item, key))) failures.push(`missing_has:${key}`);
   }
   for (const key of expect.brief_nonnull ?? []) {
     if (brief[key] === null) failures.push(`brief_null:${key}`);
@@ -62,10 +112,10 @@ export function checkEnquiry(answer, expect = {}) {
     if (valid.fields[key]?.value !== value) failures.push(`value:${key}`);
   }
   for (const key of expect.missing_includes ?? []) {
-    if (!valid.missing_information.includes(key)) failures.push(`missing_lacks:${key}`);
+    if (!valid.missing_information.some((item) => sameMissingConcept(item, key))) failures.push(`missing_lacks:${key}`);
   }
   for (const key of expect.missing_excludes ?? []) {
-    if (valid.missing_information.includes(key)) failures.push(`missing_has:${key}`);
+    if (valid.missing_information.some((item) => sameMissingConcept(item, key))) failures.push(`missing_has:${key}`);
   }
   for (const needle of expect.draft_excludes ?? []) {
     if (lower(valid.draft_reply).includes(lower(needle))) failures.push(`draft_has:${needle}`);
