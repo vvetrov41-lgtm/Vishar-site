@@ -63,6 +63,8 @@ export const CRM_AGENT_RPCS = new Set([
   'service_telegram_client_ai_digest',
   // Phase 6a bounded convergence sweep (schedules ordinary refreshes only).
   'service_converge_client_ai_briefs',
+  // Phase 3: bounded classifier result for the latest client message.
+  'service_record_client_reply_state',
 ]);
 
 /**

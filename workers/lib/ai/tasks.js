@@ -138,6 +138,19 @@ const TASKS = Object.freeze({
     structured: true,
   },
 
+  // Phase 3: one short client draft for a draftable next action, generated
+  // apart from the client-state analysis so a rejected draft never discards
+  // the analysis. Small output ceiling; reply-safety is enforced afterwards.
+  crm_draft_reply: {
+    capability: 'drafting',
+    modality: 'text',
+    chain: ['qwen', 'workers_ai'],
+    timeoutMs: 20_000,
+    maxOutputTokens: 400,
+    temperature: 0.3,
+    structured: true,
+  },
+
   // --- declared multimodal capabilities -------------------------------------
   // Structured description of one private client reference image. Separate
   // from `vision_reference_understanding` because that task is unstructured

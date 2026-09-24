@@ -795,6 +795,9 @@ insert into expected_function_acl values
   ('public.service_record_attention_shadow()', false, false, true),
   -- Stale-brief convergence sweep (20260924036000). Backend only.
   ('public.service_converge_client_ai_briefs(integer)', false, false, true),
+  -- Narrow client-state contract (20260924040000).
+  ('public.service_record_client_reply_state(uuid,text)', false, false, true),
+  ('public.service_contract_rule_summary(integer)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires

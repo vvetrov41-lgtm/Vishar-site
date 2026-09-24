@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
 import { checkClientState, checkEnquiry, checkVision } from './ai-evals/assertions.mjs';
 import { projectClientStateInput } from '../workers/lib/crm-agent.js';
+import { diagnoseClientStateV2 } from '../workers/lib/ai/client-state-schema.js';
 import { projectEnquiryAiInput } from '../workers/lib/enquiry-ai.js';
 import { runModelTask } from '../workers/lib/ai/router.js';
 import { resolveTask } from '../workers/lib/ai/tasks.js';
@@ -325,6 +326,32 @@ await test('vision check rejects an invalid shape and a claimed existing tattoo'
   const claimed = { ...STAR_ANSWER, image_kind: 'existing_tattoo', existing_tattoo_visible: true };
   assert.deepEqual(checkVision(claimed, VISION_FIXTURES.synthetic_star.expect).failures,
     ['image_kind', 'existing_tattoo_visible']);
+});
+
+await test('every client-state fixture carries workflow facts for the v2 contract', () => {
+  for (const [id, fixture] of Object.entries(CLIENT_STATE_FIXTURES)) {
+    const projected = projectClientStateInput(fixture.input, { contract: 'v2' });
+    assert.ok(projected, `${id} projects under v2`);
+    const facts = JSON.parse(projected).untrusted_crm_data.crm_workflow_facts;
+    assert.ok(facts.allowed_actions.length > 0, `${id} has allowed actions`);
+  }
+  const paid = CLIENT_STATE_FIXTURES.deposit_paid.input.attention.allowed_actions;
+  assert.ok(!paid.includes('request_deposit'));
+  const booked = CLIENT_STATE_FIXTURES.session_scheduled.input.attention.allowed_actions;
+  assert.ok(!booked.includes('request_information') && !booked.includes('offer_dates'));
+});
+
+await test('probe eval runs the v2 contract with the fixture facts', async () => {
+  const calls = [];
+  const env = { AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: PROBE_TOKEN,
+    AI: { run: async (model, input) => { calls.push(input); return { response: '{}' }; } } };
+  const response = await handleAiRouterProbeRequest(probeRequest({
+    mode: 'eval', task: 'crm_client_state', fixture: 'session_scheduled', variant: { provider: 'qwen', contract: 'v2' } }), env);
+  const body = await response.json();
+  assert.equal(body.contract, 'v2');
+  assert.ok(JSON.stringify(calls[0]).includes('crm_workflow_facts'));
+  assert.equal(body.attempts[0].validationFailure, 'top_level.keys');
+  assert.equal(diagnoseClientStateV2({}, []), 'top_level.keys');
 });
 
 console.log(`ai evals (offline): ${passes} tests passed`);

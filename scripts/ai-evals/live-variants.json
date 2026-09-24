@@ -1,13 +1,90 @@
 {
   "repeats": 2,
-  "maxCalls": 220,
+  "maxCalls": 320,
   "variants": [
-    { "id": "intake-qwen-full", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "full" } },
-    { "id": "intake-qwen-transport", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "transport" } },
-    { "id": "intake-qwen-object", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "object" } },
-    { "id": "intake-llama", "task": "enquiry_intake", "variant": { "provider": "workers_ai" } },
-    { "id": "state-qwen-current", "task": "crm_client_state", "variant": { "provider": "qwen", "timeoutMs": 60000 } },
-    { "id": "state-qwen-nothink", "task": "crm_client_state", "variant": { "provider": "qwen", "thinking": "off", "timeoutMs": 60000 } },
-    { "id": "state-llama", "task": "crm_client_state", "variant": { "provider": "workers_ai", "timeoutMs": 60000 } }
+    {
+      "id": "intake-qwen-full",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "qwen",
+        "schemaMode": "full"
+      }
+    },
+    {
+      "id": "intake-qwen-transport",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "qwen",
+        "schemaMode": "transport"
+      }
+    },
+    {
+      "id": "intake-qwen-object",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "qwen",
+        "schemaMode": "object"
+      }
+    },
+    {
+      "id": "intake-llama",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "workers_ai"
+      }
+    },
+    {
+      "id": "state-qwen-current",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "qwen",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-qwen-nothink",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "qwen",
+        "thinking": "off",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-llama",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "workers_ai",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-v2-qwen",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "qwen",
+        "contract": "v2",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-v2-qwen-nothink",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "qwen",
+        "contract": "v2",
+        "thinking": "off",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-v2-llama",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "workers_ai",
+        "contract": "v2",
+        "timeoutMs": 60000
+      }
+    }
   ]
 }

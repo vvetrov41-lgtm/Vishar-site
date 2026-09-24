@@ -29,7 +29,8 @@ import {
   ENQUIRY_AI_SYSTEM, diagnoseEnquiryAnalysis, normalizeEnquiryAnalysis, validateEnquiryAnalysis,
 } from '../lib/ai/enquiry-schema.js';
 import {
-  CLIENT_STATE_SYSTEM, diagnoseClientStateAnalysis, validateClientStateAnalysis,
+  CLIENT_STATE_SYSTEM, CLIENT_STATE_V2_SYSTEM, diagnoseClientStateAnalysis, diagnoseClientStateV2,
+  validateClientStateAnalysis,
 } from '../lib/ai/client-state-schema.js';
 import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../lib/ai/eval-fixtures.js';
 import {
@@ -200,9 +201,15 @@ async function runEvalProbe(env, body, fetchImpl) {
   }
 
   const isState = task === 'crm_client_state';
-  const input = isState ? projectClientStateInput(fixture.input) : projectEnquiryAiInput(fixture.input);
+  const v2 = isState && variant.contract === 'v2';
+  const input = isState
+    ? projectClientStateInput(fixture.input, { contract: v2 ? 'v2' : 'v1' })
+    : projectEnquiryAiInput(fixture.input);
   if (!input) return json(500, { ok: false, error: 'fixture_projection_failed' });
-  const validateJson = isState
+  const allowed = fixture.input.attention?.allowed_actions ?? [];
+  const validateJson = v2
+    ? (value) => diagnoseClientStateV2(value, allowed) ?? true
+    : isState
     ? (value) => (validateClientStateAnalysis(value) ? true : diagnoseClientStateAnalysis(value) ?? 'contract')
     : (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value))
       ?? diagnoseEnquiryAnalysis(normalizeEnquiryAnalysis(value)) ?? 'contract';
@@ -210,7 +217,7 @@ async function runEvalProbe(env, body, fetchImpl) {
   const result = await runModelTask(
     env,
     task,
-    { system: isState ? CLIENT_STATE_SYSTEM : ENQUIRY_AI_SYSTEM, input },
+    { system: v2 ? CLIENT_STATE_V2_SYSTEM : isState ? CLIENT_STATE_SYSTEM : ENQUIRY_AI_SYSTEM, input },
     { fetchImpl, logger: createLogger(newRequestId()), validateJson, experiment },
   );
 
@@ -218,6 +225,7 @@ async function runEvalProbe(env, body, fetchImpl) {
     ok: result.ok,
     task,
     fixture: fixtureId,
+    contract: v2 ? 'v2' : 'v1',
     provider: result.provider ?? null,
     model: result.model ?? null,
     fallbackUsed: result.fallbackUsed ?? false,
