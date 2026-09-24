@@ -14,8 +14,15 @@ import { createSupabaseClient } from './supabase.js';
 import { createStorageClient } from './storage.js';
 import { runModelTask } from './ai/router.js';
 import { MAX_IMAGE_BYTES } from './ai/tasks.js';
-import { CLIENT_STATE_SYSTEM, validateClientStateAnalysis } from './ai/client-state-schema.js';
-import { REFERENCE_IMAGE_SYSTEM, validateReferenceImageAnalysis } from './ai/reference-image-schema.js';
+import {
+  CLIENT_STATE_PROMPT_VERSION, CLIENT_STATE_SCHEMA_VERSION, CLIENT_STATE_SYSTEM,
+  diagnoseClientStateAnalysis, validateClientStateAnalysis,
+} from './ai/client-state-schema.js';
+import {
+  REFERENCE_IMAGE_PROMPT_VERSION, REFERENCE_IMAGE_SCHEMA_VERSION, REFERENCE_IMAGE_SYSTEM,
+  diagnoseReferenceImageAnalysis, validateReferenceImageAnalysis,
+} from './ai/reference-image-schema.js';
+import { buildAiRunRecord, recordAiRun } from './ai/telemetry.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATE_TASK = 'crm_client_state';
@@ -179,22 +186,39 @@ export async function loadPrivateImage(env, storagePath, deps = {}) {
   return { dataBase64: btoa(binary) };
 }
 
+/** Maps a completion RPC status onto the telemetry outcome vocabulary. */
+const appliedOutcome = (status) => (status === 'succeeded' || status === undefined
+  ? 'succeeded'
+  : status === 'stale' ? 'stale' : 'not_applied');
+
 async function processClientStateJob(env, job, supabase, runTask) {
+  const telemetry = (routed, outcome, errorCode = null, inputChars = null) => buildAiRunRecord({
+    task: STATE_TASK, jobKind: 'client_state', jobId: job.job_id,
+    promptVersion: CLIENT_STATE_PROMPT_VERSION, schemaVersion: CLIENT_STATE_SCHEMA_VERSION,
+    routed, outcome, errorCode, inputChars,
+  });
+
   const input = projectClientStateInput(job.input);
-  if (!input) return { outcome: 'failed', errorCode: 'input_invalid' };
+  if (!input) {
+    return { outcome: 'failed', errorCode: 'input_invalid', aiRun: telemetry(null, 'failed', 'input_invalid') };
+  }
 
   const model = await runTask(
     env,
     STATE_TASK,
     { system: CLIENT_STATE_SYSTEM, input },
-    { validateJson: (json) => validateClientStateAnalysis(json) !== null },
+    { validateJson: (json) => (validateClientStateAnalysis(json) !== null ? true : diagnoseClientStateAnalysis(json) ?? 'contract') },
   );
-  if (!model?.ok) return { outcome: 'failed', errorCode: 'ai_unavailable' };
+  if (!model?.ok) {
+    return { outcome: 'failed', errorCode: 'ai_unavailable', aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable', input.length) };
+  }
 
   // Re-validated rather than trusting the router's check: the router proves the
   // answer parsed, this proves the object is exactly the contract.
   const result = validateClientStateAnalysis(model.json);
-  if (!result) return { outcome: 'failed', errorCode: 'output_invalid' };
+  if (!result) {
+    return { outcome: 'failed', errorCode: 'output_invalid', aiRun: telemetry(model, 'failed', 'output_invalid', input.length) };
+  }
 
   const applied = await supabase.rpc('service_complete_client_ai_state_job', {
     p_job_id: job.job_id,
@@ -205,7 +229,10 @@ async function processClientStateJob(env, job, supabase, runTask) {
     p_provider: model.provider,
     p_model: model.model,
   });
-  return { outcome: applied?.status ?? 'completed' };
+  return {
+    outcome: applied?.status ?? 'completed',
+    aiRun: telemetry(model, appliedOutcome(applied?.status), applied?.error_code ?? null, input.length),
+  };
 }
 
 async function processReferenceImageJob(env, job, supabase, runTask, deps) {
@@ -220,8 +247,16 @@ async function processReferenceImageJob(env, job, supabase, runTask, deps) {
     return { outcome: 'failed', errorCode: 'image_unsupported' };
   }
 
+  const telemetry = (routed, outcome, errorCode = null) => buildAiRunRecord({
+    task: VISION_TASK, jobKind: 'reference_image', jobId: job.job_id,
+    promptVersion: REFERENCE_IMAGE_PROMPT_VERSION, schemaVersion: REFERENCE_IMAGE_SCHEMA_VERSION,
+    routed, outcome, errorCode, imageCount: routed ? 1 : 0,
+  });
+
   const image = await loadPrivateImage(env, storagePath, { ...deps, supabase });
-  if (image.error) return { outcome: 'failed', errorCode: image.error };
+  if (image.error) {
+    return { outcome: 'failed', errorCode: image.error, aiRun: telemetry(null, 'failed', image.error) };
+  }
 
   const model = await runTask(
     env,
@@ -231,12 +266,16 @@ async function processReferenceImageJob(env, job, supabase, runTask, deps) {
       input: 'Describe this client reference image using the required JSON contract.',
       images: [{ mimeType, dataBase64: image.dataBase64 }],
     },
-    { validateJson: (json) => validateReferenceImageAnalysis(json) !== null },
+    { validateJson: (json) => (validateReferenceImageAnalysis(json) !== null ? true : diagnoseReferenceImageAnalysis(json) ?? 'contract') },
   );
-  if (!model?.ok) return { outcome: 'failed', errorCode: 'ai_unavailable' };
+  if (!model?.ok) {
+    return { outcome: 'failed', errorCode: 'ai_unavailable', aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable') };
+  }
 
   const analysis = validateReferenceImageAnalysis(model.json);
-  if (!analysis) return { outcome: 'failed', errorCode: 'output_invalid' };
+  if (!analysis) {
+    return { outcome: 'failed', errorCode: 'output_invalid', aiRun: telemetry(model, 'failed', 'output_invalid') };
+  }
 
   const applied = await supabase.rpc('service_complete_reference_image_job', {
     p_job_id: job.job_id,
@@ -245,7 +284,10 @@ async function processReferenceImageJob(env, job, supabase, runTask, deps) {
     p_provider: model.provider,
     p_model: model.model,
   });
-  return { outcome: applied?.status ?? 'completed' };
+  return {
+    outcome: applied?.status ?? 'completed',
+    aiRun: telemetry(model, appliedOutcome(applied?.status), applied?.error_code ?? null),
+  };
 }
 
 export async function processCrmAgentJob(env, job, deps = {}) {
@@ -273,8 +315,12 @@ export async function processCrmAgentJob(env, job, deps = {}) {
         ? await processClientStateJob(env, job, supabase, runTask)
         : { outcome: 'ignored' };
 
-    if (result.outcome === 'failed') return release(result.errorCode);
-    return result;
+    // Telemetry goes last, after the job's own state change, and never
+    // changes the outcome the caller sees.
+    const { aiRun = null, ...outcome } = result;
+    const settled = outcome.outcome === 'failed' ? await release(outcome.errorCode) : outcome;
+    await recordAiRun(supabase, aiRun);
+    return settled;
   } catch {
     // A provider or database exception can carry private message text in its
     // message. It is collapsed to a bounded code and the object is never logged.

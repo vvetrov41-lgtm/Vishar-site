@@ -88,7 +88,24 @@ export function normalizeBindingResponse(payload) {
     ? choice.finish_reason.slice(0, 40)
     : 'stop';
 
-  return { text: trimmed, finishReason };
+  const usage = normalizeUsage(payload.usage);
+  return usage ? { text: trimmed, finishReason, usage } : { text: trimmed, finishReason };
+}
+
+const tokenCount = (value) => (Number.isSafeInteger(value) && value >= 0 && value <= 9_999_999 ? value : null);
+
+/**
+ * Token counts only, when the model reports them. Never the payload itself:
+ * telemetry needs to know how long an answer was, not what it said.
+ */
+export function normalizeUsage(usage) {
+  if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return null;
+  const counts = {
+    promptTokens: tokenCount(usage.prompt_tokens),
+    completionTokens: tokenCount(usage.completion_tokens),
+    reasoningTokens: tokenCount(usage.completion_tokens_details?.reasoning_tokens),
+  };
+  return Object.values(counts).some((value) => value !== null) ? counts : null;
 }
 
 /**

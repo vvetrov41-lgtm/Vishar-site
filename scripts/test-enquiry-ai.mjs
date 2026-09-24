@@ -33,11 +33,16 @@ const job = (input = {}) => ({
     ...input,
   },
 });
+// Telemetry writes are recorded apart from the job RPCs so the job-sequence
+// assertions below stay exact; dedicated tests assert the telemetry itself.
 const rpcRecorder = (claim = null) => {
   const calls = [];
+  const telemetry = [];
   return {
     calls,
+    telemetry,
     rpc: async (name, args) => {
+      if (name === 'service_record_ai_run') { telemetry.push(args.p_run); return { status: 'recorded' }; }
       calls.push({ name, args });
       if (name === 'service_claim_enquiry_ai_jobs') return claim ?? [];
       if (name === 'service_complete_enquiry_ai_job') return { status: 'succeeded' };

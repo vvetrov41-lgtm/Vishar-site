@@ -1,6 +1,10 @@
 import { createSupabaseClient } from './supabase.js';
 import { runModelTask } from './ai/router.js';
-import { ENQUIRY_AI_SYSTEM, normalizeEnquiryAnalysis, validateEnquiryAnalysis } from './ai/enquiry-schema.js';
+import {
+  ENQUIRY_AI_PROMPT_VERSION, ENQUIRY_AI_SCHEMA_VERSION, ENQUIRY_AI_SYSTEM,
+  diagnoseEnquiryAnalysis, normalizeEnquiryAnalysis, validateEnquiryAnalysis,
+} from './ai/enquiry-schema.js';
+import { buildAiRunRecord, recordAiRun } from './ai/telemetry.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TASK = 'enquiry_intake';
@@ -28,6 +32,9 @@ export function projectEnquiryAiInput(input) {
 }
 
 const validateNormalizedEnquiryAnalysis = (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value));
+// Returns the validated object (truthy) when valid, or a bounded failure code.
+const checkEnquiryAnswer = (value) => validateNormalizedEnquiryAnalysis(value)
+  ?? diagnoseEnquiryAnalysis(normalizeEnquiryAnalysis(value)) ?? 'contract';
 
 export async function processEnquiryAiJob(env, job, deps = {}) {
   const { supabase = createSupabaseClient(env), runTask = runModelTask } = deps;
@@ -40,21 +47,35 @@ export async function processEnquiryAiJob(env, job, deps = {}) {
     try { await supabase.rpc('service_fail_enquiry_ai_job', { ...args, p_error_code: code }); } catch { /* lease expiry recovers */ }
     return { outcome: 'failed', errorCode: code };
   };
+  // Telemetry is written after the job's own state change and never alters it.
+  const telemetry = (routed, outcome, errorCode = null, inputChars = null) => recordAiRun(supabase, buildAiRunRecord({
+    task: TASK, jobKind: 'enquiry_intake', jobId: job.job_id,
+    promptVersion: ENQUIRY_AI_PROMPT_VERSION, schemaVersion: ENQUIRY_AI_SCHEMA_VERSION,
+    routed, outcome, errorCode, inputChars,
+  }));
+  const failWith = async (code, routed, telemetryCode, inputChars = null) => {
+    const failed = await fail(code);
+    await telemetry(routed, 'failed', telemetryCode, inputChars);
+    return failed;
+  };
   try {
     const input = projectEnquiryAiInput(job.input);
-    if (!input) return fail('input_invalid');
+    if (!input) return failWith('input_invalid', null, 'input_invalid');
     const model = await runTask(
       env,
       TASK,
       { system: ENQUIRY_AI_SYSTEM, input },
-      { validateJson: validateNormalizedEnquiryAnalysis },
+      { validateJson: checkEnquiryAnswer },
     );
-    if (!model?.ok) return fail('ai_unavailable');
+    if (!model?.ok) return failWith('ai_unavailable', model, model?.errorCode ?? 'ai_unavailable', input.length);
     const result = validateNormalizedEnquiryAnalysis(model.json);
-    if (!result) return fail('output_invalid');
+    if (!result) return failWith('output_invalid', model, 'output_invalid', input.length);
     const saved = await supabase.rpc('service_complete_enquiry_ai_job', {
       ...args, p_result: result, p_provider: model.provider, p_model: model.model,
     });
+    await telemetry(model, saved?.status === 'stale' ? 'stale'
+      : (saved?.status === undefined || saved?.status === 'succeeded') ? 'succeeded' : 'not_applied',
+    null, input.length);
     return { outcome: saved?.status ?? 'completed' };
   } catch {
     // Provider/DB exceptions can contain private text. Never log error objects.

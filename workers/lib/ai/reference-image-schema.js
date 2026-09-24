@@ -43,6 +43,29 @@ export function validateReferenceImageAnalysis(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+/** Bounded location of the first contract break, or null when valid. */
+export function diagnoseReferenceImageAnalysis(value) {
+  if (validateReferenceImageAnalysis(value)) return null;
+  if (!exactKeys(value, [...ANALYSIS_KEYS])) return 'top_level.keys';
+  if (!IMAGE_KINDS.includes(value.image_kind)) return 'image_kind';
+  if (value.existing_tattoo_visible !== null && typeof value.existing_tattoo_visible !== 'boolean') {
+    return 'existing_tattoo_visible';
+  }
+  if (!nullableText(value.body_area, 120)) return 'body_area';
+  if (!nullableText(value.composition, 300)) return 'composition';
+  if (!nullableText(value.palette, 200)) return 'palette';
+  if (!Array.isArray(value.subjects) || value.subjects.length > 10
+    || !value.subjects.every((entry) => text(entry, 120))) return 'subjects';
+  if (!Array.isArray(value.quality_limitations) || value.quality_limitations.length > 6
+    || !value.quality_limitations.every((entry) => text(entry, 200))) return 'quality_limitations';
+  if (!text(value.summary, 800)) return 'summary';
+  return 'contract';
+}
+
+/** Bump with REFERENCE_IMAGE_SYSTEM (hash-pinned in tests) or the validated shape. */
+export const REFERENCE_IMAGE_PROMPT_VERSION = 'reference-image.2026-09-10';
+export const REFERENCE_IMAGE_SCHEMA_VERSION = 'reference-image.v1';
+
 export const REFERENCE_IMAGE_SYSTEM = `You describe ONE image a tattoo client sent to an artist.
 Describe only what is visible. Never guess, and never infer intent from the image.
 
