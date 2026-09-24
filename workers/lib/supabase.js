@@ -69,6 +69,8 @@ export const CRM_AGENT_RPCS = new Set([
  */
 export const AI_TELEMETRY_RPCS = new Set([
   'service_record_ai_run',
+  // Phase 2 deterministic-attention shadow evidence (aggregate counts only).
+  'service_record_attention_shadow',
 ]);
 
 /** Existing generic automation engine backend surface. Never exposed to public callers. */

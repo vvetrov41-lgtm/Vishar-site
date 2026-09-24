@@ -347,6 +347,21 @@ export async function drainCrmAgent(env, { limit = 2, ...deps } = {}) {
   }
 }
 
+/**
+ * Records one deterministic-attention shadow comparison, at most hourly (the
+ * database throttles). Aggregate counts only; never throws.
+ */
+export async function recordAttentionShadow(env, deps = {}) {
+  if (!enabled(env)) return 'disabled';
+  try {
+    const supabase = deps.supabase ?? createSupabaseClient(env, deps.fetchImpl ?? fetch);
+    const result = await supabase.rpc('service_record_attention_shadow', {});
+    return ['recorded', 'throttled'].includes(result?.status) ? result.status : 'rejected';
+  } catch {
+    return 'failed';
+  }
+}
+
 export const __testing = Object.freeze({
   MAX_CONTEXT_CHARS, MAX_IMAGE_BYTES, SIGNED_URL_SECONDS, STATE_TASK, VISION_TASK,
 });

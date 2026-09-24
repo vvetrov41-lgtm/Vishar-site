@@ -10,7 +10,7 @@ import {
   REFERENCE_IMAGE_PROMPT_VERSION, REFERENCE_IMAGE_SYSTEM, diagnoseReferenceImageAnalysis,
 } from '../workers/lib/ai/reference-image-schema.js';
 import { ENQUIRY_AI_PROMPT_VERSION, ENQUIRY_AI_SYSTEM } from '../workers/lib/ai/enquiry-schema.js';
-import { processCrmAgentJob } from '../workers/lib/crm-agent.js';
+import { processCrmAgentJob, recordAttentionShadow } from '../workers/lib/crm-agent.js';
 import { processEnquiryAiJob } from '../workers/lib/enquiry-ai.js';
 import { runModelTask } from '../workers/lib/ai/router.js';
 
@@ -253,6 +253,17 @@ await test('enquiry intake: records a run after the job completes', async () => 
   assert.equal(run.attempts[0].error_code, 'provider_unavailable');
   assert.equal(run.attempts[0].duration_ms, 477);
   assert.ok(!JSON.stringify(run).includes(SECRET_NAME));
+});
+
+
+await test('attention shadow recording is fail-open and gated', async () => {
+  const calls = [];
+  const ok = { rpc: async (name) => { calls.push(name); return { status: 'throttled' }; } };
+  assert.equal(await recordAttentionShadow({ CRM_AGENT_ENABLED: 'true' }, { supabase: ok }), 'throttled');
+  assert.deepEqual(calls, ['service_record_attention_shadow']);
+  assert.equal(await recordAttentionShadow({}, { supabase: ok }), 'disabled');
+  const broken = { rpc: async () => { throw new Error('down'); } };
+  assert.equal(await recordAttentionShadow({ CRM_AGENT_ENABLED: 'true' }, { supabase: broken }), 'failed');
 });
 
 console.log(`ai telemetry: ${passes} tests passed`);
