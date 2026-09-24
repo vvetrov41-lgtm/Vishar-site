@@ -48,6 +48,7 @@ export const PROVIDER_IDS = Object.freeze(new Set(Object.keys(PROVIDERS)));
 /** Failures the next provider in the chain might survive. */
 const FALLBACK_CODES = new Set([
   'provider_timeout',
+  'provider_input_rejected',
   'provider_rate_limited',
   'provider_unavailable',
   'provider_http_error',

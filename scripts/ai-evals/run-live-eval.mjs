@@ -16,7 +16,17 @@ const endpoint = process.env.ENDPOINT;
 const token = process.env.PROBE_TOKEN;
 if (!endpoint || !token) throw new Error('ENDPOINT and PROBE_TOKEN are required');
 const plan = JSON.parse(readFileSync(new URL('./live-variants.json', import.meta.url), 'utf8'));
-const only = (process.env.EVAL_VARIANTS || '').split(',').map((v) => v.trim()).filter(Boolean);
+// A probe branch may narrow the run with `only` in live-variants.json.
+const only = (process.env.EVAL_VARIANTS || (plan.only ?? []).join(','))
+  .split(',').map((v) => v.trim()).filter(Boolean);
+
+// The TattooAI Worker applies its public per-IP write limit (20 POSTs a
+// minute) to the probe path too. Unpaced, fast-failing variants used that
+// budget up and every later call measured our own limiter, not a model.
+const MIN_CALL_INTERVAL_MS = Number(plan.minCallIntervalMs ?? 3500);
+const RATE_LIMIT_WAIT_MS = 61_000;
+const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
+let lastCallAt = 0;
 
 const percentile = (values, p) => {
   if (!values.length) return null;
@@ -25,13 +35,21 @@ const percentile = (values, p) => {
 };
 const mean = (values) => (values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null);
 
-async function call(task, fixture, variant) {
+async function call(task, fixture, variant, retried = false) {
+  const wait = lastCallAt + MIN_CALL_INTERVAL_MS - Date.now();
+  if (wait > 0) await sleep(wait);
+  lastCallAt = Date.now();
   const response = await fetch(endpoint, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ mode: 'eval', task, fixture, variant }),
     signal: AbortSignal.timeout(90_000),
   });
+  if (response.status === 429 && !retried) {
+    // One bounded wait for the limiter window, then the call is measured.
+    await sleep(RATE_LIMIT_WAIT_MS);
+    return call(task, fixture, variant, true);
+  }
   if (!response.ok) return { httpStatus: response.status };
   return response.json();
 }
