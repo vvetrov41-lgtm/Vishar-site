@@ -798,6 +798,10 @@ insert into expected_function_acl values
   -- Narrow client-state contract (20260924040000).
   ('public.service_record_client_reply_state(uuid,text)', false, false, true),
   ('public.service_contract_rule_summary(integer)', false, false, true),
+  -- Today pulse (20260924050000). CRM read under the caller's capabilities;
+  -- Telegram read for the backend only.
+  ('public.get_today_pulse(uuid)', false, true, false),
+  ('public.service_telegram_today_pulse(text,integer)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires
