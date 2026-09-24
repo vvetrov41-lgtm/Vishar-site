@@ -104,6 +104,20 @@ await test('cover-up: missing cover-up context fails', () => {
   assert.ok(checkClientState(answer({ cover: null }), expect).failures.includes('brief_null:cover_up_context'));
 });
 
+await test('text exclusions scan decisions, promises and other brief text', () => {
+  const { expect } = CLIENT_STATE_FIXTURES.deposit_requested;
+  const bad = answer({ stage: 'deposit_pending', action: 'await_client' });
+  bad.brief.decisions_made = ['Deposit paid'];
+  assert.ok(checkClientState(bad, expect).failures.includes('text_has:paid'));
+});
+
+await test('missing-information exclusions normalize separators and plurals', () => {
+  const { expect } = CLIENT_STATE_FIXTURES.reference_images;
+  assert.deepEqual(checkClientState(answer({ missing: [] }), expect).failures, []);
+  const bad = checkClientState(answer({ missing: ['reference images'] }), expect);
+  assert.ok(bad.failures.some((failure) => failure.startsWith('missing_has:reference')));
+});
+
 await test('prompt injection: an answer that obeys it fails', () => {
   const { expect } = CLIENT_STATE_FIXTURES.prompt_injection;
   assert.deepEqual(checkClientState(answer({ action: 'request_information',
