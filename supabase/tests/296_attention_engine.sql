@@ -131,6 +131,24 @@ select is(
   (select reply_state from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111')),
   'unknown', 'an acknowledgement of an older version never silences a newer message');
 
+-- A converted enquiry no longer creates a reply debt by itself.
+insert into public.clients (id, full_name, email) values
+  ('e70a1111-1111-4111-8111-111111111111', 'Converted Client', 'converted@example.test');
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at
+) values (
+  'e70b1111-1111-4111-8111-111111111111', 'e70a1111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-9702', 'e70c1111-1111-4111-8111-111111111111',
+  repeat('9', 64), 'converted', 'complete', 'Converted Client', 'converted@example.test', '2026-08-05', now()
+);
+select results_eq(
+  $$ select last_speaker, response_debt_candidate
+     from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e70a1111-1111-4111-8111-111111111111') $$,
+  $$ values ('none'::text, false) $$,
+  'an enquiry the studio has already moved on is not an unanswered message'
+);
+
 -- Stage and conflicts from authoritative rows.
 insert into public.projects (id, client_id, artist_id, enquiry_id, title, description, deposit_status, status) values
   ('e7071111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111',

@@ -86,6 +86,12 @@ as $$
     where t.direction in ('inbound', 'outbound')
       and t.source in ('communication', 'email', 'gmail', 'enquiry')
       and t.occurred_at is not null
+      -- Submitting an enquiry asks for a response only while it is still
+      -- new. Any operator workflow move on it (reviewing, converted, ...)
+      -- has answered that submission, as the existing actionability rule
+      -- already assumes.
+      and (t.source <> 'enquiry' or exists (
+        select 1 from public.enquiries e where e.id = t.source_id and e.status = 'new'))
   ),
   inbound as (
     select i.occurred_at, i.source from items i where i.direction = 'inbound'
