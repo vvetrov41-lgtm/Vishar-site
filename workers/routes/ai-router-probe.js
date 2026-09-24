@@ -25,7 +25,15 @@
 // No CORS headers are emitted. A browser cannot reach this from the site.
 
 import { describeRouting, runModelTask } from '../lib/ai/router.js';
-import { ENQUIRY_AI_SYSTEM, validateEnquiryAnalysis } from '../lib/ai/enquiry-schema.js';
+import {
+  ENQUIRY_AI_SYSTEM, diagnoseEnquiryAnalysis, normalizeEnquiryAnalysis, validateEnquiryAnalysis,
+} from '../lib/ai/enquiry-schema.js';
+import {
+  CLIENT_STATE_SYSTEM, diagnoseClientStateAnalysis, validateClientStateAnalysis,
+} from '../lib/ai/client-state-schema.js';
+import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES } from '../lib/ai/eval-fixtures.js';
+import { projectClientStateInput } from '../lib/crm-agent.js';
+import { projectEnquiryAiInput } from '../lib/enquiry-ai.js';
 import { createLogger, newRequestId } from '../lib/logging.js';
 
 const PATH = '/internal/ai-router';
@@ -127,6 +135,61 @@ function authorized(request, env) {
   return match ? tokenMatches(match[1], expected) : false;
 }
 
+/**
+ * Guarded evaluation of one synthetic fixture under one closed request shape.
+ *
+ * The caller names a fixture and picks from closed choices; it cannot supply
+ * text. The fixture goes through the same projection and validation a real
+ * job uses, so the answer measures production behaviour. Every fixture is
+ * invented, so returning the validated answer exposes nobody.
+ */
+async function runEvalProbe(env, body, fetchImpl) {
+  const task = body?.task;
+  const fixtures = task === 'crm_client_state' ? CLIENT_STATE_FIXTURES
+    : task === 'enquiry_intake' ? ENQUIRY_FIXTURES : null;
+  const fixtureId = typeof body?.fixture === 'string' ? body.fixture : '';
+  const fixture = fixtures && Object.prototype.hasOwnProperty.call(fixtures, fixtureId) ? fixtures[fixtureId] : null;
+  if (!fixture) return json(400, { ok: false, error: 'fixture_unknown' });
+
+  const variant = body?.variant && typeof body.variant === 'object' ? body.variant : {};
+  const experiment = {
+    provider: typeof variant.provider === 'string' ? variant.provider : undefined,
+    schemaMode: variant.schemaMode,
+    thinking: variant.thinking,
+    timeoutMs: variant.timeoutMs,
+    maxOutputTokens: variant.maxOutputTokens,
+  };
+
+  const isState = task === 'crm_client_state';
+  const input = isState ? projectClientStateInput(fixture.input) : projectEnquiryAiInput(fixture.input);
+  if (!input) return json(500, { ok: false, error: 'fixture_projection_failed' });
+  const validateJson = isState
+    ? (value) => (validateClientStateAnalysis(value) ? true : diagnoseClientStateAnalysis(value) ?? 'contract')
+    : (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value))
+      ?? diagnoseEnquiryAnalysis(normalizeEnquiryAnalysis(value)) ?? 'contract';
+
+  const result = await runModelTask(
+    env,
+    task,
+    { system: isState ? CLIENT_STATE_SYSTEM : ENQUIRY_AI_SYSTEM, input },
+    { fetchImpl, logger: createLogger(newRequestId()), validateJson, experiment },
+  );
+
+  return json(200, {
+    ok: result.ok,
+    task,
+    fixture: fixtureId,
+    provider: result.provider ?? null,
+    model: result.model ?? null,
+    fallbackUsed: result.fallbackUsed ?? false,
+    errorCode: result.errorCode ?? null,
+    durationMs: result.durationMs,
+    inputChars: input.length,
+    attempts: result.attempts,
+    answer: result.ok ? result.json : null,
+  });
+}
+
 export async function handleAiRouterProbeRequest(request, env, { fetchImpl = fetch } = {}) {
   if (!isProbeEnabled(env)) return json(404, { ok: false, error: 'not_found' });
   if (!authorized(request, env)) return json(401, { ok: false, error: 'unauthorized' });
@@ -139,6 +202,7 @@ export async function handleAiRouterProbeRequest(request, env, { fetchImpl = fet
   }
 
   const body = await request.json().catch(() => null);
+  if (body?.mode === 'eval') return runEvalProbe(env, body, fetchImpl);
   const task = typeof body?.task === 'string' ? body.task : '';
   const probe = Object.prototype.hasOwnProperty.call(PROBES, task) ? PROBES[task] : null;
   if (!probe) return json(400, { ok: false, error: 'task_not_probeable' });

@@ -26,6 +26,12 @@ export const MAX_PROVIDERS_PER_REQUEST = 2;
 export const ATTEMPTS_PER_PROVIDER = 1;
 
 export const MAX_TIMEOUT_MS = 30_000;
+/**
+ * Ceiling for a server-side `AI_TIMEOUT_MS_<TASK>` override. A CRM drain runs
+ * at most two jobs of two providers inside a five-minute lease, so even at this
+ * ceiling a tick stays well inside its lease.
+ */
+export const MAX_TIMEOUT_OVERRIDE_MS = 60_000;
 export const MAX_OUTPUT_TOKENS = 2_000;
 export const MAX_INPUT_CHARS = 12_000;
 export const MAX_SYSTEM_CHARS = 20_000;
@@ -189,6 +195,14 @@ export function routeOverrideFor(env, taskName, knownProviderIds) {
   return requested;
 }
 
+/** Reads `AI_TIMEOUT_MS_<TASK>`; anything outside [1s, 60s] is ignored. */
+export function timeoutOverrideFor(env, taskName) {
+  const raw = env?.[`AI_TIMEOUT_MS_${taskName.toUpperCase()}`];
+  if (typeof raw !== 'string' || !/^[0-9]{4,5}$/.test(raw.trim())) return null;
+  const value = Number(raw.trim());
+  return value >= 1_000 && value <= MAX_TIMEOUT_OVERRIDE_MS ? value : null;
+}
+
 /**
  * Resolves one task to its effective plan. `knownProviderIds` is supplied by the
  * router so this module never imports an adapter and stays a pure description.
@@ -207,7 +221,8 @@ export function resolveTask(env, taskName, knownProviderIds = new Set()) {
     modality: definition.modality,
     chain: Object.freeze(chain),
     routeSource: override ? 'env' : 'default',
-    timeoutMs: clampInteger(definition.timeoutMs, 1_000, MAX_TIMEOUT_MS, MAX_TIMEOUT_MS),
+    timeoutMs: timeoutOverrideFor(env, taskName)
+      ?? clampInteger(definition.timeoutMs, 1_000, MAX_TIMEOUT_MS, MAX_TIMEOUT_MS),
     maxOutputTokens: clampInteger(definition.maxOutputTokens, 16, MAX_OUTPUT_TOKENS, 512),
     temperature: definition.temperature,
     structured: definition.structured === true,

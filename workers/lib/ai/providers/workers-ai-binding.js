@@ -114,7 +114,7 @@ export function normalizeUsage(usage) {
  */
 export async function callBindingModel({
   binding, model, request, signal, jsonMode = false,
-  reasoningEffort = null, useMaxCompletionTokens = false,
+  reasoningEffort = null, useMaxCompletionTokens = false, disableThinking = false,
 }) {
   if (signal?.aborted) throw new ProviderError('provider_timeout');
 
@@ -128,6 +128,9 @@ export async function callBindingModel({
   else input.max_tokens = request.maxOutputTokens;
   if (typeof request.temperature === 'number') input.temperature = request.temperature;
   if (['low', 'medium', 'high'].includes(reasoningEffort)) input.reasoning_effort = reasoningEffort;
+  // Qwen chat templates take `enable_thinking`; the binding forwards
+  // `chat_template_kwargs` to the template. Only set when explicitly asked.
+  if (disableThinking) input.chat_template_kwargs = { enable_thinking: false };
   if (jsonMode && request.responseFormat === 'json') {
     input.response_format = request.responseSchema && typeof request.responseSchema === 'object'
       ? { type: 'json_schema', json_schema: request.responseSchema }
