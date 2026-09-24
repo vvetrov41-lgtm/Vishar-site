@@ -10,7 +10,7 @@
 
 import tattooai from './tattooai.js';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
-import { drainCrmAgent } from './lib/crm-agent.js';
+import { drainCrmAgent, recordAttentionShadow } from './lib/crm-agent.js';
 import { getCorsHeaders, isRegistryBookingRequest } from './lib/http.js';
 import { handleHostedBookingRequest, isHostedBookingPath } from './routes/hosted-booking.js';
 import { handlePublicBookingRequest, isPublicBookingPath } from './routes/public-booking.js';
@@ -114,6 +114,9 @@ async function handleInternalCrmAgentDrain(request, env) {
   if (request.method !== 'POST') return new Response('Not found', { status: 404 });
 
   const result = await drainCrmAgent(env, { limit: 2 });
+  // Phase 2 shadow evidence: the database throttles this to one aggregate
+  // record per hour. Counts only, fail-open, never affects the drain result.
+  await recordAttentionShadow(env);
   const processed = Number.isInteger(result?.processed)
     ? Math.min(3, Math.max(0, result.processed))
     : 0;

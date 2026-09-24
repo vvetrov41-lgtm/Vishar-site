@@ -791,6 +791,8 @@ insert into expected_function_acl values
   -- AI run telemetry (20260924010000). Service-only write and aggregate read.
   ('public.service_record_ai_run(jsonb)', false, false, true),
   ('public.service_ai_run_summary(integer)', false, false, true),
+  -- Deterministic attention shadow recording (20260924030000).
+  ('public.service_record_attention_shadow()', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires
