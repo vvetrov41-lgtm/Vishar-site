@@ -1,6 +1,10 @@
 # Vishar CRM AI layer: architecture and production audit
 
 - Date: 2026-09-24
+- Revision 2 (2026-09-24): corrections from the independent review on PR #869
+  applied (M1 wording, D.1/D.2 causes kept as hypotheses, `last_speaker` vs
+  `reply_state` split in F.3, eval-based Phase 1 criteria, composable
+  attention rules). Trunk re-checked: still `8608681`, no change since audit.
 - Audited trunk: `agent/platform-telegram-self-service` at
   `8608681244b051f2429410615fafbc564540a0d9` (merge of PR #868).
   The SHA handed over as context (`8d54310d`) is two merges older. Both later
@@ -188,7 +192,7 @@ about the system being quietly less useful than it looks.
 **H1. 76% of client briefs come from the 8B fallback, silently.** [VERIFIED]
 `client_ai_next_actions` since 2026-09-12: Qwen 29, Llama 3.1 8B 92. The CRM
 shows no quality tier, so the operator cannot tell a Qwen brief from a Llama
-one. Root cause in D. Pain: the brief most used for decisions is written by the
+one. Observed failure modes in D. Pain: the brief most used for decisions is written by the
 weakest model in the chain, and each fallback also pays for the Qwen call it
 abandoned (see M2).
 
@@ -236,9 +240,10 @@ operator learns to trust neither.
 
 ### Medium
 
-**M1. Enquiry intake never uses Qwen.** [VERIFIED] `enquiry_ai_jobs`: Qwen 2,
-Llama 27, failed 3. Root cause in D.2. First-touch drafts come from the 8B
-model.
+**M1. Enquiry intake almost always falls back from Qwen.** [VERIFIED]
+`enquiry_ai_jobs`: Qwen 2, Llama 27, failed 3. Qwen does produce production
+results, but rarely. The observed failure is in D.2; its cause is not yet
+proven. Most first-touch drafts come from the 8B model.
 
 **M2. A timed-out binding call keeps running and billing.** [VERIFIED in code]
 `workers-ai-binding.js` notes the binding takes no AbortSignal; the router
@@ -294,11 +299,11 @@ and they can disagree.
 
 ---
 
-## D. Root cause of the Qwen fallback rate
+## D. Qwen fallback: observed failure modes and open causes
 
 Two different failures hide behind one "fallback" column.
 
-### D.1 `crm_client_state`: Qwen hits the 30 s timeout
+### D.1 `crm_client_state`: the 30 s timeout is the dominant observed failure mode
 
 **Evidence** [VERIFIED, production, read-only]:
 
@@ -316,22 +321,24 @@ Two different failures hide behind one "fallback" column.
    | Qwen | 23.0, 27.2 |
    | Llama after Qwen | 31.8, 32.8, 32.9, 33.1, 33.1, 33.4, 35.1, 35.4 |
 
-   Llama-served jobs take 30 s + 2-5 s. That is the router's 30 s Qwen timeout
-   followed by a fast Llama call. Successful Qwen calls take 23-27 s, i.e. the
-   model runs right at the timeout edge, and roughly three calls in four cross
-   it.
+   Llama-served jobs take 30 s + 2-5 s. That pattern matches the router's
+   30 s Qwen timeout followed by a fast Llama call. Successful Qwen calls take
+   23-27 s, i.e. the model runs right at the timeout edge. [INFERRED from
+   timing; the per-attempt error code is not stored, see H2.]
 3. Not context size. Grouping by current prompt-context length per client,
    clients at 1 900-3 000 chars fall back as often as clients at 8 000+.
 4. Vision on the same model and same account succeeds 97% of the time. Its
    output cap is 900 tokens and a typical answer is a few hundred tokens.
 
-**Mechanism** [INFERRED]: Qwen 3.8 27B is a reasoning model.
-`reasoning_effort: 'low'` still produces thinking tokens before the answer.
-The client-state contract asks for a long answer: a summary of up to 2 000
-characters, 14 brief keys, a 5×2 `discussed` block, a reason, a draft and a
-list. Thinking plus 700-1 000 answer tokens at 27B decode speed lands at
-roughly 25-35 s. Output length, not input length, decides the outcome, which
-matches point 3 and point 4.
+**Why the calls are that slow** [HYPOTHESIS, not proven]: candidate causes,
+alone or combined, are (a) reasoning tokens that `reasoning_effort: 'low'` does
+not suppress, (b) the long client-state answer (summary up to 2 000 chars,
+14 brief keys, a 5×2 `discussed` block, reason, draft, list), (c) truncation at
+`max_completion_tokens`, (d) schema-invalid output on some runs. Points 3 and 4
+are consistent with (a) and (b): input size does not predict fallback, and the
+same model with a short output contract succeeds. None of (a)-(d) is proven
+until Phase 0 telemetry records per-attempt `error_code`, `finish_reason`,
+duration and token usage.
 
 **Ruled out or secondary:**
 
@@ -339,37 +346,39 @@ matches point 3 and point 4.
   Llama gaps of about 3-5 s, not 32-35 s. Ruled out for the dominant path.
 - Scheduler/lease timing: lease is 5 min; two jobs of 35 s fit easily. Ruled
   out.
-- Malformed JSON / schema rejection / truncation: cannot be excluded for the
-  minority of cases, because attempt codes are not stored (H2). A truncated
-  answer would fail fast after `max_completion_tokens`, not at 30 s.
-  [HYPOTHESIS: some share of failures is `output_invalid`; Phase 1 telemetry
-  settles it within days.]
+- Malformed JSON / schema rejection / truncation: cannot be excluded, because
+  attempt codes are not stored (H2). They would not explain the 30-35 s gaps on
+  their own unless they happen after a slow generation. [HYPOTHESIS: some share
+  of failures is `output_invalid`; Phase 0 telemetry settles it.]
 
-### D.2 `enquiry_intake`: Qwen rejects the request before inference
+### D.2 `enquiry_intake`: Qwen fails fast with `provider_unavailable`
 
 **Evidence** [VERIFIED, probe run 34722872657, 2026-09-12 22:29 UTC]: the
 enquiry schema probe logged Qwen `provider_unavailable` after 477 ms, then
 Llama succeeded in 2 190 ms. `provider_unavailable` is what the binding adapter
-emits when `env.AI.run` throws. 477 ms is too short for inference.
-Production agrees: 2 of 29 intake jobs served by Qwen.
+emits when `env.AI.run` throws. Production agrees: 2 of 29 intake jobs served
+by Qwen. [INFERRED: 477 ms is short for a 1 400-token structured answer, so
+the call most likely failed before or early in inference.]
 
-**Mechanism** [HYPOTHESIS, high confidence]: the only request difference
+**Candidate cause** [HYPOTHESIS, unproven]: the main request difference
 between the two providers is the schema. `providers/workers-ai.js` swaps in
 the reduced `ENQUIRY_AI_TRANSPORT_SCHEMA` because, in its own comment, "some
 hosted models reject richer JSON-Schema keywords before inference starts".
 `providers/qwen.js` does not, so Qwen receives the full schema with `anyOf`,
 `enum` inside `anyOf`, `minLength`, `maxLength` and `uniqueItems`. The
-2026-09-12 probe workflow (PR #792) was then changed to accept a fallback as a
-pass, which hid the regression. Settle with one probe call that sends Qwen the
-transport schema.
+2026-09-12 probe workflow (PR #792) accepts a fallback as a pass, so the probe
+cannot detect this. Settle with a controlled synthetic probe that sends Qwen
+(1) the full schema, (2) the transport schema, (3) `json_object`, and records
+the outcome of each. Until then, capacity, rate limiting or a model-side error
+remain possible causes.
 
 ### D.3 Should Qwen stay primary?
 
 | Task | Verdict | Why |
 |---|---|---|
 | Vision reference extraction | Keep Qwen → Gemma | 97% success, short structured output, image stays on Cloudflare. |
-| Enquiry intake | Keep Qwen, fix the request | Deterministic rejection of the schema, not a model limit. Send the transport schema (or `json_object`); the full validator stays authoritative. |
-| Client state | Keep Qwen only after the contract shrinks and thinking is off | As built, Qwen is the wrong trade: slower than the timeout. With deterministic fields removed (F.3) and non-thinking mode, the answer halves. Then re-measure against the eval suite before deciding. |
+| Enquiry intake | Decide after the controlled probe | If the probe shows the full schema is rejected, send the transport schema (or `json_object`) to Qwen; the full validator stays authoritative. If not, the cause is elsewhere and the route is chosen by eval results. |
+| Client state | Decide on measured evidence | As observed, Qwen is usually slower than the timeout. Candidate changes (shorter contract after F.3, non-thinking mode, longer timeout, a different fallback) are evaluated on eval quality, structured-output validity, p50/p95 latency, failure and fallback rate and cost. Provider share is a diagnostic, not the goal. |
 
 Alternatives inside the existing router (no new vendor, no new key):
 
@@ -408,7 +417,7 @@ are the behaviours, not the mechanics.
 | Offer real calendar slots | speed-to-lead Step 4 | Not appropriate as automation | Dates are an artist decision here. Surface free slots to the artist inside the CRM; never in a draft. |
 | Hot lead routed to a human immediately | speed-to-lead Step 5 | Already implemented correctly | Telegram new-enquiry alert with AI summary (PR #787). |
 | Median time inquiry → draft, age of oldest waiting draft | speed-to-lead Step 8 | Missing and worth adding | Two numbers for Pulse; derivable from existing timestamps. |
-| Do not reply where a human already did | speed-to-lead | Implemented but weaker | `client_request_information_is_actionable` covers enquiry acks, not a reply sent in WhatsApp. Ball-in-court rule fixes it (F.3). |
+| Do not reply where a human already did | speed-to-lead | Implemented but weaker | `client_request_information_is_actionable` covers enquiry acks, not a reply sent in WhatsApp. `last_speaker` plus `reply_state` fixes it (F.3). |
 | Three buckets: needs you / drafted / handled | inbox-manager Step 2 | Missing and worth adding | Unified inbox triage over Gmail + WhatsApp + Instagram, including unmatched conversations (H4). |
 | Rank by consequence, not arrival | inbox-manager triage rules | Missing and worth adding | Pulse ordering: booked-session risk and paid-deposit clients above new enquiries. |
 | Extract "what was already promised" from threads | inbox-manager Step 3 | Already implemented correctly | `brief.promises_to_client`. Needs provenance (J.4). |
@@ -448,7 +457,7 @@ Not one general CRM agent, and not several specialist agents.
 ```
 1. Authoritative facts        Postgres tables (enquiries, projects, sessions,
                               payments, messages, calendar). Never written by AI.
-2. Deterministic rules        SQL functions: ball-in-court, stage, SLA timers,
+2. Deterministic rules        SQL functions: last speaker, stage, SLA timers,
                               conflicts, allowed actions. Pure, pgTAP-tested.
 3. Event processing           Existing triggers → jobs → cron drains. Add a
                               time-based sweep (hourly) for SLA transitions.
@@ -462,22 +471,29 @@ Not one general CRM agent, and not several specialist agents.
 8. Financial/booking authority Artist only, in the CRM. No AI path.
 ```
 
-### F.3 Deterministic engine: `crm_private.client_attention(artist, client)`
+### F.3 Deterministic attention layer
 
-One SQL function (later a view) returns, per client, facts no model computes:
+One bounded server contract (`client_attention` projection, consumed by
+`get_today_pulse`), built from small composable functions/views, each with its
+own pgTAP tests: communication facts, stage facts, SLA, conflicts, allowed
+actions. Not one large PL/pgSQL function. Per client it returns:
 
 | Field | Rule |
 |---|---|
 | `last_inbound_at`, `last_outbound_at` | max over Gmail excerpts, `email_messages`, WhatsApp/Instagram messages, enquiry creation |
-| `ball_in_court` | `artist` if last inbound > last outbound; `client` if the reverse; `nobody` if the enquiry is terminal or a session is scheduled with nothing pending |
+| `last_speaker` | `client` or `studio`: which of the two timestamps is later. A deterministic fact, not an obligation. |
+| `response_debt_candidate` | true when `last_speaker = client` and no operator acknowledgement or `no_reply_needed` mark is newer than that message |
+| `reply_state` | `reply_required` / `no_reply_needed` / `unknown`. Semantic: set by a narrow conversation classifier (F.4) or by explicit operator acknowledgement. "Thanks, see you then" is `no_reply_needed`. Never inferred from timestamps alone. |
 | `stage` | from facts: session booked → `booked`; deposit requested unpaid → `deposit_pending`; project quote exists → `quote_discussion`; enquiry `new` → `new_enquiry`; etc. AI no longer writes it. |
-| `sla_state` | `ok / due / overdue / cold`, e.g. artist owes a reply > 24 h = overdue; client silent 7 d after a question = follow-up due; 21 d = cold; `new` enquiry untouched 48 h = overdue |
+| `sla_state` | `ok / due / overdue / cold`, e.g. `response_debt_candidate` with `reply_state <> no_reply_needed` > 24 h = overdue; client silent 7 d after a question = follow-up due; 21 d = cold; `new` enquiry untouched 48 h = overdue |
 | `conflicts[]` | codes: `deposit_paid_no_session`, `session_without_project`, `session_past_unconfirmed`, `consultation_booked_enquiry_still_new`, `conversation_unlinked`, `paid_amount_mismatch`, `ai_brief_stale` |
-| `allowed_actions[]` | action types permitted now (replaces M3 guards): no `request_information` when a session is booked or the ball is with the client; no `request_deposit` when paid |
+| `allowed_actions[]` | action types permitted now (replaces M3 guards): no `request_information` when a session is booked or `last_speaker = studio` with an unanswered question; no `request_deposit` when paid |
 | `has_valid_next_step` | open action exists with `due_at` in future, or a future session, or terminal |
 
-Why better: it answers "who is waiting for whom" exactly, updates with time,
-and removes a class of model errors instead of patching them.
+Why better: timestamps, stage and SLA become exact and update with time, and
+a class of model errors disappears instead of being patched. The semantic part
+("does this message need a reply") stays separate, so a deterministic rule
+does not become a false-positive engine.
 
 ### F.4 Narrow AI capabilities (four)
 
@@ -490,8 +506,8 @@ and removes a class of model errors instead of patching them.
 2. **Conversation understanding** (`crm_client_state`, narrowed): input = new
    timeline items since the last run + previous brief + deterministic
    attention row. Output = updated summary, stated-fact claims with source ids,
-   open questions, promises, and one recommended action chosen from
-   `allowed_actions`. No `stage`, no `waiting_on`, no `discussed` duplicate of
+   open questions, promises, `reply_state` for the latest inbound, and one
+   recommended action chosen from `allowed_actions`. No `stage`, no `waiting_on`, no `discussed` duplicate of
    facts.
 3. **Reference-image description**: unchanged.
 4. **Draft composer**: separate short call only when an action is draftable
@@ -520,7 +536,7 @@ latency needs.
 | `crm_agent_jobs`, lease, retry policy | KEEP | Correct and battle-tested. |
 | `client_ai_watermark` staleness | KEEP, extend | Add time-driven sweep (H5). |
 | Router + error taxonomy | KEEP, modify | Wire telemetry sink; add `provider_truncated` from `finish_reason = length`; per-task timeout. |
-| `providers/qwen.js` | MODIFY | Send transport schema for intake (D.2); non-thinking mode for extraction. |
+| `providers/qwen.js` | MODIFY (conditional) | Request shape for intake per the D.2 probe result; non-thinking mode only if the probe shows it is supported and eval shows it helps. |
 | `client-state-schema.js` contract | MODIFY | Drop `stage`, `waiting_on`, `discussed`; add `fact_claims[]` with source ids; action limited to `allowed_actions`. |
 | DB guards in `guard_client_ai_next_action_truth` | MODIFY → REMOVE later | Move rules into `allowed_actions` before the call; keep guard as an assertion that logs if ever triggered. |
 | `isSafeClientDraft` regex | MODIFY | Keep as backstop; stop failing the whole analysis on a draft; null the draft and record `draft_rejected`. |
@@ -541,8 +557,8 @@ latency needs.
 
 | Task | Primary | Fallback | Timeout | Output budget | Condition to change |
 |---|---|---|---|---|---|
-| `enquiry_intake` | Qwen 3.8 27B, transport schema, non-thinking | Llama 3.1 8B fast | 30 s | 1 200 | Keep if eval field accuracy ≥ Llama and p95 < 15 s. |
-| `crm_client_state` (narrowed) | Qwen 3.8 27B non-thinking | Gemma 4 26B A4B text, else Llama 8B | 45 s | 900 | Choose fallback by eval; mark `quality_tier` on the row; if fallback share > 20% for 3 days, alert. |
+| `enquiry_intake` | Qwen 3.8 27B (request shape per probe result) | Llama 3.1 8B fast | 30 s | 1 200 | Keep only if eval quality and validity are at least Llama's and p95 latency fits the intake path. |
+| `crm_client_state` (narrowed) | Candidate: Qwen 3.8 27B (non-thinking if supported) | Candidate: Gemma 4 26B A4B text, else Llama 8B | 45 s | 900 | Chosen by eval; mark `quality_tier` on the row; alert on a sustained fallback or failure spike. |
 | `vision_reference_extraction` | Qwen | Gemma 4 | 30 s | 900 | No change. |
 | `draft_compose` (new) | Qwen non-thinking | none (no draft beats a weak draft) | 20 s | 300 | — |
 | `concept_consult`, `aftercare_support` | unchanged | unchanged | — | — | Out of CRM scope. |
@@ -560,7 +576,8 @@ tick, well inside the 5-minute lease. Cancel is still impossible on the binding
 |---|---|---|
 | Activity logging, timeline linking of a linked conversation | Automatic | Internal, reversible, factual. |
 | Brief/summary refresh, fact claims, image description | Automatic | Derived, always labelled AI and stale-checked. |
-| `ball_in_court`, stage, SLA state, conflicts, attention ranking | Automatic, deterministic | Exact from facts. |
+| `last_speaker`, `response_debt_candidate`, stage, SLA state, conflicts, attention ranking | Automatic, deterministic | Exact from facts. |
+| `reply_state` (`no_reply_needed`) | Automatic from classifier, overridable by operator | Semantic; operator acknowledgement wins. |
 | Next-action generation and supersession | Automatic | A recommendation, not an act. |
 | Linking an unmatched conversation to a client | Automatic only on exact unique phone/email/handle match (already done for WhatsApp phone); otherwise one-tap suggestion | A wrong link merges two people's histories. |
 | Internal priority, Telegram push of high-priority items | Automatic | Operator-only surface. |
@@ -613,8 +630,9 @@ looking at. The boundaries that matter (money, dates, bookings) stay closed.
    `enquiry-ai.js`; persist attempts via a service RPC into `ai_runs`.
 2. Router: treat `finish_reason = length` as `provider_truncated`; per-task
    timeout; include token usage when the binding reports it.
-3. `qwen.js`: transport schema for intake; `chat_template_kwargs:
-   { enable_thinking: false }` for structured extraction behind a flag.
+3. `qwen.js`: request shape for intake and `chat_template_kwargs:
+   { enable_thinking: false }` for structured extraction, each behind a flag
+   and each only if the Phase 1 probe and eval support it.
 4. `crm-agent.js`: new projection = new timeline items since the last
    watermark + previous brief + `client_attention` row; narrowed contract.
 5. Hourly SLA sweep in the existing scheduler: re-evaluates `client_attention`
@@ -629,7 +647,7 @@ looking at. The boundaries that matter (money, dates, bookings) stay closed.
 ## L. CRM UI changes
 
 1. **Today becomes the Pulse**, reading `get_today_pulse`. Sections in this
-   order: *Waiting for you* (ball with artist, ranked by consequence: paid
+   order: *Waiting for you* (response debt with `reply_state <> no_reply_needed`, ranked by consequence: paid
    deposit or booked session first, then new enquiries by age), *Inbox not
    handled* (including unmatched conversations), *Conflicts*, *Waiting on
    clients* (collapsed, with cold flags), *Today's sessions*, *Changed since
@@ -678,7 +696,8 @@ expected prose).
 | Cover-up with photo | `cover_up` stated; no feasibility claim; bucket `needs_consultation` |
 | Vague enquiry ("something on my arm") | bucket `needs_info`; missing = placement, size, style; one question in draft |
 | Client reply answering size | fact claim size with source id; open question removed |
-| Artist reply | ball moves to client (deterministic); AI action not `request_information` |
+| Artist reply | `last_speaker = studio` (deterministic); AI action not `request_information` |
+| Client "thanks, see you then" | `last_speaker = client`, `reply_state = no_reply_needed`; not in *Waiting for you* |
 | Consultation booked | `request_information` not allowed; stage from facts |
 | Deposit paid | `request_deposit` not allowed; brief never says "unpaid" |
 | Session scheduled | action ∈ {`no_action`, `follow_up`}; no date in draft |
@@ -719,7 +738,7 @@ repository's existing release path. None needs a production data rewrite.
 |---|---|---|
 | 0 | `ai_runs` + router telemetry wiring + `finish_reason` | — |
 | 1 | Qwen request fixes (intake schema, non-thinking) + offline eval harness with the 15 fixtures | 0 |
-| 2 | `client_attention` function, shadow comparison, conflict codes, SLA sweep | 0 |
+| 2 | `client_attention` from composable rule functions, shadow comparison, conflict codes, SLA sweep | 0 |
 | 3 | Narrowed client-state contract using `allowed_actions`; guard demotion | 1, 2 |
 | 4 | `get_today_pulse` + Today/Telegram on one engine + Done/Dismiss feedback | 2 |
 | 5 | Unmatched-conversation triage and intake bucket | 1, 4 |
@@ -732,10 +751,12 @@ repository's existing release path. None needs a production data rewrite.
 - **Phase 0:** every CRM AI job produces one `ai_runs` row with attempts;
   a query returns fallback share and top error code per task for the last
   24 h; no text content in the table (pgTAP asserts column set).
-- **Phase 1:** live probe shows Qwen serving `enquiry_intake` without
-  fallback; offline eval runs in CI; Qwen share for `crm_client_state` ≥ 80%
-  over 7 days, or the decision to switch primary is recorded with numbers.
-- **Phase 2:** `client_attention` pgTAP covers every rule; shadow report
+- **Phase 1:** the controlled probe settles the intake failure cause; offline
+  eval runs in CI; the chosen route per task is justified by eval quality,
+  structured-output validity, p50/p95 latency, failure and fallback rate and
+  cost, and production telemetry after rollout confirms it. Provider share is
+  reported as a diagnostic only.
+- **Phase 2:** every rule function has its own pgTAP coverage; shadow report
   lists disagreements with AI `waiting_on` / `stage`; hourly sweep bounded
   (≤ N jobs per tick) and idempotent.
 - **Phase 3:** zero next actions superseded by guards at insert over 7 days;
