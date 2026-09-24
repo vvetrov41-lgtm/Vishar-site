@@ -28,6 +28,10 @@ select is(pg_temp.sla('client', 'unknown', 80, 90, 'new_enquiry'), 'overdue/stud
   'a client message older than 72 hours is overdue');
 select is(pg_temp.sla('client', 'no_reply_needed', 80, 90, 'booked'), 'ok/nothing_pending/nobody',
   '"thanks, see you then" marked no_reply_needed owes nothing');
+select is(pg_temp.sla('client', 'unknown', 50, 90, 'new_enquiry'), 'overdue/studio_reply_owed/artist',
+  'an untouched new enquiry is overdue after 48 hours');
+select is(pg_temp.sla('client', 'unknown', 50, 90, 'gathering_information'), 'due/studio_reply_owed/artist',
+  'other studio replies stay due until 72 hours');
 select is(pg_temp.sla('studio', 'unknown', 300, 200, 'gathering_information'), 'due/client_follow_up_due/client',
   'the client silent for over a week after the studio spoke is a follow-up');
 select is(pg_temp.sla('studio', 'unknown', 900, 600, 'gathering_information'), 'cold/client_silent/client',
@@ -39,15 +43,17 @@ select is(pg_temp.sla('studio', 'unknown', 900, 600, 'booked'), 'ok/nothing_pend
 -- Pure allowed-action rules
 -- ---------------------------------------------------------------------------
 
-select ok(not ('request_information' = any(crm_private.attention_allowed_actions('booked', 'paid', true, false))),
+select ok(not ('request_information' = any(crm_private.attention_allowed_actions('booked', 'paid', true, false, false))),
   'a booked client is never asked for intake information again');
-select ok(not ('request_deposit' = any(crm_private.attention_allowed_actions('scheduling', 'paid', false, false))),
+select ok(not ('request_deposit' = any(crm_private.attention_allowed_actions('scheduling', 'paid', false, false, false))),
   'a paid deposit is never requested again');
-select ok(not ('offer_dates' = any(crm_private.attention_allowed_actions('booked', 'paid', true, false))),
+select ok(not ('offer_dates' = any(crm_private.attention_allowed_actions('booked', 'paid', true, false, false))),
   'dates are not offered over an existing booking');
-select ok(not ('await_client' = any(crm_private.attention_allowed_actions('gathering_information', 'none', false, true))),
+select ok(not ('await_client' = any(crm_private.attention_allowed_actions('gathering_information', 'none', false, false, true))),
   'the studio owing a reply cannot be told to wait for the client');
-select ok('request_information' = any(crm_private.attention_allowed_actions('new_enquiry', 'none', false, true)),
+select ok(not ('request_information' = any(crm_private.attention_allowed_actions('awaiting_artist_review', 'none', false, true, false))),
+  'a client with a booked consultation is not asked for intake information again');
+select ok('request_information' = any(crm_private.attention_allowed_actions('new_enquiry', 'none', false, false, true)),
   'a new enquiry may ask for information');
 
 -- ---------------------------------------------------------------------------
@@ -115,6 +121,15 @@ insert into public.communication_messages (
 select is(
   (select reply_state from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111')),
   'unknown', 'a newer client message reopens the question');
+
+-- An acknowledgement clicked late, for the version seen before the newer
+-- message, does not cover the newer message.
+update public.attention_acknowledgements
+set acknowledged_at = now()
+where artist_id = 'a1111111-1111-4111-8111-111111111111' and entity_id = 'e7041111-1111-4111-8111-111111111111';
+select is(
+  (select reply_state from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111')),
+  'unknown', 'an acknowledgement of an older version never silences a newer message');
 
 -- Stage and conflicts from authoritative rows.
 insert into public.projects (id, client_id, artist_id, enquiry_id, title, description, deposit_status, status) values

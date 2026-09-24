@@ -103,9 +103,10 @@ as $$
     limit 1
   ),
   ack as (
-    -- An operator who cleared this client's reply item after the latest
-    -- inbound has handled it. That is an explicit mark, not an inference.
-    select max(a.acknowledged_at) as at
+    -- An operator who cleared this client's reply item handled the version
+    -- they SAW: `observed_at` is the source version the item showed. A newer
+    -- inbound after that version is not covered, however late the click was.
+    select max(a.observed_at) as at
     from public.attention_acknowledgements a
     where a.artist_id = p_artist_id
       and (
@@ -270,6 +271,8 @@ as $$
   select
     case
       when a.debt and a.inbound_hours >= 72 then 'overdue'
+      -- A brand-new enquiry is the most perishable debt: overdue at 48 hours.
+      when a.debt and p_workflow_stage = 'new_enquiry' and a.inbound_hours >= 48 then 'overdue'
       when a.debt and a.inbound_hours >= 24 then 'due'
       when a.debt then 'ok'
       when a.awaiting_client and a.outbound_hours >= 21 * 24 then 'cold'
@@ -298,6 +301,7 @@ create function crm_private.attention_allowed_actions(
   p_workflow_stage text,
   p_deposit_state text,
   p_has_future_tattoo_session boolean,
+  p_has_future_consultation boolean,
   p_response_debt boolean
 )
 returns text[]
@@ -311,7 +315,8 @@ as $$
     'request_deposit', 'confirm_booking', 'follow_up', 'await_client', 'no_action'
   ]) with ordinality as t(a, ord)
   where not (
-    (a = 'request_information' and (p_has_future_tattoo_session or p_workflow_stage in ('booked', 'aftercare')))
+    (a = 'request_information' and (p_has_future_tattoo_session or p_has_future_consultation
+                                    or p_workflow_stage in ('booked', 'aftercare')))
     or (a = 'request_deposit' and p_deposit_state in ('paid', 'requested', 'not_required'))
     or (a in ('offer_dates', 'confirm_booking') and p_has_future_tattoo_session)
     or (a = 'prepare_quote' and p_workflow_stage in ('booked', 'aftercare', 'deposit_pending', 'scheduling'))
@@ -415,7 +420,7 @@ as $$
     'waiting_on_candidate', l.waiting_on_candidate,
     'age_hours', l.age_hours,
     'allowed_actions', to_jsonb(crm_private.attention_allowed_actions(
-      s.workflow_stage, s.deposit_state, s.has_future_tattoo_session,
+      s.workflow_stage, s.deposit_state, s.has_future_tattoo_session, s.has_future_consultation,
       c.response_debt_candidate and c.reply_state <> 'no_reply_needed')),
     'conflicts', to_jsonb(crm_private.attention_conflicts(p_artist_id, p_client_id)),
     'has_valid_next_step', (
@@ -436,7 +441,7 @@ $$;
 revoke all on function crm_private.attention_comm_facts(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function crm_private.attention_stage_facts(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function crm_private.attention_sla(text, text, timestamptz, timestamptz, text, timestamptz) from public, anon, authenticated, service_role;
-revoke all on function crm_private.attention_allowed_actions(text, text, boolean, boolean) from public, anon, authenticated, service_role;
+revoke all on function crm_private.attention_allowed_actions(text, text, boolean, boolean, boolean) from public, anon, authenticated, service_role;
 revoke all on function crm_private.attention_conflicts(uuid, uuid) from public, anon, authenticated, service_role;
 revoke all on function crm_private.client_attention(uuid, uuid, timestamptz) from public, anon, authenticated, service_role;
 
@@ -517,6 +522,9 @@ begin
   if not crm_private.is_service_backend() then
     raise exception 'backend only' using errcode = '42501';
   end if;
+
+  -- Serialise overlapping ticks so the hourly throttle is atomic.
+  perform pg_advisory_xact_lock(hashtext('crm_private.attention_shadow_runs'));
 
   if exists (select 1 from crm_private.attention_shadow_runs r
              where r.created_at > clock_timestamp() - interval '1 hour') then
