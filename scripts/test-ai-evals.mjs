@@ -108,7 +108,18 @@ await test('text exclusions scan decisions, promises and other brief text', () =
   const { expect } = CLIENT_STATE_FIXTURES.deposit_requested;
   const bad = answer({ stage: 'deposit_pending', action: 'await_client' });
   bad.brief.decisions_made = ['Deposit paid'];
-  assert.ok(checkClientState(bad, expect).failures.includes('text_has:paid'));
+  assert.ok(checkClientState(bad, expect).failures.includes('claims:deposit_paid'));
+});
+
+await test('a negated payment statement is not a paid claim', () => {
+  const { expect } = CLIENT_STATE_FIXTURES.deposit_requested;
+  for (const phrase of ['Deposit requested, not yet paid.', 'Deposit is unpaid.', 'Book once paid.',
+    "Client hasn't paid the deposit.", 'Awaiting paid confirmation? no.']) {
+    const ok = answer({ stage: 'deposit_pending', action: 'await_client', summary: phrase });
+    assert.ok(!checkClientState(ok, expect).failures.includes('claims:deposit_paid'), phrase);
+  }
+  const claimed = answer({ stage: 'deposit_pending', action: 'await_client', summary: 'The deposit has been paid.' });
+  assert.ok(checkClientState(claimed, expect).failures.includes('claims:deposit_paid'));
 });
 
 await test('missing-information exclusions normalize separators and plurals', () => {

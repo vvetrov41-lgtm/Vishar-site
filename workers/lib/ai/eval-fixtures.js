@@ -161,7 +161,7 @@ export const CLIENT_STATE_FIXTURES = Object.freeze({
     expect: {
       stage_in: ['deposit_pending', 'scheduling', 'quote_discussion'],
       draft_absent_for: COMMITTING,
-      text_excludes: ['paid'],
+      claims_absent: ['deposit_paid'],
     },
   },
   deposit_paid: {

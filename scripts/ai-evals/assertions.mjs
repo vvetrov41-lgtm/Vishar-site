@@ -65,6 +65,24 @@ function sameMissingConcept(left, right) {
   return subset(a, b) || subset(b, a);
 }
 
+// A claim detector looks for an assertion, not a word. "Deposit paid" is a
+// claim; "not yet paid", "unpaid", "once paid" and "awaiting payment" are not.
+const NEGATION_BEFORE = /(?:\bnot(?: yet)?|n't|\bun|\byet to be|\bawaiting|\bpending|\buntil|\bonce|\bbefore|\bwhen|\bif|\bwhether|\bno)\s*$/;
+const CLAIMS = Object.freeze({
+  deposit_paid: /\bpaid\b/g,
+});
+
+function assertsClaim(text, claim) {
+  const pattern = CLAIMS[claim];
+  if (!pattern) return false;
+  for (const match of text.matchAll(pattern)) {
+    const before = text.slice(Math.max(0, match.index - 24), match.index);
+    const sentenceStart = Math.max(before.lastIndexOf('.'), before.lastIndexOf('\n'));
+    if (!NEGATION_BEFORE.test(before.slice(sentenceStart + 1))) return true;
+  }
+  return false;
+}
+
 export function checkClientState(answer, expect = {}) {
   const valid = validateClientStateAnalysis(answer);
   if (!valid) return { valid: false, failures: ['schema_invalid'] };
@@ -91,6 +109,9 @@ export function checkClientState(answer, expect = {}) {
   }
   for (const needle of expect.draft_excludes ?? []) {
     if (draft.includes(lower(needle))) failures.push(`draft_has:${needle}`);
+  }
+  for (const claim of expect.claims_absent ?? []) {
+    if (assertsClaim(text, claim)) failures.push(`claims:${claim}`);
   }
   for (const group of expect.mentions_any ?? []) {
     if (!group.some((needle) => text.includes(lower(needle)))) failures.push(`mentions:${group[0]}`);
@@ -122,6 +143,8 @@ export function checkEnquiry(answer, expect = {}) {
   }
   return { valid: true, failures };
 }
+
+export const __testing = Object.freeze({ assertsClaim });
 
 export function checkAnswer(task, answer, expect) {
   return task === 'enquiry_intake' ? checkEnquiry(answer, expect) : checkClientState(answer, expect);
