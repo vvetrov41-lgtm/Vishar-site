@@ -42,6 +42,10 @@ AI_ROUTE_ENQUIRY_INTAKE = "workers_ai,qwen"
 # Vision remains separately guarded by the database vision_enabled switch.
 CRM_AGENT_ENABLED = "true"
 CRM_AGENT_VISION_ENABLED = "true"
+# Phase 3 narrow client-state contract (20260924040000): the model returns
+# semantic fields and one action from allowed_actions; stage and waiting side
+# come from the deterministic layer. Remove to return to the v1 contract.
+CRM_AGENT_CONTRACT = "v2"
 # Stale-brief convergence (Phase 6a), enabled after the Llama routing passed
 # post-deploy acceptance. A refresh costs ~15-30 Neurons on Llama; the
 # database dedupes to one sweep per client per day and caps the batch, so this
