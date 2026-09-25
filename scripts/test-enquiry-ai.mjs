@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { ENQUIRY_AI_FIELDS, diagnoseEnquiryAnalysis, isSafeIntakeDraft, normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../workers/lib/ai/enquiry-schema.js';
 import { drainEnquiryAi, processEnquiryAiJob, projectEnquiryAiInput, scheduleEnquiryAi } from '../workers/lib/enquiry-ai.js';
+import { handleAiRouterProbeRequest } from '../workers/routes/ai-router-probe.js';
 
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
 const LEASE = '22222222-2222-4222-8222-222222222222';
@@ -231,6 +232,38 @@ await test('disabled processing and queue failures cannot break booking intake',
   assert.doesNotThrow(() => scheduleEnquiryAi(env, JOB_ID, () => { throw new Error('waitUntil unavailable'); }));
   const unavailable = await drainEnquiryAi(env, { supabase: { rpc: async () => { throw new Error('db private detail'); } } });
   assert.deepEqual(unavailable, { processed: 0, errorCode: 'queue_unavailable' });
+});
+
+const probeToken = 'q'.repeat(40);
+const enquiryProbe = (run) => handleAiRouterProbeRequest(new Request('https://tattooai.example/internal/ai-router', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${probeToken}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ task: 'enquiry_intake' }),
+}), { AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: probeToken, AI: { run } });
+
+await test('the enquiry probe judges an answer the way a real job does', async () => {
+  // A drifted answer a real job repairs (display-cased enum) is valid for the probe too.
+  const drifted = result({ fields: { colour: field('Black and Grey') } });
+  const response = await enquiryProbe(async () => ({ response: JSON.stringify(drifted) }));
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.schemaValid, true);
+  assert.equal(body.provider, 'workers_ai');
+  assert.equal(body.outputPreview, null);
+});
+
+await test('the enquiry probe falls back to Qwen when Llama is invalid, as a real job does', async () => {
+  const models = [];
+  const response = await enquiryProbe(async (model) => {
+    models.push(model);
+    return { response: JSON.stringify(model.includes('/llama-') ? { fields: {} } : result()) };
+  });
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.schemaValid, true);
+  assert.equal(body.provider, 'qwen');
+  assert.equal(body.fallbackUsed, true);
+  assert.equal(models.length, 2);
 });
 
 if (!process.exitCode) console.log(`enquiry ai: ${passes} tests passed`);

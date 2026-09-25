@@ -20,7 +20,7 @@ import {
 } from './ai/client-state-schema.js';
 import {
   REFERENCE_IMAGE_PROMPT_VERSION, REFERENCE_IMAGE_SCHEMA_VERSION, REFERENCE_IMAGE_SYSTEM,
-  diagnoseReferenceImageAnalysis, validateReferenceImageAnalysis,
+  diagnoseReferenceImageAnalysis, normalizeReferenceImageAnalysis, validateReferenceImageAnalysis,
 } from './ai/reference-image-schema.js';
 import { buildAiRunRecord, recordAiRun } from './ai/telemetry.js';
 
@@ -266,13 +266,16 @@ async function processReferenceImageJob(env, job, supabase, runTask, deps) {
       input: 'Describe this client reference image using the required JSON contract.',
       images: [{ mimeType, dataBase64: image.dataBase64 }],
     },
-    { validateJson: (json) => (validateReferenceImageAnalysis(json) !== null ? true : diagnoseReferenceImageAnalysis(json) ?? 'contract') },
+    {
+      validateJson: (json) => (validateReferenceImageAnalysis(normalizeReferenceImageAnalysis(json)) !== null
+        ? true : diagnoseReferenceImageAnalysis(normalizeReferenceImageAnalysis(json)) ?? 'contract'),
+    },
   );
   if (!model?.ok) {
     return { outcome: 'failed', errorCode: 'ai_unavailable', aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable') };
   }
 
-  const analysis = validateReferenceImageAnalysis(model.json);
+  const analysis = validateReferenceImageAnalysis(normalizeReferenceImageAnalysis(model.json));
   if (!analysis) {
     return { outcome: 'failed', errorCode: 'output_invalid', aiRun: telemetry(model, 'failed', 'output_invalid') };
   }

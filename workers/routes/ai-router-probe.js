@@ -33,7 +33,8 @@ import {
 } from '../lib/ai/client-state-schema.js';
 import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../lib/ai/eval-fixtures.js';
 import {
-  REFERENCE_IMAGE_SYSTEM, diagnoseReferenceImageAnalysis, validateReferenceImageAnalysis,
+  REFERENCE_IMAGE_SYSTEM, diagnoseReferenceImageAnalysis, normalizeReferenceImageAnalysis,
+  validateReferenceImageAnalysis,
 } from '../lib/ai/reference-image-schema.js';
 import { projectClientStateInput } from '../lib/crm-agent.js';
 import { projectEnquiryAiInput } from '../lib/enquiry-ai.js';
@@ -179,8 +180,8 @@ async function runEvalProbe(env, body, fetchImpl) {
       {
         fetchImpl,
         logger: createLogger(newRequestId()),
-        validateJson: (value) => (validateReferenceImageAnalysis(value) !== null
-          ? true : diagnoseReferenceImageAnalysis(value) ?? 'contract'),
+        validateJson: (value) => (validateReferenceImageAnalysis(normalizeReferenceImageAnalysis(value)) !== null
+          ? true : diagnoseReferenceImageAnalysis(normalizeReferenceImageAnalysis(value)) ?? 'contract'),
         experiment,
       },
     );
@@ -194,7 +195,7 @@ async function runEvalProbe(env, body, fetchImpl) {
       errorCode: result.errorCode ?? null,
       durationMs: result.durationMs,
       attempts: result.attempts,
-      answer: result.ok ? result.json : null,
+      answer: result.ok ? normalizeReferenceImageAnalysis(result.json) : null,
     });
   }
 
@@ -245,17 +246,29 @@ export async function handleAiRouterProbeRequest(request, env, { fetchImpl = fet
   const probe = Object.prototype.hasOwnProperty.call(PROBES, task) ? PROBES[task] : null;
   if (!probe) return json(400, { ok: false, error: 'task_not_probeable' });
 
+  // Enquiry intake is judged exactly as a real job judges it: normalised, then
+  // validated inside the router, so an invalid answer falls back the same way.
+  const enquiryValidate = task === 'enquiry_intake'
+    ? (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value))
+      ?? diagnoseEnquiryAnalysis(normalizeEnquiryAnalysis(value)) ?? 'contract'
+    : undefined;
   const result = await runModelTask(
     env,
     task,
     { system: probe.system, input: probe.input, images: probe.images },
-    { fetchImpl, logger: createLogger(newRequestId()), requiredKeys: probe.requiredKeys ?? [] },
+    {
+      fetchImpl,
+      logger: createLogger(newRequestId()),
+      requiredKeys: probe.requiredKeys ?? [],
+      ...(enquiryValidate ? { validateJson: enquiryValidate } : {}),
+    },
   );
 
   // Attempts are already bounded operational tokens. The preview is the model's
   // answer to a fixed synthetic prompt, so echoing a short slice proves real
   // inference without exposing anything about a person.
-  const schemaValid = task === 'enquiry_intake' ? Boolean(result.ok && validateEnquiryAnalysis(result.json)) : null;
+  const schemaValid = task === 'enquiry_intake'
+    ? Boolean(result.ok && validateEnquiryAnalysis(normalizeEnquiryAnalysis(result.json))) : null;
   const ok = result.ok && schemaValid !== false;
   return json(ok ? 200 : 502, {
     ok,

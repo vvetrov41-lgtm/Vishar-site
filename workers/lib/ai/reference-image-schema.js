@@ -43,6 +43,35 @@ export function validateReferenceImageAnalysis(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+/**
+ * Shape-only repair before validation, the same idea as the enquiry repair: a
+ * model that lists the palette as ["black", "white"] or gives one limitation as
+ * a bare string said something valid in the wrong container. Nothing is
+ * invented, shortened or reinterpreted; content that is still out of bounds
+ * after the container fix stays invalid. Anything that is not a plain object is
+ * returned unchanged.
+ */
+export function normalizeReferenceImageAnalysis(value) {
+  if (!plain(value)) return value;
+  const out = { ...value };
+  const words = (v) => Array.isArray(v) && v.every((entry) => typeof entry === 'string');
+  for (const key of ['body_area', 'composition', 'palette']) {
+    if (words(out[key])) {
+      const joined = out[key].map((entry) => entry.trim()).filter(Boolean).join(', ');
+      out[key] = joined || null;
+    } else if (typeof out[key] === 'string' && !out[key].trim()) {
+      out[key] = null;
+    }
+  }
+  for (const key of ['subjects', 'quality_limitations']) {
+    if (typeof out[key] === 'string') out[key] = out[key].trim() ? [out[key].trim()] : [];
+    else if (out[key] === null) out[key] = [];
+  }
+  if (out.existing_tattoo_visible === 'true') out.existing_tattoo_visible = true;
+  if (out.existing_tattoo_visible === 'false') out.existing_tattoo_visible = false;
+  return out;
+}
+
 /** Bounded location of the first contract break, or null when valid. */
 export function diagnoseReferenceImageAnalysis(value) {
   if (validateReferenceImageAnalysis(value)) return null;
