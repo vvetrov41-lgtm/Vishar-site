@@ -73,7 +73,7 @@ for (const entry of plan.variants) {
         fixture,
         ok: Boolean(result.ok),
         code: first?.errorCode ?? (result.ok ? 'ok' : result.errorCode ?? `http_${result.httpStatus}`),
-        validationFailure: first?.validationFailure ?? null,
+        validationFailure: first?.validationFailure ?? first?.errorDetail ?? null,
         finishReason: first?.finishReason ?? null,
         durationMs: first?.durationMs ?? null,
         completionTokens: first?.completionTokens ?? null,

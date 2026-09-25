@@ -532,6 +532,35 @@ await test('binding exceptions are classified by their Workers AI code only', ()
   assert.ok(errors.PROVIDER_ERROR_CODES.includes('provider_input_rejected'));
 });
 
+await test('a binding failure carries a bounded diagnostic token, never its message', async () => {
+  const d = (message, name) => errors.bindingErrorDetail(Object.assign(new Error(message), name ? { name } : {}));
+  assert.equal(d('AiError: 3023: Service unavailable for account 7f3a'), 'cf_3023');
+  assert.equal(d('model not available on this plan'), 'Error');
+  assert.equal(d('x', 'AiError'), 'AiError');
+  assert.equal(d('x', 'weird name; drop table'), 'unknown');
+  assert.equal(new errors.ProviderError('provider_unavailable', 'account 7f3a').detail, null);
+
+  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+    ? new Error('AiError: 3023: Service unavailable for account-7f3a')
+    : { response: 'Summary.' }));
+  const logger = collectingLogger();
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch(), logger });
+  assert.equal(result.attempts[0].errorCode, 'provider_unavailable');
+  assert.equal(result.attempts[0].errorDetail, 'cf_3023');
+  assert.ok(!JSON.stringify(result.attempts).includes('7f3a'));
+  assert.ok(!JSON.stringify(logger.lines).includes('7f3a'));
+});
+
+await test('the production logger keeps a bounded error detail and drops anything else', async () => {
+  const { redact } = await import('../workers/lib/logging.js');
+  assert.equal(redact({ errorDetail: 'cf_3023' }).errorDetail, 'cf_3023');
+  assert.equal(redact({ errorDetail: 'AiError' }).errorDetail, 'AiError');
+  const unsafe = redact({ errorDetail: 'Service unavailable for account 7f3a' });
+  assert.equal(unsafe.errorDetail, undefined);
+  assert.equal(unsafe.droppedFields, 1);
+});
+
 await test('a model refusing the request shape falls back to the next tier', async () => {
   const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
     ? new Error('AiError: 5006: Error: json_schema not supported for account-7f3a')

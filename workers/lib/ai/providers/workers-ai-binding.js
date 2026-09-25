@@ -14,7 +14,7 @@
 // The binding takes no AbortSignal, so the router's timeout is applied by
 // racing the call rather than cancelling it.
 
-import { ProviderError, classifyBindingError } from '../errors.js';
+import { ProviderError, bindingErrorDetail, classifyBindingError } from '../errors.js';
 
 /** Model ids are `@cf/<publisher>/<model>`, or a bare vendor path for routed third parties. */
 export const CF_MODEL_RE = /^@[a-z0-9-]+\/[A-Za-z0-9._/-]{2,80}$/;
@@ -145,7 +145,7 @@ export async function callBindingModel({
     // problems as exceptions. The message may name the account or the model,
     // so only its numeric Workers AI code is classified into a bounded code,
     // and the message is never propagated.
-    throw new ProviderError(classifyBindingError(error));
+    throw new ProviderError(classifyBindingError(error), bindingErrorDetail(error));
   }
 
   return { ...normalizeBindingResponse(payload), model };
