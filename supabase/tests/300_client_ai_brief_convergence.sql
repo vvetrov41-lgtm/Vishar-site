@@ -84,8 +84,8 @@ select is((select count(*)::int from public.crm_agent_jobs
   1, 'one ordinary refresh job exists');
 
 set local role service_role;
-select is((public.service_converge_client_ai_briefs(1) ->> 'queued')::int, 0,
-  'the hourly budget is spent, so nothing more is queued');
+select is(public.service_converge_client_ai_briefs(1) ->> 'status', 'budget_spent',
+  'the hourly budget is spent, so the sweep stops before computing anything');
 select is((public.service_converge_client_ai_briefs(4) ->> 'queued')::int, 1,
   'a larger budget queues the other client, never the one already pending');
 select is((public.service_converge_client_ai_briefs(10) ->> 'queued')::int, 0,

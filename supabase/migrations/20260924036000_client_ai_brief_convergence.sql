@@ -217,6 +217,11 @@ begin
     where j.source_event_id like 'converge:%'
       and j.created_at > clock_timestamp() - interval '1 hour');
 
+  -- Nothing can be queued this hour: do not compute a single watermark.
+  if v_budget <= 0 then
+    return jsonb_build_object('status', 'budget_spent', 'queued', 0, 'budget', 0);
+  end if;
+
   for v_row in
     select s.artist_id, s.client_id, w.watermark
     from public.client_ai_state s
@@ -230,14 +235,15 @@ begin
     order by s.updated_at asc, s.client_id
   loop
     v_stale := v_stale + 1;
-    if v_queued < v_budget and crm_private.schedule_client_ai_refresh(
+    if crm_private.schedule_client_ai_refresh(
          v_row.artist_id, v_row.client_id, 'converge:' || left(v_row.watermark, 32)) is not null then
       v_queued := v_queued + 1;
     end if;
+    -- Stop as soon as the budget is used; the rest waits for the next hour.
+    exit when v_queued >= v_budget;
   end loop;
 
-  return jsonb_build_object('status', 'ok', 'stale_without_job', v_stale, 'queued', v_queued,
-                            'budget', greatest(v_budget, 0));
+  return jsonb_build_object('status', 'ok', 'examined', v_stale, 'queued', v_queued, 'budget', v_budget);
 end;
 $$;
 

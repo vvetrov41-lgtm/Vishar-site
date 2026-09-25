@@ -372,7 +372,7 @@ export async function convergeClientAiBriefs(env, deps = {}) {
   try {
     const supabase = deps.supabase ?? createSupabaseClient(env, deps.fetchImpl ?? fetch);
     const result = await supabase.rpc('service_converge_client_ai_briefs', { p_limit: 4 });
-    return ['ok', 'busy', 'disabled'].includes(result?.status) ? result.status : 'rejected';
+    return ['ok', 'busy', 'disabled', 'budget_spent'].includes(result?.status) ? result.status : 'rejected';
   } catch {
     return 'failed';
   }
