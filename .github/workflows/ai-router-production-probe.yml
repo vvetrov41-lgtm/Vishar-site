@@ -138,6 +138,7 @@ jobs:
             const qwenAttempt = attempts.find((a) => a.provider === "qwen");
             const fallbackCodes = new Set([
               "provider_timeout",
+              "provider_input_rejected",
               "provider_rate_limited",
               "provider_unavailable",
               "provider_http_error",
@@ -183,6 +184,7 @@ jobs:
             const qwenAttempt = attempts.find((a) => a.provider === "qwen");
             const fallbackCodes = new Set([
               "provider_timeout",
+              "provider_input_rejected",
               "provider_rate_limited",
               "provider_unavailable",
               "provider_http_error",
@@ -234,6 +236,7 @@ jobs:
             const qwenAttempt = attempts.find((a) => a.provider === "qwen");
             const fallbackCodes = new Set([
               "provider_timeout",
+              "provider_input_rejected",
               "provider_rate_limited",
               "provider_unavailable",
               "provider_http_error",

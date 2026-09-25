@@ -519,6 +519,32 @@ await test('every provider error code is in the declared taxonomy', () => {
   assert.ok(errors.PROVIDER_ERROR_CODES.includes('provider_malformed_response'));
 });
 
+await test('binding exceptions are classified by their Workers AI code only', () => {
+  const c = (message, name) => errors.classifyBindingError(Object.assign(new Error(message), name ? { name } : {}));
+  assert.equal(c('AiError: 3040: Capacity temporarily exceeded, please try again.'), 'provider_rate_limited');
+  assert.equal(c('AiError: 3036: Account limited'), 'provider_rate_limited');
+  assert.equal(c('AiError: 5006: Error: oneOf at \'/\' not met'), 'provider_input_rejected');
+  assert.equal(c('AiError: 3007: Request timeout'), 'provider_timeout');
+  assert.equal(c('aborted', 'AbortError'), 'provider_timeout');
+  assert.equal(c('model not available on this plan'), 'provider_unavailable');
+  assert.equal(c('status 429 Too Many Requests'), 'provider_rate_limited');
+  assert.equal(errors.classifyBindingError(undefined), 'provider_unavailable');
+  assert.ok(errors.PROVIDER_ERROR_CODES.includes('provider_input_rejected'));
+});
+
+await test('a model refusing the request shape falls back to the next tier', async () => {
+  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+    ? new Error('AiError: 5006: Error: json_schema not supported for account-7f3a')
+    : { response: 'Summary.' }));
+  const logger = collectingLogger();
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch(), logger });
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'workers_ai');
+  assert.equal(result.attempts[0].errorCode, 'provider_input_rejected');
+  assert.ok(!JSON.stringify(logger.lines).includes('account-7f3a'), 'the provider message never reaches telemetry');
+});
+
 // --- telemetry --------------------------------------------------------------
 
 await test('telemetry identifies the tier and model without carrying content', async () => {

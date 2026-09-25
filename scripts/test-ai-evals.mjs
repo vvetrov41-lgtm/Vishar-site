@@ -166,7 +166,7 @@ await test('provider failure falls back and records a bounded code', async () =>
   }), 'crm_client_state', stateInput, { validateJson: validate });
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'workers_ai');
-  assert.equal(result.attempts[0].errorCode, 'provider_unavailable');
+  assert.equal(result.attempts[0].errorCode, 'provider_rate_limited');
   assert.ok(!JSON.stringify(result.attempts).includes('123'));
 });
 

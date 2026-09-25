@@ -5,6 +5,9 @@ export const ENQUIRY_AI_FIELDS = Object.freeze([
   'reference_images_present', 'discovery_source', 'discovery_source_detail', 'notes',
 ]);
 const BOOLEAN_FIELDS = new Set(['cover_up', 'reference_images_present']);
+const BOOLEAN_TRUE = new Set(['true', 'yes', 'y']);
+const BOOLEAN_FALSE = new Set(['false', 'no', 'n']);
+const BOOLEAN_UNKNOWN = new Set(['', 'unknown', 'not specified', 'not mentioned', 'not stated', 'n/a', 'na', 'none', 'null']);
 const ENUMS = Object.freeze({
   colour: ['colour', 'black_and_grey', 'mixed'],
   discovery_source: ['instagram', 'google', 'ai', 'referral', 'convention', 'returning_client', 'other'],
@@ -139,9 +142,14 @@ export function normalizeEnquiryAnalysis(value) {
     if (fieldValue === null) status = 'missing';
     if (BOOLEAN_FIELDS.has(name) && typeof fieldValue === 'string') {
       const token = fieldValue.trim().toLowerCase();
-      if (token === 'true') fieldValue = true;
-      if (token === 'false') fieldValue = false;
+      if (BOOLEAN_TRUE.has(token)) fieldValue = true;
+      else if (BOOLEAN_FALSE.has(token)) fieldValue = false;
+      // "unknown" is the model saying the fact is missing, in words.
+      else if (BOOLEAN_UNKNOWN.has(token)) { fieldValue = null; status = 'missing'; }
     }
+    // A boolean reported as missing is not a fact: keep it missing rather than
+    // promote a model default (usually false) into an extracted answer.
+    if (BOOLEAN_FIELDS.has(name) && status === 'missing') fieldValue = null;
     if (ENUMS[name] && typeof fieldValue === 'string') fieldValue = normalizeEnum(name, fieldValue);
     if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
     fields[name] = { value: fieldValue, status };
@@ -192,16 +200,20 @@ export function diagnoseEnquiryAnalysis(value) {
   if (!exactKeys(value.fields, ENQUIRY_AI_FIELDS)) return 'fields.keys';
   if (!text(value.summary, 1200)) return 'summary';
   if (!isSafeIntakeDraft(value.draft_reply)) return 'draft_reply';
+  // The suffix names the kind of break (bounded, content-free), so telemetry
+  // can tell a type drift from a missing-with-value or an enum miss.
   for (const name of ENQUIRY_AI_FIELDS) {
     const field = value.fields[name];
-    if (!exactKeys(field, ['value', 'status']) || !STATUSES.has(field.status)) return `fields.${name}`;
+    if (!exactKeys(field, ['value', 'status'])) return `fields.${name}.shape`;
+    if (!STATUSES.has(field.status)) return `fields.${name}.status`;
     if (field.status === 'missing') {
-      if (field.value !== null) return `fields.${name}`;
+      if (field.value !== null) return `fields.${name}.missing_has_value`;
     } else if (BOOLEAN_FIELDS.has(name)) {
-      if (typeof field.value !== 'boolean') return `fields.${name}`;
-    } else if (!text(field.value, ['project_description', 'notes'].includes(name) ? 2000 : 500)
-      || (ENUMS[name] && !ENUMS[name].includes(field.value))) {
-      return `fields.${name}`;
+      if (typeof field.value !== 'boolean') return `fields.${name}.${field.value === null ? 'null' : typeof field.value}`;
+    } else if (ENUMS[name] && typeof field.value === 'string' && !ENUMS[name].includes(field.value)) {
+      return `fields.${name}.enum`;
+    } else if (!text(field.value, ['project_description', 'notes'].includes(name) ? 2000 : 500)) {
+      return `fields.${name}.text`;
     }
   }
   return 'missing_information';
