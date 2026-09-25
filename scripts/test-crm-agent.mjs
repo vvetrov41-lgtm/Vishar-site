@@ -5,7 +5,7 @@ import {
   isSafeClientDraft, validateClientBrief, validateClientStateAnalysis, validateNextAction,
 } from '../workers/lib/ai/client-state-schema.js';
 import {
-  REFERENCE_IMAGE_SYSTEM, validateReferenceImageAnalysis,
+  REFERENCE_IMAGE_SYSTEM, normalizeReferenceImageAnalysis, validateReferenceImageAnalysis,
 } from '../workers/lib/ai/reference-image-schema.js';
 import {
   drainCrmAgent, loadPrivateImage, processCrmAgentJob, projectClientStateInput,
@@ -373,6 +373,25 @@ await test('a descriptive image analysis validates and a verdict has nowhere to 
   // Genuine uncertainty is expressible, which is what keeps the model from
   // being pushed into a guess by the shape of the contract.
   assert.ok(validateReferenceImageAnalysis(image({ image_kind: 'unclear', existing_tattoo_visible: null, body_area: null })));
+});
+
+await test('a right answer in the wrong container is repaired, never invented or shortened', () => {
+  const repaired = normalizeReferenceImageAnalysis(image({
+    palette: ['black', ' white '], composition: [], subjects: 'a moth', quality_limitations: null,
+    existing_tattoo_visible: 'false',
+  }));
+  assert.equal(repaired.palette, 'black, white');
+  assert.equal(repaired.composition, null);
+  assert.deepEqual(repaired.subjects, ['a moth']);
+  assert.deepEqual(repaired.quality_limitations, []);
+  assert.equal(repaired.existing_tattoo_visible, false);
+  assert.ok(validateReferenceImageAnalysis(repaired));
+  // Still out of bounds after the container fix: stays invalid.
+  const long = normalizeReferenceImageAnalysis(image({ palette: ['x'.repeat(150), 'y'.repeat(150)] }));
+  assert.equal(validateReferenceImageAnalysis(long), null);
+  // A verdict key is not a container problem.
+  assert.equal(validateReferenceImageAnalysis(normalizeReferenceImageAnalysis({ ...image(), cover_up_possible: true })), null);
+  assert.equal(normalizeReferenceImageAnalysis('text'), 'text');
 });
 
 await test('a private image is read server-side and its signed URL never escapes', async () => {
