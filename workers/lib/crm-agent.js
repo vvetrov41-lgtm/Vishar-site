@@ -362,6 +362,22 @@ export async function recordAttentionShadow(env, deps = {}) {
   }
 }
 
+/**
+ * Phase 6a: enqueue ordinary refreshes for a few stale briefs. The database
+ * owns the budget (a few per hour) and the dedupe; this only asks. Counts
+ * only, fail-open, never affects the drain result.
+ */
+export async function convergeClientAiBriefs(env, deps = {}) {
+  if (!enabled(env)) return 'disabled';
+  try {
+    const supabase = deps.supabase ?? createSupabaseClient(env, deps.fetchImpl ?? fetch);
+    const result = await supabase.rpc('service_converge_client_ai_briefs', { p_limit: 4 });
+    return ['ok', 'busy', 'disabled'].includes(result?.status) ? result.status : 'rejected';
+  } catch {
+    return 'failed';
+  }
+}
+
 export const __testing = Object.freeze({
   MAX_CONTEXT_CHARS, MAX_IMAGE_BYTES, SIGNED_URL_SECONDS, STATE_TASK, VISION_TASK,
 });

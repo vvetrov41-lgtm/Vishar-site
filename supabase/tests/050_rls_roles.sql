@@ -793,6 +793,8 @@ insert into expected_function_acl values
   ('public.service_ai_run_summary(integer)', false, false, true),
   -- Deterministic attention shadow recording (20260924030000).
   ('public.service_record_attention_shadow()', false, false, true),
+  -- Stale-brief convergence sweep (20260924036000). Backend only.
+  ('public.service_converge_client_ai_briefs(integer)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires
