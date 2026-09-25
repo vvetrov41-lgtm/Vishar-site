@@ -203,6 +203,7 @@ async function attemptProvider({ provider, config, plan, request, fetchImpl, now
     return {
       ok: false,
       errorCode: toProviderErrorCode(error),
+      errorDetail: error instanceof ProviderError ? error.detail : null,
       durationMs: Math.max(0, Math.round(now() - startedAt)),
     };
   } finally {
@@ -279,6 +280,9 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
         durationMs: outcome.durationMs,
         outcome: outcome.ok ? 'succeeded' : 'failed',
         errorCode: outcome.errorCode ?? null,
+        // Bounded token (cf_NNNN or an exception class). Returned by the
+        // guarded probe and logged; not persisted in ai_runs.
+        errorDetail: outcome.errorDetail ?? null,
         finishReason: outcome.ok && typeof outcome.result?.finishReason === 'string'
           ? outcome.result.finishReason.toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 32) || null
           : null,
@@ -311,6 +315,7 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
       logger?.[outcome.ok ? 'info' : 'warn']?.('ai.router.attempt', {
         task: plan.task, provider: record.provider, model: record.model,
         outcome: record.outcome, errorCode: record.errorCode, durationMs: record.durationMs,
+        ...(record.errorDetail ? { errorDetail: record.errorDetail } : {}),
       });
 
       if (record.outcome === 'succeeded') {

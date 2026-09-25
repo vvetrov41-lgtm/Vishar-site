@@ -21,12 +21,30 @@ export const PROVIDER_ERROR_CODES = Object.freeze([
 const CODES = new Set(PROVIDER_ERROR_CODES);
 
 export class ProviderError extends Error {
-  constructor(code) {
+  constructor(code, detail = null) {
     const safe = CODES.has(code) ? code : 'provider_unavailable';
     super(safe);
     this.name = 'ProviderError';
     this.code = safe;
+    // A bounded diagnostic token (see bindingErrorDetail), never free text.
+    this.detail = typeof detail === 'string' && DETAIL_RE.test(detail) ? detail : null;
   }
+}
+
+const DETAIL_RE = /^(cf_[0-9]{4}|[A-Za-z][A-Za-z0-9]{0,39})$/;
+
+/**
+ * What kind of binding failure this was, as a token safe to log: the numeric
+ * Workers AI code (`cf_3040`) when the message carries one, otherwise the
+ * exception class name (`AiError`, `TypeError`). Never the message text,
+ * which can name the account or the model.
+ */
+export function bindingErrorDetail(error) {
+  const message = typeof error?.message === 'string' ? error.message.slice(0, 200) : '';
+  const match = /\b([35][0-9]{3})\b/.exec(message);
+  if (match) return `cf_${match[1]}`;
+  const name = typeof error?.name === 'string' ? error.name : '';
+  return /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(name) ? name : 'unknown';
 }
 
 /** Anything an adapter throws becomes a bounded code, including a raw TypeError. */
