@@ -19,10 +19,13 @@ guarded live eval. No client text is recorded here.
   - Production: every intake run failed (Qwen schema refusal, then Llama
     `cover_up`); #873 repairs boolean word drift and names the kind of break.
   - Since 2026-09-24 ~19:15 UTC every Workers AI binding call (Qwen, Llama,
-    Gemma) fails in 17–40 ms; eval 2 (efb70e4): 108/108. Not a model or schema
-    cause. #876 adds a bounded diagnostic token to name it.
-  - Routing decision: pending until the binding failure is named. No routing
-    change has been made on assumptions.
+    Gemma) fails in 7–40 ms; eval 2 (efb70e4): 108/108. Named by the bounded
+    diagnostic token (#876, #880): **cf_4006, the daily free Neuron
+    allocation** (10 000/day, reset 00:00 UTC; more requires Workers Paid).
+  - Routing decision: blocked on an account/budget decision (Workers Paid or
+    staying within 10 000 Neurons/day). No routing change has been made on
+    assumptions. The brief convergence sweep is opt-in (#881) so it cannot
+    spend the allocation new enquiries need.
 - [ ] Phase 2: deterministic attention engine in shadow mode (PRs #872, #874)
   - 18 hourly shadow runs over 32 clients: waiting_on disagreed for 26,
     stage for 23, AI actions disallowed by the rules 0.
