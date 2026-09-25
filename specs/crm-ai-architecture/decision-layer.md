@@ -101,3 +101,59 @@ Production shadow on real traffic is blocked by this gate.
    current path and the operator's actual handling. No user-visible effect.
 4. Only then a flagged cutover per question, starting with `reply_needed`.
    Each question can be reverted independently.
+
+## Evidence (synthetic only)
+
+Runs: 36172142494 (78 cases × 2) and 36173240531 (98 cases × 2).
+Model: `typesafe/jev-1.13`, served as `typesafe/jev-1.13-20260917` by
+TypeSafe. All 98 cases offer several allowed actions.
+
+The table is from run 36173240531. "Answered acc." is accuracy on cases
+where the model was confident enough to answer.
+
+| Split | reply_needed answered acc. / abstain | commitment_risk | next_action | human_review_needed |
+|---|---|---|---|---|
+| dev (24) | 1.00 / 11% | 1.00 / 9% | 0.89 / 27% | 0.91 / 52% |
+| holdout (44) | 0.97 / 17% | 0.97 / 19% | 0.93 / 31% | 0.76 / 44% |
+| holdout2 (20) | 1.00 / 16% | 1.00 / 21% | 0.88 / 18% | 1.00 / 61% |
+| baseline (10) | 1.00 / 11% | 1.00 / 39% | 1.00 / 50% | 1.00 / 63% |
+
+Other results:
+- 196 calls, 0 API errors, cost $0.0076 (about $0.00004 a decision).
+- p50 about 130 ms, p95 about 200 ms.
+- The same decision on repeat for 94% of cases; the action flipped in 4%.
+- The answer was always inside `allowed_actions`.
+
+Findings:
+
+- `commitment_risk` was never confidently false on a commitment case
+  (0 of 60+).
+- `human_review_needed` on its own is unreliable. It was confidently false on
+  weekend availability, hourly rate, "either date is fine", a client who
+  believes a session is booked when it is not, and a deposit link after
+  payment.
+- The fail-closed review rule routes to the artist unless both questions are
+  confidently false. It was chosen after run 1 and tested on holdout2, which
+  was written after run 1. Review recall is 1.00 on every split. The cost is
+  that about half of the safe cases also go to review.
+- Next-action errors on answered cases:
+  - `request_information` for a price question;
+  - `no_action` for simple logistics questions (address, parking);
+  - `offer_dates` for "ok sounds good" while dates were already being checked.
+
+  None of these is outside the allowed list, and all are recommendations the
+  artist sees.
+- Baseline: on the client-state cases Llama/Qwen are scored on, Jev's raw
+  action passed every action check, as Llama's did in the live eval
+  (36154979615/36171131094). Llama takes about 2 s and about 15–30 Neurons;
+  Qwen takes about 38 s and about 200 Neurons; Jev takes about 0.13 s and
+  about $0.00004.
+
+What this supports:
+- `reply_needed` and `commitment_risk` are candidates for shadow mode.
+- `next_action` in shadow only, compared with the current path.
+- `human_review_needed` is used only inside the review rule.
+
+What it does not support:
+- any cutover;
+- any real-data use before the privacy gate.
