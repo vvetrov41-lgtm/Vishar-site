@@ -31,17 +31,19 @@ const typeFields = async (name) => {
 const baseType = (t) => (t?.ofType?.ofType?.name ?? t?.ofType?.name ?? t?.name);
 
 const accountFields = await typeFields('account');
-const candidates = accountFields.filter((f) => /^ai/i.test(f.name) && /Groups$/.test(f.name)).map((f) => f.name);
+// Introspection may be unavailable; then try the likely dataset names.
+const introspected = accountFields.filter((f) => /^ai/i.test(f.name) && /Groups$/.test(f.name)).map((f) => f.name);
+const candidates = introspected.length ? introspected : ['aiInferenceAdaptiveGroups'];
 console.log('ai datasets:', JSON.stringify(candidates));
 const dataset = candidates.find((n) => /inference/i.test(n)) ?? candidates.find((n) => !/gateway/i.test(n));
 if (!dataset) { console.log('no Workers AI dataset is visible to this token'); process.exit(0); }
 
-const groupType = baseType(accountFields.find((f) => f.name === dataset).type);
-const groupFields = await typeFields(groupType);
+const groupType = baseType(accountFields.find((f) => f.name === dataset)?.type);
+const groupFields = groupType ? await typeFields(groupType) : [];
 const dimType = baseType(groupFields.find((f) => f.name === 'dimensions')?.type);
 const sumType = baseType(groupFields.find((f) => f.name === 'sum')?.type);
-const dims = (await typeFields(dimType)).map((f) => f.name);
-const sums = (await typeFields(sumType)).map((f) => f.name);
+const dims = dimType ? (await typeFields(dimType)).map((f) => f.name) : ['date', 'modelId'];
+const sums = sumType ? (await typeFields(sumType)).map((f) => f.name) : [];
 console.log('dimensions:', JSON.stringify(dims));
 console.log('sums:', JSON.stringify(sums));
 
@@ -51,14 +53,19 @@ const dateFilter = dims.includes('date') ? 'date_geq' : 'datetimeHour_geq';
 const start = new Date(Date.now() - days * 86400000);
 const since = dateFilter === 'date_geq' ? start.toISOString().slice(0, 10) : start.toISOString();
 
-const query = `query($a: String!, $since: ${dateFilter === 'date_geq' ? 'Date' : 'Time'}!) { viewer { accounts(filter: { accountTag: $a }) {
+// Cloudflare Analytics scalars are lowercase `string`; dates use `Date`/`Time`.
+const query = `query($a: string, $since: ${dateFilter === 'date_geq' ? 'Date' : 'Time'}) { viewer { accounts(filter: { accountTag: $a }) {
   rows: ${dataset}(limit: 1000, filter: { ${dateFilter}: $since }) {
     count
     ${sums.length ? `sum { ${sums.join(' ')} }` : ''}
     dimensions { ${wantDims.join(' ')} }
   } } } }`;
 const result = await gql(query, { a: account, since });
-if (result.error) { console.log('usage query refused:', result.error, JSON.stringify(result.messages)); process.exit(0); }
+if (result.error) {
+  // A refused query is a failed read, never a green run with no data.
+  console.log('usage query refused:', result.error, JSON.stringify(result.messages));
+  process.exit(1);
+}
 const rows = result.data?.viewer?.accounts?.[0]?.rows ?? [];
 rows.sort((x, y) => String(x.dimensions.date ?? '').localeCompare(String(y.dimensions.date ?? '')));
 console.log(`rows: ${rows.length} (last ${days} days)`);
