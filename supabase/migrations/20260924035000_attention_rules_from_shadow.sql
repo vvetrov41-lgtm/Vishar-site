@@ -16,6 +16,10 @@
 --    outbound message, or clearing its Today item) was staged new_enquiry.
 --    It is now gathering_information, as the browser Today already assumed.
 --
+-- Also: a Gmail reply acknowledgement is keyed by the client id (as
+-- acknowledge_attention_item and the browser key it), not by a Gmail thread
+-- context, so Gmail acknowledgements were never matched before.
+--
 -- Shadow mode only: nothing an operator sees changes.
 
 drop function crm_private.client_attention(uuid, uuid, timestamptz);
@@ -65,24 +69,32 @@ as $$
     order by m.created_at desc
     limit 1
   ),
-  ack as (
+  ack_rows as (
     -- An operator who cleared this client's reply item handled the version
     -- they SAW: `observed_at` is the source version the item showed. A newer
     -- inbound after that version is not covered, however late the click was.
-    select max(a.observed_at) as at, max(a.acknowledged_at) as acknowledged_at
+    select a.observed_at, a.acknowledged_at
     from public.attention_acknowledgements a
     where a.artist_id = p_artist_id
       and (
         (a.item_kind = 'conversation_reply' and exists (
           select 1 from public.communication_conversations c
           where c.id = a.entity_id and c.artist_id = p_artist_id and c.client_id = p_client_id))
-        or (a.item_kind = 'gmail_reply' and exists (
-          select 1 from crm_private.gmail_thread_contexts g
-          where g.id = a.entity_id and g.artist_id = p_artist_id and g.client_id = p_client_id))
+        -- A Gmail reply item is keyed by the client (acknowledge_attention_item).
+        or (a.item_kind = 'gmail_reply' and a.entity_id = p_client_id)
         or (a.item_kind = 'new_enquiry' and exists (
           select 1 from public.enquiries e
           where e.id = a.entity_id and e.artist_id = p_artist_id and e.client_id = p_client_id))
       )
+  ),
+  ack as (
+    select max(r.observed_at) as at from ack_rows r
+  ),
+  -- When the latest inbound was handled: the click of an acknowledgement that
+  -- covers it, the earliest such click, never an unrelated newer one.
+  handled as (
+    select min(r.acknowledged_at) as at from ack_rows r, inbound
+    where r.observed_at >= inbound.occurred_at
   ),
   facts as (
     select
@@ -92,7 +104,7 @@ as $$
       (select reply_state from mark) as mark_state,
       (select source from mark) as mark_source,
       (select at from ack) as ack_at,
-      (select acknowledged_at from ack) as ack_clicked_at
+      (select at from handled) as ack_clicked_at
   )
   select
     f.last_inbound_at,
@@ -145,7 +157,7 @@ security definer
 set search_path = pg_catalog, public, crm_private
 as $$
   with enquiry as (
-    select e.status::text as status, e.created_at
+    select e.id, e.status::text as status, e.created_at
     from public.enquiries e
     where e.artist_id = p_artist_id and e.client_id = p_client_id and e.archived_at is null
     order by e.updated_at desc, e.created_at desc, e.id desc
@@ -191,15 +203,16 @@ as $$
         where en.status = 'new' and (
           exists (select 1 from crm_private.client_timeline_items(p_artist_id, p_client_id) t
                   where t.direction = 'outbound' and t.occurred_at >= en.created_at)
+          -- This enquiry's own Today item, or a reply item for this client,
+          -- cleared after the enquiry arrived. A sibling enquiry's item does
+          -- not engage this one.
           or exists (select 1 from public.attention_acknowledgements a
                      where a.artist_id = p_artist_id and a.acknowledged_at >= en.created_at
-                       and a.item_kind in ('new_enquiry', 'conversation_reply', 'gmail_reply')
-                       and (a.entity_id in (select e2.id from public.enquiries e2
-                                            where e2.artist_id = p_artist_id and e2.client_id = p_client_id)
-                            or a.entity_id in (select c.id from public.communication_conversations c
-                                               where c.artist_id = p_artist_id and c.client_id = p_client_id)
-                            or a.entity_id in (select g.id from crm_private.gmail_thread_contexts g
-                                               where g.artist_id = p_artist_id and g.client_id = p_client_id))))
+                       and ((a.item_kind = 'new_enquiry' and a.entity_id = en.id)
+                            or (a.item_kind = 'conversation_reply' and a.entity_id in (
+                                  select c.id from public.communication_conversations c
+                                  where c.artist_id = p_artist_id and c.client_id = p_client_id))
+                            or (a.item_kind = 'gmail_reply' and a.entity_id = p_client_id))))
       ) as enquiry_engaged
   )
   select
