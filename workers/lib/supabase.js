@@ -61,6 +61,8 @@ export const CRM_AGENT_RPCS = new Set([
   'service_complete_reference_image_job',
   'service_fail_crm_agent_job',
   'service_telegram_client_ai_digest',
+  // Phase 6a bounded convergence sweep (schedules ordinary refreshes only).
+  'service_converge_client_ai_briefs',
 ]);
 
 /**
