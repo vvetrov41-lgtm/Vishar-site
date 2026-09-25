@@ -84,6 +84,18 @@ export const THINKING_MODES = Object.freeze(['default', 'off']);
  * one; every value is a closed choice or a clamped number, and none of them can
  * change what a model is asked or which data it sees.
  */
+/**
+ * Cloudflare-hosted models an eval may put on the workers_ai tier, so a
+ * cheaper model can be measured against the incumbent. A closed list: the
+ * probe cannot name an arbitrary model, and nothing outside an eval sets it.
+ */
+export const EVAL_WORKERS_AI_MODELS = Object.freeze(new Set([
+  '@cf/meta/llama-3.1-8b-instruct-fast',
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/zai-org/glm-4.7-flash',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+]));
+
 export function normalizeExperiment(plan, experiment) {
   if (!experiment || typeof experiment !== 'object') return null;
   const provider = typeof experiment.provider === 'string' && PROVIDER_IDS.has(experiment.provider)
@@ -95,6 +107,7 @@ export function normalizeExperiment(plan, experiment) {
     maxOutputTokens: clamp(experiment.maxOutputTokens, 16, MAX_OUTPUT_TOKENS),
     schemaMode: SCHEMA_MODES.includes(experiment.schemaMode) ? experiment.schemaMode : 'default',
     thinking: THINKING_MODES.includes(experiment.thinking) ? experiment.thinking : 'default',
+    model: provider === 'workers_ai' && EVAL_WORKERS_AI_MODELS.has(experiment.model) ? experiment.model : null,
   });
 }
 
@@ -252,7 +265,8 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
   const candidates = chain
     .map((id) => {
       const provider = PROVIDERS[id];
-      const config = provider ? provider.configure(env, plan.modality) : null;
+      let config = provider ? provider.configure(env, plan.modality) : null;
+      if (config && experiment?.model && id === 'workers_ai') config = { ...config, model: experiment.model };
       return config ? { provider, config } : null;
     })
     .filter(Boolean)

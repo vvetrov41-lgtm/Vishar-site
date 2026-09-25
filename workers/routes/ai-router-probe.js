@@ -158,6 +158,7 @@ async function runEvalProbe(env, body, fetchImpl) {
     thinking: variant.thinking,
     timeoutMs: variant.timeoutMs,
     maxOutputTokens: variant.maxOutputTokens,
+    model: typeof variant.model === 'string' ? variant.model : undefined,
   };
 
   const isState = task === 'crm_client_state';

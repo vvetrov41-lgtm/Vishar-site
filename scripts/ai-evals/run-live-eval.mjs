@@ -55,6 +55,8 @@ async function call(task, fixture, variant, retried = false) {
 }
 
 let calls = 0;
+let quotaStreak = 0;
+let stopped = null;
 const report = [];
 for (const entry of plan.variants) {
   if (only.length && !only.includes(entry.id)) continue;
@@ -63,11 +65,15 @@ for (const entry of plan.variants) {
   const rows = [];
   for (let repeat = 0; repeat < plan.repeats; repeat += 1) {
     for (const fixture of fixtures) {
-      if (calls >= plan.maxCalls) break;
+      if (calls >= plan.maxCalls || stopped) break;
+      if (quotaStreak >= 3) { stopped = 'quota_exhausted'; break; }
       calls += 1;
       let result;
       try { result = await call(entry.task, fixture, entry.variant); } catch { result = { httpStatus: 0 }; }
       const first = Array.isArray(result.attempts) ? result.attempts[0] : null;
+      // Stop condition: a spent allocation fails every call the same way.
+      // Three in a row end the whole run instead of burning the plan.
+      quotaStreak = /quota|4006|3036/.test(String(first?.errorDetail ?? '')) ? quotaStreak + 1 : 0;
       const check = result.ok && result.answer ? checkAnswer(entry.task, result.answer, expectations[fixture].expect) : null;
       rows.push({
         fixture,
@@ -76,6 +82,8 @@ for (const entry of plan.variants) {
         validationFailure: first?.validationFailure ?? first?.errorDetail ?? null,
         finishReason: first?.finishReason ?? null,
         durationMs: first?.durationMs ?? null,
+        promptTokens: first?.promptTokens ?? null,
+        model: first?.model ?? null,
         completionTokens: first?.completionTokens ?? null,
         reasoningTokens: first?.reasoningTokens ?? null,
         checkFailures: check ? check.failures : null,
@@ -100,6 +108,9 @@ for (const entry of plan.variants) {
     checkPassRate: valid.length ? +(passed.length / valid.length).toFixed(2) : 0,
     p50Ms: percentile(durations, 50),
     p95Ms: percentile(durations, 95),
+    model: rows.find((r) => r.model)?.model ?? null,
+    failureRate: rows.length ? +(1 - valid.length / rows.length).toFixed(2) : 0,
+    meanPromptTokens: mean(rows.map((r) => r.promptTokens).filter(Number.isFinite)),
     meanCompletionTokens: mean(rows.map((r) => r.completionTokens).filter(Number.isFinite)),
     meanReasoningTokens: mean(rows.map((r) => r.reasoningTokens).filter(Number.isFinite)),
     codes,
@@ -107,9 +118,9 @@ for (const entry of plan.variants) {
   });
 }
 
-console.log(JSON.stringify({ calls, report }, null, 2));
-const table = ['| variant | runs | valid | checks pass | p50 ms | p95 ms | completion tok | reasoning tok | outcome codes |',
-  '|---|---|---|---|---|---|---|---|---|',
-  ...report.map((r) => `| ${r.id} | ${r.runs} | ${r.validRate} | ${r.checkPassRate} | ${r.p50Ms} | ${r.p95Ms} | ${r.meanCompletionTokens} | ${r.meanReasoningTokens} | ${Object.entries(r.codes).map(([k, v]) => `${k}=${v}`).join(', ')} |`)];
+console.log(JSON.stringify({ calls, stopped, report }, null, 2));
+const table = ['| variant | model | runs | valid | checks pass | p50 ms | p95 ms | prompt tok | completion tok | reasoning tok | outcome codes |',
+  '|---|---|---|---|---|---|---|---|---|---|---|',
+  ...report.map((r) => `| ${r.id} | ${r.model} | ${r.runs} | ${r.validRate} | ${r.checkPassRate} | ${r.p50Ms} | ${r.p95Ms} | ${r.meanPromptTokens} | ${r.meanCompletionTokens} | ${r.meanReasoningTokens} | ${Object.entries(r.codes).map(([k, v]) => `${k}=${v}`).join(', ')} |`)];
 console.log(table.join('\n'));
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## CRM AI live eval\n\n${table.join('\n')}\n`);

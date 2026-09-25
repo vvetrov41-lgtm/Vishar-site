@@ -576,6 +576,20 @@ await test('the production logger keeps a bounded error detail and drops anythin
   assert.equal(unsafe.droppedFields, 1);
 });
 
+await test('an eval may put only an allow-listed model on the workers_ai tier', async () => {
+  const plan = { task: 'crm_client_state' };
+  assert.equal(router.normalizeExperiment(plan, { provider: 'workers_ai', model: '@cf/google/gemma-4-26b-a4b-it' }).model,
+    '@cf/google/gemma-4-26b-a4b-it');
+  assert.equal(router.normalizeExperiment(plan, { provider: 'workers_ai', model: '@cf/moonshotai/kimi-k2.6' }).model, null);
+  assert.equal(router.normalizeExperiment(plan, { provider: 'qwen', model: '@cf/google/gemma-4-26b-a4b-it' }).model, null);
+
+  const stub = aiBinding(() => ({ response: 'Summary.' }));
+  const result = await router.runModelTask({ AI: stub.AI }, 'text_summarization', textInput,
+    { fetchImpl: forbiddenFetch(), experiment: { provider: 'workers_ai', model: '@cf/zai-org/glm-4.7-flash' } });
+  assert.equal(result.ok, true);
+  assert.equal(stub.calls[0].model, '@cf/zai-org/glm-4.7-flash');
+});
+
 await test('a model refusing the request shape falls back to the next tier', async () => {
   const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
     ? new Error('AiError: 5006: Error: json_schema not supported for account-7f3a')
