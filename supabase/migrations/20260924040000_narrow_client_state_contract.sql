@@ -200,9 +200,11 @@ begin
   if v_attention is null then
     return new;
   end if;
+  -- Overwrite only with a real deterministic value: a missing one keeps the
+  -- model's value rather than writing a null the brief validator rejects.
   new.brief := new.brief
-    || jsonb_build_object('stage', v_attention ->> 'workflow_stage',
-                          'waiting_on', v_attention ->> 'waiting_on_candidate');
+    || jsonb_strip_nulls(jsonb_build_object('stage', v_attention ->> 'workflow_stage',
+                                            'waiting_on', v_attention ->> 'waiting_on_candidate'));
   return new;
 end;
 $$;
@@ -269,12 +271,27 @@ begin
     return jsonb_build_object('status', 'not_found');
   end if;
 
-  -- The mark answers the message the job actually saw: the latest inbound
-  -- at the job's own watermark. A newer inbound would have made the job stale.
+  -- The mark may only answer the message the job actually saw. If anything
+  -- the model reads changed since the job's snapshot (a newer inbound message
+  -- above all), the classification is about an older state: discard it rather
+  -- than let "no reply needed" hide a message the model never read.
+  if crm_private.client_ai_watermark(v_job.artist_id, v_job.client_id) is distinct from v_job.snapshot_hash then
+    return jsonb_build_object('status', 'stale');
+  end if;
+
   select c.last_inbound_at into v_inbound
   from crm_private.attention_comm_facts(v_job.artist_id, v_job.client_id) c;
   if v_inbound is null then
     return jsonb_build_object('status', 'no_inbound');
+  end if;
+
+  -- One classifier mark per message: a retried call records nothing new.
+  if exists (
+    select 1 from crm_private.client_reply_marks m
+    where m.artist_id = v_job.artist_id and m.client_id = v_job.client_id
+      and m.message_at = v_inbound and m.source = 'classifier'
+  ) then
+    return jsonb_build_object('status', 'already_recorded');
   end if;
 
   insert into crm_private.client_reply_marks (artist_id, client_id, message_at, reply_state, source)
