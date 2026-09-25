@@ -45,7 +45,15 @@ const SAFE_FIELDS = new Set([
   'providerAttempts',
   'outputChars',
   'imageCount',
+  // A bounded binding-failure token (cf_NNNN or an exception class name),
+  // never message text. Held to its own pattern below.
+  'errorDetail',
 ]);
+
+// Fields whose value must also match a closed shape to be kept.
+const FIELD_PATTERNS = Object.freeze({
+  errorDetail: /^(cf_[0-9]{4}|[A-Za-z][A-Za-z0-9]{0,39})$/,
+});
 
 // Values are bounded too. A safe field name with an unbounded value would still
 // be a way to smuggle a paragraph of client text into the logs.
@@ -66,7 +74,8 @@ export function redact(fields = {}) {
   let dropped = 0;
 
   for (const [key, value] of Object.entries(fields)) {
-    if (SAFE_FIELDS.has(key)) {
+    if (SAFE_FIELDS.has(key)
+        && (!FIELD_PATTERNS[key] || (typeof value === 'string' && FIELD_PATTERNS[key].test(value)))) {
       safe[key] = coerce(value);
     } else {
       dropped += 1;

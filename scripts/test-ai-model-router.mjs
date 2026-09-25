@@ -552,6 +552,15 @@ await test('a binding failure carries a bounded diagnostic token, never its mess
   assert.ok(!JSON.stringify(logger.lines).includes('7f3a'));
 });
 
+await test('the production logger keeps a bounded error detail and drops anything else', async () => {
+  const { redact } = await import('../workers/lib/logging.js');
+  assert.equal(redact({ errorDetail: 'cf_3023' }).errorDetail, 'cf_3023');
+  assert.equal(redact({ errorDetail: 'AiError' }).errorDetail, 'AiError');
+  const unsafe = redact({ errorDetail: 'Service unavailable for account 7f3a' });
+  assert.equal(unsafe.errorDetail, undefined);
+  assert.equal(unsafe.droppedFields, 1);
+});
+
 await test('a model refusing the request shape falls back to the next tier', async () => {
   const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
     ? new Error('AiError: 5006: Error: json_schema not supported for account-7f3a')
