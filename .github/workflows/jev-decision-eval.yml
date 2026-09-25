@@ -1,0 +1,90 @@
+name: Jev CRM decision eval
+
+# Candidate-only evaluation for TypeSafe Jev through OpenRouter.
+# Pull requests run the fixture/contract self-test only. A live paid run happens
+# only from an explicit probe/jev-eval-* branch and uses the isolated jev-eval
+# GitHub Environment secret. The runner contains synthetic data only and has no
+# Supabase, CRM or Cloudflare credentials.
+on:
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    paths:
+      - scripts/ai-evals/jev-decision-fixtures.mjs
+      - scripts/ai-evals/run-jev-eval.mjs
+      - .github/workflows/jev-decision-eval.yml
+  push:
+    branches:
+      - 'probe/jev-eval-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jev-crm-decision-eval
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact snapshot
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate synthetic Jev eval contract
+        run: node scripts/ai-evals/run-jev-eval.mjs --self-test
+
+  live:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/probe/jev-eval-')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: jev-eval
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+    steps:
+      - name: Checkout exact eval snapshot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify canonical ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch origin agent/platform-telegram-self-service --no-tags
+          git merge-base --is-ancestor origin/agent/platform-telegram-self-service "$GITHUB_SHA"
+          echo 'Jev eval snapshot descends from the canonical CRM branch.'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify OpenRouter credential is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OPENROUTER_API_KEY"
+          echo 'OpenRouter credential is present.'
+
+      - name: Run live synthetic Jev evaluation
+        run: node scripts/ai-evals/run-jev-eval.mjs
+
+      - name: Upload content-free eval result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jev-eval-results
+          path: jev-eval-results.json
+          if-no-files-found: ignore
+          retention-days: 14
