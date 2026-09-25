@@ -1,13 +1,20 @@
 {
-  "repeats": 2,
-  "maxCalls": 220,
+  "repeats": 1,
+  "maxCalls": 14,
+  "minCallIntervalMs": 3500,
+  "only": [
+    "v2-vision-gemma-1", "v2-vision-gemma-2", "v2-vision-gemma-3",
+    "v2-vision-qwen", "v2-vision-chain-1", "v2-vision-chain-2",
+    "v2-intake-chain", "v2-state-chain"
+  ],
   "variants": [
-    { "id": "intake-qwen-full", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "full" } },
-    { "id": "intake-qwen-transport", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "transport" } },
-    { "id": "intake-qwen-object", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "object" } },
-    { "id": "intake-llama", "task": "enquiry_intake", "variant": { "provider": "workers_ai" } },
-    { "id": "state-qwen-current", "task": "crm_client_state", "variant": { "provider": "qwen", "timeoutMs": 60000 } },
-    { "id": "state-qwen-nothink", "task": "crm_client_state", "variant": { "provider": "qwen", "thinking": "off", "timeoutMs": 60000 } },
-    { "id": "state-llama", "task": "crm_client_state", "variant": { "provider": "workers_ai", "timeoutMs": 60000 } }
+    { "id": "v2-vision-gemma-1", "task": "vision_reference_extraction", "variant": { "provider": "workers_ai" } },
+    { "id": "v2-vision-gemma-2", "task": "vision_reference_extraction", "variant": { "provider": "workers_ai" } },
+    { "id": "v2-vision-gemma-3", "task": "vision_reference_extraction", "variant": { "provider": "workers_ai" } },
+    { "id": "v2-vision-qwen", "task": "vision_reference_extraction", "variant": { "provider": "qwen", "timeoutMs": 60000 } },
+    { "id": "v2-vision-chain-1", "task": "vision_reference_extraction", "variant": {} },
+    { "id": "v2-vision-chain-2", "task": "vision_reference_extraction", "variant": {} },
+    { "id": "v2-intake-chain", "task": "enquiry_intake", "variant": {}, "fixtures": ["intake_complete", "intake_cover_up"] },
+    { "id": "v2-state-chain", "task": "crm_client_state", "variant": {}, "fixtures": ["client_reply_answering", "deposit_paid"] }
   ]
 }
