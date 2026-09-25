@@ -69,6 +69,8 @@ const PULSE_REASONS = Object.freeze({
   past_session_unresolved: 'Past session not marked done',
   session_without_project: 'Session without a project',
   converted_enquiry_without_project: 'Converted enquiry without a project',
+  fact_conflict_placement: 'Brief and enquiry disagree on placement',
+  fact_conflict_size: 'Brief and enquiry disagree on size',
 });
 
 const PULSE_EMPTY_MESSAGE = 'Vishar CRM: nothing needs you right now.';
