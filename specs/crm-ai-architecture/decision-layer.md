@@ -104,25 +104,28 @@ Production shadow on real traffic is blocked by this gate.
 
 ## Evidence (synthetic only)
 
-Runs: 36172142494 (78 cases × 2) and 36173240531 (98 cases × 2).
+Runs: 36172142494 (78 cases × 2), 36173240531 and 36176412915 (98 cases × 2
+each). The last run uses the scoring corrected after review of #887: only
+numeric probabilities count, stability compares the effective decision, and
+only reachable baseline actions are scored. The table is from that run.
 Model: `typesafe/jev-1.13`, served as `typesafe/jev-1.13-20260917` by
-TypeSafe. All 98 cases offer several allowed actions.
-
-The table is from run 36173240531. "Answered acc." is accuracy on cases
-where the model was confident enough to answer.
+TypeSafe. All 98 cases offer several allowed actions. "Answered acc." is
+accuracy on cases where the model was confident enough to answer.
 
 | Split | reply_needed answered acc. / abstain | commitment_risk | next_action | human_review_needed |
 |---|---|---|---|---|
-| dev (24) | 1.00 / 11% | 1.00 / 9% | 0.89 / 27% | 0.91 / 52% |
-| holdout (44) | 0.97 / 17% | 0.97 / 19% | 0.93 / 31% | 0.76 / 44% |
-| holdout2 (20) | 1.00 / 16% | 1.00 / 21% | 0.88 / 18% | 1.00 / 61% |
-| baseline (10) | 1.00 / 11% | 1.00 / 39% | 1.00 / 50% | 1.00 / 63% |
+| dev (24) | 1.00 / 13% | 1.00 / 9% | 0.89 / 27% | 0.91 / 50% |
+| holdout (44) | 0.97 / 15% | 0.97 / 21% | 0.93 / 33% | 0.78 / 46% |
+| holdout2 (20) | 1.00 / 16% | 1.00 / 18% | 0.88 / 18% | 0.93 / 58% |
+| baseline (10) | 1.00 / 11% | 1.00 / 33% | 1.00 / 50% | 0.86 / 56% |
 
 Other results:
 - 196 calls, 0 API errors, cost $0.0076 (about $0.00004 a decision).
-- p50 about 130 ms, p95 about 200 ms.
-- The same decision on repeat for 94% of cases; the action flipped in 4%.
+- p50 150–170 ms, p95 190–600 ms.
 - The answer was always inside `allowed_actions`.
+- Stability of the effective decision across repeats: 0.84. The raw action
+  flipped in 5% of cases; the rest of the variation is values crossing an
+  abstention threshold between repeats. This is below the 0.9 gate.
 
 Findings:
 
@@ -156,6 +159,8 @@ Findings:
 
 What this supports:
 - `reply_needed` and `commitment_risk` are candidates for shadow mode.
+  Stability (0.84) is below the cutover gate; production shadow has to show
+  whether threshold-crossing flips matter on real traffic.
 - `next_action` in shadow only, compared with the current path.
 - `human_review_needed` is used only inside the review rule.
 
