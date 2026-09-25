@@ -523,6 +523,7 @@ await test('binding exceptions are classified by their Workers AI code only', ()
   const c = (message, name) => errors.classifyBindingError(Object.assign(new Error(message), name ? { name } : {}));
   assert.equal(c('AiError: 3040: Capacity temporarily exceeded, please try again.'), 'provider_rate_limited');
   assert.equal(c('AiError: 3036: Account limited'), 'provider_rate_limited');
+  assert.equal(c('4006: daily free allocation used up'), 'provider_rate_limited');
   assert.equal(c('AiError: 5006: Error: oneOf at \'/\' not met'), 'provider_input_rejected');
   assert.equal(c('AiError: 3007: Request timeout'), 'provider_timeout');
   assert.equal(c('aborted', 'AbortError'), 'provider_timeout');
