@@ -427,7 +427,6 @@ export interface FakeClientOptions {
    * but switched off, which is production's default.
    */
   todayPulse?: unknown;
-      }
   /** What `get_conversation_link_suggestion` answers. Omitted means no match. */
   linkSuggestion?: unknown;
   /** Records PostgREST filters so detail pages can prove server-side scoping. */
