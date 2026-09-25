@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { ENQUIRY_AI_FIELDS, isSafeIntakeDraft, normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../workers/lib/ai/enquiry-schema.js';
+import { ENQUIRY_AI_FIELDS, diagnoseEnquiryAnalysis, isSafeIntakeDraft, normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../workers/lib/ai/enquiry-schema.js';
 import { drainEnquiryAi, processEnquiryAiJob, projectEnquiryAiInput, scheduleEnquiryAi } from '../workers/lib/enquiry-ai.js';
 
 const JOB_ID = '11111111-1111-4111-8111-111111111111';
@@ -98,6 +98,30 @@ await test('deterministic repair fixes transport drift without inventing extract
   assert.equal(isSafeIntakeDraft(repaired.draft_reply), true);
   assert.ok(validateEnquiryAnalysis(repaired));
   assert.equal(repaired.fields.project_description.value, raw.fields.project_description.value);
+});
+
+await test('boolean fields accept yes/no words and never promote a missing default into a fact', () => {
+  const yes = normalizeEnquiryAnalysis(result({ fields: { cover_up: field('Yes') } }));
+  assert.equal(yes.fields.cover_up.value, true);
+  const no = normalizeEnquiryAnalysis(result({ fields: { cover_up: field('no') } }));
+  assert.equal(no.fields.cover_up.value, false);
+  const unknown = normalizeEnquiryAnalysis(result({ fields: { cover_up: field('Not mentioned') } }));
+  assert.equal(unknown.fields.cover_up.value, null);
+  assert.equal(unknown.fields.cover_up.status, 'missing');
+  assert.ok(unknown.missing_information.includes('cover_up'));
+  const defaulted = normalizeEnquiryAnalysis(result({ fields: { cover_up: { value: false, status: 'missing' } } }));
+  assert.equal(defaulted.fields.cover_up.value, null, 'a missing boolean stays missing');
+  for (const repaired of [yes, no, unknown, defaulted]) assert.ok(validateEnquiryAnalysis(repaired));
+  // Anything else still fails closed.
+  assert.equal(validateEnquiryAnalysis(normalizeEnquiryAnalysis(result({ fields: { cover_up: field('maybe later') } }))), null);
+});
+
+await test('the validation diagnosis names the kind of break without content', () => {
+  assert.equal(diagnoseEnquiryAnalysis(result({ fields: { cover_up: field('maybe') } })), 'fields.cover_up.string');
+  assert.equal(diagnoseEnquiryAnalysis(result({ fields: { cover_up: { value: false, status: 'missing' } } })), 'fields.cover_up.missing_has_value');
+  assert.equal(diagnoseEnquiryAnalysis(result({ fields: { colour: field('neon') } })), 'fields.colour.enum');
+  assert.equal(diagnoseEnquiryAnalysis(result({ fields: { placement: { value: 'arm' } } })), 'fields.placement.shape');
+  assert.equal(diagnoseEnquiryAnalysis(result({ fields: { placement: field('arm', 'guessed') } })), 'fields.placement.status');
 });
 
 await test('deterministic repair still fails closed for malformed extracted fields', () => {
