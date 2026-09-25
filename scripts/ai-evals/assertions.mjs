@@ -6,7 +6,7 @@
 
 import { validateClientStateAnalysis } from '../../workers/lib/ai/client-state-schema.js';
 import { normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../../workers/lib/ai/enquiry-schema.js';
-import { validateReferenceImageAnalysis } from '../../workers/lib/ai/reference-image-schema.js';
+import { normalizeReferenceImageAnalysis, validateReferenceImageAnalysis } from '../../workers/lib/ai/reference-image-schema.js';
 
 const lower = (value) => (typeof value === 'string' ? value.toLowerCase() : '');
 
@@ -148,7 +148,7 @@ export function checkEnquiry(answer, expect = {}) {
 export const __testing = Object.freeze({ assertsClaim });
 
 export function checkVision(answer, expect = {}) {
-  const valid = validateReferenceImageAnalysis(answer);
+  const valid = validateReferenceImageAnalysis(normalizeReferenceImageAnalysis(answer));
   if (!valid) return { valid: false, failures: ['schema_invalid'] };
   const failures = [];
   if (expect.image_kind_in && !expect.image_kind_in.includes(valid.image_kind)) failures.push('image_kind');
