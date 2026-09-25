@@ -98,19 +98,30 @@ select is(
   crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'workflow_stage',
   'new_enquiry', 'an untouched new enquiry is at new_enquiry');
 
--- An operator acknowledgement after the message is an explicit no-reply mark.
+-- An operator acknowledgement after the message means the studio handled it
+-- (20260924035000): the studio's turn, taken when it was cleared.
 insert into public.attention_acknowledgements (artist_id, item_kind, entity_id, observed_at, acknowledged_at)
 values ('a1111111-1111-4111-8111-111111111111', 'conversation_reply', 'e7041111-1111-4111-8111-111111111111',
         now() - interval '30 hours', now() - interval '1 hour');
 select results_eq(
   $$ select reply_state, reply_state_source
      from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') $$,
-  $$ values ('no_reply_needed'::text, 'operator_ack'::text) $$,
+  $$ values ('handled'::text, 'operator_ack'::text) $$,
   'an operator acknowledgement after the latest inbound marks it handled'
 );
 select is(
   crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'sla_state',
   'ok', 'a handled message is no longer due');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'waiting_on_candidate',
+  'client', 'after the studio handled the message, the client is the one expected to move');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'workflow_stage',
+  'gathering_information', 'a new enquiry the studio already engaged with is no longer an untouched lead');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111',
+    now() + interval '8 days') ->> 'sla_reason',
+  'client_follow_up_due', 'follow-up timers run from the moment the message was handled');
 
 -- A newer inbound makes the acknowledgement moot.
 insert into public.communication_messages (
