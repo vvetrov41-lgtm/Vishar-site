@@ -42,6 +42,11 @@ AI_ROUTE_ENQUIRY_INTAKE = "workers_ai,qwen"
 # Vision remains separately guarded by the database vision_enabled switch.
 CRM_AGENT_ENABLED = "true"
 CRM_AGENT_VISION_ENABLED = "true"
+# Stale-brief convergence (Phase 6a), enabled after the Llama routing passed
+# post-deploy acceptance. A refresh costs ~15-30 Neurons on Llama; the
+# database dedupes to one sweep per client per day and caps the batch, so this
+# bounds the extra spend. Unset (or 0) turns the sweep off.
+CRM_BRIEF_CONVERGE_PER_HOUR = "8"
 AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,qwen"
 AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
 
