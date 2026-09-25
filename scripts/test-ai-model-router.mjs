@@ -536,6 +536,8 @@ await test('binding exceptions are classified by their Workers AI code only', ()
 await test('a binding failure carries a bounded diagnostic token, never its message', async () => {
   const d = (message, name) => errors.bindingErrorDetail(Object.assign(new Error(message), name ? { name } : {}));
   assert.equal(d('AiError: 3023: Service unavailable for account 7f3a'), 'cf_3023');
+  assert.equal(d('4006: you have used up your daily free allocation of 10,000 neurons'), 'cf_4006_quota');
+  assert.equal(d('7003: something'), 'cf_7003');
   assert.equal(d('model not available on this plan'), 'Error_other');
   assert.equal(d('x', 'AiError'), 'AiError_other');
   assert.equal(d('', 'AiError'), 'AiError_empty');
@@ -566,6 +568,7 @@ await test('a binding failure carries a bounded diagnostic token, never its mess
 await test('the production logger keeps a bounded error detail and drops anything else', async () => {
   const { redact } = await import('../workers/lib/logging.js');
   assert.equal(redact({ errorDetail: 'cf_3023' }).errorDetail, 'cf_3023');
+  assert.equal(redact({ errorDetail: 'cf_4006_quota' }).errorDetail, 'cf_4006_quota');
   assert.equal(redact({ errorDetail: 'AiError' }).errorDetail, 'AiError');
   assert.equal(redact({ errorDetail: 'AiError_quota' }).errorDetail, 'AiError_quota');
   const unsafe = redact({ errorDetail: 'Service unavailable for account 7f3a' });

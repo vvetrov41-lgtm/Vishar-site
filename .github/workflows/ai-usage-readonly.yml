@@ -1,0 +1,44 @@
+name: Workers AI usage (read-only)
+
+# Reads aggregate Workers AI usage for the production account from the
+# Cloudflare GraphQL Analytics API: date, model, script, counts, token and
+# Neuron sums. No prompt or response exists in that dataset; nothing is
+# written anywhere.
+on:
+  push:
+    branches:
+      - 'probe/ai-usage-*'
+
+permissions:
+  contents: read
+
+jobs:
+  usage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Checkout exact snapshot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify the snapshot is canonical
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch origin agent/platform-telegram-self-service --no-tags
+          git merge-base --is-ancestor origin/agent/platform-telegram-self-service "$GITHUB_SHA"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Read aggregate Workers AI usage
+        run: node scripts/ai-usage/read-usage.mjs

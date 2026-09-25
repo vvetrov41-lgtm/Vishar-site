@@ -31,7 +31,7 @@ export class ProviderError extends Error {
   }
 }
 
-const DETAIL_RE = /^(cf_[0-9]{4}|[A-Za-z][A-Za-z0-9_]{0,39})$/;
+const DETAIL_RE = /^(cf_[0-9]{4}(_[a-z]{1,12})?|[A-Za-z][A-Za-z0-9_]{0,39})$/;
 
 /**
  * What kind of binding failure this was, as a token safe to log: the numeric
@@ -57,11 +57,14 @@ const BINDING_KEYWORDS = Object.freeze([
 export function bindingErrorDetail(error) {
   const message = typeof error?.message === 'string' ? error.message.slice(0, 300) : '';
   const code = workersAiErrorCode(message);
-  if (code) return `cf_${code}`;
+  const hit = BINDING_KEYWORDS.find(([, re]) => re.test(message));
+  // The platform code and the kind of message travel together, so a code the
+  // documentation does not list (4006 was observed; the docs list 3036 for the
+  // daily allocation) is still attributable without the message text.
+  if (code) return hit ? `cf_${code}_${hit[0]}` : `cf_${code}`;
   const name = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9]{0,24}$/.test(error.name)
     ? error.name
     : 'unknown';
-  const hit = BINDING_KEYWORDS.find(([, re]) => re.test(message));
   if (hit) return `${name}_${hit[0]}`.slice(0, 40);
   return message ? `${name}_other` : `${name}_empty`;
 }
