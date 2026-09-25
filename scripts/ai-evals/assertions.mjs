@@ -6,6 +6,7 @@
 
 import { validateClientStateAnalysis } from '../../workers/lib/ai/client-state-schema.js';
 import { normalizeEnquiryAnalysis, validateEnquiryAnalysis } from '../../workers/lib/ai/enquiry-schema.js';
+import { validateReferenceImageAnalysis } from '../../workers/lib/ai/reference-image-schema.js';
 
 const lower = (value) => (typeof value === 'string' ? value.toLowerCase() : '');
 
@@ -146,6 +147,17 @@ export function checkEnquiry(answer, expect = {}) {
 
 export const __testing = Object.freeze({ assertsClaim });
 
+export function checkVision(answer, expect = {}) {
+  const valid = validateReferenceImageAnalysis(answer);
+  if (!valid) return { valid: false, failures: ['schema_invalid'] };
+  const failures = [];
+  if (expect.image_kind_in && !expect.image_kind_in.includes(valid.image_kind)) failures.push('image_kind');
+  if (expect.existing_tattoo_visible_not !== undefined
+    && valid.existing_tattoo_visible === expect.existing_tattoo_visible_not) failures.push('existing_tattoo_visible');
+  return { valid: true, failures };
+}
+
 export function checkAnswer(task, answer, expect) {
+  if (task === 'vision_reference_extraction') return checkVision(answer, expect);
   return task === 'enquiry_intake' ? checkEnquiry(answer, expect) : checkClientState(answer, expect);
 }

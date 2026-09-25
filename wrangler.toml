@@ -34,7 +34,7 @@ SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 VISHAR_ENVIRONMENT = "production"
 CRM_AI_INTAKE_ENABLED = "true"
 CRM_AI_IMAGES_ENABLED = "false"
-AI_ROUTE_ENQUIRY_INTAKE = "qwen,workers_ai"
+AI_ROUTE_ENQUIRY_INTAKE = "workers_ai,qwen"
 
 # Derived client AI state is enabled in production by explicit operator decision.
 # The database carries its own switch in crm_private.crm_agent_config, so jobs
@@ -42,7 +42,7 @@ AI_ROUTE_ENQUIRY_INTAKE = "qwen,workers_ai"
 # Vision remains separately guarded by the database vision_enabled switch.
 CRM_AGENT_ENABLED = "true"
 CRM_AGENT_VISION_ENABLED = "true"
-AI_ROUTE_CRM_CLIENT_STATE = "qwen,workers_ai"
+AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,qwen"
 AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
 
 # Model routing. Provider order per task and the model identifier per tier are
@@ -54,9 +54,9 @@ AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
 # The optional OpenAI adapter remains available for an explicitly configured
 # future route, but is not required by the current production AI path.
 #
-# Llama handles short, high-volume text work. Qwen leads structured extraction,
-# reasoning and vision work; Llama or Gemma on Workers AI provides the bounded
-# fallback depending on modality.
+# Chosen per task from the 2026-09-25 live eval (quality, failure rate, latency,
+# Neurons): Llama leads enquiry intake and CRM client state with Qwen as the
+# fallback; Qwen leads vision with Gemma (thinking off) as the fallback.
 AI_ROUTE_CONCEPT_CONSULT = "workers_ai,qwen"
 AI_ROUTE_AFTERCARE_SUPPORT = "workers_ai,qwen"
 AI_ROUTE_TEXT_SUMMARIZATION = "qwen,workers_ai"
@@ -66,6 +66,9 @@ AI_ROUTE_HIGH_QUALITY_REASONING = "qwen,workers_ai"
 AI_ROUTE_VISION_REFERENCE_UNDERSTANDING = "qwen,workers_ai"
 AI_ROUTE_VISION_DOCUMENT_EXTRACTION = "qwen,workers_ai"
 AI_MODEL_QWEN_VISION = "@cf/qwen/qwen3.8-27b"
+# Qwen rejects the full enquiry JSON Schema (Workers AI 8007); the transport
+# schema passed every intake check in the 2026-09-25 eval.
+AI_QWEN_ENQUIRY_SCHEMA = "transport"
 AI_MODEL_QWEN_TEXT = "@cf/qwen/qwen3.8-27b"
 AI_MODEL_OPENAI_TEXT = "gpt-4o-mini"
 AI_MODEL_OPENAI_VISION = "gpt-4o-mini"
@@ -95,8 +98,9 @@ binding = "AI"
 
 [env.preview.vars]
 VISHAR_ENVIRONMENT = "preview"
-AI_ROUTE_ENQUIRY_INTAKE = "qwen,workers_ai"
-AI_ROUTE_CRM_CLIENT_STATE = "qwen,workers_ai"
+AI_ROUTE_ENQUIRY_INTAKE = "workers_ai,qwen"
+AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,qwen"
+AI_QWEN_ENQUIRY_SCHEMA = "transport"
 AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
 AI_ROUTE_CONCEPT_CONSULT = "workers_ai,qwen"
 AI_ROUTE_AFTERCARE_SUPPORT = "workers_ai,qwen"

@@ -31,7 +31,10 @@ import {
 import {
   CLIENT_STATE_SYSTEM, diagnoseClientStateAnalysis, validateClientStateAnalysis,
 } from '../lib/ai/client-state-schema.js';
-import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES } from '../lib/ai/eval-fixtures.js';
+import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../lib/ai/eval-fixtures.js';
+import {
+  REFERENCE_IMAGE_SYSTEM, diagnoseReferenceImageAnalysis, validateReferenceImageAnalysis,
+} from '../lib/ai/reference-image-schema.js';
 import { projectClientStateInput } from '../lib/crm-agent.js';
 import { projectEnquiryAiInput } from '../lib/enquiry-ai.js';
 import { createLogger, newRequestId } from '../lib/logging.js';
@@ -146,7 +149,8 @@ function authorized(request, env) {
 async function runEvalProbe(env, body, fetchImpl) {
   const task = body?.task;
   const fixtures = task === 'crm_client_state' ? CLIENT_STATE_FIXTURES
-    : task === 'enquiry_intake' ? ENQUIRY_FIXTURES : null;
+    : task === 'enquiry_intake' ? ENQUIRY_FIXTURES
+      : task === 'vision_reference_extraction' ? VISION_FIXTURES : null;
   const fixtureId = typeof body?.fixture === 'string' ? body.fixture : '';
   const fixture = fixtures && Object.prototype.hasOwnProperty.call(fixtures, fixtureId) ? fixtures[fixtureId] : null;
   if (!fixture) return json(400, { ok: false, error: 'fixture_unknown' });
@@ -160,6 +164,39 @@ async function runEvalProbe(env, body, fetchImpl) {
     maxOutputTokens: variant.maxOutputTokens,
     model: typeof variant.model === 'string' ? variant.model : undefined,
   };
+
+  if (task === 'vision_reference_extraction') {
+    // Same system prompt, instruction and validator as a real reference-image
+    // job; only the image is the repository's synthetic fixture.
+    const result = await runModelTask(
+      env,
+      task,
+      {
+        system: REFERENCE_IMAGE_SYSTEM,
+        input: 'Describe this client reference image using the required JSON contract.',
+        images: [fixture.image],
+      },
+      {
+        fetchImpl,
+        logger: createLogger(newRequestId()),
+        validateJson: (value) => (validateReferenceImageAnalysis(value) !== null
+          ? true : diagnoseReferenceImageAnalysis(value) ?? 'contract'),
+        experiment,
+      },
+    );
+    return json(200, {
+      ok: result.ok,
+      task,
+      fixture: fixtureId,
+      provider: result.provider ?? null,
+      model: result.model ?? null,
+      fallbackUsed: result.fallbackUsed ?? false,
+      errorCode: result.errorCode ?? null,
+      durationMs: result.durationMs,
+      attempts: result.attempts,
+      answer: result.ok ? result.json : null,
+    });
+  }
 
   const isState = task === 'crm_client_state';
   const input = isState ? projectClientStateInput(fixture.input) : projectEnquiryAiInput(fixture.input);

@@ -9,7 +9,7 @@
 // Output: per-variant validity, check pass rate, first-attempt outcome codes,
 // p50/p95 latency and token means, as JSON and as a Markdown table.
 import { readFileSync, appendFileSync } from 'node:fs';
-import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
+import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
 import { checkAnswer } from './assertions.mjs';
 
 const endpoint = process.env.ENDPOINT;
@@ -67,7 +67,8 @@ for (const entry of plan.variants) {
   const fixtures = Array.isArray(subset)
     ? EVAL_FIXTURE_IDS[entry.task].filter((id) => subset.includes(id))
     : EVAL_FIXTURE_IDS[entry.task];
-  const expectations = entry.task === 'enquiry_intake' ? ENQUIRY_FIXTURES : CLIENT_STATE_FIXTURES;
+  const expectations = entry.task === 'enquiry_intake' ? ENQUIRY_FIXTURES
+    : entry.task === 'vision_reference_extraction' ? VISION_FIXTURES : CLIENT_STATE_FIXTURES;
   const rows = [];
   for (let repeat = 0; repeat < plan.repeats; repeat += 1) {
     for (const fixture of fixtures) {

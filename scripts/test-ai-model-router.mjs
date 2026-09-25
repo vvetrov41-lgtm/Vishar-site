@@ -186,7 +186,12 @@ await test('every declared task resolves to known providers and bounded limits',
 await test('chain order follows Workers AI cost, not the old vendor assumption', () => {
   assert.deepEqual(
     [...tasks.resolveTask({}, 'enquiry_intake', router.PROVIDER_IDS).chain],
-    ['qwen', 'workers_ai'],
+    ['workers_ai', 'qwen'],
+  );
+  // Routine CRM extraction leads with Llama too, per the live eval.
+  assert.deepEqual(
+    [...tasks.resolveTask({}, 'crm_client_state', router.PROVIDER_IDS).chain],
+    ['workers_ai', 'qwen'],
   );
   // Short, high-volume public replies stay on the cheap Llama tier and escalate.
   for (const name of ['concept_consult', 'aftercare_support']) {
@@ -319,6 +324,21 @@ await test('Qwen bounds structured extraction and uses JSON mode', async () => {
   assert.equal(stub.calls[0].input.max_completion_tokens, 900);
   assert.deepEqual(stub.calls[0].input.response_format, { type: 'json_object' });
   assert.equal('max_tokens' in stub.calls[0].input, false);
+});
+
+await test('Workers AI switches thinking off for Gemma and keeps Llama unchanged', async () => {
+  const stub = aiBinding(() => ({ response: '{"ok":true}' }));
+  const request = { ...visionInput, maxOutputTokens: 900, temperature: 0, responseFormat: 'json', responseSchema: null };
+  await llama.invoke({ config: llama.configure({ AI: stub.AI }, 'vision'), request, signal: new AbortController().signal });
+  assert.equal(stub.calls[0].model, '@cf/google/gemma-4-26b-a4b-it');
+  assert.deepEqual(stub.calls[0].input.chat_template_kwargs, { enable_thinking: false });
+  assert.equal('reasoning_effort' in stub.calls[0].input, false);
+
+  const text = { ...request, images: [] };
+  await llama.invoke({ config: llama.configure({ AI: stub.AI }, 'text'), request: text, signal: new AbortController().signal });
+  assert.equal(stub.calls[1].model, '@cf/meta/llama-3.1-8b-instruct-fast');
+  assert.equal('chat_template_kwargs' in stub.calls[1].input, false);
+  assert.equal(stub.calls[1].input.reasoning_effort, 'low');
 });
 
 await test('Qwen vision needs no OpenAI key', async () => {

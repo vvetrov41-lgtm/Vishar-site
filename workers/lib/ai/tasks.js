@@ -44,10 +44,14 @@ export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
 export const ALLOWED_IMAGE_MIME_TYPES = Object.freeze(['image/jpeg', 'image/png', 'image/webp']);
 
 const TASKS = Object.freeze({
+  // Llama leads: in the 2026-09-25 live eval it was schema-valid and passed
+  // every semantic check on all intake fixtures at ~3 s and ~18 Neurons a
+  // call, while Qwen needed ~16 s and ~250 Neurons for the same result. Qwen
+  // (transport schema) remains the fallback.
   enquiry_intake: {
     capability: 'extraction',
     modality: 'text',
-    chain: ['qwen', 'workers_ai'],
+    chain: ['workers_ai', 'qwen'],
     timeoutMs: 30_000,
     maxOutputTokens: 1_400,
     temperature: 0,
@@ -115,17 +119,19 @@ const TASKS = Object.freeze({
     structured: false,
   },
 
-  // Derived CRM client state. Qwen leads because the brief is a structured
-  // extraction over a bounded context, which is what this tier is already
-  // trusted with for enquiry intake; Workers AI backs it up so a Qwen outage
-  // degrades the brief rather than stopping it. The output ceiling is the
+  // Derived CRM client state. Llama leads: in the 2026-09-25 live eval it was
+  // schema-valid on every fixture and passed 5 of 6 semantic checks (the miss
+  // was the waiting side, which the deterministic layer owns) at ~2 s and
+  // ~15-30 Neurons a call. Qwen, the previous lead, timed out on a third of
+  // calls at ~200-350 Neurons each and showed no measurable quality gain, so it
+  // is kept only as the fallback. The output ceiling is the
   // largest here because one call returns a summary, a brief and a
   // recommendation, and a truncated answer fails schema validation and is
   // paid for twice.
   crm_client_state: {
     capability: 'extraction',
     modality: 'text',
-    chain: ['qwen', 'workers_ai'],
+    chain: ['workers_ai', 'qwen'],
     timeoutMs: 30_000,
     maxOutputTokens: 1_800,
     temperature: 0,
