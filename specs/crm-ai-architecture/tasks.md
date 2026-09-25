@@ -9,7 +9,10 @@ guarded live eval. No client text is recorded here.
   - First real production job 2026-09-24 08:05 UTC: Qwen `provider_timeout`
     at 30 000 ms, Llama fallback succeeded in 3 436 ms, per-attempt tokens and
     finish reason recorded.
-- [x] Phase 1: model reliability and evaluation (PRs #871, #873, #876, #880–#884, #886, #888)
+- [ ] Phase 1: model reliability and evaluation (PRs #871, #873, #876, #880–#884, #886, #888)
+  - Open until real production telemetry confirms each route: client state
+    is confirmed (below); intake and vision are confirmed only by synthetic
+    probes/evals so far, which create no production records.
   - 4006 (2026-09-24 ~19:15 UTC onward): a Workers AI platform code taken
     from the binding exception, kept separate from our class
     (`provider_rate_limited`). It is not in the public error table, which
@@ -45,7 +48,8 @@ guarded live eval. No client text is recorded here.
     `gathering_information`; Gmail acknowledgements were never matched.
     waiting_on disagreement fell to 14/32 after release.
   - Remaining stage disagreement is mostly against stale AI briefs (Phase 6a).
-- [ ] Phase 3: narrow client-state contract (#890, draft, CI green; waits for
+- [ ] Phase 3: narrow client-state contract (#890, draft; CRM validation
+      36179775264 green on head ff27a7f; waits for
       the Phase 2 shadow report on briefs refreshed by the sweep)
 - [ ] Phase 4: unified Today / Pulse (#891, stacked on #890; behind
       `crm_agent_config.today_pulse` and `CRM_TODAY_PULSE_ENABLED`)
