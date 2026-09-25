@@ -535,9 +535,15 @@ await test('binding exceptions are classified by their Workers AI code only', ()
 await test('a binding failure carries a bounded diagnostic token, never its message', async () => {
   const d = (message, name) => errors.bindingErrorDetail(Object.assign(new Error(message), name ? { name } : {}));
   assert.equal(d('AiError: 3023: Service unavailable for account 7f3a'), 'cf_3023');
-  assert.equal(d('model not available on this plan'), 'Error');
-  assert.equal(d('x', 'AiError'), 'AiError');
-  assert.equal(d('x', 'weird name; drop table'), 'unknown');
+  assert.equal(d('model not available on this plan'), 'Error_other');
+  assert.equal(d('x', 'AiError'), 'AiError_other');
+  assert.equal(d('', 'AiError'), 'AiError_empty');
+  assert.equal(d('You have used up your daily free allocation for account 7f3a', 'AiError'), 'AiError_quota');
+  assert.equal(d('This model requires the Workers Paid plan', 'AiError'), 'AiError_plan');
+  assert.equal(d('Workers AI is disabled for this account', 'AiError'), 'AiError_disabled');
+  assert.equal(d('No such model @cf/x', 'AiError'), 'AiError_model');
+  assert.equal(d('AiError 7003 something'), 'cf_7003');
+  assert.equal(d('x', 'weird name; drop table'), 'unknown_other');
   assert.equal(new errors.ProviderError('provider_unavailable', 'account 7f3a').detail, null);
 
   const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
@@ -556,6 +562,7 @@ await test('the production logger keeps a bounded error detail and drops anythin
   const { redact } = await import('../workers/lib/logging.js');
   assert.equal(redact({ errorDetail: 'cf_3023' }).errorDetail, 'cf_3023');
   assert.equal(redact({ errorDetail: 'AiError' }).errorDetail, 'AiError');
+  assert.equal(redact({ errorDetail: 'AiError_quota' }).errorDetail, 'AiError_quota');
   const unsafe = redact({ errorDetail: 'Service unavailable for account 7f3a' });
   assert.equal(unsafe.errorDetail, undefined);
   assert.equal(unsafe.droppedFields, 1);
