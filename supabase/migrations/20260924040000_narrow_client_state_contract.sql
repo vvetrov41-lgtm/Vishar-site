@@ -175,9 +175,10 @@ as $$
 $$;
 
 
+-- Same private ACL as 20260914183614: SECURITY DEFINER service RPCs call this
+-- helper as its owner; no API role, service_role included, executes it.
 revoke execute on function crm_private.client_ai_context(uuid, uuid)
-  from public, anon, authenticated;
-grant execute on function crm_private.client_ai_context(uuid, uuid) to service_role;
+  from public, anon, authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- Deterministic fields on write
