@@ -115,7 +115,9 @@ insert into public.crm_agent_jobs (
   id, artist_id, workspace_id, client_id, job_type, source_event_id, snapshot_hash, status, attempts
 )
 select 'e8081111-1111-4111-8111-111111111111', a.id, a.workspace_id, 'e8011111-1111-4111-8111-111111111111',
-       'refresh_client_ai_state', 'contract-test:event', repeat('d', 64), 'succeeded', 1
+       'refresh_client_ai_state', 'contract-test:event',
+       crm_private.client_ai_watermark('a1111111-1111-4111-8111-111111111111', 'e8011111-1111-4111-8111-111111111111'),
+       'succeeded', 1
 from public.artists a where a.id = 'a1111111-1111-4111-8111-111111111111';
 
 select is(public.service_record_client_reply_state('e8081111-1111-4111-8111-111111111111', 'no_reply_needed') ->> 'status',
@@ -125,8 +127,23 @@ select results_eq(
      from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e8011111-1111-4111-8111-111111111111') $$,
   $$ values ('no_reply_needed'::text, 'classifier'::text, true) $$,
   '"thanks, see you then" keeps the last-speaker fact but owes no reply');
+select is(public.service_record_client_reply_state('e8081111-1111-4111-8111-111111111111', 'no_reply_needed') ->> 'status',
+  'already_recorded', 'a retried call records no second mark');
 select is(public.service_record_client_reply_state('e8081111-1111-4111-8111-111111111111', 'free text') ->> 'status',
   'ignored', 'only the closed reply-state vocabulary is accepted');
+
+-- A newer inbound the model never read: the classification is discarded.
+insert into public.communication_messages (
+  id, conversation_id, artist_id, channel, direction, origin, status, body, provider_timestamp
+) values ('e8071111-1111-4111-8111-111111111112', 'e8061111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'inbound', 'contact', 'received',
+  'Actually, can we talk about the price?', now() - interval '1 minute');
+select is(public.service_record_client_reply_state('e8081111-1111-4111-8111-111111111111', 'no_reply_needed') ->> 'status',
+  'stale', 'a mark from before a newer client message is discarded');
+select is(
+  (select count(*)::int from crm_private.client_reply_marks
+   where client_id = 'e8011111-1111-4111-8111-111111111111' and source = 'classifier'),
+  1, 'the newer message carries no classifier mark');
 
 select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
 select throws_ok($$ select public.service_record_client_reply_state('e8081111-1111-4111-8111-111111111111', 'no_reply_needed') $$,
