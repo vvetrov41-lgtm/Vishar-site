@@ -245,17 +245,29 @@ export async function handleAiRouterProbeRequest(request, env, { fetchImpl = fet
   const probe = Object.prototype.hasOwnProperty.call(PROBES, task) ? PROBES[task] : null;
   if (!probe) return json(400, { ok: false, error: 'task_not_probeable' });
 
+  // Enquiry intake is judged exactly as a real job judges it: normalised, then
+  // validated inside the router, so an invalid answer falls back the same way.
+  const enquiryValidate = task === 'enquiry_intake'
+    ? (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value))
+      ?? diagnoseEnquiryAnalysis(normalizeEnquiryAnalysis(value)) ?? 'contract'
+    : undefined;
   const result = await runModelTask(
     env,
     task,
     { system: probe.system, input: probe.input, images: probe.images },
-    { fetchImpl, logger: createLogger(newRequestId()), requiredKeys: probe.requiredKeys ?? [] },
+    {
+      fetchImpl,
+      logger: createLogger(newRequestId()),
+      requiredKeys: probe.requiredKeys ?? [],
+      ...(enquiryValidate ? { validateJson: enquiryValidate } : {}),
+    },
   );
 
   // Attempts are already bounded operational tokens. The preview is the model's
   // answer to a fixed synthetic prompt, so echoing a short slice proves real
   // inference without exposing anything about a person.
-  const schemaValid = task === 'enquiry_intake' ? Boolean(result.ok && validateEnquiryAnalysis(result.json)) : null;
+  const schemaValid = task === 'enquiry_intake'
+    ? Boolean(result.ok && validateEnquiryAnalysis(normalizeEnquiryAnalysis(result.json))) : null;
   const ok = result.ok && schemaValid !== false;
   return json(ok ? 200 : 502, {
     ok,
