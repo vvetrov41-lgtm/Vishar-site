@@ -20,6 +20,7 @@ import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
 import { summariseToday, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
+import { pulseToTodayItems, type TodayPulse } from '../lib/today-pulse';
 import { typeLabel } from './AppointmentsPage';
 import { daysAgoIso } from '../lib/appointment-api';
 import type { Appointment } from '../lib/appointment-api';
@@ -41,6 +42,8 @@ interface TodayData {
   activity: ActivityEntry[];
   acknowledgements: AttentionAcknowledgement[];
   clientNames: Map<string, string>;
+  /** The server pulse, when it answered. Rendered only while it is enabled. */
+  pulse: TodayPulse | null;
 }
 
 interface GmailDiscoveryState {
@@ -67,7 +70,7 @@ export function DashboardPage() {
 
     // Each read is asked for only where the role could hold the capability.
     // The database still decides what comes back.
-    const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity, acknowledgements] = await Promise.all([
+    const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity, acknowledgements, pulse] = await Promise.all([
       // Audit M-5: Today reads current and upcoming sessions (plus recent history
       // for engagement checks), never the earliest 300 ever booked.
       can(role, 'viewSessions') ? api.listAppointments({ artistId, from: daysAgoIso(90) }) : Promise.resolve([]),
@@ -80,6 +83,9 @@ export function DashboardPage() {
       can(role, 'viewNotifications')
         ? api.listAttentionAcknowledgements(artistId).catch(() => [])
         : Promise.resolve([]),
+      // The server pulse is additive: if it cannot be read, Today keeps the
+      // list it computes here, exactly as before.
+      api.getTodayPulse(artistId).catch(() => null),
     ]);
 
     // The finance RPC is per artist. When no artist is chosen, ask for every
@@ -128,6 +134,7 @@ export function DashboardPage() {
       activity,
       acknowledgements,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
+      pulse,
     };
   }, [api, role, selectedArtistId, mayManageFinance, mayViewEnquiries]);
 
@@ -187,6 +194,10 @@ export function DashboardPage() {
     failedJobCount: data.failedJobCount,
     clientName: (clientId) => data.clientNames.get(clientId) ?? null,
   });
+  // One engine for Today and Telegram once the server pulse is switched on.
+  // The schedule below still comes from the appointments read here.
+  const serverPulse = data.pulse?.enabled ? data.pulse : null;
+  const needsYou = serverPulse ? pulseToTodayItems(serverPulse) : snapshot.needsYou;
 
   async function dismissAttention(item: AttentionItemRef, key: string) {
     setDismissing(key);
@@ -209,11 +220,12 @@ export function DashboardPage() {
 
       <Section title={t('today.needsYou')}>
         {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
-        {snapshot.needsYou.length === 0 ? (
+        {serverPulse ? <PulseSummary pulse={serverPulse} /> : null}
+        {needsYou.length === 0 ? (
           <EmptyState compact title={t('today.allClear')} hint={t('today.allClearHint')} />
         ) : (
           <div className="list">
-            {snapshot.needsYou.map((item) => (
+            {needsYou.map((item) => (
               <NeedsYouRow
                 key={item.key}
                 item={item}
@@ -335,7 +347,18 @@ function NeedsYouRow({
       ? t('today.failedJobs', { count: item.detail })
       : item.kind === 'reply' && item.detail
         ? channelLabel(item.detail)
-        : item.detail;
+        : item.kind === 'conflict' && item.detail
+          ? t(`today.conflict.${item.detail}`)
+          : item.kind === 'unmatched_inbound' && item.detail
+            ? t('today.unknownSenders', { count: item.detail })
+            : item.kind === 'client_follow_up_due' || item.kind === 'client_cold'
+              ? null
+              : item.detail;
+  // An AI next action is shown as what it is: a suggestion, labelled, never
+  // the reason the row exists.
+  const suggestion = item.aiSuggestion
+    ? t('today.aiSuggestion', { action: t(`today.aiAction.${item.aiSuggestion.action_type}`) })
+    : null;
 
   const content = (
     <>
@@ -347,6 +370,7 @@ function NeedsYouRow({
         {detail ? <><span className="badge">{detail}</span>{' '}</> : null}
         {when}
       </div>
+      {suggestion ? <div className="meta today-ai-suggestion">{suggestion}</div> : null}
     </>
   );
 
@@ -365,6 +389,36 @@ function NeedsYouRow({
           {t('today.dismiss')}
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * "What changed since yesterday" and the two speed numbers, from the server
+ * pulse. A source that could not be read is said out loud rather than shown
+ * as nothing having happened.
+ */
+function PulseSummary({ pulse }: { pulse: TodayPulse }) {
+  const { t } = useLanguage();
+  if (pulse.artists.length === 0) return null;
+  const sum = (pick: (a: TodayPulse['artists'][number]) => number) =>
+    pulse.artists.reduce((total, artist) => total + (Number(pick(artist)) || 0), 0);
+  const medians = pulse.artists
+    .map((artist) => artist.median_first_reply_hours)
+    .filter((value): value is number => typeof value === 'number');
+  const staleGmail = pulse.artists.some((artist) => artist.sources?.gmail_snapshot === 'stale');
+  return (
+    <div className="today-pulse-summary">
+      <p className="meta">
+        {t('today.sinceYesterday', {
+          enquiries: sum((a) => a.changes.new_enquiries),
+          messages: sum((a) => a.changes.inbound_messages),
+          sessions: sum((a) => a.changes.sessions_booked),
+          payments: sum((a) => a.changes.payments_received),
+        })}
+        {medians.length ? <>{' · '}{t('today.medianFirstReply', { hours: Math.max(...medians) })}</> : null}
+      </p>
+      {staleGmail ? <p className="notice warn">{t('today.gmailStale')}</p> : null}
     </div>
   );
 }
