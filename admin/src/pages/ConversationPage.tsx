@@ -27,6 +27,7 @@ import {
   participantLabel,
   type ConversationDetail,
   type ConversationMessage,
+  type LinkSuggestion,
 } from '../lib/communications-api';
 import type { Client } from '../lib/types';
 
@@ -41,6 +42,9 @@ const COPY = {
     unmatchedHint:
       'Nothing was created automatically. Link an existing client, create a new one, or turn this into an enquiry when it really is one.',
     linkExisting: 'Link an existing client',
+    suggestionPhone: 'Looks like {name}: the same phone number is on their record.',
+    suggestionInstagram: 'Looks like {name}: the same Instagram handle is on their record.',
+    linkSuggested: 'Link to {name}',
     searchClients: 'Search clients by name',
     noClientMatches: 'No matching clients',
     link: 'Link',
@@ -91,6 +95,9 @@ const COPY = {
     unmatchedHint:
       'Ничего не создано автоматически. Свяжите с существующим клиентом, создайте нового или оформите заявку, если это действительно заявка.',
     linkExisting: 'Связать с существующим клиентом',
+    suggestionPhone: 'Похоже, это {name}: у клиента в карточке тот же номер телефона.',
+    suggestionInstagram: 'Похоже, это {name}: у клиента в карточке тот же Instagram.',
+    linkSuggested: 'Связать с {name}',
     searchClients: 'Поиск клиента по имени',
     noClientMatches: 'Совпадений нет',
     link: 'Связать',
@@ -153,6 +160,14 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   } = useAsync<ConversationDetail | null>(
     () => api.getConversation(conversationId),
     [api, conversationId],
+  );
+
+  // Asked only for an unknown sender; a failure simply shows no suggestion.
+  const { data: suggestion } = useAsync<LinkSuggestion | null>(
+    () => (conversation && conversation.link_state === 'unmatched'
+      ? api.getLinkSuggestion(conversationId)
+      : Promise.resolve(null)),
+    [api, conversationId, conversation?.link_state],
   );
 
   const {
@@ -286,6 +301,22 @@ export function ConversationPage({ conversationId }: { conversationId: string })
         <section className="card">
           <h3>{copy.unmatchedTitle}</h3>
           <p className="notice">{copy.unmatchedHint}</p>
+          {suggestion?.status === 'suggested' ? (
+            <div className="notice conversation-link-suggestion">
+              <p>
+                {(suggestion.match === 'instagram' ? copy.suggestionInstagram : copy.suggestionPhone)
+                  .replace('{name}', suggestion.client_name ?? '')}
+              </p>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => run(() => api.linkClient(conversationId, suggestion.client_id))}
+              >
+                {copy.linkSuggested.replace('{name}', suggestion.client_name ?? '')}
+              </button>
+            </div>
+          ) : null}
           <div className="actions">
             <button type="button" onClick={() => setPanel(panel === 'link' ? 'none' : 'link')}>
               {copy.linkExisting}
