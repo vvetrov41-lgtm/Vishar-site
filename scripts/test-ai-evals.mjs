@@ -8,8 +8,8 @@
 // bounded codes. Model quality is measured separately by the guarded live eval
 // (scripts/ai-evals/run-live-eval.mjs), which reuses these fixtures and checks.
 import assert from 'node:assert/strict';
-import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
-import { checkClientState, checkEnquiry } from './ai-evals/assertions.mjs';
+import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
+import { checkClientState, checkEnquiry, checkVision } from './ai-evals/assertions.mjs';
 import { projectClientStateInput } from '../workers/lib/crm-agent.js';
 import { projectEnquiryAiInput } from '../workers/lib/enquiry-ai.js';
 import { runModelTask } from '../workers/lib/ai/router.js';
@@ -290,6 +290,41 @@ await test('probe eval mode rejects an unknown fixture and stays closed without 
   const closed = await handleAiRouterProbeRequest(probeRequest({ mode: 'eval', task: 'crm_client_state', fixture: 'deposit_paid' }),
     { AI: { run: async () => ({}) } });
   assert.equal(closed.status, 404);
+});
+
+const STAR_ANSWER = {
+  image_kind: 'reference_artwork', existing_tattoo_visible: false, body_area: null,
+  subjects: ['black five-pointed shape'], composition: 'Centred shape on a white background.',
+  palette: 'Black on white.', quality_limitations: ['low resolution'], summary: 'A black star-like silhouette.',
+};
+
+await test('probe eval runs structured vision on the synthetic image through Gemma with thinking off', async () => {
+  const calls = [];
+  const env = {
+    AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: PROBE_TOKEN,
+    AI: { run: async (model, input) => { calls.push({ model, input }); return { response: JSON.stringify(STAR_ANSWER) }; } },
+  };
+  const response = await handleAiRouterProbeRequest(probeRequest({
+    mode: 'eval', task: 'vision_reference_extraction', fixture: 'synthetic_star',
+    variant: { provider: 'workers_ai' }, input: 'CALLER TEXT',
+  }), env);
+  const body = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(body.ok, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].model, '@cf/google/gemma-4-26b-a4b-it');
+  assert.deepEqual(calls[0].input.chat_template_kwargs, { enable_thinking: false });
+  const sent = JSON.stringify(calls[0].input);
+  assert.ok(!sent.includes('CALLER TEXT'));
+  assert.ok(sent.includes(VISION_FIXTURES.synthetic_star.image.dataBase64));
+  assert.deepEqual(checkVision(body.answer, VISION_FIXTURES.synthetic_star.expect), { valid: true, failures: [] });
+});
+
+await test('vision check rejects an invalid shape and a claimed existing tattoo', () => {
+  assert.deepEqual(checkVision({ image_kind: 'reference_artwork' }).failures, ['schema_invalid']);
+  const claimed = { ...STAR_ANSWER, image_kind: 'existing_tattoo', existing_tattoo_visible: true };
+  assert.deepEqual(checkVision(claimed, VISION_FIXTURES.synthetic_star.expect).failures,
+    ['image_kind', 'existing_tattoo_visible']);
 });
 
 console.log(`ai evals (offline): ${passes} tests passed`);

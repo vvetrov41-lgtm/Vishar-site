@@ -299,7 +299,24 @@ export const ENQUIRY_FIXTURES = Object.freeze({
   },
 });
 
+// Reference-image fixtures. The image is a 96x96 black five-pointed shape on
+// white, generated for this repository: not a photograph and not a client
+// image. It exercises the structured vision contract end to end.
+export const VISION_FIXTURES = Object.freeze({
+  synthetic_star: {
+    image: Object.freeze({
+      mimeType: 'image/png',
+      dataBase64: 'iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAIAAABt+uBvAAABl0lEQVR42u3cYQrDMAiGYY+Q+182g/0ajJatUfNpXg9g9FkpVLvaJG7DIAAIIIAAAggggAAiAAIIIIAAAgigqxjv2N6Sbxn+QJ+RjBJxdCxQAlP0oRlAEVJpZ6UCedWddtAGoMXqE46QAHrWQHR+LaC/2ojLrA70SydBacsA3TcTkROgdkBX/bgnLAz03ZJvtg5An105ptIad4gA6c6DXH55ncsHoB0TxbE71EeuAEkb1RjaAyRqpL7VAEjaKKiL2MVhdZ2ZsFktrTNzVs91dWbabr6oDjfpgg+raljWjMadyVrSODJZb511I2uvs2hk7WkWmewcnWdGdpTOAyM7TedfI4D8gEavcAYaHcMNaPQNgOKBRvcAKBjI3WiuvVineA9yfHNjMVVEMRLPYl7W7pVsG5gFXYzulahsNXKACq99AAIIIIAAAgigU4Dm1j8RAgTQCUBz07+YAQLoHKDfjTZWCJA20Mz9ZkxJoHuj7bUBVAFoxoyTWwF9G4lUpfWZQDWdKfgdRSkdgAoCqQVAAAEEEEAA1Y0XLMjDchaTLV4AAAAASUVORK5CYII=',
+    }),
+    expect: {
+      image_kind_in: ['reference_artwork', 'other', 'unclear'],
+      existing_tattoo_visible_not: true,
+    },
+  },
+});
+
 export const EVAL_FIXTURE_IDS = Object.freeze({
   crm_client_state: Object.freeze(Object.keys(CLIENT_STATE_FIXTURES)),
   enquiry_intake: Object.freeze(Object.keys(ENQUIRY_FIXTURES)),
+  vision_reference_extraction: Object.freeze(Object.keys(VISION_FIXTURES)),
 });
