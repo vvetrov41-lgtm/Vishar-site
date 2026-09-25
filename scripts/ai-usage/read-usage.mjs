@@ -8,7 +8,7 @@
 const token = process.env.CLOUDFLARE_API_TOKEN;
 const account = process.env.CLOUDFLARE_ACCOUNT_ID;
 if (!token || !account) throw new Error('CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are required');
-const days = Math.min(Math.max(Number(process.env.USAGE_DAYS || 3), 1), 7);
+const days = Math.min(Math.max(Number(process.env.USAGE_DAYS || 7), 1), 7);
 
 async function gql(query, variables = {}) {
   const response = await fetch('https://api.cloudflare.com/client/v4/graphql', {
@@ -41,11 +41,22 @@ if (!dataset) { console.log('no Workers AI dataset is visible to this token'); p
 const groupType = baseType(accountFields.find((f) => f.name === dataset)?.type);
 const groupFields = groupType ? await typeFields(groupType) : [];
 const dimType = baseType(groupFields.find((f) => f.name === 'dimensions')?.type);
-const sumType = baseType(groupFields.find((f) => f.name === 'sum')?.type);
 const dims = dimType ? (await typeFields(dimType)).map((f) => f.name) : ['date', 'modelId'];
-const sums = sumType ? (await typeFields(sumType)).map((f) => f.name) : [];
-console.log('dimensions:', JSON.stringify(dims));
-console.log('sums:', JSON.stringify(sums));
+console.log('group fields:', JSON.stringify(groupFields.map((f) => f.name)));
+
+// Every aggregate object on the group (sum, avg, max, ...) and its numeric
+// scalar fields. Neurons may live under any of them.
+const aggregates = {};
+for (const f of groupFields) {
+  if (['dimensions', 'count'].includes(f.name)) continue;
+  const t = baseType(f.type);
+  const sub = t ? await typeFields(t) : [];
+  const numeric = sub.filter((x) => ['Int', 'Float', 'int', 'float', 'uint64', 'float64', 'Long']
+    .includes(baseType(x.type)) || /^(u?int|float)/i.test(String(baseType(x.type)))).map((x) => x.name);
+  if (numeric.length) aggregates[f.name] = numeric;
+}
+console.log('aggregates:', JSON.stringify(aggregates));
+const sums = Object.entries(aggregates).flatMap(([k, v]) => v.map((n) => `${k}.${n}`));
 
 const wantDims = ['date', 'modelId', 'model', 'scriptName', 'source', 'errorCode', 'statusCode']
   .filter((d) => dims.includes(d));
@@ -57,7 +68,7 @@ const since = dateFilter === 'date_geq' ? start.toISOString().slice(0, 10) : sta
 const query = `query($a: string, $since: ${dateFilter === 'date_geq' ? 'Date' : 'Time'}) { viewer { accounts(filter: { accountTag: $a }) {
   rows: ${dataset}(limit: 1000, filter: { ${dateFilter}: $since }) {
     count
-    ${sums.length ? `sum { ${sums.join(' ')} }` : ''}
+    ${Object.entries(aggregates).map(([k, v]) => `${k} { ${v.join(' ')} }`).join('\n    ')}
     dimensions { ${wantDims.join(' ')} }
   } } } }`;
 const result = await gql(query, { a: account, since });
@@ -71,5 +82,5 @@ rows.sort((x, y) => String(x.dimensions.date ?? '').localeCompare(String(y.dimen
 console.log(`rows: ${rows.length} (last ${days} days)`);
 console.log(`| ${wantDims.join(' | ')} | count | ${sums.join(' | ')} |`);
 for (const r of rows) {
-  console.log(`| ${wantDims.map((d) => r.dimensions[d] ?? '').join(' | ')} | ${r.count} | ${sums.map((s) => r.sum?.[s] ?? '').join(' | ')} |`);
+  console.log(`| ${wantDims.map((d) => r.dimensions[d] ?? '').join(' | ')} | ${r.count} | ${sums.map((path) => { const [k, n] = path.split('.'); return r[k]?.[n] ?? ''; }).join(' | ')} |`);
 }
