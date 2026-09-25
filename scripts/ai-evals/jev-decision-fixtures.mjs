@@ -31,8 +31,10 @@ export const JEV_QUESTIONS = Object.freeze({
   commitment_risk: {
     type: 'noul',
     instructions: [
-      'Would properly handling this state require an artist or operator decision about price, session count, dates, booking, deposit, tattoo feasibility, health/aftercare escalation, or another commitment?',
-      'Answer false for routine acknowledgements and simple non-commitment replies.',
+      'Would handling the current message now require an artist or operator decision about price, session count, dates, booking, deposit, tattoo feasibility, health/aftercare escalation, or another commitment-sensitive matter?',
+      'Do not mark this true merely because the artist may review ordinary tattoo details later.',
+      'Newly supplied size, colour, placement, references or other routine details are false unless the current message also asks for a commitment-sensitive decision.',
+      'Routine acknowledgements and simple non-commitment replies are false.',
     ].join(' '),
   },
 });
@@ -165,5 +167,124 @@ export const JEV_FIXTURES = Object.freeze([
       allowed_actions: ['human_review'],
     }),
     expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'booked_reschedule_request',
+    state: crmState({
+      stage: 'booked',
+      has_booking: true,
+      deposit_status: 'paid',
+      latest_message: 'Could we move my appointment from the 10th to the 11th instead?',
+      allowed_actions: ['human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'asks_session_estimate',
+    state: crmState({
+      latest_message: 'How many full-day sessions do you think this sleeve will take?',
+      allowed_actions: ['human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'simple_studio_address_question',
+    state: crmState({
+      stage: 'booked',
+      has_booking: true,
+      latest_message: 'What is the studio address please?',
+      allowed_actions: ['reply_to_client'],
+    }),
+    expect: { reply_needed: true, next_action: 'reply_to_client', commitment_risk: false },
+  },
+  {
+    id: 'finished_tattoo_compliment',
+    state: crmState({
+      stage: 'aftercare',
+      has_booking: true,
+      latest_message: 'Four weeks healed now and it looks amazing. Thank you again!',
+      allowed_actions: ['no_action', 'reply_to_client'],
+    }),
+    expect: { reply_needed: false, next_action: 'no_action', commitment_risk: false },
+  },
+  {
+    id: 'aftercare_normal_itch_question',
+    state: crmState({
+      stage: 'aftercare',
+      has_booking: true,
+      latest_message: 'It is quite itchy on day four. Is that normal and should I put more cream on?',
+      allowed_actions: ['human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'client_changes_colour_preference',
+    state: crmState({
+      stage: 'gathering_information',
+      previous_studio_message: 'Would you prefer colour or black and grey?',
+      latest_message: 'I have decided on colour instead of black and grey.',
+      allowed_actions: ['reply_to_client', 'human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'reply_to_client', commitment_risk: false },
+  },
+  {
+    id: 'client_requests_cancellation',
+    state: crmState({
+      stage: 'booked',
+      has_booking: true,
+      deposit_status: 'paid',
+      latest_message: 'Unfortunately I need to cancel my appointment. Can you cancel it for me?',
+      allowed_actions: ['human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'client_asks_payment_confirmation',
+    state: crmState({
+      stage: 'deposit_pending',
+      deposit_status: 'requested',
+      latest_message: 'I have just sent the deposit. Can you confirm you received it?',
+      allowed_actions: ['human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'client_declines_for_now',
+    state: crmState({
+      stage: 'gathering_information',
+      latest_message: 'Thanks. I am going to think about it and come back to you in a few weeks.',
+      allowed_actions: ['await_client', 'no_action'],
+    }),
+    expect: { reply_needed: false, next_action: 'await_client', commitment_risk: false },
+  },
+  {
+    id: 'candidate_date_acceptance',
+    state: crmState({
+      stage: 'scheduling',
+      previous_studio_message: 'I may be able to offer the 10th or 11th, subject to confirmation.',
+      latest_message: 'The 10th works perfectly for me, please book it.',
+      allowed_actions: ['human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'human_review', commitment_risk: true },
+  },
+  {
+    id: 'sends_reference_only',
+    state: crmState({
+      stage: 'gathering_information',
+      latest_message: 'Here are the two reference images I mentioned. The first one is closer to the style I like.',
+      allowed_actions: ['reply_to_client', 'human_review'],
+    }),
+    expect: { reply_needed: true, next_action: 'reply_to_client', commitment_risk: false },
+  },
+  {
+    id: 'booked_travel_note',
+    state: crmState({
+      stage: 'booked',
+      has_booking: true,
+      deposit_status: 'paid',
+      latest_message: 'Just to let you know I have booked my train and will arrive about 30 minutes early.',
+      allowed_actions: ['no_action', 'reply_to_client'],
+    }),
+    expect: { reply_needed: false, next_action: 'no_action', commitment_risk: false },
   },
 ]);
