@@ -24,7 +24,15 @@ export function configure(env, modality) {
   return { binding, model };
 }
 
+// Models on this tier that think before answering by default. With thinking on,
+// the reasoning spends the whole output budget and the answer arrives empty
+// (live eval 2026-09-25: Gemma 4 and GLM 4.7 flash returned
+// provider_empty_response on every intake and client-state call). The
+// fallback tier needs a direct answer, so thinking is switched off for them.
+const THINKING_MODEL_RE = /^@cf\/(google\/gemma-4|zai-org\/glm-|qwen\/qwen3)/;
+
 export async function invoke({ config, request, signal }) {
+  const thinkingModel = THINKING_MODEL_RE.test(config.model);
   const transportRequest = request.responseSchema
     ? { ...request, responseSchema: ENQUIRY_AI_TRANSPORT_SCHEMA }
     : request;
@@ -35,9 +43,10 @@ export async function invoke({ config, request, signal }) {
     request: transportRequest,
     signal,
     jsonMode: structured,
-    reasoningEffort: structured ? 'low' : null,
+    reasoningEffort: structured && !thinkingModel ? 'low' : null,
+    disableThinking: thinkingModel,
     useMaxCompletionTokens: structured,
   });
 }
 
-export const __testing = Object.freeze({ DEFAULT_TEXT_MODEL, DEFAULT_VISION_MODEL });
+export const __testing = Object.freeze({ DEFAULT_TEXT_MODEL, DEFAULT_VISION_MODEL, THINKING_MODEL_RE });

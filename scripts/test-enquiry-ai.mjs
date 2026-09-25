@@ -180,7 +180,7 @@ await test('repairable Qwen output completes without a provider retry', async ()
   assert.equal(db.calls[0].args.p_result.fields.colour.value, 'black_and_grey');
 });
 
-await test('semantic-invalid Qwen output falls back to Workers AI before the CRM job fails', async () => {
+await test('semantic-invalid Llama output falls back to Qwen before the CRM job fails', async () => {
   const db = rpcRecorder();
   const attemptedModels = [];
   const aiEnv = {
@@ -188,7 +188,7 @@ await test('semantic-invalid Qwen output falls back to Workers AI before the CRM
     AI: {
       run: async (model) => {
         attemptedModels.push(model);
-        if (model.includes('/qwen/')) return { response: JSON.stringify({ fields: {} }) };
+        if (model.includes('/llama-')) return { response: JSON.stringify({ fields: {} }) };
         return { response: JSON.stringify(result()) };
       },
     },
@@ -196,8 +196,8 @@ await test('semantic-invalid Qwen output falls back to Workers AI before the CRM
   const response = await processEnquiryAiJob(aiEnv, job(), { supabase: db });
   assert.equal(response.outcome, 'succeeded');
   assert.equal(attemptedModels.length, 2);
-  assert.ok(attemptedModels[0].includes('/qwen/'));
-  assert.ok(attemptedModels[1].includes('/llama-'));
+  assert.ok(attemptedModels[0].includes('/llama-'));
+  assert.ok(attemptedModels[1].includes('/qwen/'));
   assert.deepEqual(db.calls.map((call) => call.name), ['service_complete_enquiry_ai_job']);
 });
 
