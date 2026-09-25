@@ -98,19 +98,30 @@ select is(
   crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'workflow_stage',
   'new_enquiry', 'an untouched new enquiry is at new_enquiry');
 
--- An operator acknowledgement after the message is an explicit no-reply mark.
+-- An operator acknowledgement after the message means the studio handled it
+-- (20260924035000): the studio's turn, taken when it was cleared.
 insert into public.attention_acknowledgements (artist_id, item_kind, entity_id, observed_at, acknowledged_at)
 values ('a1111111-1111-4111-8111-111111111111', 'conversation_reply', 'e7041111-1111-4111-8111-111111111111',
         now() - interval '30 hours', now() - interval '1 hour');
 select results_eq(
   $$ select reply_state, reply_state_source
      from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') $$,
-  $$ values ('no_reply_needed'::text, 'operator_ack'::text) $$,
+  $$ values ('handled'::text, 'operator_ack'::text) $$,
   'an operator acknowledgement after the latest inbound marks it handled'
 );
 select is(
   crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'sla_state',
   'ok', 'a handled message is no longer due');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'waiting_on_candidate',
+  'client', 'after the studio handled the message, the client is the one expected to move');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111') ->> 'workflow_stage',
+  'gathering_information', 'a new enquiry the studio already engaged with is no longer an untouched lead');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111',
+    now() + interval '8 days') ->> 'sla_reason',
+  'client_follow_up_due', 'follow-up timers run from the moment the message was handled');
 
 -- A newer inbound makes the acknowledgement moot.
 insert into public.communication_messages (
@@ -186,6 +197,52 @@ values ('e7091111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-1111111
 select ok(
   'consultation_booked_enquiry_new' = any(crm_private.attention_conflicts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111')),
   'a booked consultation while the enquiry is still new is a conflict');
+
+-- ---------------------------------------------------------------------------
+-- Handled time and engagement are tied to the right acknowledgement
+-- ---------------------------------------------------------------------------
+
+insert into public.clients (id, full_name, email) values
+  ('e7a01111-1111-4111-8111-111111111111', 'Two Enquiry Client', 'two@example.test');
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at,
+  created_at, updated_at
+) values
+  ('e7a11111-1111-4111-8111-111111111111', 'e7a01111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-9711', 'e7a21111-1111-4111-8111-111111111111',
+   repeat('a', 64), 'new', 'complete', 'Two Enquiry Client', 'two@example.test', '2026-08-05', now(),
+   now() - interval '20 days', now() - interval '20 days'),
+  ('e7a31111-1111-4111-8111-111111111111', 'e7a01111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-9712', 'e7a41111-1111-4111-8111-111111111111',
+   repeat('b', 64), 'new', 'complete', 'Two Enquiry Client', 'two@example.test', '2026-08-05', now(),
+   now() - interval '2 days', now() - interval '2 days');
+
+-- The operator clears the OLD enquiry's item today; the new one stays untouched.
+insert into public.attention_acknowledgements (artist_id, item_kind, entity_id, observed_at, acknowledged_at)
+values ('a1111111-1111-4111-8111-111111111111', 'new_enquiry', 'e7a11111-1111-4111-8111-111111111111',
+        now() - interval '20 days', now() - interval '1 hour');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7a01111-1111-4111-8111-111111111111') ->> 'workflow_stage',
+  'new_enquiry', 'clearing a sibling enquiry does not engage the newest one');
+
+-- A Gmail reply item is keyed by the client and counts as handled.
+insert into public.attention_acknowledgements (artist_id, item_kind, entity_id, observed_at, acknowledged_at)
+values ('a1111111-1111-4111-8111-111111111111', 'gmail_reply', 'e7a01111-1111-4111-8111-111111111111',
+        now() - interval '2 days', now() - interval '47 hours');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7a01111-1111-4111-8111-111111111111') ->> 'reply_state',
+  'handled', 'a cleared Gmail reply item, keyed by the client, counts as handled');
+select is(
+  crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7a01111-1111-4111-8111-111111111111') ->> 'workflow_stage',
+  'gathering_information', 'and it engages the newest enquiry it followed');
+
+-- handled_at is the click that covered the latest inbound, not the later,
+-- unrelated click on the old enquiry.
+select ok(
+  (crm_private.client_attention('a1111111-1111-4111-8111-111111111111', 'e7a01111-1111-4111-8111-111111111111') ->> 'handled_at')::timestamptz
+    < now() - interval '46 hours',
+  'the handled time comes from the acknowledgement that covers the latest message');
 
 -- ---------------------------------------------------------------------------
 -- Shadow report and recording
