@@ -181,7 +181,7 @@ jobs:
           node -e '
             const r = require("/tmp/enquiry.json");
             const attempts = Array.isArray(r.attempts) ? r.attempts : [];
-            const qwenAttempt = attempts.find((a) => a.provider === "qwen");
+            const llamaAttempt = attempts[0];
             const fallbackCodes = new Set([
               "provider_timeout",
               "provider_input_rejected",
@@ -192,25 +192,29 @@ jobs:
               "provider_empty_response",
               "output_invalid",
             ]);
-            if (!qwenAttempt) throw new Error("enquiry routing never attempted qwen");
-            if (!qwenAttempt.model.startsWith("cf-qwen-")) {
-              throw new Error(`unexpected qwen model ${qwenAttempt.model}`);
+            // Enquiry intake leads with Workers AI Llama and falls back to Qwen
+            // (routing chosen from the 2026-09-25 live eval).
+            if (!llamaAttempt || llamaAttempt.provider !== "workers_ai") {
+              throw new Error("enquiry routing did not lead with workers_ai");
+            }
+            if (!llamaAttempt.model.startsWith("cf-meta-llama-3.1-8b-instruct-fast")) {
+              throw new Error(`unexpected workers_ai model ${llamaAttempt.model}`);
             }
             if (r.schemaValid !== true) throw new Error("enquiry output failed the production schema");
             if (r.outputPreview !== null) throw new Error("private-schema probe returned an output preview");
 
-            if (r.provider === "qwen") {
-              if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected final qwen model ${r.model}`);
-              console.log(`Qwen enquiry schema valid: ${r.model} in ${r.durationMs}ms`);
-            } else if (r.provider === "workers_ai") {
-              if (r.fallbackUsed !== true) throw new Error("workers_ai served enquiry without fallbackUsed=true");
-              if (qwenAttempt.outcome !== "failed" || !fallbackCodes.has(qwenAttempt.errorCode)) {
-                throw new Error(`unexpected qwen fallback cause ${qwenAttempt.errorCode}`);
-              }
+            if (r.provider === "workers_ai") {
               if (!r.model.startsWith("@cf/meta/llama-3.1-8b-instruct-fast")) {
-                throw new Error(`unexpected workers_ai fallback model ${r.model}`);
+                throw new Error(`unexpected final workers_ai model ${r.model}`);
               }
-              console.log(`Workers AI enquiry fallback schema valid after Qwen ${qwenAttempt.errorCode}: ${r.model} in ${r.durationMs}ms`);
+              console.log(`Llama enquiry schema valid: ${r.model} in ${r.durationMs}ms`);
+            } else if (r.provider === "qwen") {
+              if (r.fallbackUsed !== true) throw new Error("qwen served enquiry without fallbackUsed=true");
+              if (llamaAttempt.outcome !== "failed" || !fallbackCodes.has(llamaAttempt.errorCode)) {
+                throw new Error(`unexpected workers_ai fallback cause ${llamaAttempt.errorCode}`);
+              }
+              if (!r.model.startsWith("@cf/qwen/")) throw new Error(`unexpected qwen fallback model ${r.model}`);
+              console.log(`Qwen enquiry fallback schema valid after Llama ${llamaAttempt.errorCode}: ${r.model} in ${r.durationMs}ms`);
             } else {
               throw new Error(`enquiry served by unexpected provider ${r.provider}`);
             }
