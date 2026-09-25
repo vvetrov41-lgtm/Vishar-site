@@ -98,7 +98,7 @@ where client_id in ('d6200000-0000-4000-8000-000000000001', 'd6200000-0000-4000-
   and source_event_id like 'converge:%';
 set local role service_role;
 select is((public.service_converge_client_ai_briefs(10) ->> 'queued')::int, 0,
-  'the same watermark is never swept twice');
+  'the same watermark is not swept twice on the same day');
 reset role;
 
 -- Disabled agent: nothing happens.
