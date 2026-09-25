@@ -536,6 +536,8 @@ await test('binding exceptions are classified by their Workers AI code only', ()
 await test('a binding failure carries a bounded diagnostic token, never its message', async () => {
   const d = (message, name) => errors.bindingErrorDetail(Object.assign(new Error(message), name ? { name } : {}));
   assert.equal(d('AiError: 3023: Service unavailable for account 7f3a'), 'cf_3023');
+  assert.equal(d('4006: you have used up your daily free allocation of 10,000 neurons'), 'cf_4006_quota');
+  assert.equal(d('7003: something'), 'cf_7003');
   assert.equal(d('model not available on this plan'), 'Error_other');
   assert.equal(d('x', 'AiError'), 'AiError_other');
   assert.equal(d('', 'AiError'), 'AiError_empty');
@@ -566,11 +568,26 @@ await test('a binding failure carries a bounded diagnostic token, never its mess
 await test('the production logger keeps a bounded error detail and drops anything else', async () => {
   const { redact } = await import('../workers/lib/logging.js');
   assert.equal(redact({ errorDetail: 'cf_3023' }).errorDetail, 'cf_3023');
+  assert.equal(redact({ errorDetail: 'cf_4006_quota' }).errorDetail, 'cf_4006_quota');
   assert.equal(redact({ errorDetail: 'AiError' }).errorDetail, 'AiError');
   assert.equal(redact({ errorDetail: 'AiError_quota' }).errorDetail, 'AiError_quota');
   const unsafe = redact({ errorDetail: 'Service unavailable for account 7f3a' });
   assert.equal(unsafe.errorDetail, undefined);
   assert.equal(unsafe.droppedFields, 1);
+});
+
+await test('an eval may put only an allow-listed model on the workers_ai tier', async () => {
+  const plan = { task: 'crm_client_state' };
+  assert.equal(router.normalizeExperiment(plan, { provider: 'workers_ai', model: '@cf/google/gemma-4-26b-a4b-it' }).model,
+    '@cf/google/gemma-4-26b-a4b-it');
+  assert.equal(router.normalizeExperiment(plan, { provider: 'workers_ai', model: '@cf/moonshotai/kimi-k2.6' }).model, null);
+  assert.equal(router.normalizeExperiment(plan, { provider: 'qwen', model: '@cf/google/gemma-4-26b-a4b-it' }).model, null);
+
+  const stub = aiBinding(() => ({ response: 'Summary.' }));
+  const result = await router.runModelTask({ AI: stub.AI }, 'text_summarization', textInput,
+    { fetchImpl: forbiddenFetch(), experiment: { provider: 'workers_ai', model: '@cf/zai-org/glm-4.7-flash' } });
+  assert.equal(result.ok, true);
+  assert.equal(stub.calls[0].model, '@cf/zai-org/glm-4.7-flash');
 });
 
 await test('a model refusing the request shape falls back to the next tier', async () => {

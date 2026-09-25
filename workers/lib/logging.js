@@ -52,7 +52,7 @@ const SAFE_FIELDS = new Set([
 
 // Fields whose value must also match a closed shape to be kept.
 const FIELD_PATTERNS = Object.freeze({
-  errorDetail: /^(cf_[0-9]{4}|[A-Za-z][A-Za-z0-9_]{0,39})$/,
+  errorDetail: /^(cf_[0-9]{4}(_[a-z]{1,12})?|[A-Za-z][A-Za-z0-9_]{0,39})$/,
 });
 
 // Values are bounded too. A safe field name with an unbounded value would still
