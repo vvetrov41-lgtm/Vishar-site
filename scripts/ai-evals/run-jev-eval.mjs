@@ -51,7 +51,7 @@ function selfTest() {
   }
   if (JEV_FIXTURES.length * REPEATS > MAX_CALLS) throw new Error('call_budget_exceeded');
   const ids = new Set();
-  const splits = { dev: 0, holdout: 0, baseline: 0 };
+  const splits = { dev: 0, holdout: 0, holdout2: 0, baseline: 0 };
   let multiChoice = 0;
   for (const fixture of JEV_FIXTURES) {
     if (typeof fixture?.id !== 'string' || !fixture.id || ids.has(fixture.id)) throw new Error(`fixture_id_invalid:${fixture?.id}`);
@@ -145,6 +145,18 @@ export function decide(answers, allowed) {
   return out;
 }
 
+/**
+ * Fail-closed review routing, chosen from the first v2 run and tested on
+ * holdout2: route to the artist unless BOTH commitment_risk and
+ * human_review_needed are confidently false. (human_review_needed alone missed
+ * most date/price questions; commitment_risk was never confidently false on a
+ * commitment case.)
+ */
+export function routesToReview(decision) {
+  return !(decision.commitment_risk_p <= 0.5 - BOOLEAN_MARGIN
+    && decision.human_review_needed_p <= 0.5 - BOOLEAN_MARGIN);
+}
+
 function score(fixture, decision) {
   const checks = {};
   for (const q of BOOLEAN_QUESTIONS) {
@@ -182,6 +194,13 @@ function summarise(rows) {
       coverageCorrect: ratio(scored.filter((r) => r.checks[q]).length, eligible.length),
     };
   }
+  const reviewPos = ok.filter((r) => r.fixture.expect.review === true);
+  const reviewNeg = ok.filter((r) => r.fixture.expect.review === false);
+  const review = {
+    recall: ratio(reviewPos.filter((r) => r.routedToReview).length, reviewPos.length),
+    missed: [...new Set(reviewPos.filter((r) => !r.routedToReview).map((r) => r.id))],
+    negativesRouted: ratio(reviewNeg.filter((r) => r.routedToReview).length, reviewNeg.length),
+  };
   const rawScored = ok.filter((r) => r.rawAction !== null);
   const durations = ok.map((r) => r.durationMs).filter(Number.isFinite);
   return {
@@ -191,6 +210,7 @@ function summarise(rows) {
     allowedActionRate: ratio(ok.filter((r) => r.actionAllowed).length, ok.length),
     rawActionAccuracy: ratio(rawScored.filter((r) => r.rawAction).length, rawScored.length),
     questions: per,
+    review,
     p50Ms: percentile(durations, 50),
     p95Ms: percentile(durations, 95),
   };
@@ -235,6 +255,10 @@ function markdown(report) {
       lines.push(`| ${split} | ${s.calls} | ${s.allowedActionRate} | ${s.rawActionAccuracy} | ${q} | ${m.accuracyAnswered} | ${m.abstentionRate} | ${m.coverageCorrect} | ${s.p50Ms} | ${s.p95Ms} |`);
     }
   }
+  lines.push('', '### Fail-closed review routing', '', '| Split | Review recall | Missed | Safe cases routed to review |', '|---|---:|---|---:|');
+  for (const [split, s] of Object.entries(report.splits)) {
+    lines.push(`| ${split} | ${s.review.recall} | ${s.review.missed.join(', ') || '-'} | ${s.review.negativesRouted} |`);
+  }
   lines.push('', '### Misses (answered and wrong)', '', '| Fixture | Split | Question | Got | p / conf |', '|---|---|---|---|---:|');
   for (const miss of report.misses) lines.push(`| ${miss.id} | ${miss.split} | ${miss.question} | ${miss.got} | ${miss.p} |`);
   return lines.join('\n');
@@ -260,6 +284,9 @@ if (process.argv.includes('--self-test')) {
   }, allowed);
   if ('next_action' in outside.answered || outside.action_allowed) throw new Error('decide_outside_allowed');
   if (!decide({ next_action: { choice: 'x' } }, allowed).invalid) throw new Error('decide_invalid');
+  if (!routesToReview({ commitment_risk_p: 0.9, human_review_needed_p: 0.1 })) throw new Error('review_commitment');
+  if (!routesToReview({ commitment_risk_p: 0.1, human_review_needed_p: 0.5 })) throw new Error('review_unsure');
+  if (routesToReview({ commitment_risk_p: 0.1, human_review_needed_p: 0.15 })) throw new Error('review_safe');
   console.log(JSON.stringify({ ok: true, ...self }));
   process.exit(0);
 }
@@ -300,13 +327,14 @@ for (let repeat = 0; repeat < REPEATS; repeat += 1) {
       reply_needed_p: decision.reply_needed_p, commitment_risk_p: decision.commitment_risk_p,
       human_review_needed_p: decision.human_review_needed_p,
       answered: decision.answered, abstained: decision.abstained, checks, rawAction,
+      routedToReview: routesToReview(decision),
       durationMs: call.durationMs,
     });
   }
 }
 
 const splits = {};
-for (const split of ['dev', 'holdout', 'baseline']) splits[split] = summarise(rows.filter((r) => r.split === split));
+for (const split of ['dev', 'holdout', 'holdout2', 'baseline']) splits[split] = summarise(rows.filter((r) => r.split === split));
 const misses = [];
 for (const r of rows.filter((x) => x.ok)) {
   for (const [q, pass] of Object.entries(r.checks)) {
