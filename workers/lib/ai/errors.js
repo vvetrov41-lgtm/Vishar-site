@@ -42,20 +42,22 @@ const DETAIL_RE = /^(cf_[0-9]{4}|[A-Za-z][A-Za-z0-9_]{0,39})$/;
 // Closed vocabulary for a binding message that carries no numeric code. Only
 // the matched label leaves this module, never the text around it.
 const BINDING_KEYWORDS = Object.freeze([
+  // Request-shape problems first: their messages name parameters such as
+  // max_tokens, which must not read as an authentication failure.
+  ['input', /invalid|schema|oneof|must be|required property|too large|too long|max_tokens|parameter/i],
+  ['auth', /unauthori[sz]ed|authentication|api token|access token|credential|permission denied/i],
   ['quota', /neuron|allocation|quota|usage limit|daily limit/i],
   ['plan', /paid plan|workers paid|upgrade|billing|subscription|payment/i],
   ['disabled', /disabled|suspended|blocked|not enabled|not allowed|forbidden/i],
-  ['auth', /unauthori[sz]ed|authentication|token|credential|permission/i],
   ['model', /no such model|unknown model|model not found|invalid model|deprecated|not supported/i],
   ['capacity', /capacity|overloaded|busy|try again|temporarily/i],
   ['network', /network|connection|fetch failed|socket|dns|timed? ?out/i],
-  ['input', /invalid|schema|oneof|must be|required property|too large|too long/i],
 ]);
 
 export function bindingErrorDetail(error) {
   const message = typeof error?.message === 'string' ? error.message.slice(0, 300) : '';
-  const match = /\b([1-9][0-9]{3})\b/.exec(message);
-  if (match) return `cf_${match[1]}`;
+  const code = workersAiErrorCode(message);
+  if (code) return `cf_${code}`;
   const name = typeof error?.name === 'string' && /^[A-Za-z][A-Za-z0-9]{0,24}$/.test(error.name)
     ? error.name
     : 'unknown';
@@ -90,6 +92,16 @@ export function providerErrorCodeForStatus(status) {
  * either; the former is one model refusing a request shape (for example a JSON
  * schema it does not support) that the next model in the chain may accept.
  */
+/**
+ * The Workers AI error code, only where Cloudflare puts it: at the start of
+ * the message or right after the error class (`AiError: 3040: ...`), or after
+ * the word "code". A parameter limit such as `max_tokens <= 4096` is not a code.
+ */
+function workersAiErrorCode(message) {
+  const match = /(?:^|^[A-Za-z]*Error:\s*|\bcode[:\s]+)([1-9][0-9]{3})(?=\s*(?::|$|\s))/i.exec(message);
+  return match ? match[1] : null;
+}
+
 const BINDING_CODE_CLASSES = Object.freeze({
   3007: 'provider_timeout',
   3008: 'provider_timeout',
@@ -106,8 +118,8 @@ const BINDING_CODE_CLASSES = Object.freeze({
 export function classifyBindingError(error) {
   if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return 'provider_timeout';
   const message = typeof error?.message === 'string' ? error.message.slice(0, 200) : '';
-  const match = /\b([35]\d{3})\b/.exec(message);
-  if (match && BINDING_CODE_CLASSES[match[1]]) return BINDING_CODE_CLASSES[match[1]];
+  const code = workersAiErrorCode(message);
+  if (code && BINDING_CODE_CLASSES[code]) return BINDING_CODE_CLASSES[code];
   if (/\b429\b|capacity|rate.?limit|too many requests/i.test(message)) return 'provider_rate_limited';
   return 'provider_unavailable';
 }

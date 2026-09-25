@@ -542,7 +542,11 @@ await test('a binding failure carries a bounded diagnostic token, never its mess
   assert.equal(d('This model requires the Workers Paid plan', 'AiError'), 'AiError_plan');
   assert.equal(d('Workers AI is disabled for this account', 'AiError'), 'AiError_disabled');
   assert.equal(d('No such model @cf/x', 'AiError'), 'AiError_model');
-  assert.equal(d('AiError 7003 something'), 'cf_7003');
+  assert.equal(d('7003: something'), 'cf_7003');
+  assert.equal(d('max_tokens must be <= 4096', 'AiError'), 'AiError_input');
+  assert.equal(d('max_tokens must be positive', 'AiError'), 'AiError_input');
+  assert.equal(d('Unauthorized: missing access token', 'AiError'), 'AiError_auth');
+  assert.equal(errors.classifyBindingError(new Error('max_tokens must be <= 3040')), 'provider_unavailable');
   assert.equal(d('x', 'weird name; drop table'), 'unknown_other');
   assert.equal(new errors.ProviderError('provider_unavailable', 'account 7f3a').detail, null);
 
