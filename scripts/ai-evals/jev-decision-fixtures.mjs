@@ -21,10 +21,10 @@ export const JEV_QUESTIONS = Object.freeze({
       'Do not invent a booking, price, date, deposit state, medical conclusion, or tattoo feasibility decision.',
     ].join(' '),
     criteria: {
-      reply_to_client: 'Send a normal non-commitment reply because the client asked a simple question or supplied useful information that should be acknowledged.',
+      reply_to_client: 'Send a normal non-commitment reply only when a substantive reply is needed because the client asked a simple question or supplied useful information that requires acknowledgement. Do not choose this for a purely optional courtesy reply.',
       follow_up: 'The studio is waiting for the client and enough time has passed that a follow-up is due.',
       await_client: 'The studio has already asked or replied and should wait for the client.',
-      no_action: 'No substantive action is needed now, for example a pure acknowledgement after a settled booking.',
+      no_action: 'No substantive action is needed now. Choose this for a pure acknowledgement, compliment, travel update or other courtesy-only message even when a polite reply would be acceptable.',
       human_review: 'An artist or operator must decide something commitment-sensitive or safety-sensitive before any reply, such as price, dates, booking, deposit, tattoo feasibility, or health/aftercare escalation.',
     },
   },
