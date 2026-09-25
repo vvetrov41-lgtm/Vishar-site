@@ -18,6 +18,9 @@ import { appendFileSync, writeFileSync } from 'node:fs';
 import {
   CRM_ACTIONS, JEV_FIXTURES, JEV_MODEL, allowedActions, buildQuestions,
 } from './jev-decision-fixtures.mjs';
+import {
+  ACTION_MIN_CONFIDENCE, BOOLEAN_MARGIN, decide, routesToReview,
+} from '../../workers/lib/ai/decision-contract.js';
 
 const ENDPOINT = 'https://openrouter.ai/api/alpha/decisions';
 const MAX_FIXTURES = 120;
@@ -26,12 +29,6 @@ const MAX_CALLS = 300;
 const MAX_TOTAL_COST_USD = 0.05;
 const REQUEST_TIMEOUT_MS = 15_000;
 const RETRY_DELAYS_MS = [1_000, 2_000];
-
-// Fail-closed thresholds. A boolean is answered only when its probability is
-// at least this far from 0.5; the action only at or above this confidence.
-// Anything else abstains, which in production means "keep the existing path".
-export const BOOLEAN_MARGIN = 0.3; // p <= 0.2 or p >= 0.8
-export const ACTION_MIN_CONFIDENCE = 0.6;
 
 const ACTIONS = new Set(CRM_ACTIONS);
 const BOOLEAN_QUESTIONS = ['reply_needed', 'commitment_risk', 'human_review_needed'];
@@ -118,43 +115,6 @@ async function callJev(apiKey, state) {
     }
   }
   return { ok: false, code: 'retry_exhausted' };
-}
-
-/** Typed decision with fail-closed abstention. Pure; exported for the self-test. */
-export function decide(answers, allowed) {
-  const out = { answered: {}, abstained: [] };
-  for (const q of BOOLEAN_QUESTIONS) {
-    const p = Number(answers?.[q]?.noul);
-    if (!Number.isFinite(p) || p < 0 || p > 1) return { invalid: `answer_${q}` };
-    out[`${q}_p`] = round(p);
-    if (Math.abs(p - 0.5) >= BOOLEAN_MARGIN) out.answered[q] = p >= 0.5;
-    else out.abstained.push(q);
-  }
-  const choice = answers?.next_action?.choice;
-  const confidence = Number(answers?.next_action?.confidence);
-  if (typeof choice !== 'string' || !ACTIONS.has(choice)) return { invalid: 'answer_next_action' };
-  out.action = choice;
-  out.action_allowed = allowed.includes(choice);
-  out.action_confidence = Number.isFinite(confidence) ? round(confidence) : null;
-  // An action outside the server list is never used, whatever its confidence.
-  if (out.action_allowed && Number.isFinite(confidence) && confidence >= ACTION_MIN_CONFIDENCE) {
-    out.answered.next_action = choice;
-  } else {
-    out.abstained.push('next_action');
-  }
-  return out;
-}
-
-/**
- * Fail-closed review routing, chosen from the first v2 run and tested on
- * holdout2: route to the artist unless BOTH commitment_risk and
- * human_review_needed are confidently false. (human_review_needed alone missed
- * most date/price questions; commitment_risk was never confidently false on a
- * commitment case.)
- */
-export function routesToReview(decision) {
-  return !(decision.commitment_risk_p <= 0.5 - BOOLEAN_MARGIN
-    && decision.human_review_needed_p <= 0.5 - BOOLEAN_MARGIN);
 }
 
 function score(fixture, decision) {
