@@ -371,7 +371,11 @@ export async function convergeClientAiBriefs(env, deps = {}) {
   if (!enabled(env)) return 'disabled';
   try {
     const supabase = deps.supabase ?? createSupabaseClient(env, deps.fetchImpl ?? fetch);
-    const result = await supabase.rpc('service_converge_client_ai_briefs', { p_limit: 4 });
+    // Refreshing old briefs competes with new enquiries for the same daily
+    // Workers AI allocation, so it is opt-in: CRM_BRIEF_CONVERGE_PER_HOUR.
+    const perHour = Number.parseInt(env?.CRM_BRIEF_CONVERGE_PER_HOUR ?? '0', 10);
+    if (!Number.isInteger(perHour) || perHour <= 0) return 'off';
+    const result = await supabase.rpc('service_converge_client_ai_briefs', { p_limit: Math.min(perHour, 10) });
     return ['ok', 'busy', 'disabled', 'budget_spent'].includes(result?.status) ? result.status : 'rejected';
   } catch {
     return 'failed';

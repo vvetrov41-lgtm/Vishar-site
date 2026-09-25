@@ -269,11 +269,14 @@ await test('attention shadow recording is fail-open and gated', async () => {
 await test('brief convergence asks the database with a small budget and is fail-open', async () => {
   const calls = [];
   const ok = { rpc: async (name, args) => { calls.push({ name, args }); return { status: 'ok', queued: 2 }; } };
-  assert.equal(await convergeClientAiBriefs({ CRM_AGENT_ENABLED: 'true' }, { supabase: ok }), 'ok');
+  assert.equal(await convergeClientAiBriefs({ CRM_AGENT_ENABLED: 'true' }, { supabase: ok }), 'off',
+    'the sweep is opt-in because it spends the shared daily AI allocation');
+  assert.deepEqual(calls, []);
+  assert.equal(await convergeClientAiBriefs({ CRM_AGENT_ENABLED: 'true', CRM_BRIEF_CONVERGE_PER_HOUR: '4' }, { supabase: ok }), 'ok');
   assert.deepEqual(calls, [{ name: 'service_converge_client_ai_briefs', args: { p_limit: 4 } }]);
   assert.equal(await convergeClientAiBriefs({}, { supabase: ok }), 'disabled');
   const broken = { rpc: async () => { throw new Error('down'); } };
-  assert.equal(await convergeClientAiBriefs({ CRM_AGENT_ENABLED: 'true' }, { supabase: broken }), 'failed');
+  assert.equal(await convergeClientAiBriefs({ CRM_AGENT_ENABLED: 'true', CRM_BRIEF_CONVERGE_PER_HOUR: '4' }, { supabase: broken }), 'failed');
 });
 
 console.log(`ai telemetry: ${passes} tests passed`);

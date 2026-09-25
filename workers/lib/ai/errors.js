@@ -106,6 +106,9 @@ const BINDING_CODE_CLASSES = Object.freeze({
   3007: 'provider_timeout',
   3008: 'provider_timeout',
   3036: 'provider_rate_limited',
+  // The daily free Neuron allocation as the binding actually reports it
+  // (observed in production 2026-09-25; the docs table lists 3036).
+  4006: 'provider_rate_limited',
   3040: 'provider_rate_limited',
   3003: 'provider_input_rejected',
   3006: 'provider_input_rejected',
