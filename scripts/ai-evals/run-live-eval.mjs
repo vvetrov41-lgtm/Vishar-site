@@ -35,7 +35,14 @@ const percentile = (values, p) => {
 };
 const mean = (values) => (values.length ? Math.round(values.reduce((a, b) => a + b, 0) / values.length) : null);
 
-async function call(task, fixture, variant, retried = false) {
+// A freshly minted probe token reaches every Cloudflare edge only after a
+// short delay; until then the route answers 404 exactly as when it is closed.
+// Two runs lost their first calls to this, so a 404 is retried a bounded
+// number of times before it counts as a result.
+const PROPAGATION_WAIT_MS = 10_000;
+const MAX_PROPAGATION_RETRIES = 3;
+
+async function call(task, fixture, variant, retried = false, propagationRetries = 0) {
   const wait = lastCallAt + MIN_CALL_INTERVAL_MS - Date.now();
   if (wait > 0) await sleep(wait);
   lastCallAt = Date.now();
@@ -45,10 +52,14 @@ async function call(task, fixture, variant, retried = false) {
     body: JSON.stringify({ mode: 'eval', task, fixture, variant }),
     signal: AbortSignal.timeout(90_000),
   });
+  if (response.status === 404 && propagationRetries < MAX_PROPAGATION_RETRIES) {
+    await sleep(PROPAGATION_WAIT_MS);
+    return call(task, fixture, variant, retried, propagationRetries + 1);
+  }
   if (response.status === 429 && !retried) {
     // One bounded wait for the limiter window, then the call is measured.
     await sleep(RATE_LIMIT_WAIT_MS);
-    return call(task, fixture, variant, true);
+    return call(task, fixture, variant, true, propagationRetries);
   }
   if (!response.ok) return { httpStatus: response.status };
   return response.json();
