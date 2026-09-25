@@ -1,13 +1,24 @@
 {
-  "repeats": 2,
-  "maxCalls": 220,
+  "repeats": 1,
+  "maxCalls": 80,
+  "minCallIntervalMs": 3500,
+  "only": [
+    "intake-qwen-full", "intake-qwen-transport-60", "intake-qwen-object-60",
+    "intake-llama", "intake-gemma", "intake-glm-flash", "intake-qwen3-30b",
+    "state-qwen-nothink", "state-llama", "state-gemma", "state-glm-flash", "state-qwen3-30b"
+  ],
   "variants": [
-    { "id": "intake-qwen-full", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "full" } },
-    { "id": "intake-qwen-transport", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "transport" } },
-    { "id": "intake-qwen-object", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "object" } },
+    { "id": "intake-qwen-full", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "full" }, "fixtures": ["intake_complete", "intake_cover_up"] },
+    { "id": "intake-qwen-transport-60", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "transport", "timeoutMs": 60000 }, "fixtures": ["intake_complete", "intake_cover_up"] },
+    { "id": "intake-qwen-object-60", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "object", "timeoutMs": 60000 }, "fixtures": ["intake_complete", "intake_cover_up"] },
     { "id": "intake-llama", "task": "enquiry_intake", "variant": { "provider": "workers_ai" } },
-    { "id": "state-qwen-current", "task": "crm_client_state", "variant": { "provider": "qwen", "timeoutMs": 60000 } },
-    { "id": "state-qwen-nothink", "task": "crm_client_state", "variant": { "provider": "qwen", "thinking": "off", "timeoutMs": 60000 } },
-    { "id": "state-llama", "task": "crm_client_state", "variant": { "provider": "workers_ai", "timeoutMs": 60000 } }
+    { "id": "intake-gemma", "task": "enquiry_intake", "variant": { "provider": "workers_ai", "model": "@cf/google/gemma-4-26b-a4b-it", "timeoutMs": 60000 } },
+    { "id": "intake-glm-flash", "task": "enquiry_intake", "variant": { "provider": "workers_ai", "model": "@cf/zai-org/glm-4.7-flash", "timeoutMs": 60000 } },
+    { "id": "intake-qwen3-30b", "task": "enquiry_intake", "variant": { "provider": "workers_ai", "model": "@cf/qwen/qwen3-30b-a3b-fp8", "timeoutMs": 60000 } },
+    { "id": "state-qwen-nothink", "task": "crm_client_state", "variant": { "provider": "qwen", "thinking": "off", "timeoutMs": 60000 }, "fixtures": ["vague_enquiry", "consultation_booked", "deposit_paid"] },
+    { "id": "state-llama", "task": "crm_client_state", "variant": { "provider": "workers_ai", "timeoutMs": 60000 }, "fixtures": ["vague_enquiry", "client_reply_answering", "consultation_booked", "deposit_paid", "client_silent", "prompt_injection"] },
+    { "id": "state-gemma", "task": "crm_client_state", "variant": { "provider": "workers_ai", "model": "@cf/google/gemma-4-26b-a4b-it", "timeoutMs": 60000 }, "fixtures": ["vague_enquiry", "client_reply_answering", "consultation_booked", "deposit_paid", "client_silent", "prompt_injection"] },
+    { "id": "state-glm-flash", "task": "crm_client_state", "variant": { "provider": "workers_ai", "model": "@cf/zai-org/glm-4.7-flash", "timeoutMs": 60000 }, "fixtures": ["vague_enquiry", "client_reply_answering", "consultation_booked", "deposit_paid", "client_silent", "prompt_injection"] },
+    { "id": "state-qwen3-30b", "task": "crm_client_state", "variant": { "provider": "workers_ai", "model": "@cf/qwen/qwen3-30b-a3b-fp8", "timeoutMs": 60000 }, "fixtures": ["vague_enquiry", "client_reply_answering", "consultation_booked", "deposit_paid", "client_silent", "prompt_injection"] }
   ]
 }
