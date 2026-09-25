@@ -127,14 +127,17 @@ const round = (value) => (Number.isFinite(value) ? Number(value.toFixed(4)) : nu
 export function decide(answers, allowed) {
   const out = { answered: {}, abstained: [] };
   for (const q of BOOLEAN_QUESTIONS) {
-    const p = Number(answers?.[q]?.noul);
-    if (!Number.isFinite(p) || p < 0 || p > 1) return { invalid: `answer_${q}` };
+    // Only a real number counts: Number(null), Number(false) and Number('')
+    // are 0, which would read as "confidently false" and defeat fail-closed.
+    const p = answers?.[q]?.noul;
+    if (typeof p !== 'number' || !Number.isFinite(p) || p < 0 || p > 1) return { invalid: `answer_${q}` };
     out[`${q}_p`] = round(p);
     if (Math.abs(p - 0.5) >= BOOLEAN_MARGIN) out.answered[q] = p >= 0.5;
     else out.abstained.push(q);
   }
   const choice = answers?.next_action?.choice;
-  const confidence = Number(answers?.next_action?.confidence);
+  const rawConfidence = answers?.next_action?.confidence;
+  const confidence = typeof rawConfidence === 'number' ? rawConfidence : Number.NaN;
   if (typeof choice !== 'string' || !NEXT_ACTION_TYPES.includes(choice)) return { invalid: 'answer_next_action' };
   out.action = choice;
   out.action_allowed = sanitizeAllowedActions(allowed).includes(choice);

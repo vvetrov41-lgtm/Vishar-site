@@ -144,10 +144,15 @@ Findings:
   None of these is outside the allowed list, and all are recommendations the
   artist sees.
 - Baseline: on the client-state cases Llama/Qwen are scored on, Jev's raw
-  action passed every action check, as Llama's did in the live eval
-  (36154979615/36171131094). Llama takes about 2 s and about 15–30 Neurons;
-  Qwen takes about 38 s and about 200 Neurons; Jev takes about 0.13 s and
-  about $0.00004.
+  action passed every action check. Two of those checks
+  (`bl_deposit_paid`, `bl_session_scheduled`) are unreachable for Jev because
+  SQL already removed the forbidden actions from its choice set. For Jev
+  they therefore measure the architecture, not the model; the runner now
+  scores only reachable actions (review finding on #887). Llama passed the
+  same checks without that restriction in the live eval
+  (36154979615/36171131094). Cost and latency per call: Llama about 2 s and
+  about 15–30 Neurons; Qwen about 38 s and about 200 Neurons; Jev about
+  0.13 s and about $0.00004.
 
 What this supports:
 - `reply_needed` and `commitment_risk` are candidates for shadow mode.

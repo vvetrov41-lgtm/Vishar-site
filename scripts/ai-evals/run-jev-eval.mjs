@@ -124,15 +124,18 @@ function score(fixture, decision) {
     if (expected === null || !(q in decision.answered)) continue;
     checks[q] = decision.answered[q] === expected;
   }
-  if ('next_action' in decision.answered) {
+  // A forbidden action the server already removed from the choice set cannot
+  // be chosen, so it is not evidence of model quality: only reachable ones count.
+  const reachableNot = (fixture.expect.notActions ?? []).filter((a) => fixture.state.allowed_actions.includes(a));
+  const actionScored = Boolean(fixture.expect.actions) || reachableNot.length > 0;
+  if ('next_action' in decision.answered && actionScored) {
     const a = decision.answered.next_action;
-    if (fixture.expect.actions) checks.next_action = fixture.expect.actions.includes(a);
-    else if (fixture.expect.notActions) checks.next_action = !fixture.expect.notActions.includes(a);
+    checks.next_action = fixture.expect.actions ? fixture.expect.actions.includes(a) : !reachableNot.includes(a);
   }
   // Scored on the raw choice too, so abstention cannot hide a wrong answer.
   const raw = decision.action;
-  const rawAction = fixture.expect.actions ? fixture.expect.actions.includes(raw)
-    : fixture.expect.notActions ? !fixture.expect.notActions.includes(raw) : null;
+  const rawAction = !actionScored ? null
+    : fixture.expect.actions ? fixture.expect.actions.includes(raw) : !reachableNot.includes(raw);
   return { checks, rawAction };
 }
 
@@ -142,7 +145,7 @@ function summarise(rows) {
   for (const q of [...BOOLEAN_QUESTIONS, 'next_action']) {
     const scored = ok.filter((r) => q in r.checks);
     const eligible = ok.filter((r) => (q === 'next_action'
-      ? (r.fixture.expect.actions || r.fixture.expect.notActions)
+      ? r.rawAction !== null
       : r.fixture.expect[EXPECT_KEY[q]] !== null));
     const abstained = eligible.filter((r) => r.abstained.includes(q)).length;
     per[q] = {
@@ -186,7 +189,12 @@ function stability(rows) {
   for (const runs of byId.values()) {
     if (runs.length < 2) continue;
     total += 1;
-    const signature = (r) => [r.action, ...BOOLEAN_QUESTIONS.map((q) => r[`${q}_p`] >= 0.5)].join('|');
+    // The effective decision: what was answered (including the accepted
+    // action) and what abstained. A value crossing a threshold between
+    // repeats changes behaviour even when the raw polarity does not.
+    const signature = (r) => JSON.stringify([
+      r.action, r.answered, [...r.abstained].sort(), r.routedToReview,
+    ]);
     if (runs.every((r) => signature(r) === signature(runs[0]))) same += 1;
     for (let i = 1; i < runs.length; i += 1) {
       pairs += 1;

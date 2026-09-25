@@ -68,6 +68,12 @@ await test('malformed answers are invalid, not guessed', () => {
   assert.ok(decide({ ...confident, reply_needed: { noul: 1.5 } }, allowed).invalid);
   assert.ok(decide({ ...confident, next_action: { choice: 'send_money' } }, allowed).invalid);
   assert.ok(decide(null, allowed).invalid);
+  for (const bad of [null, false, '', '0.1', undefined]) {
+    assert.ok(decide({ ...confident, commitment_risk: { noul: bad } }, allowed).invalid, `noul ${String(bad)}`);
+  }
+  // A non-numeric confidence never makes an action usable.
+  const noConf = decide({ ...confident, next_action: { choice: 'no_action', confidence: '0.99' } }, allowed);
+  assert.equal('next_action' in noConf.answered, false);
 });
 
 await test('review routing is fail-closed', () => {
