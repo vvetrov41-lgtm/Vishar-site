@@ -60,9 +60,10 @@ let stopped = null;
 const report = [];
 for (const entry of plan.variants) {
   if (only.length && !only.includes(entry.id)) continue;
-  // A budgeted run can name a subset of fixtures per task; unknown ids are
+  // A budgeted run can name a subset of fixtures per variant or per task
+  // (expensive models on fewer cases); unknown ids are
   // ignored, so the plan cannot invent a case the Worker does not own.
-  const subset = plan.fixtures?.[entry.task];
+  const subset = entry.fixtures ?? plan.fixtures?.[entry.task];
   const fixtures = Array.isArray(subset)
     ? EVAL_FIXTURE_IDS[entry.task].filter((id) => subset.includes(id))
     : EVAL_FIXTURE_IDS[entry.task];
