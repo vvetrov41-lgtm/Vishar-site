@@ -60,7 +60,12 @@ let stopped = null;
 const report = [];
 for (const entry of plan.variants) {
   if (only.length && !only.includes(entry.id)) continue;
-  const fixtures = EVAL_FIXTURE_IDS[entry.task];
+  // A budgeted run can name a subset of fixtures per task; unknown ids are
+  // ignored, so the plan cannot invent a case the Worker does not own.
+  const subset = plan.fixtures?.[entry.task];
+  const fixtures = Array.isArray(subset)
+    ? EVAL_FIXTURE_IDS[entry.task].filter((id) => subset.includes(id))
+    : EVAL_FIXTURE_IDS[entry.task];
   const expectations = entry.task === 'enquiry_intake' ? ENQUIRY_FIXTURES : CLIENT_STATE_FIXTURES;
   const rows = [];
   for (let repeat = 0; repeat < plan.repeats; repeat += 1) {
