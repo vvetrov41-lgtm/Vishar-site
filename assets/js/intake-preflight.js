@@ -9,10 +9,10 @@
     function clearHints(){Array.prototype.forEach.call(form.querySelectorAll('[data-preflight-hint]'),function(n){n.remove();});if(notice){notice.remove();notice=null;}}
     function hint(field,text){
       var el=form.elements[field];if(!el||typeof el.insertAdjacentElement!=='function')return null;
-      var old=form.querySelector('[data-preflight-hint="'+field+'"]');if(old)old.remove();
+      var existing=form.querySelectorAll('[data-preflight-hint="'+field+'"]');
       var p=document.createElement('span');p.setAttribute('data-preflight-hint',field);p.setAttribute('role','note');
       p.style.cssText='display:block;margin-top:8px;padding:8px 10px;border-left:3px solid #f5c26b;background:rgba(245,194,107,.08);color:#f5dfb4;font-size:14px;line-height:1.5;border-radius:6px';
-      p.textContent=text;el.insertAdjacentElement('afterend',p);
+      p.textContent=text;var anchor=existing.length?existing[existing.length-1]:el;anchor.insertAdjacentElement('afterend',p);
       el.addEventListener('input',function(){p.remove();},{once:true});
       return el;
     }

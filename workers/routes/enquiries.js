@@ -327,6 +327,9 @@ async function handleEnquiryIntakeInternal(
     });
 
     if (intake.replayed && intake.intake_state === 'complete') {
+      // A replayed complete intake is still a successful conversion for the
+      // preflight that immediately preceded this submission.
+      markPreflightSubmitted(supabase, preflightFollowUp, enquiryId, schedule);
       scheduleEnquiryAi(env, enquiryId, schedule, { supabase, fetchImpl });
       scheduleOpenAiLeadConversion({
         env,

@@ -18,7 +18,7 @@
 //
 // The same module drives the synthetic eval (scripts/ai-evals) and the Worker.
 
-export const PREFLIGHT_VERSION = 'intake-preflight.2026-09-26b';
+export const PREFLIGHT_VERSION = 'intake-preflight.2026-09-26c';
 
 // A field is flagged only when the provider is confident it is unclear:
 // P(clear) at or below this value. False clarifications cost more than
@@ -128,21 +128,30 @@ const probability = (answer) => {
 
 /**
  * Deterministic outcome from the provider's probabilities. A missing or
- * malformed answer never produces a clarification: that field is treated as
- * clear. Returns { status, categories, answered } — no probabilities leave
- * the server.
+ * malformed or incomplete answer is classified as skipped, so it never
+ * produces a clarification or inflates the ready-rate telemetry. No
+ * probabilities leave the server.
  */
 export function decidePreflight(answers, state) {
   if (!answers || typeof answers !== 'object') return { status: 'skipped', categories: [], reason: 'answer_invalid' };
+
+  // Fail open on incomplete provider output. Missing probabilities must never
+  // be misclassified as a successful "ready" decision in telemetry.
+  const required = ['artist_review', 'placement_clear', 'size_clear', 'idea_clear'];
+  if (isCoverUp(state?.cover_up)) required.push('coverup_goal_clear');
+  if (required.some((key) => probability(answers[key]) === null)) {
+    return { status: 'skipped', categories: [], reason: 'answer_incomplete' };
+  }
+
   const review = probability(answers.artist_review);
-  if (review !== null && review >= ARTIST_REVIEW_MIN_P) return { status: 'artist_review', categories: [] };
+  if (review >= ARTIST_REVIEW_MIN_P) return { status: 'artist_review', categories: [] };
 
   const unclear = [];
   const field = { placement: 'placement_clear', size: 'size_clear', idea: 'idea_clear', coverup_goal: 'coverup_goal_clear' };
   for (const category of CLARIFY_CATEGORIES) {
     if (category === 'coverup_goal' && !isCoverUp(state?.cover_up)) continue;
     const p = probability(answers[field[category]]);
-    if (p !== null && p <= UNCLEAR_MAX_P) unclear.push(category);
+    if (p <= UNCLEAR_MAX_P) unclear.push(category);
   }
   const categories = unclear.slice(0, MAX_CLARIFICATIONS);
   return categories.length ? { status: 'clarify', categories } : { status: 'ready', categories: [] };

@@ -64,11 +64,22 @@ await test('artist review wins over clarification and is a success', () => {
   assert.deepEqual(d, { status: 'artist_review', categories: [] });
 });
 
-await test('a malformed or missing answer never asks the client anything', () => {
+await test('a malformed or incomplete answer is skipped and never asks the client anything', () => {
   const state = buildPreflightState(fields);
-  for (const bad of [null, 'x', {}, { placement_clear: { noul: 'low' } }, { size_clear: { noul: -1 } }, { idea_clear: null }]) {
-    assert.notEqual(decidePreflight(bad, state).status, 'clarify');
+  for (const bad of [
+    null,
+    'x',
+    {},
+    { placement_clear: { noul: 'low' } },
+    { size_clear: { noul: -1 } },
+    { idea_clear: null },
+    { ...answers(), artist_review: undefined },
+    { ...answers(), size_clear: undefined },
+  ]) {
+    assert.equal(decidePreflight(bad, state).status, 'skipped');
   }
+  const coverupState = buildPreflightState({ ...fields, coverUp: 'Yes' });
+  assert.equal(decidePreflight(answers(), coverupState).status, 'skipped');
 });
 
 await test('at most three hints, all server-owned text', () => {
@@ -79,6 +90,20 @@ await test('at most three hints, all server-owned text', () => {
   for (const m of messages) assert.equal(m.text, CLARIFICATION_TEMPLATES[m.category].text);
   assert.deepEqual(clarificationMessages(['price', 'placement']).map((m) => m.category), ['placement']);
   for (const c of CLARIFY_CATEGORIES) assert.ok(!/£|\$|price|available|book|deposit/i.test(CLARIFICATION_TEMPLATES[c].text));
+});
+
+await test('the browser preserves multiple server hints that target the same field', () => {
+  assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes("querySelectorAll('[data-preflight-hint=\\\"'+field+'\\\"]')"));
+  assert.ok(!INTAKE_PREFLIGHT_BROWSER_JS.includes("if(old)old.remove()"));
+});
+
+await test('replayed completed intakes still mark the preflight as submitted', () => {
+  const source = readFileSync(new URL('../workers/routes/enquiries.js', import.meta.url), 'utf8');
+  const start = source.indexOf("if (intake.replayed && intake.intake_state === 'complete')");
+  const end = source.indexOf('const cleanupPaths = new Set()', start);
+  assert.ok(start >= 0 && end > start);
+  const replayBlock = source.slice(start, end);
+  assert.match(replayBlock, /markPreflightSubmitted\(supabase, preflightFollowUp, enquiryId, schedule\)/);
 });
 
 // ---------------------------------------------------------------------------
