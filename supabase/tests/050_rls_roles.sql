@@ -806,6 +806,9 @@ insert into expected_function_acl values
   ('public.get_conversation_link_suggestion(uuid)', false, true, false),
   -- Fact provenance (20260924070000). CRM read, operators only.
   ('public.get_client_fact_provenance(uuid,uuid)', false, true, false),
+  -- Intake preflight telemetry (20260924090000). Backend only, metadata only.
+  ('public.service_record_intake_preflight(jsonb)', false, false, true),
+  ('public.service_mark_intake_preflight_submitted(uuid,text,uuid)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires

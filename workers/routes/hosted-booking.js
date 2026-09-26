@@ -12,6 +12,7 @@ import { SUPPORTED_BOOKING_FORM_VERSION } from '../lib/provider-routing.js';
 import { PRIVACY_NOTICE_VERSION } from '../lib/validation.js';
 import { renderDiscoverySourceOptionsHtml } from '../lib/discovery-sources.js';
 import { handleHostedEnquiryIntake } from './enquiries.js';
+import { INTAKE_PREFLIGHT_BROWSER_JS } from '../lib/intake-preflight/browser-client.js';
 
 const PUBLIC_SOURCE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const HOSTED_TEMPLATE = 'tattoo-enquiry';
@@ -74,7 +75,7 @@ function unavailablePage(status = 404) {
   });
 }
 
-function renderHostedForm(meta, sourceId) {
+function renderHostedForm(meta, sourceId, { preflight = false } = {}) {
   const rawArtist = String(meta.artist_display_name || 'Tattoo artist');
   const artist = escapeHtml(rawArtist);
   const label = escapeHtml(meta.display_label || 'Tattoo enquiry');
@@ -123,11 +124,13 @@ function renderHostedForm(meta, sourceId) {
 <p id="status" class="status" role="status" aria-live="polite"></p>
 </form>
 </main>
+${preflight ? `<script>${INTAKE_PREFLIGHT_BROWSER_JS}</script>` : ''}
 <script>
 (function(){
   'use strict';
   var form=document.getElementById('booking');
   var submit=document.getElementById('submit');
+  var preflight=${preflight ? 'true' : 'false'}&&window.VisharIntakePreflight?window.VisharIntakePreflight.create({form:form,endpoint:'${formPath}',enabled:true,submitButton:submit}):null;
   var status=document.getElementById('status');
   var files=document.getElementById('references');
   var preferred=document.getElementById('preferredReply');
@@ -168,6 +171,7 @@ function renderHostedForm(meta, sourceId) {
       payload.append('utmContent',(params.get('utm_content')||'').slice(0,160));
       payload.append('utmTerm',(params.get('utm_term')||'').slice(0,160));
       selected.forEach(function(file){payload.append('references',file,file.name);});
+      if(preflight&&!(await preflight.gate(payload))){submit.disabled=false;submit.textContent='Send enquiry to ${artist}';status.textContent='';return;}
       var response=await fetch('${formPath}',{method:'POST',body:payload,credentials:'same-origin'});
       var result=await response.json().catch(function(){return {};});
       if(!response.ok||!result.ok){if(response.status>=400&&response.status<500)clearKey();throw new Error(result.error||'The enquiry could not be sent.');}
@@ -259,7 +263,7 @@ export async function handleHostedBookingRequest(request, env, { logger, fetchIm
       sourceMode: 'hosted',
     });
 
-    const body = renderHostedForm(meta, sourceId);
+    const body = renderHostedForm(meta, sourceId, { preflight: env?.INTAKE_PREFLIGHT_ENABLED === 'true' });
     return new Response(request.method === 'HEAD' ? null : body, {
       status: 200,
       headers: pageHeaders(),
@@ -289,3 +293,5 @@ export async function handleHostedBookingRequest(request, env, { logger, fetchIm
     return unavailablePage(safe.status >= 500 ? 503 : 404);
   }
 }
+
+export const __testing = Object.freeze({ renderHostedForm });

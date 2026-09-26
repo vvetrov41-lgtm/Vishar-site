@@ -21,6 +21,13 @@ import { parseEnquiryFields, parseEnquiryFiles } from '../lib/validation.js';
 import { createSupabaseClient, SupabaseError, toRequestError } from '../lib/supabase.js';
 import { createStorageClient } from '../lib/storage.js';
 import { scheduleEnquiryAi } from '../lib/enquiry-ai.js';
+import {
+  markPreflightSubmitted,
+  readPreflightFollowUp,
+  readPreflightReferenceCount,
+  recordPreflight,
+  runIntakePreflight,
+} from '../lib/intake-preflight/provider.js';
 import { buildEnquiryNotification, sendNotification } from '../lib/telegram.js';
 import {
   readBookingSourcePublicId,
@@ -179,6 +186,37 @@ async function handleEnquiryIntakeInternal(
       logger.info('enquiry.honeypot', { route: 'enquiries', outcome: 'ignored' });
       return jsonResponse({ ok: true }, 200, responseCors);
     }
+
+    // Semantic preflight: same source resolution and deterministic validation
+    // as a real submit, then a clarity check on four free-text fields. Nothing
+    // is persisted except metadata telemetry, no files are read, and every
+    // failure answers "skipped" so the form submits normally.
+    if (form.get('preflight') === '1') {
+      const result = await runIntakePreflight(env, {
+        projectType: enquiry.projectType,
+        placement: enquiry.placement,
+        size: enquiry.size,
+        idea: enquiry.idea,
+        coverUp: enquiry.coverUp,
+        referenceCount: readPreflightReferenceCount(form),
+      }, { fetchImpl });
+      const preflightId = crypto.randomUUID();
+      const formPath = hostedMode ? 'hosted'
+        : String(env?.BOOKING_SOURCE_KEY ?? '').startsWith('public-slug:') ? 'slug' : 'external';
+      try {
+        if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
+        recordPreflight(supabase, { id: preflightId, formPath, result }, schedule);
+      } catch { /* telemetry is optional */ }
+      logger.info('enquiry.preflight', {
+        route: 'enquiries', status: result.status, outcome: result.outcome,
+        categories: result.categories.join('+') || 'none', durationMs: result.latencyMs,
+      });
+      return jsonResponse({
+        ok: true,
+        preflight: { id: preflightId, version: result.version, status: result.status, messages: result.messages },
+      }, 200, responseCors);
+    }
+    const preflightFollowUp = readPreflightFollowUp(form);
 
     const openAiAdsContext = readOpenAiAdsMeasurementContext(form, origin);
     const metaAdsContext = readMetaAdsMeasurementContext(form, origin);
@@ -411,6 +449,7 @@ async function handleEnquiryIntakeInternal(
     });
 
     scheduleEnquiryAi(env, enquiryId, schedule, { supabase, fetchImpl });
+    markPreflightSubmitted(supabase, preflightFollowUp, enquiryId, schedule);
     const outboxId = finalization?.outbox_id;
     let notification = { delivered: false, errorCode: 'outbox_route_missing' };
     // Audit M-1: production delivers enquiry alerts only through the scheduled

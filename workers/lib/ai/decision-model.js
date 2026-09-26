@@ -26,15 +26,16 @@ export function decisionModelConfig(env) {
 }
 
 /**
- * One decision for one minimal state. Returns either
- * { ok: true, decision, model, provider, durationMs, costUsd, inputTokens, contract }
- * or { ok: false, code, durationMs }. `decision` is the fail-closed typed
- * result of `decide`, which may abstain on any question.
+ * One typed decision call: { state, questions } in, raw answers out. Shared by
+ * every decision contract (CRM next step, intake preflight) so transport
+ * rules live in one place. Returns
+ * { ok: true, answers, model, provider, durationMs, costUsd, inputTokens }
+ * or { ok: false, code, durationMs }. Never logs the body or the answer.
  */
-export async function requestDecision(config, state, { fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, now = Date.now } = {}) {
+export async function requestTypedDecision(config, { state, questions }, { fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS, now = Date.now } = {}) {
   if (!config) return { ok: false, code: 'not_configured', durationMs: 0 };
-  if (!Array.isArray(state?.allowed_actions) || !state.allowed_actions.length) {
-    return { ok: false, code: 'no_allowed_actions', durationMs: 0 };
+  if (!state || typeof state !== 'object' || !questions || typeof questions !== 'object') {
+    return { ok: false, code: 'request_invalid', durationMs: 0 };
   }
   const startedAt = now();
   let response;
@@ -42,7 +43,7 @@ export async function requestDecision(config, state, { fetchImpl = fetch, timeou
     response = await fetchImpl(DECISION_ENDPOINT, {
       method: 'POST',
       headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: config.model, state, questions: buildQuestions(state.allowed_actions) }),
+      body: JSON.stringify({ model: config.model, state, questions }),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'manual',
     });
@@ -66,20 +67,37 @@ export async function requestDecision(config, state, { fetchImpl = fetch, timeou
   } catch {
     return { ok: false, code: 'malformed', durationMs };
   }
-  const decision = decide(data?.answers, state.allowed_actions);
-  if (decision.invalid) return { ok: false, code: 'answer_invalid', durationMs };
+  if (!data?.answers || typeof data.answers !== 'object') return { ok: false, code: 'answer_invalid', durationMs };
   const cost = Number(data?.usage?.cost);
   const tokens = Number(data?.usage?.input_tokens);
   return {
     ok: true,
-    decision,
-    contract: DECISION_CONTRACT_VERSION,
+    answers: data.answers,
     model: typeof data?.model === 'string' && SERVED_RE.test(data.model) ? data.model : config.model,
     provider: typeof data?.provider === 'string' && SERVED_RE.test(data.provider) ? data.provider : null,
     durationMs,
     costUsd: Number.isFinite(cost) && cost >= 0 ? cost : null,
     inputTokens: Number.isSafeInteger(tokens) && tokens >= 0 ? tokens : null,
   };
+}
+
+/**
+ * One decision for one minimal state. Returns either
+ * { ok: true, decision, model, provider, durationMs, costUsd, inputTokens, contract }
+ * or { ok: false, code, durationMs }. `decision` is the fail-closed typed
+ * result of `decide`, which may abstain on any question.
+ */
+export async function requestDecision(config, state, options = {}) {
+  if (!config) return { ok: false, code: 'not_configured', durationMs: 0 };
+  if (!Array.isArray(state?.allowed_actions) || !state.allowed_actions.length) {
+    return { ok: false, code: 'no_allowed_actions', durationMs: 0 };
+  }
+  const result = await requestTypedDecision(config, { state, questions: buildQuestions(state.allowed_actions) }, options);
+  if (!result.ok) return result;
+  const decision = decide(result.answers, state.allowed_actions);
+  if (decision.invalid) return { ok: false, code: 'answer_invalid', durationMs: result.durationMs };
+  const { answers: _answers, ...meta } = result;
+  return { ...meta, decision, contract: DECISION_CONTRACT_VERSION };
 }
 
 export const __testing = Object.freeze({ MIN_KEY_LENGTH, DEFAULT_TIMEOUT_MS });

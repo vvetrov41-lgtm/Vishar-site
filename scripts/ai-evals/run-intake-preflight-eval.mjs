@@ -35,7 +35,7 @@ const ratio = (n, d) => (d ? round(n / d) : null);
 function selfTest() {
   if (!PREFLIGHT_FIXTURES.length || PREFLIGHT_FIXTURES.length * REPEATS > MAX_CALLS) throw new Error('fixture_budget_invalid');
   const ids = new Set();
-  const splits = { dev: 0, holdout: 0 };
+  const splits = { dev: 0, holdout: 0, holdout2: 0 };
   let needClarify = 0; let needNone = 0; let review = 0;
   for (const f of PREFLIGHT_FIXTURES) {
     if (!f.id || ids.has(f.id)) throw new Error(`fixture_id_invalid:${f.id}`);
@@ -173,7 +173,7 @@ async function live() {
     }
   }
   const bySplit = {};
-  for (const split of ['dev', 'holdout']) bySplit[split] = summarise(rows.filter((r) => r.split === split));
+  for (const split of ['dev', 'holdout', 'holdout2']) bySplit[split] = summarise(rows.filter((r) => r.split === split));
   const report = {
     ...meta,
     totalCostUsd: round(cost, 6),

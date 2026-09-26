@@ -18,14 +18,14 @@
 //
 // The same module drives the synthetic eval (scripts/ai-evals) and the Worker.
 
-export const PREFLIGHT_VERSION = 'intake-preflight.2026-09-26';
+export const PREFLIGHT_VERSION = 'intake-preflight.2026-09-26b';
 
 // A field is flagged only when the provider is confident it is unclear:
 // P(clear) at or below this value. False clarifications cost more than
 // missed ones, so the bar is deliberately strict.
-export const UNCLEAR_MAX_P = 0.2;
+export const UNCLEAR_MAX_P = 0.3;
 // artist_review is used only when the provider is confident.
-export const ARTIST_REVIEW_MIN_P = 0.8;
+export const ARTIST_REVIEW_MIN_P = 0.65;
 
 export const PREFLIGHT_STATUSES = Object.freeze(['ready', 'clarify', 'artist_review', 'skipped']);
 export const CLARIFY_CATEGORIES = Object.freeze(['placement', 'size', 'idea', 'coverup_goal']);
