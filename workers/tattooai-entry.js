@@ -25,18 +25,31 @@ import {
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
 
-// Public per-IP rate limits (audit M-8). Every browser-reachable request is
-// counted: POST (enquiries, AI tools, client actions) against the write
-// limiter, everything else against the generous read limiter. CORS preflights
-// are never counted. Subrequests from Cloudflare Workers all share one egress
+// Public per-IP rate limits (audit M-8). Normal browser-reachable POSTs
+// (enquiries, AI tools, client actions) use the write limiter and reads use
+// the generous read limiter. Semantic preflight has its own stricter limiter
+// and is deliberately excluded from the write bucket so it cannot consume
+// capacity reserved for the actual enquiry submission. CORS preflights are
+// never counted. Subrequests from Cloudflare Workers all share one egress
 // address, so the first-party booking edges that proxy to this Worker would
 // otherwise throttle every visitor together; they are not counted here.
 // A missing or failing limiter never blocks a request.
 const WORKER_EGRESS_PREFIX = '2a06:98c0:3600:';
 
+function isSemanticPreflightRequest(request) {
+  try {
+    const url = new URL(request?.url ?? '');
+    return String(request?.method || '').toUpperCase() === 'POST'
+      && url.searchParams.get('preflight') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function rateLimitClass(request) {
   const method = String(request?.method || '').toUpperCase();
   if (method === 'OPTIONS') return null;
+  if (isSemanticPreflightRequest(request)) return null;
   return method === 'POST' ? 'write' : 'read';
 }
 
