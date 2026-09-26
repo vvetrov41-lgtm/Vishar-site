@@ -13,14 +13,12 @@ assert.match(booking, /pixelId: 'XkQY5Xq3FbxJvAx2qDD9my'/);
 assert.match(booking, /const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent'/);
 assert.match(booking, /storedConsent\(OPENAI_ADS_CONSENT_KEY\) !== 'granted'/);
 assert.match(booking, /cookieValue\('__oppref'\)/);
-assert.match(booking, /cookieValue\('__obref'\)/);
 assert.match(booking, /window\.location\.origin \+ window\.location\.pathname/);
 
 for (const field of [
   'openaiAdsMeasurementConsent',
   'openaiAdsSourceUrl',
   'openaiAdsOppref',
-  'openaiAdsObref',
 ]) {
   assert.ok(booking.includes(`payload.append('${field}'`), `${field} must be handed to the Worker`);
 }
@@ -38,6 +36,8 @@ assert.match(
 assert.ok(!booking.includes("payload.append('openaiAdsEmail'"));
 assert.ok(!booking.includes("payload.append('openaiAdsPhone'"));
 assert.ok(!booking.includes("payload.append('openaiAdsName'"));
+assert.ok(!booking.includes("payload.append('openaiAdsObref'"),
+  'PR #909 intentionally removed the unused obref forwarding path');
 
 assert.match(privacy, /server-to-server through the OpenAI Ads Conversions API/);
 assert.match(privacy, /<code>__obref<\/code>/);

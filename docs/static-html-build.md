@@ -42,8 +42,10 @@ modules, never the generated blocks — the next build overwrites them.
 ## Committed output
 
 The generated HTML is committed, the same way `assets/css/tailwind.css` is.
-Cloudflare Pages therefore keeps serving the repository as-is, with no build
-step of its own. `npm run validate:site` re-runs the generator in check mode and
+Cloudflare Pages does not run this generator. Its only build step is
+`scripts/build-public.mjs`, which copies the allowlisted public files into
+`dist/` (see `docs/public-deploy-boundary.md`); a new page must be added to that
+allowlist to be published. `npm run validate:site` re-runs the generator in check mode and
 fails on drift, and it also asserts on the raw file contents that every page
 carries the main nav, the footer, the shared internal links, and every gallery
 image with alt text.
