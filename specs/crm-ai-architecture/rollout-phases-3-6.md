@@ -73,7 +73,7 @@ from public.client_ai_state group by 1;                      -- fact conflicts, 
 ## Rollback
 
 - **Phase 3 activation.**
-  - Remove `CRM_AGENT_CONTRACT` in a Worker release: the v1 contract returns immediately.
+  - Set `CRM_AGENT_CONTRACT = "v1"` in a Worker release: the v1 contract returns immediately. Removing the line is not enough, because the release deploys with `--keep-vars` and the remote `v2` binding would survive.
   - Set `deterministic_state = false` in a later migration.
   - No row is lost, and briefs written meanwhile are valid under both contracts.
 - **Phase 4 activation.**
