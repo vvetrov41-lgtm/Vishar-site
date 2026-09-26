@@ -30,7 +30,13 @@ export type TodayItemKind =
   | 'deposit_outstanding'
   | 'new_enquiry'
   | 'overdue_follow_up'
-  | 'integration_failure';
+  | 'integration_failure'
+  // Only the server pulse produces these (Phase 4): they need the
+  // deterministic attention layer, which the browser cannot compute.
+  | 'conflict'
+  | 'unmatched_inbound'
+  | 'client_follow_up_due'
+  | 'client_cold';
 
 /**
  * Client-originated work first: those are the items where the delay is visible
@@ -68,6 +74,10 @@ export interface TodayItem {
   urgent: boolean;
   /** Present only where acknowledging this exact observed version is safe. */
   acknowledgement: AttentionItemRef | null;
+  /** Server pulse only: the rule code that put this row here. */
+  reason?: string;
+  /** Server pulse only: an open AI next action, shown as a labelled suggestion. */
+  aiSuggestion?: { id: string; action_type: string; reason: string | null } | null;
 }
 
 export interface TodaySnapshot {

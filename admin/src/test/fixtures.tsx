@@ -422,6 +422,11 @@ export interface FakeClientOptions {
   role: CrmRole | 'deactivated' | 'signed_out' | 'no_profile';
   /** Records every RPC the interface attempts, so tests can assert on writes. */
   rpcCalls?: { name: string; args: Record<string, unknown> | undefined }[];
+  /**
+   * What `get_today_pulse` answers. Omitted means the server pulse is present
+   * but switched off, which is production's default.
+   */
+  todayPulse?: unknown;
   /** Records PostgREST filters so detail pages can prove server-side scoping. */
   queryCalls?: { table: string; method: string; args: unknown[] }[];
   /** Force an error from one table, to exercise the error state. */
@@ -1133,6 +1138,12 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       }
       if (name === 'list_capabilities') return { data: [], error: null };
       if (name === 'list_attention_acknowledgements') return { data: [], error: null };
+      if (name === 'get_today_pulse') {
+        return {
+          data: options.todayPulse ?? { generated_at: '2026-09-01T08:00:00Z', enabled: false, items: [], artists: [] },
+          error: null,
+        };
+      }
 
       // --- Control plane ---------------------------------------------------
       // Every one of these refuses rather than answering empty when the option

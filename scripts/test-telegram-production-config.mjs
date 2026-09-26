@@ -32,6 +32,7 @@ for (const needle of [
   'TELEGRAM_DRAIN_ENABLED = "false"', 'GMAIL_SHARED_DRAIN_ENABLED = "false"', 'AUTOMATION_TICK_ENABLED = "false"',
   'ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'CRM_AGENT_SHARED_DRAIN_ENABLED = "false"',
   'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "false"',
+  'CRM_TODAY_PULSE_ENABLED = "false"',
 ]) expectIncludes(tracked, needle, 'tracked config');
 for (const needle of ['[triggers]','crons =','[[services]]','gwaliusblwrzisrwnsvs','vishar-telegram-drain-staging','TELEGRAM_CHAT_ID','GOOGLE_OAUTH_CLIENT_SECRET','GMAIL_TOKEN_ENCRYPTION_KEY']) expectExcludes(tracked, needle, 'tracked config');
 

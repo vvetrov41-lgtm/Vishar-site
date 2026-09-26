@@ -513,16 +513,16 @@ await test('vision stays off until its own switch is set', async () => {
 // Telegram control surface
 // ---------------------------------------------------------------------------
 
-const { crmAgentDigestCommand, handleCrmAgentDigestCommand, renderDigest } =
+const { crmAgentDigestCommand, handleCrmAgentDigestCommand, renderDigest, renderPulse } =
   await import('../workers/lib/crm-agent-telegram.js');
 
 const tgEnv = { ...env, CRM_AGENT_TELEGRAM_DIGEST_ENABLED: 'true', TELEGRAM_BOT_TOKEN: 'x'.repeat(40) };
 const update = (text, chat = { id: 4242, type: 'private' }) => ({ message: { text, chat } });
 
 await test('the digest command is recognised in a private chat only', () => {
-  assert.deepEqual(crmAgentDigestCommand(update('/needsme')), { chatId: '4242' });
-  assert.deepEqual(crmAgentDigestCommand(update('/today')), { chatId: '4242' });
-  assert.deepEqual(crmAgentDigestCommand(update('/needsme@visharbot')), { chatId: '4242' });
+  assert.deepEqual(crmAgentDigestCommand(update('/needsme')), { chatId: '4242', command: 'needsme' });
+  assert.deepEqual(crmAgentDigestCommand(update('/today')), { chatId: '4242', command: 'today' });
+  assert.deepEqual(crmAgentDigestCommand(update('/needsme@visharbot')), { chatId: '4242', command: 'needsme' });
   // A group chat is a shared destination; one artist's client list is not
   // group content.
   assert.equal(crmAgentDigestCommand(update('/needsme', { id: -100, type: 'supergroup' })), null);
@@ -606,6 +606,60 @@ await test('the digest stays off until its own switch is set', async () => {
     { supabase: { rpc: async () => { called = true; return {}; } }, fetchImpl: async () => ({ ok: true }) });
   assert.equal(ok, false);
   assert.equal(called, false);
+});
+
+await test('/today reads the deterministic pulse once its switch is on', async () => {
+  const calls = [];
+  const sent = [];
+  const ok = await handleCrmAgentDigestCommand({ ...tgEnv, CRM_AGENT_TELEGRAM_DIGEST_ENABLED: 'false', CRM_TODAY_PULSE_ENABLED: 'true' },
+    { chatId: '4242', command: 'today' }, {
+      supabase: {
+        rpc: async (name, args) => {
+          calls.push({ name, args });
+          return { status: 'ok', total: 3, items: [
+            { kind: 'reply', reason: 'client_message_unanswered', subject: 'Donovan Hale', urgent: true },
+            { kind: 'unmatched_inbound', reason: 'unknown_sender_unanswered', subject: null, detail: '2', urgent: false },
+          ] };
+        },
+      },
+      fetchImpl: async (url, init) => { sent.push({ url: String(url), body: init?.body }); return { ok: true }; },
+    });
+  assert.equal(ok, true);
+  assert.deepEqual(calls, [{ name: 'service_telegram_today_pulse', args: { p_chat_id: '4242', p_limit: 10 } }]);
+  assert.ok(sent[0].body.includes('Donovan Hale'));
+  assert.ok(sent[0].body.includes('Waiting for your reply'));
+  assert.ok(sent[0].body.includes('Messages from unknown senders (2)'));
+  assert.ok(sent[0].body.includes('1 more in the CRM.'));
+});
+
+await test('/needsme keeps the AI digest while the pulse is on', async () => {
+  const calls = [];
+  await handleCrmAgentDigestCommand({ ...tgEnv, CRM_TODAY_PULSE_ENABLED: 'true' }, { chatId: '4242', command: 'needsme' }, {
+    supabase: { rpc: async (name) => { calls.push(name); return { items: [] }; } },
+    fetchImpl: async () => ({ ok: true }),
+  });
+  assert.deepEqual(calls, ['service_telegram_client_ai_digest']);
+});
+
+await test('/today stays on the AI digest until the pulse switch is set', async () => {
+  const calls = [];
+  await handleCrmAgentDigestCommand(tgEnv, { chatId: '4242', command: 'today' }, {
+    supabase: { rpc: async (name) => { calls.push(name); return { items: [] }; } },
+    fetchImpl: async () => ({ ok: true }),
+  });
+  assert.deepEqual(calls, ['service_telegram_client_ai_digest']);
+});
+
+await test('the pulse renders rule codes as plain language and never a raw code or id', () => {
+  const text = renderPulse({ items: [
+    { kind: 'conflict', reason: 'deposit_paid_without_booking', subject: 'A\nB', urgent: false },
+    { kind: 'x', reason: 'invented_code', subject: null, urgent: false },
+  ] });
+  assert.ok(text.includes('A B — Deposit paid, no session booked'));
+  assert.ok(text.includes('Needs a look'));
+  assert.ok(!text.includes('invented_code'));
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}-/.test(text));
+  assert.equal(renderPulse({ items: [] }), 'Vishar CRM: nothing needs you right now.');
 });
 
 // ---------------------------------------------------------------------------

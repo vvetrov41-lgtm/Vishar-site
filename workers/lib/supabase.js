@@ -65,6 +65,7 @@ export const CRM_AGENT_RPCS = new Set([
   'service_converge_client_ai_briefs',
   // Phase 3: bounded classifier result for the latest client message.
   'service_record_client_reply_state',
+  'service_telegram_today_pulse',
 ]);
 
 /**

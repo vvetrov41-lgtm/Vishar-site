@@ -60,6 +60,9 @@ INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "false"
 # no date and moves no money; it requires TELEGRAM_LINKING_ENABLED as well,
 # because it answers on the same webhook.
 CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"
+# Telegram /today reads the deterministic Today pulse (service_telegram_today_pulse).
+# Stays off until the pulse has production acceptance; /needsme is unaffected.
+CRM_TODAY_PULSE_ENABLED = "false"
 TELEGRAM_LINKING_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.

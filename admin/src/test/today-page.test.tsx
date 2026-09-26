@@ -145,4 +145,63 @@ describe('today workspace', () => {
     const financeCalls = rpcCalls.filter((call) => call.name === 'list_monzo_reconciliation_candidates');
     expect(financeCalls.length).toBeGreaterThan(0);
   });
+
+  describe('server pulse', () => {
+    const pulse = (enabled: boolean) => ({
+      generated_at: '2026-09-01T08:00:00Z',
+      enabled,
+      items: [
+        {
+          key: 'conflict-c1-deposit_paid_without_booking', kind: 'conflict', section: 'conflicts',
+          reason: 'deposit_paid_without_booking', artist_id: 'a1', client_id: CLIENT_ID,
+          subject: 'Server Pulse Client', href: `/clients/${CLIENT_ID}`, at: null,
+          detail: 'deposit_paid_without_booking', sla_state: 'ok',
+          ai_suggestion: { id: 'n1', action_type: 'offer_dates', reason: 'Deposit is in.' },
+          acknowledgement: null, urgent: false,
+        },
+        {
+          key: 'unmatched-inbound', kind: 'unmatched_inbound', section: 'inbox',
+          reason: 'unknown_sender_unanswered', artist_id: 'a1', client_id: null, subject: null,
+          href: '/inbox?view=unmatched', at: '2026-09-01T07:00:00Z', detail: '2', sla_state: null,
+          ai_suggestion: null, acknowledgement: null, urgent: false,
+        },
+        {
+          key: 'x', kind: 'invented_kind', section: 'waiting_for_you', reason: 'x', artist_id: 'a1',
+          client_id: null, subject: 'Should not render', href: null, at: null, detail: null,
+          sla_state: null, ai_suggestion: null, acknowledgement: null, urgent: false,
+        },
+      ],
+      artists: [{
+        artist_id: 'a1', artist_name: 'Vladimir',
+        changes: { new_enquiries: 3, inbound_messages: 7, sessions_booked: 1, payments_received: 2 },
+        median_first_reply_hours: 4.5, enquiries_without_reply_30d: 1,
+        sources: { gmail_snapshot: 'stale', gmail_refreshed_at: '2026-08-30T08:00:00Z' },
+      }],
+    });
+
+    it('keeps the browser list while the pulse is switched off', async () => {
+      renderWithSession(<App />, { role: 'owner', path: '/', todayPulse: pulse(false) });
+      const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+        .closest('section') as HTMLElement;
+      expect(within(needsYou).getByText('Waiting for your reply')).toBeInTheDocument();
+      expect(within(needsYou).queryByText('Server Pulse Client')).not.toBeInTheDocument();
+    });
+
+    it('renders the server items, labels AI as a suggestion and reports a stale source', async () => {
+      renderWithSession(<App />, { role: 'owner', path: '/', todayPulse: pulse(true) });
+      const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+        .closest('section') as HTMLElement;
+      await within(needsYou).findByText('Server Pulse Client');
+      expect(within(needsYou).getByText('Deposit paid, no session booked')).toBeInTheDocument();
+      expect(within(needsYou).getByText('AI suggestion: offer dates')).toBeInTheDocument();
+      expect(within(needsYou).getByText('Messages from unknown senders')).toBeInTheDocument();
+      expect(within(needsYou).queryByText('Should not render')).not.toBeInTheDocument();
+      expect(within(needsYou).getByText(/Since yesterday: 3 new enquiries · 7 messages in · 1 bookings · 2 payments/)).toBeInTheDocument();
+      expect(within(needsYou).getByText(/median first reply 4.5 h/)).toBeInTheDocument();
+      expect(within(needsYou).getByText(/Gmail has not refreshed for over a day/)).toBeInTheDocument();
+      // The browser list is replaced, not merged.
+      expect(within(needsYou).queryByText('Waiting for your reply')).not.toBeInTheDocument();
+    });
+  });
 });
+

@@ -45,6 +45,7 @@ const required = [
   'WHATSAPP_SHARED_DRAIN_ENABLED = "false"',
   'INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "false"',
   'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"',
+  'CRM_TODAY_PULSE_ENABLED = "false"',
   'TELEGRAM_LINKING_ENABLED = "false"',
 ];
 for (const needle of required) {
