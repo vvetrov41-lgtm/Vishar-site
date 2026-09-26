@@ -1,7 +1,7 @@
 // Audit M-8: public TattooAI per-IP rate limits and first-party API host.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import entry, { __testing, rateLimitClass } from '../workers/tattooai-entry.js';
+import entry, { __testing, enforceSemanticPreflightRateLimit, rateLimitClass } from '../workers/tattooai-entry.js';
 
 const { enforcePublicRateLimit } = __testing;
 
@@ -62,6 +62,41 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
 }
 
 {
+  const semantic = limiter(1);
+  const e = { ...env, INTAKE_PREFLIGHT_RATE_LIMIT: semantic };
+  const direct = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.10' },
+  });
+  assert.equal(await enforceSemanticPreflightRateLimit(direct, e), null);
+  const refused = await enforceSemanticPreflightRateLimit(direct, e);
+  assert.equal(refused.status, 429);
+  assert.deepEqual(semantic.calls, ['preflight:198.51.100.10', 'preflight:198.51.100.10']);
+
+  const missing = await enforceSemanticPreflightRateLimit(direct, env);
+  assert.equal(missing.status, 503, 'missing semantic limiter disables only the optional preflight');
+
+  const workerEgress = new Request('https://tattooai.vvetrov41.workers.dev/?preflight=1', {
+    method: 'POST',
+    headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
+  });
+  assert.equal((await enforceSemanticPreflightRateLimit(workerEgress, env)).status, 503,
+    'Worker egress is never exempt: without the limiter the paid preflight is unavailable');
+  const shared = limiter(1);
+  const egressEnv = { ...env, INTAKE_PREFLIGHT_RATE_LIMIT: shared };
+  assert.equal(await enforceSemanticPreflightRateLimit(workerEgress, egressEnv), null);
+  assert.equal((await enforceSemanticPreflightRateLimit(workerEgress, egressEnv)).status, 429,
+    'any Cloudflare Worker (first-party or not) shares one bounded egress budget');
+  assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress']);
+  const finalSubmit = new Request('https://tattooai.vvetrov41.workers.dev/', {
+    method: 'POST',
+    headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
+  });
+  assert.equal(await enforceSemanticPreflightRateLimit(finalSubmit, egressEnv), null,
+    'a real submission is never subject to the semantic limiter');
+}
+
+{
   const e = { ...env, PUBLIC_WRITE_RATE_LIMIT: limiter(0), PUBLIC_READ_RATE_LIMIT: limiter(0) };
   const internal = new Request('https://tattooai.internal/internal/enquiry-ai/drain', {
     method: 'POST', headers: { 'CF-Connecting-IP': '198.51.100.9' },
@@ -78,5 +113,6 @@ assert.match(toml, /\[env\.preview\]\nworkers_dev = false\n(?:#[^\n]*\n)*routes 
   'preview never inherits the production Custom Domain');
 assert.match(toml, /name = "PUBLIC_WRITE_RATE_LIMIT"\nnamespace_id = "1007"\nsimple = \{ limit = 20, period = 60 \}/);
 assert.match(toml, /name = "PUBLIC_READ_RATE_LIMIT"\nnamespace_id = "1008"\nsimple = \{ limit = 300, period = 60 \}/);
+assert.match(toml, /name = "INTAKE_PREFLIGHT_RATE_LIMIT"\nnamespace_id = "1012"\nsimple = \{ limit = 10, period = 60 \}/);
 
 console.log('TattooAI public rate limits and first-party API host: passed.');

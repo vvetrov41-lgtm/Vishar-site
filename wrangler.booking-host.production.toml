@@ -14,3 +14,10 @@ preview_urls = false
 #   booking.vishartattoo.com -> vishar-booking-host-production
 # Keeping domain ownership out of routine code deploys prevents a source update
 # from mutating DNS or routing.
+
+# Optional semantic preflight is rate-limited at the originating client edge.
+# Limiter failure disables only the semantic check; the real enquiry still submits.
+[[ratelimits]]
+name = "HOSTED_FORM_PREFLIGHT_RATE_LIMIT"
+namespace_id = "1009"
+simple = { limit = 10, period = 60 }

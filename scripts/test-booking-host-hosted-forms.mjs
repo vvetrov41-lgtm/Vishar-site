@@ -190,6 +190,54 @@ test('nothing the browser sends becomes routing authority', async () => {
   assert.equal(calls[0].init.headers.Origin, undefined);
 });
 
+test('semantic preflight is rate-limited and its bounded contract survives the hosted proxy', async () => {
+  const preflight = {
+    id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    version: 'intake-preflight.2026-09-26c',
+    status: 'clarify',
+    messages: [{ field: 'placement', text: 'Please be more specific.' }],
+  };
+  const { calls, fetchImpl } = upstreamFetch({ postBody: { ok: true, preflight } });
+  const body = new FormData();
+  body.append('preflight', '1');
+  body.append('preflightId', preflight.id);
+  let limits = 0;
+  const response = await handleProductionBookingHostRequest(
+    new Request(`${FORM_URL}?preflight=1`, {
+      method: 'POST',
+      body,
+      headers: { 'CF-Connecting-IP': '203.0.113.10' },
+    }),
+    {
+      fetchImpl,
+      preflightLimiter: {
+        limit: async ({ key }) => {
+          limits += 1;
+          assert.equal(key, 'preflight:203.0.113.10');
+          return { success: true };
+        },
+      },
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).preflight, preflight);
+  assert.equal(limits, 1);
+  assert.equal(calls[0].url, `${UPSTREAM}${FORM_PATH}?preflight=1`);
+
+  const blocked = await handleProductionBookingHostRequest(
+    new Request(`${FORM_URL}?preflight=1`, {
+      method: 'POST',
+      body: new FormData(),
+      headers: { 'CF-Connecting-IP': '203.0.113.10' },
+    }),
+    {
+      fetchImpl: async () => { throw new Error('must not forward'); },
+      preflightLimiter: { limit: async () => ({ success: false }) },
+    },
+  );
+  assert.equal(blocked.status, 429);
+});
+
 test('a multipart submission still reaches the durable intake', async () => {
   const { calls, fetchImpl } = upstreamFetch();
   const body = new FormData();

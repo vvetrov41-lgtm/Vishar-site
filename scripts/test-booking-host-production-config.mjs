@@ -28,6 +28,7 @@ assert.doesNotMatch(activeConfig, /^routes\s*=/m);
 assert.doesNotMatch(activeConfig, /pattern\s*=/);
 assert.doesNotMatch(activeConfig, /custom_domain\s*=/);
 assert.doesNotMatch(activeConfig, /^\[vars\]$/m);
+assert.match(activeConfig, /\[\[ratelimits\]\][\s\S]*name = "HOSTED_FORM_PREFLIGHT_RATE_LIMIT"/);
 assert.doesNotMatch(activeConfig, /SUPABASE|TELEGRAM|MONZO|GOOGLE_OAUTH|SECRET|TOKEN|KV/i);
 
 assert.match(config, /booking\.vishartattoo\.com/);
@@ -166,7 +167,7 @@ assert.match(releaseWorkflow, /git ls-remote --heads origin/);
 assert.match(releaseWorkflow, /git merge-base --is-ancestor/);
 assert.match(releaseWorkflow, /workers\/scripts\/\$\{WORKER_NAME\}/);
 assert.match(releaseWorkflow, /body\.result\.bindings/);
-assert.match(releaseWorkflow, /bindings\.length !== 0/);
+assert.match(releaseWorkflow, /HOSTED_FORM_PREFLIGHT_RATE_LIMIT/);
 assert.match(releaseWorkflow, /--dry-run/);
 assert.match(releaseWorkflow, /npx wrangler deploy --config "\$PRODUCTION_CONFIG" --name "\$WORKER_NAME"/);
 assert.match(releaseWorkflow, /Cloudflare deployment id did not change after deploy/);
@@ -180,7 +181,8 @@ assert.match(privateReleaseWorkflow, /release\/private-crm-rc\*-booking-host\*\)
 assert.match(privateReleaseObserver, /release\/private-crm-rc\*-booking-host\*\) exit 1/);
 
 // The hosted booking namespace is proxied, never re-implemented here: the
-// booking host stays credential-free, so it must not gain a Supabase client.
+// booking host stays free of application credentials; its only live binding
+// is the client-aware semantic-preflight rate limiter.
 assert.equal(productionTesting.FORMS_NAMESPACE_PREFIX, '/forms/');
 assert.equal(productionTesting.FORMS_UPSTREAM_ORIGIN, 'https://tattooai.vvetrov41.workers.dev');
 assert.match(productionWorker, /proxyHostedBookingForm/);

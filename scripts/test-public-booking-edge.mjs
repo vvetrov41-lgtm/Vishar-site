@@ -96,6 +96,46 @@ test('wrong host and malformed slug never reach upstream', async () => {
   }
 });
 
+test('semantic preflight is limited by client IP before upstream forwarding', async () => {
+  const { calls, fetchImpl } = upstream(Response.json({ ok: true, preflight: { status: 'ready', messages: [] } }));
+  const body = new FormData();
+  body.append('preflight', '1');
+  let limits = 0;
+  const response = await proxyPublicBooking(
+    new Request(`${URL}?preflight=1`, {
+      method: 'POST',
+      body,
+      headers: { 'CF-Connecting-IP': '203.0.113.20' },
+    }),
+    {
+      fetchImpl,
+      preflightLimiter: {
+        limit: async ({ key }) => {
+          limits += 1;
+          assert.equal(key, 'preflight:203.0.113.20');
+          return { success: true };
+        },
+      },
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(limits, 1);
+  assert.equal(calls.length, 1);
+
+  const blocked = await proxyPublicBooking(
+    new Request(`${URL}?preflight=1`, {
+      method: 'POST',
+      body: new FormData(),
+      headers: { 'CF-Connecting-IP': '203.0.113.20' },
+    }),
+    {
+      fetchImpl: async () => { throw new Error('must not forward'); },
+      preflightLimiter: { limit: async () => ({ success: false }) },
+    },
+  );
+  assert.equal(blocked.status, 429);
+});
+
 test('POST forwards only multipart content type and body, never browser authority headers', async () => {
   const { calls, fetchImpl } = upstream(Response.json({ ok: true, reference: 'TEST-1' }));
   const body = new FormData();

@@ -99,8 +99,9 @@ jobs:
           const body = JSON.parse(fs.readFileSync(process.env.SETTINGS_FILE, 'utf8'));
           if (body?.success !== true || !body.result) throw new Error('Unable to verify current Worker settings.');
           const bindings = Array.isArray(body.result.bindings) ? body.result.bindings : [];
-          if (bindings.length !== 0) {
-            throw new Error(`Booking host unexpectedly has ${bindings.length} live binding(s); refusing replacement deploy.`);
+          const unexpected = bindings.filter((binding) => binding?.name !== 'HOSTED_FORM_PREFLIGHT_RATE_LIMIT');
+          if (unexpected.length) {
+            throw new Error(`Booking host has unexpected live bindings: ${unexpected.map((b) => b?.name || 'unnamed').join(', ')}`);
           }
           NODE
 
@@ -152,7 +153,9 @@ jobs:
           const body = JSON.parse(fs.readFileSync(process.env.SETTINGS_FILE, 'utf8'));
           if (body?.success !== true || !body.result) throw new Error('Unable to verify deployed Worker settings.');
           const bindings = Array.isArray(body.result.bindings) ? body.result.bindings : [];
-          if (bindings.length !== 0) throw new Error('Booking host gained an unexpected live binding.');
+          if (bindings.length !== 1 || bindings[0]?.name !== 'HOSTED_FORM_PREFLIGHT_RATE_LIMIT') {
+            throw new Error('Booking host did not converge to the single approved preflight rate-limit binding.');
+          }
           if (body.result.compatibility_date !== '2026-05-25') {
             throw new Error(`Unexpected compatibility date: ${body.result.compatibility_date || 'missing'}`);
           }
@@ -212,7 +215,7 @@ jobs:
             echo "- Exact release SHA: \`$GITHUB_SHA\`"
             echo '- Worker: `vishar-booking-host-production` only'
             echo '- Host: `booking.vishartattoo.com`'
-            echo '- Bindings/secrets: expected zero'
+            echo '- Bindings: one rate-limit binding only; secrets: zero'
             echo '- DNS/custom-domain mutation: none'
             echo '- Database/customer-data mutation by acceptance probes: none'
           } >> "$GITHUB_STEP_SUMMARY"

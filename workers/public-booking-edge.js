@@ -16,6 +16,8 @@ const MARKETING_BOOK_PATH = '/book/';
 const BOOK_PATH = /^\/book\/[a-z][a-z0-9-]{1,62}\/?$/;
 const METHODS = new Set(['GET', 'HEAD', 'POST', 'OPTIONS']);
 const MAX_REQUEST_BYTES = 13 * 1024 * 1024;
+const PREFLIGHT_QUERY_KEY = 'preflight';
+const PREFLIGHT_QUERY_VALUE = '1';
 const SAFE_RESPONSE_HEADERS = Object.freeze([
   'allow',
   'cache-control',
@@ -63,6 +65,33 @@ function requestLength(request) {
   return Number.isFinite(value) && value >= 0 ? value : null;
 }
 
+function isPreflightRequest(request) {
+  try {
+    return new URL(request.url).searchParams.get(PREFLIGHT_QUERY_KEY) === PREFLIGHT_QUERY_VALUE;
+  } catch {
+    return false;
+  }
+}
+
+async function enforcePreflightRateLimit(request, limiter) {
+  if (!isPreflightRequest(request)) return null;
+  if (!limiter || typeof limiter.limit !== 'function') {
+    return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503 });
+  }
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (!ip) return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503 });
+  try {
+    const { success } = await limiter.limit({ key: `preflight:${ip}` });
+    if (success) return null;
+  } catch {
+    return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503 });
+  }
+  return Response.json({ ok: false, code: 'rate_limited' }, {
+    status: 429,
+    headers: { 'retry-after': '60', 'cache-control': 'no-store' },
+  });
+}
+
 export function isPublicBookingNamespace(pathname) {
   return pathname.startsWith(BOOK_PREFIX);
 }
@@ -75,7 +104,7 @@ export function isValidPublicBookingPath(pathname) {
   return BOOK_PATH.test(pathname);
 }
 
-export async function proxyPublicBooking(request, { fetchImpl = fetch } = {}) {
+export async function proxyPublicBooking(request, { fetchImpl = fetch, preflightLimiter = null } = {}) {
   const url = new URL(request.url);
   if (url.hostname !== HOST) {
     return plain(404, 'Not found.');
@@ -119,6 +148,8 @@ export async function proxyPublicBooking(request, { fetchImpl = fetch } = {}) {
   };
 
   if (request.method === 'POST') {
+    const limited = await enforcePreflightRateLimit(request, preflightLimiter);
+    if (limited) return limited;
     const contentType = request.headers.get('content-type') || '';
     if (!contentType.toLowerCase().startsWith('multipart/form-data')) {
       return Response.json(
@@ -157,8 +188,10 @@ export async function proxyPublicBooking(request, { fetchImpl = fetch } = {}) {
 }
 
 export default {
-  async fetch(request) {
-    return proxyPublicBooking(request);
+  async fetch(request, env) {
+    return proxyPublicBooking(request, {
+      preflightLimiter: env?.PUBLIC_BOOKING_PREFLIGHT_RATE_LIMIT ?? null,
+    });
   },
 };
 

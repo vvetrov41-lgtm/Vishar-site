@@ -65,6 +65,41 @@ async function enforcePublicRateLimit(request, env) {
     },
   });
 }
+
+export async function enforceSemanticPreflightRateLimit(request, env) {
+  let url;
+  try { url = new URL(request.url); } catch { return null; }
+  if (request.method !== 'POST' || url.searchParams.get('preflight') !== '1') return null;
+
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  // First-party booking Workers enforce their own client-aware limit, but the
+  // Worker egress address is shared by every Cloudflare Worker, including
+  // third-party ones. So Worker egress is not exempt: it shares one global
+  // bucket that bounds provider spend. When it is spent the optional preflight
+  // is skipped; the real enquiry still submits.
+  const key = ip.startsWith(WORKER_EGRESS_PREFIX) ? 'preflight:worker-egress' : `preflight:${ip}`;
+
+  const origin = request.headers.get('Origin') || '';
+  const headers = {
+    ...getCorsHeaders(origin, env, request),
+    'cache-control': 'no-store',
+    'x-content-type-options': 'nosniff',
+  };
+  const limiter = env?.INTAKE_PREFLIGHT_RATE_LIMIT;
+  if (!ip || !limiter || typeof limiter.limit !== 'function') {
+    return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503, headers });
+  }
+  try {
+    const { success } = await limiter.limit({ key });
+    if (success) return null;
+  } catch {
+    return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503, headers });
+  }
+  return Response.json({ ok: false, code: 'rate_limited' }, {
+    status: 429,
+    headers: { ...headers, 'retry-after': '60' },
+  });
+}
 const AI_DRAIN_PATH = '/internal/enquiry-ai/drain';
 const CRM_AGENT_DRAIN_PATH = '/internal/crm-agent/drain';
 const AI_DRAIN_HOST = 'tattooai.internal';
@@ -140,6 +175,11 @@ export default {
     if (isInternalCrmAgentDrainRequest(request)) {
       return handleInternalCrmAgentDrain(request, env);
     }
+
+    // Direct browser preflights receive a stricter paid-provider limiter.
+    // Worker egress (first-party booking edges and any other Worker) shares one budget.
+    const preflightLimited = await enforceSemanticPreflightRateLimit(request, env);
+    if (preflightLimited) return preflightLimited;
 
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.

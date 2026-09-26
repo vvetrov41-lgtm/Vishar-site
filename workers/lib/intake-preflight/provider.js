@@ -73,6 +73,12 @@ export function readPreflightReferenceCount(form) {
   return Number.isFinite(raw) ? Math.min(Math.max(raw, 0), 3) : 0;
 }
 
+/** Stable browser-minted id used to correlate a timed-out preflight with the final submit. */
+export function readPreflightCandidateId(form) {
+  const id = String(form?.get?.('preflightId') ?? '').trim();
+  return UUID_RE.test(id) ? id : null;
+}
+
 /** The browser's note on the final submit: which preflight it followed and what the client did. */
 export function readPreflightFollowUp(form) {
   const id = String(form?.get?.('preflightId') ?? '').trim();
@@ -109,8 +115,16 @@ export async function recordPreflight(supabase, { id, formPath, result }) {
 export function markPreflightSubmitted(supabase, followUp, enquiryId, schedule) {
   if (!supabase || !followUp || typeof schedule !== 'function') return;
   try {
-    schedule(supabase.rpc('service_mark_intake_preflight_submitted', {
-      p_event_id: followUp.id, p_choice: followUp.choice, p_enquiry_id: enquiryId ?? null,
-    }).catch(() => null));
+    schedule((async () => {
+      for (const delayMs of [0, 100, 400, 1000]) {
+        if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+        try {
+          const result = await supabase.rpc('service_mark_intake_preflight_submitted', {
+            p_event_id: followUp.id, p_choice: followUp.choice, p_enquiry_id: enquiryId ?? null,
+          });
+          if (result?.status === 'marked') return;
+        } catch { /* retry boundedly */ }
+      }
+    })().catch(() => null));
   } catch { /* telemetry is optional */ }
 }

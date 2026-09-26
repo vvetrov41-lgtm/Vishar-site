@@ -28,6 +28,10 @@ const FORMS_NAMESPACE_PREFIX = '/forms/';
 const FORMS_PATH_RE = /^\/forms\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/?$/i;
 const FORMS_METHODS = new Set(['GET', 'HEAD', 'POST', 'OPTIONS']);
 const FORMS_MAX_REQUEST_BYTES = 13 * 1024 * 1024;
+const PREFLIGHT_QUERY_KEY = 'preflight';
+const PREFLIGHT_QUERY_VALUE = '1';
+const PREFLIGHT_STATUSES = new Set(['ready', 'clarify', 'artist_review', 'skipped']);
+const PREFLIGHT_FIELDS = new Set(['placement', 'size', 'idea']);
 const FORMS_RESPONSE_HEADERS = Object.freeze([
   'allow',
   'cache-control',
@@ -199,6 +203,47 @@ function requestLength(request) {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
 }
 
+function isPreflightRequest(request) {
+  try {
+    return new URL(request.url).searchParams.get(PREFLIGHT_QUERY_KEY) === PREFLIGHT_QUERY_VALUE;
+  } catch {
+    return false;
+  }
+}
+
+async function enforcePreflightRateLimit(request, limiter) {
+  if (!isPreflightRequest(request)) return null;
+  if (!limiter || typeof limiter.limit !== 'function') {
+    return hostedFormJson({ ok: false, code: 'preflight_unavailable' }, 503);
+  }
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (!ip) return hostedFormJson({ ok: false, code: 'preflight_unavailable' }, 503);
+  try {
+    const { success } = await limiter.limit({ key: `preflight:${ip}` });
+    if (success) return null;
+  } catch {
+    return hostedFormJson({ ok: false, code: 'preflight_unavailable' }, 503);
+  }
+  const response = hostedFormJson({ ok: false, code: 'rate_limited' }, 429);
+  response.headers.set('retry-after', '60');
+  return response;
+}
+
+function projectPreflight(value) {
+  if (!value || typeof value !== 'object' || !PREFLIGHT_STATUSES.has(value.status)) return null;
+  const id = typeof value.id === 'string' && /^[0-9a-f-]{36}$/i.test(value.id) ? value.id : '';
+  const version = typeof value.version === 'string' && /^intake-preflight\.[0-9a-z.-]{1,40}$/.test(value.version)
+    ? value.version : '';
+  const messages = Array.isArray(value.messages)
+    ? value.messages.slice(0, 3).flatMap((message) => {
+        const field = typeof message?.field === 'string' && PREFLIGHT_FIELDS.has(message.field) ? message.field : null;
+        const text = typeof message?.text === 'string' ? message.text.trim().slice(0, 300) : '';
+        return field && text ? [{ field, text }] : [];
+      })
+    : [];
+  return { id, version, status: value.status, messages };
+}
+
 async function submitHostedForm(request, upstreamUrl, fetchImpl) {
   const contentType = request.headers.get('content-type') || '';
   if (!contentType.toLowerCase().startsWith('multipart/form-data')) {
@@ -255,14 +300,16 @@ async function submitHostedForm(request, upstreamUrl, fetchImpl) {
     return hostedFormJson(body, status);
   }
 
+  const preflight = projectPreflight(result.preflight);
   return hostedFormJson({
     ok: true,
     ...(typeof result.reference === 'string' && result.reference ? { reference: result.reference } : {}),
     ...(result.replayed === true ? { replayed: true } : {}),
+    ...(preflight ? { preflight } : {}),
   }, 200);
 }
 
-export async function proxyHostedBookingForm(request, { fetchImpl = fetch } = {}) {
+export async function proxyHostedBookingForm(request, { fetchImpl = fetch, preflightLimiter = null } = {}) {
   const url = new URL(request.url);
 
   // A malformed id is answered here rather than upstream, so the namespace
@@ -280,9 +327,12 @@ export async function proxyHostedBookingForm(request, { fetchImpl = fetch } = {}
     return plain(405, 'Method not allowed.', { Allow: 'GET, HEAD, POST, OPTIONS' });
   }
 
-  const upstreamUrl = `${FORMS_UPSTREAM_ORIGIN}${url.pathname}`;
+  const preflight = isPreflightRequest(request);
+  const upstreamUrl = `${FORMS_UPSTREAM_ORIGIN}${url.pathname}${preflight ? '?preflight=1' : ''}`;
 
   if (request.method === 'POST') {
+    const limited = await enforcePreflightRateLimit(request, preflightLimiter);
+    if (limited) return limited;
     return submitHostedForm(request, upstreamUrl, fetchImpl);
   }
 
@@ -313,7 +363,7 @@ export async function proxyHostedBookingForm(request, { fetchImpl = fetch } = {}
   });
 }
 
-export async function handleProductionBookingHostRequest(request, { fetchImpl = fetch } = {}) {
+export async function handleProductionBookingHostRequest(request, { fetchImpl = fetch, preflightLimiter = null } = {}) {
   const url = new URL(request.url);
   if (url.hostname !== HOST) return plain(404, 'Not found.');
 
@@ -322,15 +372,17 @@ export async function handleProductionBookingHostRequest(request, { fetchImpl = 
   }
 
   if (isHostedFormNamespace(url.pathname)) {
-    return proxyHostedBookingForm(request, { fetchImpl });
+    return proxyHostedBookingForm(request, { fetchImpl, preflightLimiter });
   }
 
   return handleBookingHostRequest(request, { fetchImpl });
 }
 
 export default {
-  async fetch(request) {
-    return handleProductionBookingHostRequest(request);
+  async fetch(request, env) {
+    return handleProductionBookingHostRequest(request, {
+      preflightLimiter: env?.HOSTED_FORM_PREFLIGHT_RATE_LIMIT ?? null,
+    });
   },
 };
 

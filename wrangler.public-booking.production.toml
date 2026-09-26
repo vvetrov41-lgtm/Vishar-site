@@ -9,3 +9,10 @@ preview_urls = false
 routes = [
   { pattern = "vishartattoo.com/book/*", zone_name = "vishartattoo.com" }
 ]
+
+# Optional semantic preflight is rate-limited per client IP before it can reach
+# the shared paid decision provider.
+[[ratelimits]]
+name = "PUBLIC_BOOKING_PREFLIGHT_RATE_LIMIT"
+namespace_id = "1010"
+simple = { limit = 10, period = 60 }
