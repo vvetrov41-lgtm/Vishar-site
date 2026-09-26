@@ -9,8 +9,9 @@ guarded live eval. No client text is recorded here.
   - First real production job 2026-09-24 08:05 UTC: Qwen `provider_timeout`
     at 30 000 ms, Llama fallback succeeded in 3 436 ms, per-attempt tokens and
     finish reason recorded.
-- [x] Phase 1: model reliability and evaluation (PRs #871, #873, #876, #880–#884, #886, #888)
-  - Accepted on natural production traffic, 2026-09-26 14:51–15:31 UTC:
+- [ ] Phase 1: model reliability and evaluation (PRs #871, #873, #876, #880–#884, #886, #888, #906)
+  - Open until a natural intake succeeds after the #906 Worker release.
+  - Natural production traffic, 2026-09-26 14:51–15:31 UTC:
     - vision: 3/3 `reference-image.2026-09-10` runs succeeded on Workers AI
       (2 attempts each, 20–34 s);
     - intake: 1 `enquiry-intake.2026-09-10` run succeeded in 3.0 s;
@@ -54,9 +55,10 @@ guarded live eval. No client text is recorded here.
     `gathering_information`; Gmail acknowledgements were never matched.
     waiting_on disagreement fell to 14/32 after release.
   - Remaining stage disagreement is mostly against stale AI briefs (Phase 6a).
-- [x] Phase 3: narrow client-state contract (#890, #895, #897–#900, #902)
-  - v2 active since 2026-09-26 08:06 UTC. Accepted on natural traffic by
-    15:31 UTC:
+- [ ] Phase 3: narrow client-state contract (#890, #895, #897–#900, #902)
+  - v2 active since 2026-09-26 08:06 UTC. The criterion is 7 days with no
+    next action superseded by an insert guard; the soak ends 2026-10-03
+    08:06 UTC. First day, to 15:31 UTC:
     - 6/6 `client-state.2026-09-26c` runs succeeded on Workers AI, 1 attempt,
       no fallback, 2.9–5.3 s;
     - refreshed briefs: stage and waiting_on differ from `client_attention`
