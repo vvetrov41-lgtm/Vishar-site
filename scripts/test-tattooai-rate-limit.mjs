@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import entry, { __testing, enforceSemanticPreflightRateLimit, rateLimitClass } from '../workers/tattooai-entry.js';
 
-const { classifySemanticPreflightRequest, enforcePublicRateLimit } = __testing;
+const { isSemanticPreflightCandidate, classifySemanticPreflightRequest, enforcePublicRateLimit } = __testing;
 
 function limiter(allowed) {
   const calls = [];
@@ -71,12 +71,15 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
     },
     body: oversizedBody,
   });
-  const oversizedResponse = await enforceSemanticPreflightRateLimit(oversized, {
+  assert.equal(isSemanticPreflightCandidate(oversized), true);
+  const beforeParse = limiter(0);
+  const oversizedLimited = await entry.fetch(oversized, {
     ...env,
-    INTAKE_PREFLIGHT_RATE_LIMIT: limiter(10),
-  });
-  assert.equal(oversizedResponse.status, 413,
-    'semantic classification applies the intake size bound before multipart parsing');
+    INTAKE_PREFLIGHT_RATE_LIMIT: beforeParse,
+  }, { waitUntil() {} });
+  assert.equal(oversizedLimited.status, 429,
+    'the preflight-attempt limiter runs before any bounded multipart parse');
+  assert.deepEqual(beforeParse.calls, ['preflight:198.51.100.5']);
 }
 
 {
@@ -205,15 +208,41 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
     headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.13' },
     body: disguisedBody,
   });
-  assert.equal(await enforceSemanticPreflightRateLimit(disguised, egressEnv), null);
-  assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress'],
-    'body marker is required before the semantic limiter applies');
+  const candidateBudget = limiter(10);
+  assert.equal(await enforceSemanticPreflightRateLimit(disguised, {
+    ...env,
+    INTAKE_PREFLIGHT_RATE_LIMIT: candidateBudget,
+  }), null);
+  assert.deepEqual(candidateBudget.calls, ['preflight:198.51.100.13'],
+    'query-marked multipart attempts are bounded before the body marker is parsed');
+  assert.equal(await classifySemanticPreflightRequest(disguised), false,
+    'the body marker is still required for the semantic exemption');
   const finalSubmit = new Request('https://tattooai.vvetrov41.workers.dev/', {
     method: 'POST',
     headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
   });
   assert.equal(await enforceSemanticPreflightRateLimit(finalSubmit, egressEnv), null,
     'a real submission is never subject to the semantic limiter');
+}
+
+{
+  const body = new FormData();
+  body.set('preflight', '1');
+  const unknown = new Request('https://tattooai.vvetrov41.workers.dev/zz-audit?preflight=1', {
+    method: 'POST',
+    headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
+    body,
+  });
+  const semantic = limiter(10);
+  const response = await entry.fetch(unknown, {
+    ...env,
+    PUBLIC_WRITE_RATE_LIMIT: limiter(0),
+    INTAKE_PREFLIGHT_RATE_LIMIT: semantic,
+  }, { waitUntil() {} });
+  assert.equal(response.status, 404,
+    'unknown multipart paths never fall through to the root enquiry intake');
+  assert.equal(semantic.calls.length, 0,
+    'unknown paths cannot consume the paid-preflight bucket or reach its provider');
 }
 
 {

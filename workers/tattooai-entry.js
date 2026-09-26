@@ -15,6 +15,7 @@ import {
   RequestError,
   getCorsHeaders,
   isRegistryBookingRequest,
+  isMultipartRequest,
   parseBoundedMultipartFormData,
 } from './lib/http.js';
 import { handleHostedBookingRequest, isHostedBookingPath } from './routes/hosted-booking.js';
@@ -52,18 +53,21 @@ function isEnquiryIntakeRoute(request) {
   }
 }
 
-async function classifySemanticPreflightRequest(request) {
+function isSemanticPreflightCandidate(request) {
   let url;
   try { url = new URL(request?.url ?? ''); } catch { return false; }
   if (String(request?.method || '').toUpperCase() !== 'POST') return false;
   if (!isEnquiryIntakeRoute(request)) return false;
   if (url.searchParams.get('preflight') !== '1') return false;
-  const contentType = String(request?.headers?.get?.('content-type') || '').toLowerCase();
-  if (!contentType.includes('multipart/form-data')) return false;
+  return isMultipartRequest(request);
+}
 
-  // Use the same streaming size cap as durable intake before parsing any
-  // attacker-controlled multipart body. The original request stays untouched
-  // for the downstream route because classification reads only a clone.
+async function classifySemanticPreflightRequest(request) {
+  if (!isSemanticPreflightCandidate(request)) return false;
+
+  // Deep classification happens only after the preflight-attempt limiter.
+  // This keeps malformed/oversized multipart bodies behind a bounded budget,
+  // while the original request stays untouched for the downstream route.
   const form = await parseBoundedMultipartFormData(request.clone());
   return form.get('preflight') === '1';
 }
@@ -126,13 +130,7 @@ async function enforcePublicRateLimit(request, env, semanticPreflight = null) {
 
 export async function enforceSemanticPreflightRateLimit(request, env, semanticPreflight = null) {
   let isSemantic = semanticPreflight;
-  if (isSemantic === null) {
-    try { isSemantic = await classifySemanticPreflightRequest(request); }
-    catch (error) {
-      if (error instanceof RequestError) return requestErrorResponse(error, request, env);
-      throw error;
-    }
-  }
+  if (isSemantic === null) isSemantic = isSemanticPreflightCandidate(request);
   if (!isSemantic) return null;
 
   const ip = request.headers.get('CF-Connecting-IP') || '';
@@ -240,9 +238,13 @@ export default {
       return handleInternalCrmAgentDrain(request, env);
     }
 
-    // Classify once so a genuine preflight's bounded multipart body is not
-    // parsed twice before routing. Oversized/malformed intake bodies are
-    // rejected before either rate limiter or provider execution.
+    // Rate-limit any syntactically plausible preflight before parsing its
+    // multipart body. This bounds malformed/oversized-body CPU cost and paid
+    // provider spend. Deep classification below still requires the body marker.
+    const semanticCandidate = isSemanticPreflightCandidate(request);
+    const preflightLimited = await enforceSemanticPreflightRateLimit(request, env, semanticCandidate);
+    if (preflightLimited) return preflightLimited;
+
     let semanticPreflight = false;
     try {
       semanticPreflight = await classifySemanticPreflightRequest(request);
@@ -250,11 +252,6 @@ export default {
       if (error instanceof RequestError) return requestErrorResponse(error, request, env);
       throw error;
     }
-
-    // Direct browser preflights receive a stricter paid-provider limiter.
-    // Worker egress (first-party booking edges and any other Worker) shares one budget.
-    const preflightLimited = await enforceSemanticPreflightRateLimit(request, env, semanticPreflight);
-    if (preflightLimited) return preflightLimited;
 
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.
@@ -285,6 +282,16 @@ export default {
       });
     }
 
+    // The legacy router owns only the root multipart intake. Never let an
+    // arbitrary path fall through to the same provider-backed intake handler.
+    if (
+      String(request.method || '').toUpperCase() === 'POST'
+      && isMultipartRequest(request)
+      && !isEnquiryIntakeRoute(request)
+    ) {
+      return new Response('Not found', { status: 404 });
+    }
+
     return tattooai.fetch(request, env, ctx);
   },
 };
@@ -297,6 +304,7 @@ export const __testing = Object.freeze({
   handleInternalCrmAgentDrain,
   isInternalAiDrainRequest,
   isInternalCrmAgentDrainRequest,
+  isSemanticPreflightCandidate,
   classifySemanticPreflightRequest,
   enforcePublicRateLimit,
 });
