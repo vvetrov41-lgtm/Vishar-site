@@ -32,8 +32,13 @@ export default {
       return new Response("Use POST request", { status: 405 });
     }
 
-    // The durable booking route is the only multipart consumer.
+    // The durable booking route is the only multipart consumer. Public
+    // /book/* and /forms/* routes are dispatched by tattooai-entry.js first;
+    // this compatibility router may persist multipart intake only at root.
     if (isMultipartRequest(request)) {
+      let pathname = '';
+      try { pathname = new URL(request.url).pathname; } catch {}
+      if (pathname !== '/') return new Response('Not found', { status: 404 });
       const logger = createLogger(newRequestId());
       return handleEnquiryIntake(request, env, {
         cors,
