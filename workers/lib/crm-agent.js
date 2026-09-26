@@ -15,8 +15,11 @@ import { createStorageClient } from './storage.js';
 import { runModelTask } from './ai/router.js';
 import { MAX_IMAGE_BYTES } from './ai/tasks.js';
 import {
+  CLIENT_DRAFT_PROMPT_VERSION, CLIENT_DRAFT_SCHEMA_VERSION, CLIENT_DRAFT_SYSTEM,
   CLIENT_STATE_PROMPT_VERSION, CLIENT_STATE_SCHEMA_VERSION, CLIENT_STATE_SYSTEM,
-  diagnoseClientStateAnalysis, validateClientStateAnalysis,
+  CLIENT_STATE_V2_PROMPT_VERSION, CLIENT_STATE_V2_SCHEMA_VERSION, CLIENT_STATE_V2_SYSTEM,
+  DRAFTABLE_ACTION_TYPES, diagnoseClientDraft, diagnoseClientStateAnalysis, diagnoseClientStateV2,
+  toStoredClientState, validateClientStateAnalysis, validateClientStateV2,
 } from './ai/client-state-schema.js';
 import {
   REFERENCE_IMAGE_PROMPT_VERSION, REFERENCE_IMAGE_SCHEMA_VERSION, REFERENCE_IMAGE_SYSTEM,
@@ -27,6 +30,10 @@ import { buildAiRunRecord, recordAiRun } from './ai/telemetry.js';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STATE_TASK = 'crm_client_state';
 const VISION_TASK = 'vision_reference_extraction';
+const DRAFT_TASK = 'crm_draft_reply';
+
+/** Phase 3 contract switch. Anything but the exact value keeps v1. */
+export const contractVersion = (env) => (env?.CRM_AGENT_CONTRACT === 'v2' ? 'v2' : 'v1');
 
 /** Router caps at 12k input chars; stay under it after JSON envelope overhead. */
 const MAX_CONTEXT_CHARS = 11_000;
@@ -76,7 +83,28 @@ const projectEnquiry = (item, ideaMax = 2000) => ({
  * a future column added there must not silently become prompt content. Every
  * field that reaches a provider is named here.
  */
-export function projectClientStateInput(input) {
+const FACT_KEYS = Object.freeze([
+  'last_speaker', 'reply_state', 'workflow_stage', 'deposit_state', 'has_future_tattoo_session',
+  'has_future_consultation', 'next_session_at', 'sla_state', 'sla_reason', 'waiting_on_candidate',
+]);
+
+/** The deterministic facts the v2 prompt treats as authoritative, by name. */
+export function projectWorkflowFacts(attention) {
+  if (!attention || typeof attention !== 'object') return null;
+  const facts = {};
+  for (const key of FACT_KEYS) {
+    const value = attention[key];
+    if (typeof value === 'boolean' || value === null) facts[key] = value;
+    else if (typeof value === 'string') facts[key] = value.slice(0, 64);
+  }
+  facts.allowed_actions = Array.isArray(attention.allowed_actions)
+    ? attention.allowed_actions.filter((a) => typeof a === 'string').slice(0, 12) : [];
+  facts.conflicts = Array.isArray(attention.conflicts)
+    ? attention.conflicts.filter((c) => typeof c === 'string').slice(0, 12) : [];
+  return facts.allowed_actions.length ? facts : null;
+}
+
+export function projectClientStateInput(input, { contract = 'v1' } = {}) {
   if (!input || typeof input !== 'object') return null;
 
   const timeline = Array.isArray(input.timeline) ? input.timeline : [];
@@ -100,6 +128,11 @@ export function projectClientStateInput(input) {
       .map((item) => ({ summary: clamp(item?.summary, 800), analysis: item?.analysis ?? null })),
     previous_brief: input.previous_brief ?? null,
   };
+  if (contract === 'v2') {
+    const facts = projectWorkflowFacts(input.attention);
+    if (!facts) return null;
+    data.crm_workflow_facts = facts;
+  }
 
   let json = JSON.stringify({ untrusted_crm_data: data });
   if (json.length <= MAX_CONTEXT_CHARS) return json;
@@ -191,7 +224,82 @@ const appliedOutcome = (status) => (status === 'succeeded' || status === undefin
   ? 'succeeded'
   : status === 'stale' ? 'stale' : 'not_applied');
 
+/** The newest inbound client text, bounded, for a purpose-specific draft. */
+function latestInboundText(input) {
+  const timeline = Array.isArray(input?.timeline) ? input.timeline : [];
+  const newest = timeline.find((item) => item?.direction === 'inbound' && typeof item?.text === 'string');
+  return newest ? newest.text.slice(0, 800) : null;
+}
+
+async function processClientStateJobV2(env, job, supabase, runTask) {
+  const record = (routed, outcome, errorCode = null, inputChars = null, task = STATE_TASK) => buildAiRunRecord({
+    task, jobKind: 'client_state', jobId: job.job_id,
+    promptVersion: task === DRAFT_TASK ? CLIENT_DRAFT_PROMPT_VERSION : CLIENT_STATE_V2_PROMPT_VERSION,
+    schemaVersion: task === DRAFT_TASK ? CLIENT_DRAFT_SCHEMA_VERSION : CLIENT_STATE_V2_SCHEMA_VERSION,
+    routed, outcome, errorCode, inputChars,
+  });
+
+  const facts = projectWorkflowFacts(job?.input?.attention);
+  const input = facts ? projectClientStateInput(job.input, { contract: 'v2' }) : null;
+  if (!input) return { outcome: 'failed', errorCode: 'input_invalid', aiRun: record(null, 'failed', 'input_invalid') };
+
+  const allowed = facts.allowed_actions;
+  const model = await runTask(
+    env,
+    STATE_TASK,
+    { system: CLIENT_STATE_V2_SYSTEM, input },
+    { validateJson: (json) => diagnoseClientStateV2(json, allowed) ?? true },
+  );
+  if (!model?.ok) {
+    return { outcome: 'failed', errorCode: 'ai_unavailable',
+      aiRun: record(model, 'failed', model?.errorCode ?? 'ai_unavailable', input.length) };
+  }
+  const answer = validateClientStateV2(model.json, allowed);
+  if (!answer) return { outcome: 'failed', errorCode: 'output_invalid', aiRun: record(model, 'failed', 'output_invalid', input.length) };
+
+  const stored = toStoredClientState(answer, facts);
+  const runs = [];
+
+  // A short, separate draft only where the action may carry client text. A
+  // rejected or failed draft leaves draft_reply null; the analysis stands.
+  if (DRAFTABLE_ACTION_TYPES.includes(stored.next_action.action_type)) {
+    const draftInput = JSON.stringify({ untrusted_client_data: {
+      latest_client_message: latestInboundText(job.input),
+      purpose: stored.next_action.action_type,
+      missing_information: stored.next_action.missing_information,
+    } });
+    const drafted = await runTask(env, DRAFT_TASK, { system: CLIENT_DRAFT_SYSTEM, input: draftInput },
+      { validateJson: (json) => diagnoseClientDraft(json) ?? true });
+    if (drafted?.ok && !diagnoseClientDraft(drafted.json)) stored.next_action.draft_reply = drafted.json.draft_reply;
+    runs.push(record(drafted, drafted?.ok ? 'succeeded' : 'failed',
+      drafted?.ok ? null : drafted?.errorCode ?? 'draft_rejected', draftInput.length, DRAFT_TASK));
+  }
+
+  const applied = await supabase.rpc('service_complete_client_ai_state_job', {
+    p_job_id: job.job_id,
+    p_lease_token: job.lease_token,
+    p_summary: stored.summary,
+    p_brief: stored.brief,
+    p_next_action: stored.next_action,
+    p_provider: model.provider,
+    p_model: model.model,
+  });
+  runs.unshift(record(model, appliedOutcome(applied?.status), applied?.error_code ?? null, input.length));
+
+  // The classifier result becomes an explicit reply mark only once the job
+  // has succeeded; the database derives which message it answers.
+  const succeeded = applied?.status === undefined || applied?.status === 'succeeded';
+  if (succeeded && answer.reply_state !== 'unclear') {
+    try {
+      await supabase.rpc('service_record_client_reply_state', { p_job_id: job.job_id, p_reply_state: answer.reply_state });
+    } catch { /* fail-open: the mark is advisory */ }
+  }
+  return { outcome: applied?.status ?? 'completed', aiRun: runs };
+}
+
 async function processClientStateJob(env, job, supabase, runTask) {
+  if (contractVersion(env) === 'v2') return processClientStateJobV2(env, job, supabase, runTask);
+
   const telemetry = (routed, outcome, errorCode = null, inputChars = null) => buildAiRunRecord({
     task: STATE_TASK, jobKind: 'client_state', jobId: job.job_id,
     promptVersion: CLIENT_STATE_PROMPT_VERSION, schemaVersion: CLIENT_STATE_SCHEMA_VERSION,
@@ -322,7 +430,7 @@ export async function processCrmAgentJob(env, job, deps = {}) {
     // changes the outcome the caller sees.
     const { aiRun = null, ...outcome } = result;
     const settled = outcome.outcome === 'failed' ? await release(outcome.errorCode) : outcome;
-    await recordAiRun(supabase, aiRun);
+    for (const run of Array.isArray(aiRun) ? aiRun : [aiRun]) await recordAiRun(supabase, run);
     return settled;
   } catch {
     // A provider or database exception can carry private message text in its

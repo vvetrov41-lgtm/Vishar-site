@@ -11,6 +11,7 @@
 import { readFileSync, appendFileSync } from 'node:fs';
 import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
 import { checkAnswer } from './assertions.mjs';
+import { toStoredClientState } from '../../workers/lib/ai/client-state-schema.js';
 
 const endpoint = process.env.ENDPOINT;
 const token = process.env.PROBE_TOKEN;
@@ -92,7 +93,12 @@ for (const entry of plan.variants) {
       // Stop condition: a spent allocation fails every call the same way.
       // Three in a row end the whole run instead of burning the plan.
       quotaStreak = /quota|4006|3036/.test(String(first?.errorDetail ?? '')) ? quotaStreak + 1 : 0;
-      const check = result.ok && result.answer ? checkAnswer(entry.task, result.answer, expectations[fixture].expect) : null;
+      // A v2 answer is checked in the stored shape: stage and waiting side
+      // are deterministic there, the semantic checks still apply.
+      const scored = result.ok && result.answer && entry.variant?.contract === 'v2'
+        ? toStoredClientState(result.answer, expectations[fixture].input.attention)
+        : result.answer;
+      const check = result.ok && scored ? checkAnswer(entry.task, scored, expectations[fixture].expect) : null;
       rows.push({
         fixture,
         ok: Boolean(result.ok),
