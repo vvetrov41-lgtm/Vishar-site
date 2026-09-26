@@ -5,6 +5,10 @@
 //   node scripts/verify-public-deploy.mjs --base https://<preview>.pages.dev
 //   node scripts/verify-public-deploy.mjs --base https://vishartattoo.com
 //
+// Preview deployments of this project sit behind Cloudflare Access. To check
+// one from a terminal, export an Access service token (never commit it):
+//   CF_ACCESS_CLIENT_ID=… CF_ACCESS_CLIENT_SECRET=… node scripts/verify-public-deploy.mjs --base https://<branch>.vishar-site.pages.dev
+//
 // Checks:
 //   1. every allowlisted page and root file returns 200;
 //   2. assets: every CSS/JS/font file plus one file per asset directory → 200;
@@ -26,6 +30,9 @@ if (!args.includes('--base') || !/^https?:\/\//.test(base)) {
   process.exit(2);
 }
 const CONCURRENCY = 8;
+const accessHeaders = process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET
+  ? { 'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET }
+  : {};
 
 const failures = [];
 const passes = [];
@@ -41,7 +48,7 @@ function urlForFile(file) {
 async function request(urlPath, method = 'GET') {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const response = await fetch(base + urlPath, { method, redirect: 'manual' });
+      const response = await fetch(base + urlPath, { method, redirect: 'manual', headers: accessHeaders });
       if (method === 'GET') await response.arrayBuffer();
       return response;
     } catch (error) {
@@ -60,6 +67,12 @@ async function pool(items, worker) {
 }
 
 async function main() {
+  const probe = await request('/', 'HEAD');
+  const probeLocation = probe && probe.headers.get('location');
+  if (probeLocation && probeLocation.includes('cloudflareaccess.com')) {
+    console.error(`${base} is behind Cloudflare Access; set CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET (service token).`);
+    process.exit(2);
+  }
   const { files: publicFiles, problems } = await collectPublicFiles();
   if (problems.length) throw new Error(`public allowlist is inconsistent: ${problems.join('; ')}`);
   const publicSet = new Set(publicFiles);

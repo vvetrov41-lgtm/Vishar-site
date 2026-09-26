@@ -53,6 +53,11 @@ Rules:
 | `npm run build:public:self-test` | exercise every rule on a synthetic tree (CI) |
 | `npm run verify:deploy -- <url>` | check a deployed preview or production URL |
 
+Preview deployments of this project are behind Cloudflare Access. To verify a
+preview from a terminal, export an Access service token as `CF_ACCESS_CLIENT_ID`
+and `CF_ACCESS_CLIENT_SECRET` (environment only, never committed); without it
+the script stops with a clear message.
+
 `verify:deploy` requests, read-only: every page and root file, every CSS/JS/font
 and one file per asset directory (expects 200); security headers from
 `_headers`; every `_redirects` rule; and every git-tracked file outside the
