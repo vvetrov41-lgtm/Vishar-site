@@ -377,6 +377,32 @@ await test('thread reply uses verified threadId and RFC reply headers', async ()
   assert.match(raw, /Message-ID: <vishar-email-22222222-2222-4222-8222-222222222222@vishartattoo\.com>/);
 });
 
+await test('HTML email uses multipart alternative with a plain-text fallback', async () => {
+  let posted;
+  await sendMessage('access', {
+    toEmail: 'client@example.com',
+    subject: 'Tattoo booking',
+    body: 'Your tattoo session is booked. Confirm attendance: https://booking.vishartattoo.com/plain',
+    htmlBody: '<!doctype html><html><body><main><h1>Your tattoo session is booked</h1><a href="https://booking.vishartattoo.com/html">I\'ll be there</a></main></body></html>',
+    emailMessageId: '44444444-4444-4444-8444-444444444444',
+    fetchImpl: async (url, options = {}) => {
+      if (String(url).includes('/messages?')) return Response.json({ messages: [] });
+      if (String(url).endsWith('/messages/send') && options.method === 'POST') {
+        posted = JSON.parse(options.body);
+        return Response.json({ id: 'msg_html_1234', threadId: 'thread_html_1234' });
+      }
+      throw new Error(`unexpected ${url}`);
+    },
+  });
+  const raw = Buffer.from(posted.raw, 'base64url').toString('utf8');
+  assert.match(raw, /Content-Type: multipart\/alternative/);
+  assert.match(raw, /Content-Type: text\/plain; charset=UTF-8/);
+  assert.match(raw, /Content-Type: text\/html; charset=UTF-8/);
+  assert.match(raw, /Your tattoo session is booked\. Confirm attendance:/);
+  assert.match(raw, /<h1>Your tattoo session is booked<\/h1>/);
+  assert.match(raw, />I'll be there<\/a>/);
+});
+
 await test('malformed Gmail send response fails closed and is not reported as sent', async () => {
   await assert.rejects(
     sendMessage('access', {

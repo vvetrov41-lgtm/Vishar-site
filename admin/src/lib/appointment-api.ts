@@ -69,6 +69,7 @@ export interface ScheduleAppointmentInput {
   enquiryId?: string | null;
   projectId?: string | null;
   notes?: string | null;
+  price?: number | null;
 }
 
 /**
@@ -202,18 +203,25 @@ export function createAppointmentApi(client: CrmClient) {
         origin: 'crm',
         lead_time_days_bucket: leadTimeDaysBucket(input.startAt),
       });
+      const common = {
+        p_artist_id: input.artistId,
+        p_client_id: input.clientId,
+        p_appointment_type: input.appointmentType,
+        p_start_at: input.startAt,
+        p_end_at: input.endAt,
+        p_status: input.status ?? 'proposed',
+        p_enquiry_id: input.enquiryId ?? null,
+        p_project_id: input.projectId ?? null,
+        p_notes: input.notes ?? null,
+      };
+      const result = input.price == null
+        ? await client.rpc('schedule_appointment', common)
+        : await client.rpc('schedule_appointment_with_price', {
+          ...common,
+          p_price: input.price,
+        });
       return normaliseScheduled(unwrap<Record<string, unknown>>(
-        await client.rpc('schedule_appointment', {
-          p_artist_id: input.artistId,
-          p_client_id: input.clientId,
-          p_appointment_type: input.appointmentType,
-          p_start_at: input.startAt,
-          p_end_at: input.endAt,
-          p_status: input.status ?? 'proposed',
-          p_enquiry_id: input.enquiryId ?? null,
-          p_project_id: input.projectId ?? null,
-          p_notes: input.notes ?? null,
-        }),
+        result,
         'schedule that appointment'
       ));
     },
@@ -240,6 +248,16 @@ export function createAppointmentApi(client: CrmClient) {
           p_end_at: input.endAt,
         }),
         'reschedule that appointment'
+      );
+    },
+
+    async setAppointmentPrice(appointmentId: string, price: number) {
+      return unwrap<Record<string, unknown>>(
+        await client.rpc('set_appointment_price', {
+          p_appointment_id: appointmentId,
+          p_price: price,
+        }),
+        'update that session price'
       );
     },
 

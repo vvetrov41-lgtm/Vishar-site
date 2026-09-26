@@ -242,6 +242,7 @@ jobs:
           rm -f "$deploy_output"
           node scripts/generate-whatsapp-production-deploy-config.mjs "$deploy_config"
           grep -Fq 'WHATSAPP_DRAIN_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"' "$deploy_config"
           grep -Fq 'crons = []' "$deploy_config"
 
           XDG_CONFIG_HOME=.wrangler/config \
@@ -363,6 +364,7 @@ jobs:
             echo '- Required secret names: one production Supabase backend key plus one or more strictly encoded artist-scoped WhatsApp bindings'
             echo '- Global WhatsApp token/phone-number bindings are forbidden and not provisioned by this workflow'
             echo '- Fixed credential mutation: reconcile only canonical production SUPABASE_SECRET_KEY; artist/provider bindings are read by name only and never written here'
-            echo '- Meta actions not performed: no Embedded Signup, no phone-number registration or migration, no billing change, no message sent'
+            echo '- Meta credential/admin boundary: CI never reads artist Meta secrets; the private Worker may reconcile only the two reviewed booking-card Utility templates through existing artist-scoped bindings'
+            echo '- Meta actions not performed by CI: no Embedded Signup, no phone-number registration or migration, no billing change, no customer message sent during deployment'
             echo '- Retained staging / Pages / CRM / Calendar / Telegram / GPT / booking / database deployment commands: none'
           } >> "$GITHUB_STEP_SUMMARY"

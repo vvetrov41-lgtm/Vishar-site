@@ -153,6 +153,7 @@ export const API_OPERATIONS = {
   'update that client': { kind: 'write', ru: 'сохранить карточку клиента' },
   'update that enquiry': { kind: 'write', ru: 'сохранить заявку' },
   'update that project estimate': { kind: 'write', ru: 'сохранить оценку по проекту' },
+  'update that session price': { kind: 'write', ru: 'сохранить стоимость сеанса' },
   'update the deposit': { kind: 'write', ru: 'сохранить депозит' },
   'void that invoice': { kind: 'write', ru: 'аннулировать этот счёт' },
   'work out what that access would allow': { kind: 'read', ru: 'определить, что даст этот доступ' },

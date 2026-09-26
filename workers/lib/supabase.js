@@ -36,6 +36,10 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_message_status',
   'record_whatsapp_outbox_result',
   'service_begin_communication_send',
+  'service_resolve_whatsapp_booking_card_payload',
+  'service_apply_whatsapp_booking_card_action',
+  'service_claim_booking_card_template_targets',
+  'service_record_booking_card_template_status',
 ]);
 
 /** Meta Ads is deliberately separate from the legacy intake RPC surface. */

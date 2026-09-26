@@ -468,6 +468,7 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
     toEmail: target.client_email,
     subject: job.subject,
     body: job.body,
+    htmlBody: job.html_body ?? null,
     emailMessageId: job.email_message_id,
     threadId: providerThreadId,
     inReplyTo,

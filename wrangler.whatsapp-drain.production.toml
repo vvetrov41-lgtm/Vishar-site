@@ -13,6 +13,7 @@ preview_urls = false
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 WHATSAPP_DRAIN_ENABLED = "false"
+WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
 # The deploy gate verifies the exact secret-name set before enabling the cron:

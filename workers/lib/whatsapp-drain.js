@@ -9,7 +9,7 @@
 
 import { ProviderRouteError } from './provider-routing.js';
 import { createSupabaseClient } from './supabase.js';
-import { sendWhatsappMessage } from './whatsapp.js';
+import { sendWhatsappMessage, sendWhatsappTemplate } from './whatsapp.js';
 
 const WHATSAPP_KIND = 'whatsapp_message';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -103,6 +103,40 @@ function firstRow(value) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function validateBookingTemplatePayload(payload, job) {
+  if (!payload || payload.is_booking_card !== true) return null;
+  if (
+    payload.communication_message_id !== job.whatsapp_message_id
+    || payload.artist_id !== job.artist_id
+    || typeof payload.delivery_allowed !== 'boolean'
+    || !UUID.test(payload.booking_card_id ?? '')
+    || !Array.isArray(payload.body_parameters)
+    || typeof payload.template_name !== 'string'
+    || typeof payload.template_language !== 'string'
+    || typeof payload.location_name !== 'string'
+    || typeof payload.location_address !== 'string'
+    || !Number.isFinite(Number(payload.location_latitude))
+    || !Number.isFinite(Number(payload.location_longitude))
+    || typeof payload.confirm_payload !== 'string'
+    || typeof payload.reschedule_payload !== 'string'
+  ) {
+    throw new WhatsappDrainError('whatsapp_booking_card_payload_invalid');
+  }
+  return {
+    templateName: payload.template_name,
+    language: payload.template_language,
+    bodyParameters: payload.body_parameters,
+    location: {
+      name: payload.location_name,
+      address: payload.location_address,
+      latitude: Number(payload.location_latitude),
+      longitude: Number(payload.location_longitude),
+    },
+    quickReplies: [payload.confirm_payload, payload.reschedule_payload],
+    deliveryAllowed: payload.delivery_allowed,
+  };
+}
+
 function safeErrorCode(error) {
   const code = error instanceof WhatsappDrainError || error instanceof ProviderRouteError
     ? error.code
@@ -158,6 +192,28 @@ export async function processClaimedWhatsappJob(env, {
       p_outbox_id: job.outbox_id,
     });
     const route = validateWhatsappRoute(firstRow(resolved), job);
+
+    const payloadRows = await supabase.rpc('service_resolve_whatsapp_booking_card_payload', {
+      p_outbox_id: job.outbox_id,
+      p_worker_id: workerId,
+    });
+    const payloadList = Array.isArray(payloadRows)
+      ? payloadRows
+      : payloadRows == null
+        ? []
+        : [payloadRows];
+    if (payloadList.length !== 1) {
+      throw new WhatsappDrainError('whatsapp_booking_card_resolution_invalid');
+    }
+    const payloadEnvelope = payloadList[0];
+    const bookingTemplate = validateBookingTemplatePayload(payloadEnvelope, job);
+    if (payloadEnvelope?.is_booking_card === true && !bookingTemplate) {
+      throw new WhatsappDrainError('whatsapp_booking_card_payload_invalid');
+    }
+    if (bookingTemplate && bookingTemplate.deliveryAllowed !== true) {
+      return recordFailure(supabase, job.outbox_id, workerId, 'whatsapp_booking_card_obsolete');
+    }
+
     // Durable send intent (audit M-2). A job that already carries one came
     // back without a recorded result: the client may have the message, so it
     // is dead-lettered for the owner instead of being sent a second time.
@@ -168,12 +224,27 @@ export async function processClaimedWhatsappJob(env, {
     if (intent?.proceed !== true) {
       return recordFailure(supabase, job.outbox_id, workerId, 'communication_send_result_unknown');
     }
-    delivery = await sendWhatsappMessage(
-      env,
-      route,
-      { to: job.contact_wa_id, body: job.body },
-      fetchImpl
-    );
+
+    delivery = bookingTemplate
+      ? await sendWhatsappTemplate(
+        env,
+        route,
+        {
+          to: job.contact_wa_id,
+          templateName: bookingTemplate.templateName,
+          language: bookingTemplate.language,
+          bodyParameters: bookingTemplate.bodyParameters,
+          location: bookingTemplate.location,
+          quickReplies: bookingTemplate.quickReplies,
+        },
+        fetchImpl
+      )
+      : await sendWhatsappMessage(
+        env,
+        route,
+        { to: job.contact_wa_id, body: job.body },
+        fetchImpl
+      );
   } catch (error) {
     return recordFailure(supabase, job.outbox_id, workerId, safeErrorCode(error));
   }
@@ -278,4 +349,5 @@ export const __testing = {
   validateClaimedJob,
   validateExplicitInputs,
   validateWhatsappRoute,
+  validateBookingTemplatePayload,
 };

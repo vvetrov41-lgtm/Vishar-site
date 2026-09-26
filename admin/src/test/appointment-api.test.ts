@@ -38,6 +38,35 @@ describe('appointment API boundary', () => {
     });
   });
 
+  it('uses the atomic priced-booking RPC only when an explicit session price is present', async () => {
+    const { client, rpc } = clientWithRpc();
+    const api = createAppointmentApi(client);
+
+    await api.scheduleAppointment({
+      artistId: 'artist-1',
+      clientId: 'client-1',
+      appointmentType: 'tattoo_session',
+      startAt: '2026-11-10T10:00:00.000Z',
+      endAt: '2026-11-10T17:00:00.000Z',
+      status: 'proposed',
+      projectId: 'project-1',
+      price: 980,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('schedule_appointment_with_price', {
+      p_artist_id: 'artist-1',
+      p_client_id: 'client-1',
+      p_appointment_type: 'tattoo_session',
+      p_start_at: '2026-11-10T10:00:00.000Z',
+      p_end_at: '2026-11-10T17:00:00.000Z',
+      p_status: 'proposed',
+      p_enquiry_id: null,
+      p_project_id: 'project-1',
+      p_notes: null,
+      p_price: 980,
+    });
+  });
+
   it('uses the database conflict RPC rather than a browser-only rule', async () => {
     const rpc = vi.fn(async () => ({ data: [], error: null }));
     const api = createAppointmentApi({ rpc } as unknown as CrmClient);
@@ -54,6 +83,18 @@ describe('appointment API boundary', () => {
       p_start_at: '2026-09-10T10:00:00.000Z',
       p_end_at: '2026-09-10T11:00:00.000Z',
       p_exclude_appointment_id: 'appointment-1',
+    });
+  });
+
+  it('stores the explicit session price through the finance-guarded RPC', async () => {
+    const { client, rpc } = clientWithRpc();
+    const api = createAppointmentApi(client);
+
+    await api.setAppointmentPrice('appointment-1', 980);
+
+    expect(rpc).toHaveBeenCalledWith('set_appointment_price', {
+      p_appointment_id: 'appointment-1',
+      p_price: 980,
     });
   });
 

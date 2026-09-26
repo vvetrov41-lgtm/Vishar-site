@@ -10,6 +10,7 @@ import {
   availableTransitions,
   can,
   canAccess,
+  canManageArtistFinance,
   canManageArtistSessions,
   capabilitiesFor,
   navItemsFor,
@@ -208,6 +209,38 @@ describe('status transitions', () => {
   it('offers read_only nothing', () => {
     expect(availableTransitions(TRANSITIONS, 'new', 'read_only')).toEqual([]);
     expect(availableTransitions(TRANSITIONS, 'new', null)).toEqual([]);
+  });
+});
+
+describe('who may set one artist session price', () => {
+  it('lets the owner manage price for any artist', () => {
+    expect(canManageArtistFinance('owner', [], 'artist-1')).toBe(true);
+  });
+
+  it('requires the matching active finance membership for a booking manager', () => {
+    expect(canManageArtistFinance(
+      'booking_manager',
+      [membership({ can_manage_finance: true })],
+      'artist-1'
+    )).toBe(true);
+    expect(canManageArtistFinance(
+      'booking_manager',
+      [membership({ artist_id: 'artist-2', can_manage_finance: true })],
+      'artist-1'
+    )).toBe(false);
+    expect(canManageArtistFinance(
+      'booking_manager',
+      [membership({ can_manage_finance: true, is_active: false })],
+      'artist-1'
+    )).toBe(false);
+  });
+
+  it('never gives price editing to read-only access', () => {
+    expect(canManageArtistFinance(
+      'read_only',
+      [membership({ can_manage_finance: true })],
+      'artist-1'
+    )).toBe(false);
   });
 });
 

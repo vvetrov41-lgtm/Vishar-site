@@ -433,36 +433,70 @@ function utf8B64url(value) {
   return b64urlEncode(encoder.encode(value));
 }
 
-function buildRawMessage({ toEmail, subject, body, rfc822MessageId, inReplyTo, references }) {
+function buildRawMessage({ toEmail, subject, body, htmlBody = null, rfc822MessageId, inReplyTo, references }) {
   const to = safeEmail(toEmail);
   const safeSubject = safeHeader(subject);
   const messageId = safeHeader(rfc822MessageId);
   if (!to || !safeSubject || !messageId) throw new Error('gmail_send_headers_invalid');
   if (typeof body !== 'string' || !body.trim() || body.length > 8000) throw new Error('gmail_send_body_invalid');
+
+  const hasHtml = htmlBody !== null && htmlBody !== undefined;
+  if (
+    hasHtml
+    && (typeof htmlBody !== 'string' || !htmlBody.trim() || htmlBody.length > 30000 || htmlBody.includes('\0'))
+  ) {
+    throw new Error('gmail_send_html_invalid');
+  }
+
   const lines = [
     `To: ${to}`,
     `Subject: ${safeSubject}`,
     `Message-ID: ${messageId}`,
     'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8',
-    'Content-Transfer-Encoding: 8bit',
   ];
   const replyTo = safeHeader(inReplyTo);
   const refs = safeHeader(references, 4096);
   if (replyTo) lines.push(`In-Reply-To: ${replyTo}`);
   if (refs) lines.push(`References: ${refs}`);
-  lines.push('', body);
+
+  if (!hasHtml) {
+    lines.push(
+      'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit',
+      '',
+      body,
+    );
+    return lines.join('\r\n');
+  }
+
+  const boundarySeed = messageId.replace(/[^A-Za-z0-9]/g, '').slice(-48) || 'message';
+  const boundary = `vishar-alt-${boundarySeed}`;
+  lines.push(
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    body,
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: 8bit',
+    '',
+    htmlBody,
+    `--${boundary}--`,
+  );
   return lines.join('\r\n');
 }
 
 async function sendMessage(accessToken, {
-  toEmail, subject, body, emailMessageId, threadId, inReplyTo, references, fetchImpl = fetch,
+  toEmail, subject, body, htmlBody = null, emailMessageId, threadId, inReplyTo, references, fetchImpl = fetch,
 }) {
   const rfc822MessageId = deterministicRfc822MessageId(emailMessageId);
   const existing = await findMessageByRfc822Id(accessToken, rfc822MessageId, fetchImpl);
   if (existing) return { providerMessageId: existing.id, providerThreadId: existing.threadId, deduplicated: true, rfc822MessageId };
 
-  const raw = buildRawMessage({ toEmail, subject, body, rfc822MessageId, inReplyTo, references });
+  const raw = buildRawMessage({ toEmail, subject, body, htmlBody, rfc822MessageId, inReplyTo, references });
   const payload = { raw: utf8B64url(raw) };
   if (threadId) {
     if (!safeProviderId(threadId)) throw new Error('gmail_thread_id_invalid');

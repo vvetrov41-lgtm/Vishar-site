@@ -49,7 +49,8 @@ import {
 } from '../lib/manual-time-control';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
-import { useApi } from '../lib/session';
+import { canManageArtistFinance } from '../lib/permissions';
+import { useApi, useSession } from '../lib/session';
 import type { AppointmentType } from '../lib/appointment-api';
 import type { BookingConflict, ScheduleOverride, SchedulingPreferences } from '../lib/scheduling-api';
 
@@ -106,6 +107,7 @@ export function BookingPanel({
   onBooked,
 }: BookingPanelProps) {
   const api = useApi();
+  const { profile, memberships } = useSession();
   const { language } = useLanguage();
   const copy = COPY[language];
 
@@ -130,6 +132,7 @@ export function BookingPanel({
   const [manual, setManual] = useState(false);
   const [manualStart, setManualStart] = useState('');
   const [manualEndOverride, setManualEndOverride] = useState('');
+  const [sessionPrice, setSessionPrice] = useState('');
   const [checkingConflicts, setCheckingConflicts] = useState(false);
 
   const blocking = (conflicts ?? []).filter((conflict) => conflict.blocks);
@@ -156,6 +159,13 @@ export function BookingPanel({
   const projectMissingCode: BookingErrorCode = appointmentType === 'touch_up'
     ? 'TOUCH_UP_PROJECT_REQUIRED'
     : 'PROJECT_REQUIRED';
+  const paidAppointment = appointmentType === 'tattoo_session' || appointmentType === 'touch_up';
+  const mayManagePrice = canManageArtistFinance(profile?.role, memberships, artistId);
+  const parsedSessionPrice = sessionPrice.trim() === '' ? null : parseSessionPrice(sessionPrice);
+  const sessionPriceInvalid = paidAppointment
+    && mayManagePrice
+    && sessionPrice.trim() !== ''
+    && parsedSessionPrice === null;
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
   const automaticManualEnd = useMemo(
@@ -306,6 +316,10 @@ export function BookingPanel({
     setBooking(true);
     setError(null);
     try {
+      if (sessionPriceInvalid) {
+        setError(copy.invalidPrice);
+        return;
+      }
       const result = await api.scheduleAppointment({
         artistId,
         clientId,
@@ -314,6 +328,7 @@ export function BookingPanel({
         endAt,
         enquiryId: effectiveEnquiryId,
         projectId: effectiveProjectId,
+        price: paidAppointment && mayManagePrice ? parsedSessionPrice : null,
       });
       onBooked(result.appointment_id);
       setStage('search');
@@ -403,6 +418,27 @@ export function BookingPanel({
           </label>
         ) : null}
 
+        {paidAppointment && mayManagePrice ? (
+          <label>
+            <span>{copy.sessionPrice} · {copy.optional}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0.01"
+              max="100000"
+              step="0.01"
+              value={sessionPrice}
+              onChange={(event) => setSessionPrice(event.target.value)}
+              placeholder={copy.sessionPricePlaceholder}
+              aria-invalid={sessionPriceInvalid}
+            />
+            <span className="meta">{copy.sessionPriceHint}</span>
+          </label>
+        ) : null}
+        {sessionPriceInvalid ? (
+          <p className="notice warn" role="alert">{copy.invalidPrice}</p>
+        ) : null}
+
         {projectMissing ? (
           <p className="notice warn" role="status">
             {bookingErrorMessage(projectMissingCode, language)}
@@ -477,7 +513,7 @@ export function BookingPanel({
             <button
               type="button"
               className="primary"
-              disabled={booking}
+              disabled={booking || sessionPriceInvalid}
               onClick={() => { void book(chosen.start, chosen.end); }}
             >
               {booking ? copy.booking : copy.confirm}
@@ -660,7 +696,7 @@ export function BookingPanel({
           <div className="actions">
             <button
               type="button"
-              disabled={booking || !manualTimes()}
+              disabled={booking || !manualTimes() || sessionPriceInvalid}
               onClick={() => {
                 const times = manualTimes();
                 if (!times) {
@@ -756,6 +792,13 @@ function manualDateTimeLabel(value: string, language: Language): string {
   );
 }
 
+function parseSessionPrice(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 100000 ? parsed : null;
+}
+
 function durationBetween(startValue: string, endValue: string): number | null {
   const start = new Date(startValue);
   const end = new Date(endValue);
@@ -791,6 +834,10 @@ const COPY = {
     optional: 'optional',
     noProject: 'No project',
     noEnquiry: 'No enquiry',
+    sessionPrice: 'Session price',
+    sessionPricePlaceholder: 'Exact price for this session',
+    sessionPriceHint: 'Booking cards use this exact stored amount. Leave it blank only if the price has not been decided yet.',
+    invalidPrice: 'Enter a price between 0.01 and 100000 with no more than two decimal places.',
     search: 'Find free times',
     searching: 'Looking…',
     searchFailed: 'Could not check the schedule.',
@@ -855,6 +902,10 @@ const COPY = {
     optional: 'необязательно',
     noProject: 'Без проекта',
     noEnquiry: 'Без заявки',
+    sessionPrice: 'Стоимость сеанса',
+    sessionPricePlaceholder: 'Точная стоимость этого сеанса',
+    sessionPriceHint: 'Карточки записи используют именно эту сохранённую сумму. Оставьте пустым только если цена ещё не определена.',
+    invalidPrice: 'Укажите сумму от 0,01 до 100000 максимум с двумя знаками после запятой.',
     search: 'Найти свободное время',
     searching: 'Ищем…',
     searchFailed: 'Не удалось проверить расписание.',

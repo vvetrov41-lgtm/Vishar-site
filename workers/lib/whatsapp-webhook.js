@@ -15,6 +15,7 @@ const PROVIDER_ID = /^[0-9]{5,32}$/;
 const WA_ID = /^[0-9]{6,20}$/;
 const MESSAGE_ID = /^[A-Za-z0-9_=./-]{8,255}$/;
 const MESSAGE_TYPE = /^[a-z][a-z0-9_]{1,31}$/;
+const BOOKING_ACTION_PAYLOAD = /^booking_action:[0-9a-f]{64}$/;
 const SIGNATURE = /^sha256=([0-9a-f]{64})$/i;
 const INTEGRATION_KEY = /^[a-z][a-z0-9_-]{2,79}$/;
 const ARTIST_BINDING_PREFIX = 'ARTIST_WHATSAPP_';
@@ -263,6 +264,28 @@ async function ingestMessages(value, route, supabase) {
     if (!WA_ID.test(contactWaId) || !MESSAGE_ID.test(providerMessageId) || !providerTimestamp) continue;
 
     const messageType = normaliseMessageType(message?.type);
+
+    // Approved template quick replies arrive as signed WhatsApp button events.
+    // The opaque payload is applied atomically with inbound persistence by the
+    // database, so a webhook retry cannot record the click without applying it.
+    const bookingActionPayload = messageType === 'button'
+      && typeof message?.button?.payload === 'string'
+      && BOOKING_ACTION_PAYLOAD.test(message.button.payload)
+      ? message.button.payload
+      : null;
+
+    if (bookingActionPayload) {
+      await supabase.rpc('service_apply_whatsapp_booking_card_action', {
+        p_artist_id: route.artistId,
+        p_integration_key: route.integrationKey,
+        p_contact_wa_id: contactWaId,
+        p_provider_message_id: providerMessageId,
+        p_provider_timestamp: providerTimestamp,
+        p_payload: bookingActionPayload,
+      });
+      continue;
+    }
+
     let body = null;
     if (messageType === 'text') {
       body = typeof message?.text?.body === 'string' ? message.text.body : '';

@@ -35,6 +35,7 @@ expectIncludes(tracked, 'preview_urls = false', 'tracked config');
 expectIncludes(tracked, 'VISHAR_ENVIRONMENT = "production"', 'tracked config');
 expectIncludes(tracked, 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"', 'tracked config');
 expectIncludes(tracked, 'WHATSAPP_DRAIN_ENABLED = "false"', 'tracked config');
+expectIncludes(tracked, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"', 'tracked config');
 expectExcludes(tracked, '[triggers]', 'tracked config');
 expectExcludes(tracked, 'crons =', 'tracked config');
 expectExcludes(tracked, 'gwaliusblwrzisrwnsvs', 'tracked config');
@@ -62,6 +63,7 @@ try {
   const generatedRaw = fs.readFileSync(generatedPath, 'utf8');
   const generated = directivesOf(generatedRaw);
   expectIncludes(generated, 'WHATSAPP_DRAIN_ENABLED = "true"', 'generated config');
+  expectIncludes(generated, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"', 'generated config');
   expectIncludes(generated, '[triggers]', 'generated config');
   // No cron of its own: the shared production scheduler drives it over a
   // Service Binding because the account's cron triggers are exhausted.
@@ -73,6 +75,7 @@ try {
   expectExcludes(generated, '"ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION"', 'generated config');
   expectExcludes(generated, '"ARTIST_WHATSAPP_KRISTINA_HPRODUCTION"', 'generated config');
   expectExcludes(generated, 'WHATSAPP_DRAIN_ENABLED = "false"', 'generated config');
+  expectExcludes(generated, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"', 'generated config');
 
   // Generating must never mutate the tracked template.
   const trackedAfter = directivesOf(read('wrangler.whatsapp-drain.production.toml'));

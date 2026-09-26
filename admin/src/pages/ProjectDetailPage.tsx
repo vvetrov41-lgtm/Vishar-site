@@ -261,7 +261,13 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                   </div>
 
                   {mayManageAppointments && active ? (
-                    <ProjectAppointmentEditor appointment={appointment} disabled={busy} onSaved={reload} />
+                    <ProjectAppointmentEditor
+                      appointment={appointment}
+                      sessionPrice={price}
+                      canManagePrice={mayManageFinance}
+                      disabled={busy}
+                      onSaved={reload}
+                    />
                   ) : null}
 
                   {mayManageAppointments ? (
