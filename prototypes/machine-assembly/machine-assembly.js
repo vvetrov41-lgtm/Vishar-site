@@ -148,8 +148,14 @@
     var vh = Math.max(1, window.innerHeight || 1);
     return (window.scrollY - metrics.assemblyEnd) / vh;
   }
+  // Close-up -> black: the stage is covered before the tattoo fades in, so the
+  // machine and the tattoo never cross-fade on screen.
+  function blackoutAmount(p) {
+    return Math.max(smooth((p - 0.94) / 0.028), smooth(pastStageShare() / 0.05));
+  }
   function handoffAmount(p) {
-    var fromSequence = smooth((p - 0.955) / 0.045);
+    // Tattoo only starts after the close-up has gone fully black (see blackoutAmount).
+    var fromSequence = smooth((p - 0.968) / 0.032);
     var pastStage = smooth((pastStageShare() - 0.03) / 0.12);
     return Math.max(fromSequence, pastStage);
   }
@@ -162,7 +168,7 @@
     section.style.setProperty('--glow', ((1 - smooth((p - 0.86) / 0.1)) * smooth(e / 0.9)).toFixed(3));
     // Fast flings past the end of the stage: black the stage out first, so
     // the order stays machine → black → tattoo even if the damped 3D lags.
-    section.style.setProperty('--stage-blackout', smooth(pastStageShare() / 0.05).toFixed(3));
+    section.style.setProperty('--stage-blackout', blackoutAmount(p).toFixed(3));
     if (portfolioIntro && !section.classList.contains('is-static')) {
       var handoff = handoffAmount(p);
       portfolioIntro.style.setProperty('--handoff', handoff.toFixed(3));
