@@ -256,8 +256,22 @@ function validateBriefV2(value) {
   for (const key of BRIEF_ARRAY_KEYS) {
     if (!stringArray(value[key], 10, 300)) return `brief.${key}.${arrayShape(value[key], 10, 300)}`;
   }
-  if (!validateDiscussed(value.discussed)) return 'brief.discussed';
+  if (!validateDiscussed(value.discussed)) return `brief.discussed.${discussedShape(value.discussed)}`;
   return null;
+}
+
+// Content-free location of a broken `discussed` entry: key and rule, no value.
+function discussedShape(d) {
+  if (!plain(d)) return 'type';
+  if (!exactKeys(d, [...DISCUSSED_KEYS])) return 'keys';
+  for (const key of DISCUSSED_KEYS) {
+    const e = d[key];
+    if (!exactKeys(e, ['value', 'status'])) return `${key}.keys`;
+    if (!DISCUSSED_STATUSES.includes(e.status)) return `${key}.status`;
+    if (e.status === 'not_discussed' && e.value !== null) return `${key}.value_without_mention`;
+    if (e.status !== 'not_discussed' && !text(e.value, 200)) return `${key}.value_${textShape(e.value, 200)}`;
+  }
+  return 'contract';
 }
 
 /**
@@ -265,7 +279,8 @@ function validateBriefV2(value) {
  * - an empty or blank string in a text field becomes null;
  * - blank entries are dropped from the brief arrays;
  * - a single non-blank string where an array belongs becomes a one-item array
- *   (the brief arrays and next_action.missing_information).
+ *   (the brief arrays and next_action.missing_information);
+ * - a `discussed` entry marked not_discussed with a blank value gets null.
  * It never rewrites, invents or reinterprets content; anything else is left
  * for the validator to reject.
  */
@@ -276,6 +291,17 @@ export function normalizeClientStateV2(value) {
     if (typeof brief[key] === 'string' && !brief[key].trim()) brief[key] = null;
   }
   for (const key of BRIEF_ARRAY_KEYS) brief[key] = repairStringArray(brief[key]);
+  if (plain(brief.discussed)) {
+    const discussed = { ...brief.discussed };
+    for (const key of DISCUSSED_KEYS) {
+      const e = discussed[key];
+      // "not discussed" with a blank value is the empty container, not a claim.
+      if (plain(e) && e.status === 'not_discussed' && typeof e.value === 'string' && !e.value.trim()) {
+        discussed[key] = { ...e, value: null };
+      }
+    }
+    brief.discussed = discussed;
+  }
   const out = { ...value, brief };
   if (plain(value.next_action)) {
     const missing = repairStringArray(value.next_action.missing_information);

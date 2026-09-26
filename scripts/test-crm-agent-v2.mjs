@@ -170,6 +170,17 @@ await test('container repair fixes blanks and bare strings, never content', () =
   assert.equal(diagnoseClientStateV2(numericSize, allowed), 'brief.size.number');
   const long = normalizeClientStateV2({ ...base, brief: { ...base.brief, size: 'x'.repeat(301) } });
   assert.equal(diagnoseClientStateV2(long, allowed), 'brief.size.long');
+  const blankNotDiscussed = { ...base, brief: { ...base.brief,
+    discussed: { ...base.brief.discussed, price: { value: '', status: 'not_discussed' } } } };
+  assert.equal(diagnoseClientStateV2(blankNotDiscussed, allowed), 'brief.discussed.price.value_without_mention');
+  assert.equal(diagnoseClientStateV2(normalizeClientStateV2(blankNotDiscussed), allowed), null);
+  // A real value marked not_discussed is a contradiction, not a container problem.
+  const claimed = normalizeClientStateV2({ ...base, brief: { ...base.brief,
+    discussed: { ...base.brief.discussed, price: { value: '300', status: 'not_discussed' } } } });
+  assert.equal(diagnoseClientStateV2(claimed, allowed), 'brief.discussed.price.value_without_mention');
+  const badStatus = { ...base, brief: { ...base.brief,
+    discussed: { ...base.brief.discussed, deposit: { value: null, status: 'agreed' } } } };
+  assert.equal(diagnoseClientStateV2(badStatus, allowed), 'brief.discussed.deposit.status');
   assert.equal(normalizeClientStateV2(null), null);
   for (const code of ['brief.open_questions.item_object', 'brief.size.number', 'brief.size.long']) {
     assert.match(code, /^[a-z][a-z0-9_.]{2,79}$/, 'telemetry code format');
