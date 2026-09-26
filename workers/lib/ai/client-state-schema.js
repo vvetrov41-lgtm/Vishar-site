@@ -380,8 +380,11 @@ Record facts as stated. If two messages disagree (for example two different size
 value in the field and add one string to open_questions naming both values and which is newer,
 for example "Size: 10 cm earlier, 15 cm in the newest message - confirm". Never pick one silently.
 discussed has exactly these keys: ${DISCUSSED_KEYS.join(', ')}.
-Each is {"value": string or null, "status": "mentioned_by_client" or "mentioned_by_artist" or "not_discussed"}.
-"discussed" records only what was MENTIONED and by whom, never agreement. Use not_discussed with null when not raised.
+Each is {"value": ..., "status": "mentioned_by_client" or "mentioned_by_artist" or "not_discussed"}.
+"discussed" records only what was MENTIONED and by whom, never agreement.
+When status is mentioned_by_client or mentioned_by_artist, value is a short non-empty string saying what
+was said, for example "client asked what it costs" or "artist offered two dates"; it is never null.
+When it was not raised, use {"value": null, "status": "not_discussed"}.
 
 reply_state is about the LATEST client message only: reply_required when it asks or needs something,
 no_reply_needed when it only thanks, confirms or closes ("thanks, see you then"), unclear otherwise.
@@ -394,7 +397,7 @@ missing_information is an array of short field names, max 12, only for informati
 Only the artist decides feasibility, price, session count, duration, dates, deposits and bookings.
 No identifiers, tool calls, SQL or extra keys.`;
 
-export const CLIENT_STATE_V2_PROMPT_VERSION = 'client-state.2026-09-26';
+export const CLIENT_STATE_V2_PROMPT_VERSION = 'client-state.2026-09-26b';
 export const CLIENT_STATE_V2_SCHEMA_VERSION = 'client-state.v2';
 
 // Short, purpose-specific draft for a draftable action. Generated separately.
