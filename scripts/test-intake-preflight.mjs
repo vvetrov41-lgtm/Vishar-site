@@ -201,6 +201,12 @@ async function callPreflight(env, form, providerFetch) {
   }
 }
 
+await test('the preflight response only exposes its id after the telemetry insert is awaited', () => {
+  const source = readFileSync(new URL('../workers/routes/enquiries.js', import.meta.url), 'utf8');
+  assert.match(source, /preflightId = await recordPreflight\(/);
+  assert.match(source, /preflight: \{ id: preflightId,/);
+});
+
 await test('a preflight never persists: no intake RPC, no files, one metadata row', async () => {
   const r = await callPreflight({ ...ENV, ...ON }, preflightForm(), providerOk(answers({ placement: 0.03, size: 0.04 })));
   assert.equal(r.status, 200);

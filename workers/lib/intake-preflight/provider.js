@@ -81,9 +81,13 @@ export function readPreflightFollowUp(form) {
   return { id, choice };
 }
 
-/** Metadata-only telemetry row; fire-and-forget, never blocks the answer. */
-export function recordPreflight(supabase, { id, formPath, result }, schedule) {
-  if (!supabase || typeof schedule !== 'function') return;
+/**
+ * Metadata-only telemetry row. The insert is awaited before its id is exposed
+ * to the browser so a fast follow-up submit cannot race ahead of the row.
+ * Failure stays optional/fail-open: callers simply omit the preflight id.
+ */
+export async function recordPreflight(supabase, { id, formPath, result }) {
+  if (!supabase) return null;
   const event = {
     id,
     version: result.version,
@@ -95,8 +99,11 @@ export function recordPreflight(supabase, { id, formPath, result }, schedule) {
     latency_ms: Number.isFinite(result.latencyMs) ? Math.round(result.latencyMs) : null,
   };
   try {
-    schedule(supabase.rpc('service_record_intake_preflight', { p_event: event }).catch(() => null));
-  } catch { /* telemetry is optional */ }
+    await supabase.rpc('service_record_intake_preflight', { p_event: event });
+    return id;
+  } catch {
+    return null;
+  }
 }
 
 export function markPreflightSubmitted(supabase, followUp, enquiryId, schedule) {

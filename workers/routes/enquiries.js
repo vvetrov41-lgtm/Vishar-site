@@ -200,12 +200,13 @@ async function handleEnquiryIntakeInternal(
         coverUp: enquiry.coverUp,
         referenceCount: readPreflightReferenceCount(form),
       }, { fetchImpl });
-      const preflightId = crypto.randomUUID();
+      const candidatePreflightId = crypto.randomUUID();
       const formPath = hostedMode ? 'hosted'
         : String(env?.BOOKING_SOURCE_KEY ?? '').startsWith('public-slug:') ? 'slug' : 'external';
+      let preflightId = '';
       try {
         if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
-        recordPreflight(supabase, { id: preflightId, formPath, result }, schedule);
+        preflightId = await recordPreflight(supabase, { id: candidatePreflightId, formPath, result }) ?? '';
       } catch { /* telemetry is optional */ }
       logger.info('enquiry.preflight', {
         route: 'enquiries', status: result.status, outcome: result.outcome,

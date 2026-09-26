@@ -42,7 +42,7 @@ jobs:
         run: node scripts/ai-evals/run-intake-preflight-eval.mjs --self-test
 
   live:
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/probe/intake-preflight-eval-')) || (github.event_name == 'pull_request' && github.head_ref == 'claude/intake-semantic-preflight')
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/probe/intake-preflight-eval-')
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
