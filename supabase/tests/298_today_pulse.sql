@@ -6,6 +6,8 @@
 
 begin;
 select no_plan();
+-- The switch is pinned off here; 20260924055000 turns it on in production.
+update crm_private.crm_agent_config set today_pulse = false where singleton;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ---------------------------------------------------------------------------
@@ -128,6 +130,12 @@ select pg_temp.pulse_claims('d4111111-1111-4111-8111-111111111111');
 
 select is((public.get_today_pulse('a1111111-1111-4111-8111-111111111111') ->> 'enabled')::boolean, false,
   'CRM Today keeps the browser list until the pulse is switched on');
+reset role;
+update crm_private.crm_agent_config set today_pulse = true where singleton;
+set local role authenticated;
+select pg_temp.pulse_claims('d4111111-1111-4111-8111-111111111111');
+select is((public.get_today_pulse('a1111111-1111-4111-8111-111111111111') ->> 'enabled')::boolean, true,
+  'with the switch on, CRM Today renders the pulse');
 select ok(jsonb_array_length(public.get_today_pulse('a1111111-1111-4111-8111-111111111111') -> 'items') >= 4,
   'the manager sees the artist pulse');
 select is(public.get_today_pulse('a1111111-1111-4111-8111-111111111111') #>> '{artists,0,sources,gmail_snapshot}',
