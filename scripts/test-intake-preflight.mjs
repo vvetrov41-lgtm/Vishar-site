@@ -93,7 +93,7 @@ await test('at most three hints, all server-owned text', () => {
 });
 
 await test('the browser preserves multiple server hints that target the same field', () => {
-  assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes("querySelectorAll('[data-preflight-hint=\\\"'+field+'\\\"]')"));
+  assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes("var existing=form.querySelectorAll('[data-preflight-hint=\"'+field+'\"]')"));
   assert.ok(!INTAKE_PREFLIGHT_BROWSER_JS.includes("if(old)old.remove()"));
 });
 
