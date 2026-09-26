@@ -39,6 +39,17 @@
 - [x] T040 `PHASE2_REPORT.md`: intersections, pivots, performance, Phase 3 recommendations
 - [x] T041 Converge spec/plan/tasks with implementation evidence
 
+## Phase 3: Integration (planned)
+
+- [ ] T060 Dependency: public deploy boundary (`dist/` allowlist build) live in production — separate change
+- [ ] T061 4K-sourced desktop/mobile GLBs, 19–20 groups, path sweep clean of pass-throughs [FR-001, FR-002]
+- [ ] T062 Promote runtime and timeline to `assets/js/`; vendor GLTFLoader/RoomEnvironment with pinned hashes [FR-012]
+- [ ] T063 `index.html`: remove `#machine-bg`, Recognition strip, old section/script; add new section; Featured-in in hero [FR-008, FR-009]
+- [ ] T064 Remove GSAP/ScrollTrigger from the homepage; update validator vendor checks
+- [ ] T065 `components.js`: exclude the section from `.reveal`; disable hero parallax on the homepage
+- [ ] T066 Posters rendered from the production GLB; `_headers` caching for `/assets/3d/*`
+- [ ] T067 Validation: validate:site, build:html:check, sweep, screenshots, Lighthouse on preview, real-device QA
+
 ## Phase 5: Environment rollout, only when authorized
 
 - [ ] T050 Phase 3 integration PR (requires owner approval)

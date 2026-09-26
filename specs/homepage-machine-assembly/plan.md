@@ -184,3 +184,59 @@ section in git history; reverting the integration commit restores it.
 | Cloudflare may not compress `.glb` | geometry 712 KB instead of ≈ 300–410 KB | verify on production URL in Phase 3 |
 | Hero parallax transform in `components.js` | overlap z-order differs from prototype | handle in Phase 3 (z-index on hero content) |
 | Thin geometry aliasing (needle, wires) | shimmering on mobile | MSAA, DPR ≥ 1.5, camera avoids needle macro |
+
+## Phase 3 plan: integration (approved Phase 2 on 2026-09-26)
+
+### Dependency: public deploy boundary (separate change, lands first)
+
+Cloudflare Pages uses Git integration with no build command, so the output
+directory is the repository root (`docs/static-html-build.md:42-46`). Pages only
+auto-excludes `.git`, `node_modules` and `.DS_Store`; it has no ignore file.
+Verified on production (2026-09-26, GET only): `/AGENTS.md`, `/package.json`,
+`/.mcp.json`, `/.env.example`, `/.github/workflows/*.yml`, `/workers/*.js`,
+`/scripts/*.mjs`, `/docs/audits/*.md`, `/geo_agent/*`, `/tests/*.py` return 200;
+`/.git/*`, `/_headers`, `/_redirects` return 404. A secret-pattern scan of tracked
+files found no credentials; the exposure is internal information.
+
+Proposed fix (separate branch/PR, owner applies the dashboard change):
+`scripts/build-public.mjs` copies an explicit allowlist (sitemap pages, `404.html`,
+root public files, `assets/**` media/css/js/fonts/licences, `_headers`,
+`_redirects`) into `dist/`; Pages build command `node scripts/build-public.mjs`,
+output directory `dist`, `SKIP_DEPENDENCY_INSTALL=1`. Dry run on `4dd40fe`:
+15 pages, 928 files, 92.4 MB, 2 273 local references resolved, 0 internal files.
+`prototypes/` is excluded from production output.
+
+Phase 3 must not merge before this boundary is live, because it adds new public
+assets and relies on `prototypes/` staying unpublished.
+
+### Integration steps
+
+1. Model: build desktop and mobile GLBs from the 4K original (owner supplies it in
+   `source-assets/`), split the contact-barrel outer hardware and under-frame screws
+   (19–20 groups), rerun the path sweep, target GLB ≤ 1.6 MB desktop / ≤ 1.0 MB
+   mobile. Output under `assets/3d/machine/` with content-hashed file names.
+2. Runtime: promote `prototypes/machine-assembly/machine-assembly.js` and
+   `timeline.js` to `assets/js/` (debug/capture hooks kept behind `?debug` only in
+   non-production builds or removed); vendor `GLTFLoader.js` and
+   `RoomEnvironment.js` into `assets/vendor/three/0.128.0/examples/` through
+   `scripts/vendor-3d-libs.mjs` with pinned hashes.
+3. `index.html`: remove the fixed `#machine-bg` layer (`:149`), the Recognition strip
+   section (`:285-287`) and the old `#machine-section` + inline script (`:289-663`);
+   move "Featured in" into the hero content; add the new section; section CSS goes
+   into `assets/css/input.css` (compiled by `build:tailwind`) so layout is known at
+   first paint (no CLS).
+4. Remove GSAP/ScrollTrigger from the homepage (only `index.html` uses them); update
+   `validate-site.mjs` vendor and homepage-reference checks accordingly.
+5. `components.js`: exclude the sequence section from `.reveal` (blur/transform) and
+   stop the hero parallax transform on the homepage (it creates a stacking context
+   that would put hero text under the canvas in the overlap band).
+6. Posters: `scripts/machine-model/render-posters.mjs` renders the four posters from
+   the production GLB.
+7. `_headers`: long-lived immutable caching for `/assets/3d/*` (hashed names). CSP
+   unchanged.
+8. Validation: `validate:site`, `build:html:check`, path sweep, storyboard
+   screenshots, Lighthouse mobile/desktop against the preview URL, real-device QA
+   (iPhone Safari, Android Chrome, desktop Safari/Chrome/Firefox).
+9. Rollout: PR with Static Validation → preview QA → owner approval → merge →
+   production verification (GLB status/type/cache/compression, no GSAP requests,
+   0 3D requests before scroll, LCP unchanged). Rollback: revert the merge commit.
