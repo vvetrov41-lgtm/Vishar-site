@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - 'release/private-crm-rc*'
+      - '!release/private-crm-rc903-preflight-secret-check'
       - '!release/private-crm-rc*-booking-host*'
       - '!release/private-crm-rc*-inventory-*'
       - '!release/private-crm-rc*-backend-auth-*'
