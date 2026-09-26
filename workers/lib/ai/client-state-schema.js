@@ -264,7 +264,8 @@ function validateBriefV2(value) {
  * Container-only repair of a v2 answer, applied before validation:
  * - an empty or blank string in a text field becomes null;
  * - blank entries are dropped from the brief arrays;
- * - a single non-blank string where an array belongs becomes a one-item array.
+ * - a single non-blank string where an array belongs becomes a one-item array
+ *   (the brief arrays and next_action.missing_information).
  * It never rewrites, invents or reinterprets content; anything else is left
  * for the validator to reject.
  */
@@ -274,18 +275,19 @@ export function normalizeClientStateV2(value) {
   for (const key of Object.keys(NULLABLE_TEXT)) {
     if (typeof brief[key] === 'string' && !brief[key].trim()) brief[key] = null;
   }
-  for (const key of BRIEF_ARRAY_KEYS) {
-    const v = brief[key];
-    if (typeof v === 'string') brief[key] = v.trim() ? [v] : [];
-    else if (Array.isArray(v)) brief[key] = v.filter((entry) => !(typeof entry === 'string' && !entry.trim()));
-  }
+  for (const key of BRIEF_ARRAY_KEYS) brief[key] = repairStringArray(brief[key]);
   const out = { ...value, brief };
-  if (plain(value.next_action) && Array.isArray(value.next_action.missing_information)) {
-    out.next_action = { ...value.next_action,
-      missing_information: value.next_action.missing_information
-        .filter((entry) => !(typeof entry === 'string' && !entry.trim())) };
+  if (plain(value.next_action)) {
+    const missing = repairStringArray(value.next_action.missing_information);
+    if (missing !== value.next_action.missing_information) out.next_action = { ...value.next_action, missing_information: missing };
   }
   return out;
+}
+
+function repairStringArray(v) {
+  if (typeof v === 'string') return v.trim() ? [v] : [];
+  if (Array.isArray(v)) return v.filter((entry) => !(typeof entry === 'string' && !entry.trim()));
+  return v;
 }
 
 /**

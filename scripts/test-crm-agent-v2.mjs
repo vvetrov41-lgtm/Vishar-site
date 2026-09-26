@@ -158,6 +158,11 @@ await test('container repair fixes blanks and bare strings, never content', () =
   assert.deepEqual(fixed.brief.constraints, ['No red ink']);
   assert.deepEqual(fixed.next_action.missing_information, ['placement']);
   assert.equal(broken.brief.size, '  ', 'the input is not mutated');
+  const loneMissing = normalizeClientStateV2({ ...base, next_action: { ...base.next_action, missing_information: 'placement' } });
+  assert.deepEqual(loneMissing.next_action.missing_information, ['placement']);
+  assert.equal(diagnoseClientStateV2(loneMissing, allowed), null);
+  const objectMissing = normalizeClientStateV2({ ...base, next_action: { ...base.next_action, missing_information: [{ f: 1 }] } });
+  assert.equal(diagnoseClientStateV2(objectMissing, allowed), 'next_action.missing_information');
   // Objects, numbers and over-long values stay invalid, with a content-free location.
   const objectItem = normalizeClientStateV2({ ...base, brief: { ...base.brief, open_questions: [{ q: 'x' }] } });
   assert.equal(diagnoseClientStateV2(objectItem, allowed), 'brief.open_questions.item_object');
