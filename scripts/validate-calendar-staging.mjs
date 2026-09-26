@@ -5,11 +5,6 @@ import { resolve } from 'node:path';
 const deployReady = process.argv.includes('--deploy-ready');
 const configPath = resolve(process.cwd(), 'wrangler.calendar.staging.toml');
 const source = readFileSync(configPath, 'utf8');
-const deploymentWorkflowPath = resolve(
-  process.cwd(),
-  '.github/workflows/pr182-calendar-automatic-drain-staging.yml',
-);
-const deploymentWorkflow = readFileSync(deploymentWorkflowPath, 'utf8');
 const active = source
   .split(/\r?\n/)
   .map((line) => line.replace(/\s+#.*$/, '').trim())
