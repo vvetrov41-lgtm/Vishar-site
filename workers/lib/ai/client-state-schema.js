@@ -230,16 +230,62 @@ const BRIEF_V2_KEYS = Object.freeze(BRIEF_KEYS.filter((key) => key !== 'stage' &
 const ACTION_V2_KEYS = Object.freeze(['action_type', 'reason', 'priority', 'missing_information']);
 export const REPLY_STATES = Object.freeze(['reply_required', 'no_reply_needed', 'unclear']);
 
+const BRIEF_ARRAY_KEYS = Object.freeze(['constraints', 'decisions_made', 'open_questions', 'promises_to_client']);
+
+// Content-free shape of a broken field, for telemetry: which rule failed,
+// never what the value was.
+function textShape(v, max) {
+  if (typeof v !== 'string') return Array.isArray(v) ? 'array' : v === null ? 'null' : typeof v;
+  if (!v.trim()) return 'empty';
+  if (v.length > max) return 'long';
+  return 'control';
+}
+
+function arrayShape(v, maxItems, maxChars) {
+  if (!Array.isArray(v)) return v === null ? 'null' : typeof v === 'string' ? 'string' : 'not_array';
+  if (v.length > maxItems) return 'count';
+  const bad = v.find((entry) => !text(entry, maxChars));
+  return `item_${textShape(bad, maxChars)}`;
+}
+
 function validateBriefV2(value) {
   if (!exactKeys(value, [...BRIEF_V2_KEYS])) return 'brief.keys';
   for (const [key, max] of Object.entries(NULLABLE_TEXT)) {
-    if (!nullableText(value[key], max)) return `brief.${key}`;
+    if (!nullableText(value[key], max)) return `brief.${key}.${textShape(value[key], max)}`;
   }
-  for (const key of ['constraints', 'decisions_made', 'open_questions', 'promises_to_client']) {
-    if (!stringArray(value[key], 10, 300)) return `brief.${key}`;
+  for (const key of BRIEF_ARRAY_KEYS) {
+    if (!stringArray(value[key], 10, 300)) return `brief.${key}.${arrayShape(value[key], 10, 300)}`;
   }
   if (!validateDiscussed(value.discussed)) return 'brief.discussed';
   return null;
+}
+
+/**
+ * Container-only repair of a v2 answer, applied before validation:
+ * - an empty or blank string in a text field becomes null;
+ * - blank entries are dropped from the brief arrays;
+ * - a single non-blank string where an array belongs becomes a one-item array.
+ * It never rewrites, invents or reinterprets content; anything else is left
+ * for the validator to reject.
+ */
+export function normalizeClientStateV2(value) {
+  if (!plain(value) || !plain(value.brief)) return value;
+  const brief = { ...value.brief };
+  for (const key of Object.keys(NULLABLE_TEXT)) {
+    if (typeof brief[key] === 'string' && !brief[key].trim()) brief[key] = null;
+  }
+  for (const key of BRIEF_ARRAY_KEYS) {
+    const v = brief[key];
+    if (typeof v === 'string') brief[key] = v.trim() ? [v] : [];
+    else if (Array.isArray(v)) brief[key] = v.filter((entry) => !(typeof entry === 'string' && !entry.trim()));
+  }
+  const out = { ...value, brief };
+  if (plain(value.next_action) && Array.isArray(value.next_action.missing_information)) {
+    out.next_action = { ...value.next_action,
+      missing_information: value.next_action.missing_information
+        .filter((entry) => !(typeof entry === 'string' && !entry.trim())) };
+  }
+  return out;
 }
 
 /**
@@ -298,10 +344,13 @@ summary: a concise internal note for the artist, max 1200 characters.
 brief has exactly these keys:
 project_summary, placement, style, colour, size, cover_up_context, constraints,
 decisions_made, open_questions, promises_to_client, last_interaction, discussed.
-constraints, decisions_made, open_questions and promises_to_client are arrays of short strings, max 10 each.
-project_summary, placement, style, colour, size, cover_up_context and last_interaction are strings or null.
-Record facts as stated. If two messages disagree (for example two different sizes), keep both in
-open_questions and say which is newer. Never pick one silently.
+constraints, decisions_made, open_questions and promises_to_client are arrays of plain strings, max 10 each.
+Each item is one short sentence as a string, never an object. Use [] when there is nothing to record.
+project_summary, placement, style, colour, size, cover_up_context and last_interaction are each ONE
+plain string (for example "15 cm") or null. Never a number, an object, an array or an empty string.
+Record facts as stated. If two messages disagree (for example two different sizes), put the newest
+value in the field and add one string to open_questions naming both values and which is newer,
+for example "Size: 10 cm earlier, 15 cm in the newest message - confirm". Never pick one silently.
 discussed has exactly these keys: ${DISCUSSED_KEYS.join(', ')}.
 Each is {"value": string or null, "status": "mentioned_by_client" or "mentioned_by_artist" or "not_discussed"}.
 "discussed" records only what was MENTIONED and by whom, never agreement. Use not_discussed with null when not raised.
@@ -317,7 +366,7 @@ missing_information is an array of short field names, max 12, only for informati
 Only the artist decides feasibility, price, session count, duration, dates, deposits and bookings.
 No identifiers, tool calls, SQL or extra keys.`;
 
-export const CLIENT_STATE_V2_PROMPT_VERSION = 'client-state.2026-09-24';
+export const CLIENT_STATE_V2_PROMPT_VERSION = 'client-state.2026-09-26';
 export const CLIENT_STATE_V2_SCHEMA_VERSION = 'client-state.v2';
 
 // Short, purpose-specific draft for a draftable action. Generated separately.
