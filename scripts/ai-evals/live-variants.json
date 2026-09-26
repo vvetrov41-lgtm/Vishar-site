@@ -1,13 +1,10 @@
 {
-  "repeats": 2,
-  "maxCalls": 220,
+  "repeats": 3,
+  "maxCalls": 90,
+  "minCallIntervalMs": 3500,
+  "only": ["state-v1-chain", "state-v2-chain"],
   "variants": [
-    { "id": "intake-qwen-full", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "full" } },
-    { "id": "intake-qwen-transport", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "transport" } },
-    { "id": "intake-qwen-object", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "object" } },
-    { "id": "intake-llama", "task": "enquiry_intake", "variant": { "provider": "workers_ai" } },
-    { "id": "state-qwen-current", "task": "crm_client_state", "variant": { "provider": "qwen", "timeoutMs": 60000 } },
-    { "id": "state-qwen-nothink", "task": "crm_client_state", "variant": { "provider": "qwen", "thinking": "off", "timeoutMs": 60000 } },
-    { "id": "state-llama", "task": "crm_client_state", "variant": { "provider": "workers_ai", "timeoutMs": 60000 } }
+    { "id": "state-v1-chain", "task": "crm_client_state", "variant": { "timeoutMs": 60000 } },
+    { "id": "state-v2-chain", "task": "crm_client_state", "variant": { "contract": "v2", "timeoutMs": 60000 } }
   ]
 }
