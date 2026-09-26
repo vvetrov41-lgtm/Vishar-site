@@ -1,0 +1,970 @@
+{
+ "version": 1,
+ "description": "Semantic animation groups for the CGTrader coil tattoo machine model. Parts are matched by triangle count and centroid (glTF Y-up metres), not by index.",
+ "source": {
+  "name": "Tattoo_mach / inkerrr",
+  "triangles": 39988,
+  "parts": 59
+ },
+ "matchTolerance": 0.0005,
+ "parts": [
+  {
+   "id": "p00",
+   "triangles": 168,
+   "centroid": [
+    0.01803,
+    0.04816,
+    -0.00259
+   ],
+   "label": "front coil winding"
+  },
+  {
+   "id": "p01",
+   "triangles": 224,
+   "centroid": [
+    -0.05473,
+    0.02139,
+    -0.00259
+   ],
+   "label": "binding post washer"
+  },
+  {
+   "id": "p02",
+   "triangles": 456,
+   "centroid": [
+    -0.01147,
+    0.04059,
+    0.01131
+   ],
+   "label": "wire"
+  },
+  {
+   "id": "p03",
+   "triangles": 480,
+   "centroid": [
+    -0.02687,
+    0.05938,
+    0.01091
+   ],
+   "label": "wire"
+  },
+  {
+   "id": "p04",
+   "triangles": 528,
+   "centroid": [
+    0.01649,
+    0.04716,
+    0.01303
+   ],
+   "label": "wire"
+  },
+  {
+   "id": "p05",
+   "triangles": 528,
+   "centroid": [
+    0.01146,
+    0.06361,
+    0.00958
+   ],
+   "label": "wire"
+  },
+  {
+   "id": "p06",
+   "triangles": 840,
+   "centroid": [
+    0.0017,
+    0.04415,
+    0.01221
+   ],
+   "label": "wire"
+  },
+  {
+   "id": "p07",
+   "triangles": 1440,
+   "centroid": [
+    -0.0547,
+    0.06442,
+    -0.00259
+   ],
+   "label": "saddle screw thread"
+  },
+  {
+   "id": "p08",
+   "triangles": 168,
+   "centroid": [
+    0.04189,
+    0.019,
+    -0.0152
+   ],
+   "label": "vise washer"
+  },
+  {
+   "id": "p09",
+   "triangles": 168,
+   "centroid": [
+    -0.05474,
+    0.01377,
+    -0.00259
+   ],
+   "label": "binding post washer"
+  },
+  {
+   "id": "p10",
+   "triangles": 224,
+   "centroid": [
+    -0.0152,
+    0.03081,
+    -0.00259
+   ],
+   "label": "rear coil bottom washer"
+  },
+  {
+   "id": "p11",
+   "triangles": 168,
+   "centroid": [
+    -0.0152,
+    0.04822,
+    -0.00259
+   ],
+   "label": "rear coil winding"
+  },
+  {
+   "id": "p12",
+   "triangles": 586,
+   "centroid": [
+    -0.0152,
+    0.06581,
+    -0.00259
+   ],
+   "label": "rear coil top cap"
+  },
+  {
+   "id": "p13",
+   "triangles": 1280,
+   "centroid": [
+    -0.05506,
+    0.07325,
+    -0.00259
+   ],
+   "label": "star washer"
+  },
+  {
+   "id": "p14",
+   "triangles": 154,
+   "centroid": [
+    -0.05531,
+    0.07582,
+    -0.00259
+   ],
+   "label": "serrated washer"
+  },
+  {
+   "id": "p15",
+   "triangles": 224,
+   "centroid": [
+    0.02092,
+    0.09044,
+    0.01892
+   ],
+   "label": "barrel washer"
+  },
+  {
+   "id": "p16",
+   "triangles": 168,
+   "centroid": [
+    0.02092,
+    0.09044,
+    0.01337
+   ],
+   "label": "barrel washer"
+  },
+  {
+   "id": "p17",
+   "triangles": 1280,
+   "centroid": [
+    -0.01388,
+    0.07527,
+    -0.00259
+   ],
+   "label": "star washer"
+  },
+  {
+   "id": "p18",
+   "triangles": 154,
+   "centroid": [
+    -0.01398,
+    0.07695,
+    -0.00259
+   ],
+   "label": "serrated washer"
+  },
+  {
+   "id": "p19",
+   "triangles": 586,
+   "centroid": [
+    0.01803,
+    0.06585,
+    -0.00259
+   ],
+   "label": "front coil top cap"
+  },
+  {
+   "id": "p20",
+   "triangles": 224,
+   "centroid": [
+    0.01802,
+    0.03081,
+    -0.00259
+   ],
+   "label": "front coil bottom washer"
+  },
+  {
+   "id": "p21",
+   "triangles": 636,
+   "centroid": [
+    0.05393,
+    -0.09994,
+    -0.00259
+   ],
+   "label": "tip"
+  },
+  {
+   "id": "p22",
+   "triangles": 784,
+   "centroid": [
+    0.02114,
+    0.09079,
+    0.01292
+   ],
+   "label": "barrel thumb nut"
+  },
+  {
+   "id": "p23",
+   "triangles": 224,
+   "centroid": [
+    -0.05515,
+    0.07467,
+    -0.00259
+   ],
+   "label": "flat washer"
+  },
+  {
+   "id": "p24",
+   "triangles": 224,
+   "centroid": [
+    -0.01393,
+    0.07628,
+    -0.00259
+   ],
+   "label": "flat washer"
+  },
+  {
+   "id": "p25",
+   "triangles": 896,
+   "centroid": [
+    -0.05508,
+    0.02224,
+    -0.00297
+   ],
+   "label": "binding post wave washer"
+  },
+  {
+   "id": "p26",
+   "triangles": 288,
+   "centroid": [
+    0.01468,
+    0.07931,
+    0.01292
+   ],
+   "label": "contact lead lug"
+  },
+  {
+   "id": "p27",
+   "triangles": 1408,
+   "centroid": [
+    0.00051,
+    0.07828,
+    -0.00259
+   ],
+   "label": "spring (rear+front)"
+  },
+  {
+   "id": "p28",
+   "triangles": 48,
+   "centroid": [
+    0.04188,
+    0.01916,
+    -0.00784
+   ],
+   "label": "vise screw shaft"
+  },
+  {
+   "id": "p29",
+   "triangles": 224,
+   "centroid": [
+    -0.05474,
+    0.01488,
+    -0.00259
+   ],
+   "label": "binding post washer"
+  },
+  {
+   "id": "p30",
+   "triangles": 168,
+   "centroid": [
+    -0.0152,
+    0.02901,
+    -0.00259
+   ],
+   "label": "rear coil lower washer"
+  },
+  {
+   "id": "p31",
+   "triangles": 392,
+   "centroid": [
+    0.01804,
+    0.06384,
+    -0.00259
+   ],
+   "label": "front coil top washer"
+  },
+  {
+   "id": "p32",
+   "triangles": 2240,
+   "centroid": [
+    0.00509,
+    0.04825,
+    0.01041
+   ],
+   "label": "capacitor"
+  },
+  {
+   "id": "p33",
+   "triangles": 168,
+   "centroid": [
+    0.02092,
+    0.09044,
+    0.01836
+   ],
+   "label": "barrel washer"
+  },
+  {
+   "id": "p34",
+   "triangles": 336,
+   "centroid": [
+    -0.04136,
+    0.03065,
+    0.00709
+   ],
+   "label": "binding post lead"
+  },
+  {
+   "id": "p35",
+   "triangles": 168,
+   "centroid": [
+    0.01802,
+    0.02902,
+    -0.00259
+   ],
+   "label": "front coil lower washer"
+  },
+  {
+   "id": "p36",
+   "triangles": 392,
+   "centroid": [
+    -0.0152,
+    0.06384,
+    -0.00259
+   ],
+   "label": "rear coil top washer"
+  },
+  {
+   "id": "p37",
+   "triangles": 478,
+   "centroid": [
+    -0.0152,
+    0.01987,
+    -0.00259
+   ],
+   "label": "rear coil screw"
+  },
+  {
+   "id": "p38",
+   "triangles": 478,
+   "centroid": [
+    0.01803,
+    0.01539,
+    -0.00259
+   ],
+   "label": "front coil screw"
+  },
+  {
+   "id": "p39",
+   "triangles": 478,
+   "centroid": [
+    0.04182,
+    0.01899,
+    0.01117
+   ],
+   "label": "vise cap screw"
+  },
+  {
+   "id": "p40",
+   "triangles": 478,
+   "centroid": [
+    -0.05474,
+    0.01135,
+    -0.00259
+   ],
+   "label": "binding post bottom cap"
+  },
+  {
+   "id": "p41",
+   "triangles": 478,
+   "centroid": [
+    -0.0554,
+    0.07824,
+    -0.00259
+   ],
+   "label": "saddle cap screw"
+  },
+  {
+   "id": "p42",
+   "triangles": 478,
+   "centroid": [
+    -0.0141,
+    0.07881,
+    -0.00259
+   ],
+   "label": "armature clamp cap screw"
+  },
+  {
+   "id": "p43",
+   "triangles": 478,
+   "centroid": [
+    0.02095,
+    0.09038,
+    0.02074
+   ],
+   "label": "barrel end cap"
+  },
+  {
+   "id": "p44",
+   "triangles": 478,
+   "centroid": [
+    0.02095,
+    0.09038,
+    -0.01046
+   ],
+   "label": "barrel end cap"
+  },
+  {
+   "id": "p45",
+   "triangles": 224,
+   "centroid": [
+    -0.00228,
+    0.05099,
+    0.00024
+   ],
+   "label": "rubber band"
+  },
+  {
+   "id": "p46",
+   "triangles": 3264,
+   "centroid": [
+    0.02097,
+    0.09048,
+    -0.00164
+   ],
+   "label": "contact barrel"
+  },
+  {
+   "id": "p47",
+   "triangles": 1968,
+   "centroid": [
+    -0.05473,
+    0.03345,
+    -0.00259
+   ],
+   "label": "binding post"
+  },
+  {
+   "id": "p48",
+   "triangles": 592,
+   "centroid": [
+    0.03449,
+    0.07351,
+    -0.00259
+   ],
+   "label": "armature bar"
+  },
+  {
+   "id": "p49",
+   "triangles": 264,
+   "centroid": [
+    0.05365,
+    0.02,
+    -0.00259
+   ],
+   "label": "tube stem"
+  },
+  {
+   "id": "p50",
+   "triangles": 4224,
+   "centroid": [
+    0.00768,
+    0.03039,
+    -0.00074
+   ],
+   "label": "frame body (upright, yoke, vise housing)"
+  },
+  {
+   "id": "p51",
+   "triangles": 1776,
+   "centroid": [
+    0.01407,
+    0.09761,
+    -0.00259
+   ],
+   "label": "contact screw"
+  },
+  {
+   "id": "p52",
+   "triangles": 1776,
+   "centroid": [
+    0.05365,
+    -0.05315,
+    -0.00259
+   ],
+   "label": "grip"
+  },
+  {
+   "id": "p53",
+   "triangles": 464,
+   "centroid": [
+    0.05366,
+    0.04049,
+    -0.00264
+   ],
+   "label": "needle"
+  },
+  {
+   "id": "p54",
+   "triangles": 384,
+   "centroid": [
+    0.05257,
+    0.07447,
+    -0.00259
+   ],
+   "label": "armature nipple"
+  },
+  {
+   "id": "p55",
+   "triangles": 200,
+   "centroid": [
+    -0.00064,
+    0.04995,
+    0.00095
+   ],
+   "label": "rubber band"
+  },
+  {
+   "id": "p56",
+   "triangles": 976,
+   "centroid": [
+    0.04188,
+    0.01916,
+    -0.02252
+   ],
+   "label": "vise wing screw"
+  },
+  {
+   "id": "p57",
+   "triangles": 704,
+   "centroid": [
+    0.01803,
+    0.03257,
+    -0.00259
+   ],
+   "label": "front coil square base plate"
+  },
+  {
+   "id": "p58",
+   "triangles": 704,
+   "centroid": [
+    -0.0152,
+    0.03257,
+    -0.00259
+   ],
+   "label": "rear coil square base plate"
+  }
+ ],
+ "groups": [
+  {
+   "id": "G01",
+   "name": "frame",
+   "parts": [
+    "p50"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G02",
+   "name": "coil_rear",
+   "parts": [
+    "p11",
+    "p12",
+    "p36",
+    "p10",
+    "p30",
+    "p58",
+    "p37"
+   ],
+   "pivot": {
+    "type": "part-axis",
+    "part": "p11",
+    "y": "group-min"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G03",
+   "name": "coil_front",
+   "parts": [
+    "p00",
+    "p19",
+    "p31",
+    "p20",
+    "p35",
+    "p57",
+    "p38"
+   ],
+   "pivot": {
+    "type": "part-axis",
+    "part": "p00",
+    "y": "group-min"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G04",
+   "name": "capacitor",
+   "parts": [
+    "p32"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G05",
+   "name": "wiring",
+   "parts": [
+    "p02",
+    "p03",
+    "p04",
+    "p05",
+    "p06",
+    "p26",
+    "p34"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G06",
+   "name": "armature_bar",
+   "parts": [
+    "p48",
+    "p54"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G07",
+   "name": "spring",
+   "parts": [
+    "p27"
+   ],
+   "pivot": {
+    "type": "hinge-min-x",
+    "part": "p27",
+    "depth": 0.004
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G08",
+   "name": "armature_clamp_hw",
+   "parts": [
+    "p42",
+    "p18",
+    "p24",
+    "p17"
+   ],
+   "pivot": {
+    "type": "part-center",
+    "part": "p42"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G09",
+   "name": "rear_saddle_hw",
+   "parts": [
+    "p41",
+    "p14",
+    "p23",
+    "p13",
+    "p07"
+   ],
+   "pivot": {
+    "type": "part-center",
+    "part": "p41"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G10",
+   "name": "contact_barrel",
+   "parts": [
+    "p46",
+    "p22",
+    "p43",
+    "p44",
+    "p15",
+    "p16",
+    "p33"
+   ],
+   "pivot": {
+    "type": "part-center",
+    "part": "p46"
+   },
+   "axis": {
+    "type": "pca",
+    "part": "p46"
+   }
+  },
+  {
+   "id": "G11",
+   "name": "contact_screw",
+   "parts": [
+    "p51"
+   ],
+   "pivot": {
+    "type": "part-center",
+    "part": "p51"
+   },
+   "axis": {
+    "type": "pca",
+    "part": "p51"
+   }
+  },
+  {
+   "id": "G12",
+   "name": "binding_post",
+   "parts": [
+    "p47",
+    "p01",
+    "p09",
+    "p25",
+    "p29",
+    "p40"
+   ],
+   "pivot": {
+    "type": "part-axis",
+    "part": "p47",
+    "y": "group-min"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G13",
+   "name": "vise_screw",
+   "parts": [
+    "p56",
+    "p28",
+    "p08",
+    "p39"
+   ],
+   "pivot": {
+    "type": "part-center",
+    "part": "p28"
+   },
+   "axis": {
+    "type": "pca",
+    "part": "p28"
+   }
+  },
+  {
+   "id": "G14",
+   "name": "tube_stem",
+   "parts": [
+    "p49"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G15",
+   "name": "grip",
+   "parts": [
+    "p52"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G16",
+   "name": "tip",
+   "parts": [
+    "p21"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G17",
+   "name": "needle",
+   "parts": [
+    "p53"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  },
+  {
+   "id": "G18",
+   "name": "rubber_bands",
+   "parts": [
+    "p45",
+    "p55"
+   ],
+   "pivot": {
+    "type": "bbox-center"
+   },
+   "axis": {
+    "type": "fixed",
+    "vector": [
+     0,
+     1,
+     0
+    ]
+   }
+  }
+ ]
+}

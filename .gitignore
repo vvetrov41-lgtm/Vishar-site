@@ -25,3 +25,9 @@ geo_agent/data/raw/qfo/
 geo_agent/data/raw/xmlriver/
 geo_agent/data/raw/provider-responses/
 geo_agent/logs/
+
+# Purchased 3D model sources (homepage machine assembly). Cloudflare Pages
+# publishes the repository root, so anything committed here would be publicly
+# downloadable. Keep raw sources local until a storage decision is made
+# (specs/homepage-machine-assembly/spec.md SR-003).
+source-assets/

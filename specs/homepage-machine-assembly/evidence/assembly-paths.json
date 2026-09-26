@@ -1,0 +1,690 @@
+{
+  "samplesPerMm2": 4,
+  "contactThresholdMm": 0.35,
+  "seatShare": 0.08,
+  "samplePoints": 236338,
+  "layouts": [
+    {
+      "layout": "landscape",
+      "steps": 120,
+      "contacts": [
+        {
+          "mover": "G05_wiring",
+          "other": "G01_frame",
+          "p": 0.6667,
+          "t": 0.208,
+          "minMm": 0.02,
+          "behind": 251,
+          "restMinMm": 0.14
+        },
+        {
+          "mover": "G13_vise_screw",
+          "other": "G01_frame",
+          "p": 0.7083,
+          "t": 0.87,
+          "minMm": 0.06,
+          "behind": 134,
+          "restMinMm": 0.06
+        },
+        {
+          "mover": "G10_contact_barrel",
+          "other": "G01_frame",
+          "p": 0.5417,
+          "t": 0.685,
+          "minMm": 0.03,
+          "behind": 118,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G09_rear_saddle_hw",
+          "other": "G07_spring",
+          "p": 0.7,
+          "t": 0.889,
+          "minMm": 0.06,
+          "behind": 81,
+          "restMinMm": 0.1
+        },
+        {
+          "mover": "G12_binding_post",
+          "other": "G01_frame",
+          "p": 0.6583,
+          "t": 0.783,
+          "minMm": 0.03,
+          "behind": 70,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G06_armature_bar",
+          "other": "G17_needle",
+          "p": 0.4583,
+          "t": 0.819,
+          "minMm": 0.06,
+          "behind": 62,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G16_tip",
+          "other": "G15_grip",
+          "p": 0.6417,
+          "t": 0.817,
+          "minMm": 0.03,
+          "behind": 59,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G04_capacitor",
+          "other": "G01_frame",
+          "p": 0.4,
+          "t": 0.875,
+          "minMm": 0.05,
+          "behind": 57,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G09_rear_saddle_hw",
+          "other": "G01_frame",
+          "p": 0.6917,
+          "t": 0.796,
+          "minMm": 0.03,
+          "behind": 56,
+          "restMinMm": 0.11
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G03_coil_front",
+          "p": 0.725,
+          "t": 0.636,
+          "minMm": 0.02,
+          "behind": 50,
+          "restMinMm": 0.13
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G02_coil_rear",
+          "p": 0.7,
+          "t": 0.182,
+          "minMm": 0.03,
+          "behind": 43,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G02_coil_rear",
+          "other": "G01_frame",
+          "p": 0.2917,
+          "t": 0.705,
+          "minMm": 0.07,
+          "behind": 36,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G15_grip",
+          "other": "G14_tube_stem",
+          "p": 0.6167,
+          "t": 0.879,
+          "minMm": 0.08,
+          "behind": 36,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G03_coil_front",
+          "p": 0.7,
+          "t": 0.625,
+          "minMm": 0.08,
+          "behind": 24,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G17_needle",
+          "p": 0.7167,
+          "t": 0.485,
+          "minMm": 0.04,
+          "behind": 23,
+          "restMinMm": 0.12
+        },
+        {
+          "mover": "G11_contact_screw",
+          "other": "G10_contact_barrel",
+          "p": 0.6083,
+          "t": 0.883,
+          "minMm": 0.08,
+          "behind": 23,
+          "restMinMm": 0.09
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G10_contact_barrel",
+          "p": 0.675,
+          "t": 0.313,
+          "minMm": 0.05,
+          "behind": 19,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G04_capacitor",
+          "other": "G03_coil_front",
+          "p": 0.3833,
+          "t": 0.667,
+          "minMm": 0.17,
+          "behind": 17,
+          "restMinMm": 0.52
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G04_capacitor",
+          "p": 0.6833,
+          "t": 0.417,
+          "minMm": 0.06,
+          "behind": 13,
+          "restMinMm": 0.11
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G02_coil_rear",
+          "p": 0.6917,
+          "t": 0.521,
+          "minMm": 0.08,
+          "behind": 13,
+          "restMinMm": 0.1
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G01_frame",
+          "p": 0.725,
+          "t": 0.636,
+          "minMm": 0.08,
+          "behind": 10,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G12_binding_post",
+          "p": 0.7083,
+          "t": 0.729,
+          "minMm": 0.1,
+          "behind": 10,
+          "restMinMm": 0.08
+        },
+        {
+          "mover": "G03_coil_front",
+          "other": "G01_frame",
+          "p": 0.3167,
+          "t": 0.59,
+          "minMm": 0.03,
+          "behind": 1,
+          "restMinMm": 0.09
+        },
+        {
+          "mover": "G07_spring",
+          "other": "G06_armature_bar",
+          "p": 0.55,
+          "t": 0.9,
+          "minMm": 0.25,
+          "behind": 0,
+          "restMinMm": 0.02
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G05_wiring",
+          "p": 0.7333,
+          "t": 0.788,
+          "minMm": 0.31,
+          "behind": 0,
+          "restMinMm": 0.16
+        }
+      ],
+      "clearance": [
+        {
+          "group": "G01_frame",
+          "approachMinMm": 0.46,
+          "nearest": "G17_needle",
+          "atP": 0.0083
+        },
+        {
+          "group": "G02_coil_rear",
+          "approachMinMm": 0.07,
+          "nearest": "G01_frame",
+          "atP": 0.2917
+        },
+        {
+          "group": "G03_coil_front",
+          "approachMinMm": 0.03,
+          "nearest": "G01_frame",
+          "atP": 0.3167
+        },
+        {
+          "group": "G04_capacitor",
+          "approachMinMm": 0.05,
+          "nearest": "G01_frame",
+          "atP": 0.4
+        },
+        {
+          "group": "G05_wiring",
+          "approachMinMm": 0.02,
+          "nearest": "G01_frame",
+          "atP": 0.6667
+        },
+        {
+          "group": "G06_armature_bar",
+          "approachMinMm": 0.06,
+          "nearest": "G17_needle",
+          "atP": 0.4583
+        },
+        {
+          "group": "G07_spring",
+          "approachMinMm": 0.25,
+          "nearest": "G06_armature_bar",
+          "atP": 0.55
+        },
+        {
+          "group": "G08_armature_clamp_hw",
+          "approachMinMm": 2.04,
+          "nearest": "G07_spring",
+          "atP": 0.675
+        },
+        {
+          "group": "G09_rear_saddle_hw",
+          "approachMinMm": 0.03,
+          "nearest": "G01_frame",
+          "atP": 0.6917
+        },
+        {
+          "group": "G10_contact_barrel",
+          "approachMinMm": 0.03,
+          "nearest": "G01_frame",
+          "atP": 0.5417
+        },
+        {
+          "group": "G11_contact_screw",
+          "approachMinMm": 0.08,
+          "nearest": "G10_contact_barrel",
+          "atP": 0.6083
+        },
+        {
+          "group": "G12_binding_post",
+          "approachMinMm": 0.03,
+          "nearest": "G01_frame",
+          "atP": 0.6583
+        },
+        {
+          "group": "G13_vise_screw",
+          "approachMinMm": 0.06,
+          "nearest": "G01_frame",
+          "atP": 0.7083
+        },
+        {
+          "group": "G14_tube_stem",
+          "approachMinMm": 2.66,
+          "nearest": "G01_frame",
+          "atP": 0.1417
+        },
+        {
+          "group": "G15_grip",
+          "approachMinMm": 0.08,
+          "nearest": "G14_tube_stem",
+          "atP": 0.6167
+        },
+        {
+          "group": "G16_tip",
+          "approachMinMm": 0.03,
+          "nearest": "G15_grip",
+          "atP": 0.6417
+        },
+        {
+          "group": "G17_needle",
+          "approachMinMm": null,
+          "nearest": null,
+          "atP": null
+        },
+        {
+          "group": "G18_rubber_bands",
+          "approachMinMm": 0.02,
+          "nearest": "G03_coil_front",
+          "atP": 0.725
+        }
+      ]
+    },
+    {
+      "layout": "portrait",
+      "steps": 120,
+      "contacts": [
+        {
+          "mover": "G05_wiring",
+          "other": "G01_frame",
+          "p": 0.6667,
+          "t": 0.208,
+          "minMm": 0.02,
+          "behind": 251,
+          "restMinMm": 0.14
+        },
+        {
+          "mover": "G13_vise_screw",
+          "other": "G01_frame",
+          "p": 0.7,
+          "t": 0.778,
+          "minMm": 0.05,
+          "behind": 151,
+          "restMinMm": 0.06
+        },
+        {
+          "mover": "G16_tip",
+          "other": "G15_grip",
+          "p": 0.65,
+          "t": 0.9,
+          "minMm": 0.06,
+          "behind": 65,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G12_binding_post",
+          "other": "G01_frame",
+          "p": 0.6667,
+          "t": 0.867,
+          "minMm": 0.05,
+          "behind": 61,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G02_coil_rear",
+          "other": "G01_frame",
+          "p": 0.2917,
+          "t": 0.705,
+          "minMm": 0.04,
+          "behind": 54,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G09_rear_saddle_hw",
+          "other": "G01_frame",
+          "p": 0.7,
+          "t": 0.889,
+          "minMm": 0.1,
+          "behind": 54,
+          "restMinMm": 0.11
+        },
+        {
+          "mover": "G10_contact_barrel",
+          "other": "G01_frame",
+          "p": 0.55,
+          "t": 0.778,
+          "minMm": 0.03,
+          "behind": 52,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G03_coil_front",
+          "p": 0.725,
+          "t": 0.636,
+          "minMm": 0.02,
+          "behind": 50,
+          "restMinMm": 0.13
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G02_coil_rear",
+          "p": 0.7,
+          "t": 0.182,
+          "minMm": 0.03,
+          "behind": 43,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G15_grip",
+          "other": "G14_tube_stem",
+          "p": 0.6167,
+          "t": 0.879,
+          "minMm": 0.08,
+          "behind": 36,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G03_coil_front",
+          "other": "G01_frame",
+          "p": 0.3083,
+          "t": 0.526,
+          "minMm": 0.05,
+          "behind": 32,
+          "restMinMm": 0.09
+        },
+        {
+          "mover": "G04_capacitor",
+          "other": "G01_frame",
+          "p": 0.3917,
+          "t": 0.771,
+          "minMm": 0.04,
+          "behind": 31,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G09_rear_saddle_hw",
+          "other": "G07_spring",
+          "p": 0.7,
+          "t": 0.889,
+          "minMm": 0.04,
+          "behind": 25,
+          "restMinMm": 0.1
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G03_coil_front",
+          "p": 0.7,
+          "t": 0.625,
+          "minMm": 0.08,
+          "behind": 24,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G17_needle",
+          "p": 0.7167,
+          "t": 0.485,
+          "minMm": 0.04,
+          "behind": 23,
+          "restMinMm": 0.12
+        },
+        {
+          "mover": "G11_contact_screw",
+          "other": "G10_contact_barrel",
+          "p": 0.6083,
+          "t": 0.883,
+          "minMm": 0.07,
+          "behind": 23,
+          "restMinMm": 0.09
+        },
+        {
+          "mover": "G04_capacitor",
+          "other": "G03_coil_front",
+          "p": 0.3833,
+          "t": 0.667,
+          "minMm": 0.07,
+          "behind": 20,
+          "restMinMm": 0.52
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G10_contact_barrel",
+          "p": 0.675,
+          "t": 0.313,
+          "minMm": 0.05,
+          "behind": 19,
+          "restMinMm": 0.07
+        },
+        {
+          "mover": "G06_armature_bar",
+          "other": "G17_needle",
+          "p": 0.45,
+          "t": 0.75,
+          "minMm": 0.04,
+          "behind": 15,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G04_capacitor",
+          "p": 0.6833,
+          "t": 0.417,
+          "minMm": 0.06,
+          "behind": 13,
+          "restMinMm": 0.11
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G02_coil_rear",
+          "p": 0.6917,
+          "t": 0.521,
+          "minMm": 0.08,
+          "behind": 13,
+          "restMinMm": 0.1
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G01_frame",
+          "p": 0.725,
+          "t": 0.636,
+          "minMm": 0.08,
+          "behind": 10,
+          "restMinMm": 0.05
+        },
+        {
+          "mover": "G05_wiring",
+          "other": "G12_binding_post",
+          "p": 0.7083,
+          "t": 0.729,
+          "minMm": 0.1,
+          "behind": 10,
+          "restMinMm": 0.08
+        },
+        {
+          "mover": "G07_spring",
+          "other": "G06_armature_bar",
+          "p": 0.55,
+          "t": 0.9,
+          "minMm": 0.24,
+          "behind": 0,
+          "restMinMm": 0.02
+        },
+        {
+          "mover": "G18_rubber_bands",
+          "other": "G05_wiring",
+          "p": 0.7333,
+          "t": 0.788,
+          "minMm": 0.31,
+          "behind": 0,
+          "restMinMm": 0.16
+        }
+      ],
+      "clearance": [
+        {
+          "group": "G01_frame",
+          "approachMinMm": 0.46,
+          "nearest": "G17_needle",
+          "atP": 0.0083
+        },
+        {
+          "group": "G02_coil_rear",
+          "approachMinMm": 0.04,
+          "nearest": "G01_frame",
+          "atP": 0.2917
+        },
+        {
+          "group": "G03_coil_front",
+          "approachMinMm": 0.05,
+          "nearest": "G01_frame",
+          "atP": 0.3083
+        },
+        {
+          "group": "G04_capacitor",
+          "approachMinMm": 0.04,
+          "nearest": "G01_frame",
+          "atP": 0.3917
+        },
+        {
+          "group": "G05_wiring",
+          "approachMinMm": 0.02,
+          "nearest": "G01_frame",
+          "atP": 0.6667
+        },
+        {
+          "group": "G06_armature_bar",
+          "approachMinMm": 0.04,
+          "nearest": "G17_needle",
+          "atP": 0.45
+        },
+        {
+          "group": "G07_spring",
+          "approachMinMm": 0.24,
+          "nearest": "G06_armature_bar",
+          "atP": 0.55
+        },
+        {
+          "group": "G08_armature_clamp_hw",
+          "approachMinMm": null,
+          "nearest": null,
+          "atP": null
+        },
+        {
+          "group": "G09_rear_saddle_hw",
+          "approachMinMm": 0.04,
+          "nearest": "G07_spring",
+          "atP": 0.7
+        },
+        {
+          "group": "G10_contact_barrel",
+          "approachMinMm": 0.03,
+          "nearest": "G01_frame",
+          "atP": 0.55
+        },
+        {
+          "group": "G11_contact_screw",
+          "approachMinMm": 0.07,
+          "nearest": "G10_contact_barrel",
+          "atP": 0.6083
+        },
+        {
+          "group": "G12_binding_post",
+          "approachMinMm": 0.05,
+          "nearest": "G01_frame",
+          "atP": 0.6667
+        },
+        {
+          "group": "G13_vise_screw",
+          "approachMinMm": 0.05,
+          "nearest": "G01_frame",
+          "atP": 0.7
+        },
+        {
+          "group": "G14_tube_stem",
+          "approachMinMm": 2.65,
+          "nearest": "G01_frame",
+          "atP": 0.1333
+        },
+        {
+          "group": "G15_grip",
+          "approachMinMm": 0.08,
+          "nearest": "G14_tube_stem",
+          "atP": 0.6167
+        },
+        {
+          "group": "G16_tip",
+          "approachMinMm": 0.06,
+          "nearest": "G15_grip",
+          "atP": 0.65
+        },
+        {
+          "group": "G17_needle",
+          "approachMinMm": null,
+          "nearest": null,
+          "atP": null
+        },
+        {
+          "group": "G18_rubber_bands",
+          "approachMinMm": 0.02,
+          "nearest": "G03_coil_front",
+          "atP": 0.725
+        }
+      ]
+    }
+  ]
+}

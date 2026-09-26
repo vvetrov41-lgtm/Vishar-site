@@ -1,0 +1,82 @@
+{
+ "desk": {
+  "metrics": {
+   "top": 657,
+   "h": 2160,
+   "vh": 900,
+   "pf": 2817
+  },
+  "scrollDistancePx": 1260,
+  "scrollDistanceVh": 140,
+  "initialRequests3D": [],
+  "loadMs": 1003,
+  "framesWhileScrollingPortfolio": 0,
+  "framesIdleInView2s": 0,
+  "stats": {
+   "frames": 197,
+   "calls": 16,
+   "triangles": 36108,
+   "textures": 4,
+   "geometries": 20,
+   "programs": 5,
+   "pixelRatio": 1,
+   "size": [
+    1440,
+    900
+   ],
+   "layout": "landscape"
+  },
+  "heapMB": 6,
+  "bytes3D": {
+   "/prototypes/machine-assembly/": 9598,
+   "/prototypes/machine-assembly/machine-assembly.css": 3959,
+   "/prototypes/machine-assembly/machine-assembly.js": 25473,
+   "/assets/vendor/three/0.128.0/three.min.js": 603445,
+   "/prototypes/machine-assembly/assets/poster-landscape-exploded.webp": 14998,
+   "/prototypes/machine-assembly/lib/GLTFLoader.js": 96550,
+   "/prototypes/machine-assembly/lib/RoomEnvironment.js": 3425,
+   "/prototypes/machine-assembly/timeline.js": 8807,
+   "/prototypes/machine-assembly/assets/tattoo-machine.glb": 3155592
+  }
+ },
+ "mob": {
+  "metrics": {
+   "top": 683.640625,
+   "h": 1772,
+   "vh": 844,
+   "pf": 2456.03125
+  },
+  "scrollDistancePx": 928,
+  "scrollDistanceVh": 110,
+  "initialRequests3D": [],
+  "loadMs": 2792,
+  "framesWhileScrollingPortfolio": 0,
+  "framesIdleInView2s": 0,
+  "stats": {
+   "frames": 198,
+   "calls": 16,
+   "triangles": 36108,
+   "textures": 4,
+   "geometries": 20,
+   "programs": 5,
+   "pixelRatio": 2,
+   "size": [
+    780,
+    1688
+   ],
+   "layout": "portrait"
+  },
+  "heapMB": 6,
+  "bytes3D": {
+   "/prototypes/machine-assembly/": 9598,
+   "/prototypes/machine-assembly/machine-assembly.css": 3959,
+   "/prototypes/machine-assembly/machine-assembly.js": 25473,
+   "/assets/vendor/three/0.128.0/three.min.js": 603445,
+   "/prototypes/machine-assembly/assets/poster-portrait-exploded.webp": 26838,
+   "/prototypes/machine-assembly/lib/GLTFLoader.js": 96550,
+   "/prototypes/machine-assembly/lib/RoomEnvironment.js": 3425,
+   "/prototypes/machine-assembly/timeline.js": 8807,
+   "/prototypes/machine-assembly/assets/tattoo-machine.glb": 3155592
+  }
+ }
+}

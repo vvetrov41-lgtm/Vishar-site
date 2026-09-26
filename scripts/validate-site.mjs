@@ -18,6 +18,11 @@ const RUNTIME_EXTENSIONS = new Set(['.html', '.js', '.mjs', '.css']);
 const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png']);
 const SITE_HOST = 'vishartattoo.com';
 const NOT_FOUND_FILE_REL = '404.html';
+// Internal prototypes (e.g. specs/homepage-machine-assembly/) are published by
+// Cloudflare Pages like every other file, so they must stay out of search:
+// noindex, absent from sitemap.xml, and not linked from site pages. They are
+// excluded from the indexable-page SEO checks.
+const PROTOTYPES_DIR_REL = 'prototypes/';
 
 // Self-hosted homepage 3D libraries (Three.js r128 / GSAP+ScrollTrigger
 // 3.12.5), vendored from pinned npm packages by scripts/vendor-3d-libs.mjs.
@@ -1458,8 +1463,34 @@ function printResults() {
   console.log(`${passes.length} passed, ${warnings.length} warnings, ${failures.length} failures.`);
 }
 
+async function checkPrototypePages(prototypeFiles, siteFiles) {
+  if (!prototypeFiles.length) return;
+  const sitemap = await readFile(path.join(rootDir, 'sitemap.xml'), 'utf8');
+  for (const file of prototypeFiles) {
+    const fileRel = rel(file);
+    const contents = await readFile(file, 'utf8');
+    const robots = findTags(contents, 'meta').filter((tag) => {
+      const attrs = extractTagAttributes(tag);
+      return attrs.name && attrs.name.toLowerCase() === 'robots';
+    });
+    if (robots.length !== 1 || !(extractTagAttributes(robots[0]).content || '').toLowerCase().includes('noindex')) {
+      fail(`${fileRel} is a prototype page and must have exactly one robots meta tag containing noindex.`);
+    }
+    const urlPath = `/${fileRel.replace(/index\.html$/, '')}`;
+    if (sitemap.includes(urlPath)) fail(`${fileRel} is a prototype page but ${urlPath} appears in sitemap.xml.`);
+  }
+  for (const file of siteFiles) {
+    const contents = await readFile(file, 'utf8');
+    if (contents.includes(`/${PROTOTYPES_DIR_REL}`)) fail(`${rel(file)} links to /${PROTOTYPES_DIR_REL}; prototypes must not be linked from site pages.`);
+  }
+  pass(`${prototypeFiles.length} prototype page(s) under ${PROTOTYPES_DIR_REL} are noindex, absent from sitemap.xml, and not linked from site pages.`);
+}
+
 async function main() {
-  const htmlFiles = await listFiles(rootDir, (file) => HTML_EXTENSIONS.has(path.extname(file).toLowerCase()));
+  const allHtmlFiles = await listFiles(rootDir, (file) => HTML_EXTENSIONS.has(path.extname(file).toLowerCase()));
+  const isPrototype = (file) => rel(file).startsWith(PROTOTYPES_DIR_REL);
+  const htmlFiles = allHtmlFiles.filter((file) => !isPrototype(file));
+  const prototypeFiles = allHtmlFiles.filter(isPrototype);
 
   await checkTailwindArtifact();
   await checkStaticHtmlInSync();
@@ -1483,7 +1514,8 @@ async function main() {
   await checkH1Counts(htmlFiles);
   await checkTitlesAndDescriptions(htmlFiles);
   await checkRobotsIndexability(htmlFiles);
-  await checkLocalHtmlReferences(htmlFiles);
+  await checkLocalHtmlReferences(allHtmlFiles);
+  await checkPrototypePages(prototypeFiles, htmlFiles);
   await checkRawHtmlSharedContent(htmlFiles);
   await checkRawHtmlGalleryContent();
   await checkWebpAllowlists();

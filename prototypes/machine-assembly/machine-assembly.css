@@ -1,0 +1,95 @@
+/* Machine assembly sequence prototype. Layout variables:
+ *   --seq-overlap   how far the sequence starts inside the hero's bottom gradient
+ *   --seq-distance  scroll distance owned by the sequence after the stage sticks
+ */
+body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
+.glass { background: rgba(29, 29, 31, .72); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px); }
+.hero-title { letter-spacing: -.025em; }
+.fade-in { animation: fadeIn 1s ease-out forwards; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.proto-label { font-size: 11px; letter-spacing: .2em; text-transform: uppercase; }
+/* "Featured in" lives inside the hero content column, as its last line. */
+.hero-featured { margin-top: 2.5rem; font-size: .75rem; line-height: 1.4; }
+@media (min-width: 640px) { .hero-featured { font-size: .875rem; } }
+@media (min-width: 768px) { .hero-featured { margin-top: 3.5rem; } }
+
+:root { --seq-overlap: 22vh; --seq-distance: 140vh; }
+@media (max-width: 767px) { :root { --seq-overlap: 14vh; --seq-distance: 110vh; } }
+
+.machine-seq {
+  position: relative;
+  z-index: 1; /* above the hero background (z-0), below hero content (z-10) */
+  margin-top: calc(-1 * var(--seq-overlap));
+  height: calc(100vh + var(--seq-distance));
+  pointer-events: none;
+}
+.machine-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+/* Soft studio glow behind the machine so dark parts separate from the black
+   page. Fades out before the upright wipe so the stage ends on pure black. */
+.machine-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 55% 50% at 50% 48%, rgba(58, 56, 54, .55) 0%, rgba(20, 20, 20, .35) 45%, rgba(0, 0, 0, 0) 75%);
+  opacity: var(--glow, 1);
+}
+.machine-canvas, .machine-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.machine-canvas canvas { display: block; width: 100%; height: 100%; }
+.machine-canvas { opacity: 0; transition: opacity .5s ease; }
+.machine-seq.is-live .machine-canvas { opacity: 1; }
+.machine-poster { object-fit: cover; opacity: 0; transition: opacity .5s ease; }
+.machine-poster.is-shown { opacity: 1; }
+.machine-seq.is-live .machine-poster { opacity: 0; }
+
+/* Black shade over the top of the stage while it is still inside the hero, so
+   the parts rise out of the gradient instead of appearing with a hard edge. */
+.machine-entry-shade {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 45vh;
+  background: linear-gradient(to bottom, #000 0%, #000 30%, rgba(0, 0, 0, 0) 100%);
+  opacity: var(--entry-shade, 1);
+}
+
+.machine-skip {
+  position: absolute;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  pointer-events: auto;
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .45);
+  padding: 10px 12px;
+  opacity: var(--skip-opacity, 0);
+  transition: color .2s ease;
+}
+.machine-skip:hover, .machine-skip:focus-visible { color: #fff; }
+
+/* Static mode: reduced motion, no WebGL, weak device, load failure.
+   The section keeps one screen, without the extra scroll distance or overlap. */
+:root.machine-static { --seq-overlap: 0px; }
+.machine-seq.is-static { height: 100vh; }
+.machine-seq.is-static .machine-stage { position: relative; }
+.machine-seq.is-static .machine-entry-shade,
+.machine-seq.is-static .machine-skip { display: none; }
+
+/* Debug panel (?debug=1). */
+#machine-debug {
+  position: fixed; left: 12px; bottom: 12px; z-index: 200;
+  width: min(360px, calc(100vw - 24px));
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(20, 20, 22, .88); border: 1px solid rgba(255, 255, 255, .12);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: #ddd;
+}
+#machine-debug input[type=range] { width: 100%; }
+#machine-debug label { display: flex; gap: 6px; align-items: center; }
