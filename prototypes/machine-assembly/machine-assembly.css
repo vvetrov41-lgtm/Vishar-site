@@ -28,6 +28,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   top: 0;
   height: 100vh;
   overflow: hidden;
+  transition: opacity .45s ease;
 }
 /* Soft studio glow behind the machine so dark parts separate from the black
    page. Fades out before the upright wipe so the stage ends on pure black. */
@@ -49,6 +50,29 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 .machine-poster { object-fit: cover; opacity: 0; transition: opacity .5s ease; }
 .machine-poster.is-shown { opacity: 1; }
 .machine-seq.is-live .machine-poster { opacity: 0; }
+
+/* After the assembly handoff, keep the assembled machine as a subtle fixed
+   background behind Portfolio, matching the old homepage behaviour. */
+.machine-seq.is-background {
+  z-index: 0;
+  --glow: .48 !important;
+  --entry-shade: 0 !important;
+}
+.machine-seq.is-background .machine-stage {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  height: 100vh;
+  opacity: .44;
+}
+.machine-seq.is-background .machine-entry-shade,
+.machine-seq.is-background .machine-skip {
+  display: none;
+}
+#portfolio {
+  position: relative;
+  z-index: 1;
+}
 
 /* Black shade over the top of the stage while it is still inside the hero, so
    the parts rise out of the gradient instead of appearing with a hard edge. */
