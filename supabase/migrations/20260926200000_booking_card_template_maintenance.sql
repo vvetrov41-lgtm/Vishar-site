@@ -189,11 +189,10 @@ begin
   update crm_private.booking_card_artist_settings s
   set whatsapp_tattoo_template_status = v_tattoo,
       whatsapp_consultation_template_status = v_consultation,
-      whatsapp_enabled = case
-        when v_tattoo = 'APPROVED' and v_consultation = 'APPROVED'
-          then s.whatsapp_enabled
-        else false
-      end,
+      whatsapp_enabled = (
+        v_tattoo = 'APPROVED'
+        and v_consultation = 'APPROVED'
+      ),
       whatsapp_template_last_error_code = v_error,
       whatsapp_template_checked_at = now(),
       updated_at = now()
