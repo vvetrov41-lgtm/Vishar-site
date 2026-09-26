@@ -19,6 +19,8 @@
   var section = document.getElementById('machine-seq');
   if (!section) return;
   var portfolio = document.getElementById('portfolio');
+  var portfolioIntro = document.getElementById('portfolio-intro');
+  var featurePanels = portfolioIntro ? Array.from(portfolioIntro.querySelectorAll('.portfolio-feature')) : [];
   var stage = section.querySelector('.machine-stage');
   var canvasHost = section.querySelector('.machine-canvas');
   var poster = section.querySelector('.machine-poster');
@@ -105,23 +107,49 @@
   }
 
   // ── Scroll metrics ──────────────────────────────────────────────────────
-  var metrics = { top: 0, distance: 1 };
+  var metrics = { top: 0, distance: 1, revealStart: 0, assemblyStart: 0, assemblyEnd: 1 };
   function measure() {
     var rect = section.getBoundingClientRect();
+    var vh = Math.max(1, stage.clientHeight || window.innerHeight || 1);
     metrics.top = rect.top + window.scrollY;
     metrics.distance = Math.max(1, section.offsetHeight - stage.offsetHeight);
+    // Reveal starts with only the lower ~15% of the stage entering view.
+    // Assembly begins when roughly half the stage is visible.
+    metrics.revealStart = metrics.top - vh * 0.85;
+    metrics.assemblyStart = metrics.top - vh * 0.50;
+    metrics.assemblyEnd = metrics.top + metrics.distance;
   }
   function scrollValue() {
     var y = window.scrollY;
-    if (y < metrics.top) return metrics.top > 0 ? clamp(y / metrics.top, 0, 1) - 1 : 0;
-    return clamp((y - metrics.top) / metrics.distance, 0, 1);
+    if (y <= metrics.revealStart) return -1;
+    if (y < metrics.assemblyStart) {
+      return -1 + clamp((y - metrics.revealStart) / Math.max(1, metrics.assemblyStart - metrics.revealStart), 0, 1);
+    }
+    return clamp((y - metrics.assemblyStart) / Math.max(1, metrics.assemblyEnd - metrics.assemblyStart), 0, 1);
   }
   function updateCssState(s) {
     var e = clamp(s + 1, 0, 1);
     var p = clamp(s, 0, 1);
+    var handoff = smooth((p - 0.955) / 0.045);
     section.style.setProperty('--entry-shade', (1 - smooth(e / 0.85)).toFixed(3));
     section.style.setProperty('--skip-opacity', (p > 0.02 && p < 0.9 ? 1 : 0).toString());
     section.style.setProperty('--glow', ((1 - smooth((p - 0.86) / 0.1)) * smooth(e / 0.9)).toFixed(3));
+    section.style.setProperty('--handoff-opacity', handoff.toFixed(3));
+    section.style.setProperty('--handoff-scale', (1.06 - 0.04 * handoff).toFixed(4));
+  }
+
+  function updatePortfolioIntro() {
+    if (!featurePanels.length) return;
+    var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    featurePanels.forEach(function (panel) {
+      var rect = panel.getBoundingClientRect();
+      var enter = clamp((vh - rect.top) / (vh * 0.82), 0, 1);
+      var leave = clamp(rect.bottom / (vh * 0.58), 0, 1);
+      var visibility = Math.min(smooth(enter), smooth(leave));
+      panel.style.setProperty('--feature-opacity', visibility.toFixed(3));
+      panel.style.setProperty('--feature-scale', (1.06 - 0.055 * visibility).toFixed(4));
+      panel.style.setProperty('--feature-shade', (1 - visibility).toFixed(3));
+    });
   }
 
   // ── Script loading ──────────────────────────────────────────────────────
@@ -416,6 +444,7 @@
     state.target = scrollValue();
     updateCssState(state.target);
     if (renderer) updateBackgroundMode(state.target);
+    updatePortfolioIntro();
     if (!backgroundActive) kick();
     updateDiagnostic();
   }
@@ -691,6 +720,7 @@
   window.addEventListener('resize', onResize);
   measure();
   updateCssState(scrollValue());
+  updatePortfolioIntro();
 
   updateDiagnostic();
 
