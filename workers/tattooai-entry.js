@@ -39,8 +39,10 @@ const WORKER_EGRESS_PREFIX = '2a06:98c0:3600:';
 function isSemanticPreflightRequest(request) {
   try {
     const url = new URL(request?.url ?? '');
+    const contentType = String(request?.headers?.get?.('content-type') || '').toLowerCase();
     return String(request?.method || '').toUpperCase() === 'POST'
-      && url.searchParams.get('preflight') === '1';
+      && url.searchParams.get('preflight') === '1'
+      && contentType.includes('multipart/form-data');
   } catch {
     return false;
   }
@@ -80,9 +82,7 @@ async function enforcePublicRateLimit(request, env) {
 }
 
 export async function enforceSemanticPreflightRateLimit(request, env) {
-  let url;
-  try { url = new URL(request.url); } catch { return null; }
-  if (request.method !== 'POST' || url.searchParams.get('preflight') !== '1') return null;
+  if (!isSemanticPreflightRequest(request)) return null;
 
   const ip = request.headers.get('CF-Connecting-IP') || '';
   // First-party booking Workers enforce their own client-aware limit, but the
