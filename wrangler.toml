@@ -47,6 +47,12 @@ CRM_AGENT_VISION_ENABLED = "true"
 # come from the deterministic layer. To roll back, set it to "v1" in a release:
 # deploys use --keep-vars, so removing the line would leave "v2" in place.
 CRM_AGENT_CONTRACT = "v2"
+# Intake semantic preflight (optional clarity check before submit). Off, and
+# must stay off until the privacy gate is closed: it would send the four
+# free-text project fields to the decision provider. Set explicitly because
+# releases deploy with --keep-vars; "false" is the kill switch.
+INTAKE_PREFLIGHT_ENABLED = "false"
+INTAKE_PREFLIGHT_PROVIDER = "jev"
 # Stale-brief convergence (Phase 6a), enabled after the Llama routing passed
 # post-deploy acceptance. A refresh costs ~15-30 Neurons on Llama; the
 # database dedupes to one sweep per client per day and caps the batch, so this

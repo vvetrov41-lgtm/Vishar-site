@@ -34,6 +34,9 @@
   <!-- Staging must set its own preview Worker URL. Empty means production
        hosts use the production Worker and every other host fails closed. -->
   <meta name="vishar-booking-endpoint" content="">
+  <!-- Intake semantic preflight. Empty means off; "on" enables the optional
+       clarity check before submit. It never blocks an enquiry. -->
+  <meta name="vishar-intake-preflight" content="">
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/tailwind.css">
   <style>
@@ -128,6 +131,7 @@
   </main>
   <div id="site-footer"></div>
   <script src="/components.js" defer></script>
+  <script src="/assets/js/intake-preflight.js"></script>
   <script>
   (function () {
     const productionEndpoint = 'https://tattooai.vvetrov41.workers.dev/';
@@ -246,6 +250,11 @@
     syncPreferredContactRequirement();
     syncDiscoveryRequirement();
 
+    const preflightEnabled = ((document.querySelector('meta[name="vishar-intake-preflight"]') || {}).content || '') === 'on';
+    const preflight = preflightEnabled && endpoint && window.VisharIntakePreflight
+      ? window.VisharIntakePreflight.create({ form: form, endpoint: endpoint, enabled: true, submitButton: button })
+      : null;
+
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
       status.className = 'status-box mt-4 text-sm text-white/50';
@@ -291,6 +300,15 @@
         payload.append('utmTerm', context.utmTerm);
         payload.append('elapsedMs', String(Date.now() - startedAt));
         files.forEach(function (file) { payload.append('references', file, file.name); });
+
+        // Optional clarity check; never blocks. When it shows hints, the next
+        // submit is final (corrected or sent anyway).
+        if (preflight && !(await preflight.gate(payload))) {
+          button.disabled = false;
+          button.textContent = 'Send enquiry to Vladimir';
+          status.textContent = '';
+          return;
+        }
 
         const response = await fetch(endpoint, { method: 'POST', body: payload });
         const result = await response.json().catch(function () { return {}; });

@@ -1,0 +1,91 @@
+name: Intake preflight eval
+
+# Synthetic evaluation of the intake semantic preflight through a decision
+# provider (TypeSafe Jev via OpenRouter). Pull requests run the self-test only.
+# A live paid run happens only from an explicit probe/intake-preflight-eval-*
+# branch with the isolated jev-eval Environment secret. Synthetic data only; no
+# Supabase, CRM or Cloudflare credentials.
+on:
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    paths:
+      - scripts/ai-evals/intake-preflight-fixtures.mjs
+      - scripts/ai-evals/run-intake-preflight-eval.mjs
+      - workers/lib/intake-preflight/**
+      - .github/workflows/intake-preflight-eval.yml
+  push:
+    branches:
+      - 'probe/intake-preflight-eval-*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: jev-crm-decision-eval
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout exact snapshot
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate synthetic preflight eval contract
+        run: node scripts/ai-evals/run-intake-preflight-eval.mjs --self-test
+
+  live:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/probe/intake-preflight-eval-')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: jev-eval
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+    steps:
+      - name: Checkout exact eval snapshot
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify canonical ancestry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git fetch origin agent/platform-telegram-self-service --no-tags
+          git merge-base --is-ancestor origin/agent/platform-telegram-self-service "$GITHUB_SHA"
+          echo 'Preflight eval snapshot descends from the canonical CRM branch.'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Verify OpenRouter credential is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$OPENROUTER_API_KEY"
+          echo 'OpenRouter credential is present.'
+
+      - name: Run live synthetic preflight evaluation
+        run: node scripts/ai-evals/run-intake-preflight-eval.mjs
+
+      - name: Upload content-free eval result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intake-preflight-eval-results
+          path: intake-preflight-eval-results.json
+          if-no-files-found: ignore
+          retention-days: 14

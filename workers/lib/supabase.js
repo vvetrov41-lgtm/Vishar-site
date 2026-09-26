@@ -78,6 +78,15 @@ export const AI_TELEMETRY_RPCS = new Set([
   'service_record_attention_shadow',
 ]);
 
+/**
+ * Intake semantic preflight telemetry: version, status, categories, provider
+ * outcome and latency only. Never enquiry text. Fail-open.
+ */
+export const INTAKE_PREFLIGHT_RPCS = new Set([
+  'service_record_intake_preflight',
+  'service_mark_intake_preflight_submitted',
+]);
+
 /** Existing generic automation engine backend surface. Never exposed to public callers. */
 export const AUTOMATION_BACKEND_RPCS = new Set([
   'service_run_automation_tick',
@@ -215,6 +224,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !CRM_AGENT_RPCS.has(name)
       && !AI_TELEMETRY_RPCS.has(name)
+      && !INTAKE_PREFLIGHT_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
       && !ENQUIRY_AI_RPCS.has(name)
       && !AUTOMATION_HEARTBEAT_RPCS.has(name)
