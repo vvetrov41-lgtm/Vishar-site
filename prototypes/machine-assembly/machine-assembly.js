@@ -625,7 +625,7 @@
     applyGroups(0.78);
     applyCamera(0.78, 1);
     applyLight(0.78);
-    machineRoot.rotation.y += backgroundAngle;
+    machineRoot.rotation.y = backgroundAngle;
     renderer.render(scene, camera);
     state.frames += 1;
     backgroundRaf = requestAnimationFrame(renderBackground);
