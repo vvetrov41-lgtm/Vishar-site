@@ -80,8 +80,20 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
     method: 'POST',
     headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
   });
-  assert.equal(await enforceSemanticPreflightRateLimit(workerEgress, env), null,
-    'first-party booking edges enforce their own client-aware semantic limiter');
+  assert.equal((await enforceSemanticPreflightRateLimit(workerEgress, env)).status, 503,
+    'Worker egress is never exempt: without the limiter the paid preflight is unavailable');
+  const shared = limiter(1);
+  const egressEnv = { ...env, INTAKE_PREFLIGHT_RATE_LIMIT: shared };
+  assert.equal(await enforceSemanticPreflightRateLimit(workerEgress, egressEnv), null);
+  assert.equal((await enforceSemanticPreflightRateLimit(workerEgress, egressEnv)).status, 429,
+    'any Cloudflare Worker (first-party or not) shares one bounded egress budget');
+  assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress']);
+  const finalSubmit = new Request('https://tattooai.vvetrov41.workers.dev/', {
+    method: 'POST',
+    headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
+  });
+  assert.equal(await enforceSemanticPreflightRateLimit(finalSubmit, egressEnv), null,
+    'a real submission is never subject to the semantic limiter');
 }
 
 {

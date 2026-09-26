@@ -72,9 +72,12 @@ export async function enforceSemanticPreflightRateLimit(request, env) {
   if (request.method !== 'POST' || url.searchParams.get('preflight') !== '1') return null;
 
   const ip = request.headers.get('CF-Connecting-IP') || '';
-  // First-party booking Workers already enforce their own client-aware limit.
-  // Counting their shared egress here would collapse all visitors into one key.
-  if (ip.startsWith(WORKER_EGRESS_PREFIX)) return null;
+  // First-party booking Workers enforce their own client-aware limit, but the
+  // Worker egress address is shared by every Cloudflare Worker, including
+  // third-party ones. So Worker egress is not exempt: it shares one global
+  // bucket that bounds provider spend. When it is spent the optional preflight
+  // is skipped; the real enquiry still submits.
+  const key = ip.startsWith(WORKER_EGRESS_PREFIX) ? 'preflight:worker-egress' : `preflight:${ip}`;
 
   const origin = request.headers.get('Origin') || '';
   const headers = {
@@ -87,7 +90,7 @@ export async function enforceSemanticPreflightRateLimit(request, env) {
     return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503, headers });
   }
   try {
-    const { success } = await limiter.limit({ key: `preflight:${ip}` });
+    const { success } = await limiter.limit({ key });
     if (success) return null;
   } catch {
     return Response.json({ ok: false, code: 'preflight_unavailable' }, { status: 503, headers });
@@ -174,7 +177,7 @@ export default {
     }
 
     // Direct browser preflights receive a stricter paid-provider limiter.
-    // Worker-to-Worker booking paths are already limited at their client edge.
+    // Worker egress (first-party booking edges and any other Worker) shares one budget.
     const preflightLimited = await enforceSemanticPreflightRateLimit(request, env);
     if (preflightLimited) return preflightLimited;
 

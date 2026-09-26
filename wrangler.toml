@@ -24,7 +24,8 @@ namespace_id = "1008"
 simple = { limit = 300, period = 60 }
 
 # Direct browser semantic preflight is stricter than normal public writes.
-# First-party booking proxies enforce their own client-aware limits.
+# First-party booking proxies also limit per client; all Worker egress shares
+# one "worker-egress" key here, because that address is common to every Worker.
 [[ratelimits]]
 name = "INTAKE_PREFLIGHT_RATE_LIMIT"
 namespace_id = "1012"
