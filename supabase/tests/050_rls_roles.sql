@@ -804,6 +804,8 @@ insert into expected_function_acl values
   ('public.service_telegram_today_pulse(text,integer)', false, false, true),
   -- Unknown-sender triage (20260924060000). Read-only suggestion.
   ('public.get_conversation_link_suggestion(uuid)', false, true, false),
+  -- Fact provenance (20260924070000). CRM read, operators only.
+  ('public.get_client_fact_provenance(uuid,uuid)', false, true, false),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires
