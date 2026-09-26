@@ -56,17 +56,21 @@ select throws_ok(
   'WhatsApp booking cards cannot be enabled before both Meta templates are approved'
 );
 
-update crm_private.booking_card_artist_settings
-set whatsapp_tattoo_template_status = 'APPROVED',
-    whatsapp_consultation_template_status = 'APPROVED',
-    whatsapp_enabled = true
-where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid;
+select lives_ok(
+  $ select public.service_record_booking_card_template_status(
+    'a1111111-1111-4111-8111-111111111111'::uuid,
+    'APPROVED',
+    'APPROVED',
+    null
+  ) $,
+  'provider approval readback is accepted through the backend status path'
+);
 
 select ok(
   (select whatsapp_enabled
    from crm_private.booking_card_artist_settings
    where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
-  'WhatsApp booking cards can be enabled only after both templates are approved'
+  'WhatsApp booking cards activate automatically only after both templates are approved'
 );
 
 select lives_ok(
