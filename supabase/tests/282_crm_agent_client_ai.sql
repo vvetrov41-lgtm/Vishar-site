@@ -52,6 +52,9 @@ $$;
 grant execute on function pg_temp.artist_a(), pg_temp.artist_b() to authenticated, service_role;
 
 update crm_private.crm_agent_config set enabled = true, vision_enabled = true;
+-- This suite covers the v1 contract, where the model owns stage and waiting
+-- side. The deterministic override (Phase 3) is covered by 297.
+update crm_private.crm_agent_config set deterministic_state = false;
 
 -- Two artists, two clients, one enquiry each.
 set local role authenticated;
