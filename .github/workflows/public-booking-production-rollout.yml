@@ -271,7 +271,9 @@ jobs:
           const body = JSON.parse(fs.readFileSync(process.env.SETTINGS_FILE, 'utf8'));
           if (body?.success !== true || !body.result) throw new Error('Unable to read public-booking Worker settings.');
           const bindings = Array.isArray(body.result.bindings) ? body.result.bindings : [];
-          if (bindings.length !== 0) throw new Error('Credential-free public-booking edge gained a live binding.');
+          if (bindings.length !== 1 || bindings[0]?.name !== 'PUBLIC_BOOKING_PREFLIGHT_RATE_LIMIT') {
+            throw new Error('Public-booking edge did not converge to the single approved preflight rate-limit binding.');
+          }
           NODE
 
           # DNS/route convergence can take a few seconds at the public edge.
@@ -345,7 +347,7 @@ jobs:
             echo '- Route: `vishartattoo.com/book/*` only'
             echo '- Apex DNS: exact `vishartattoo.com -> vishar-site.pages.dev` CNAME, proxied only after guarded preflight'
             echo '- Existing marketing `/` and `/book/`: required to remain live'
-            echo '- Bindings/secrets: expected zero'
+            echo '- Bindings: one rate-limit binding only; secrets: zero'
             echo '- Acceptance: Vladimir, Kristina, unknown slug, forged query'
             echo '- Customer/enquiry writes by rollout probes: none'
           } >> "$GITHUB_STEP_SUMMARY"
