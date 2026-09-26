@@ -17,6 +17,7 @@ readback queries below are read-only (`begin read only; … rollback;`).
 | Phase 4 activation | enable PR | `20260924055000` (data) | `today_pulse = true`, scheduler `CRM_TODAY_PULSE_ENABLED=true` |
 | Phase 5 | #892 | `20260924060000` | none; the suggestion chip is read-only |
 | Phase 6b | #894 | `20260924070000` | none; fact conflicts join attention |
+| confirm_booking invariant | this | `20260924080000` | none; `confirm_booking` needs an accepted proposed date, a settled deposit and no booking conflict |
 
 Every new migration must be newer than every migration on the base, which
 fixes this order. The activation migrations use the half-step versions so

@@ -48,12 +48,14 @@ const client = (name, overrides = {}) => ({
 // facts always come from the database.
 const ALL_ACTIONS = ['request_information', 'artist_review', 'prepare_quote', 'offer_dates',
   'request_deposit', 'confirm_booking', 'follow_up', 'await_client', 'no_action'];
-const facts = ({ stage, speaker = 'client', deposit = 'none', tattoo = false, consult = false }) => {
+const facts = ({ stage, speaker = 'client', deposit = 'none', tattoo = false, consult = false, confirmReady = false }) => {
   const debt = speaker === 'client';
   const allowed = ALL_ACTIONS.filter((a) => !(
     (a === 'request_information' && (tattoo || consult || ['booked', 'aftercare'].includes(stage)))
     || (a === 'request_deposit' && ['paid', 'requested', 'not_required'].includes(deposit))
-    || (['offer_dates', 'confirm_booking'].includes(a) && tattoo)
+    || (a === 'offer_dates' && tattoo)
+    // 20260924080000: only an accepted proposed date with a settled deposit.
+    || (a === 'confirm_booking' && !confirmReady)
     || (a === 'prepare_quote' && ['booked', 'aftercare', 'deposit_pending', 'scheduling'].includes(stage))
     || (a === 'await_client' && debt)));
   return {
