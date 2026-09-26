@@ -18,6 +18,7 @@
 
   var section = document.getElementById('machine-seq');
   if (!section) return;
+  var portfolio = document.getElementById('portfolio');
   var stage = section.querySelector('.machine-stage');
   var canvasHost = section.querySelector('.machine-canvas');
   var poster = section.querySelector('.machine-poster');
@@ -39,8 +40,10 @@
   var FORCED_LAYOUT = params.get('layout');
   var FORCE_STATIC = params.has('static');
 
-  var DAMPING_SECONDS = 0.12;
-  var SNAP_DISTANCE = 0.5; // anchor jumps (e.g. "View Work") snap instead of sweeping
+  // Keep the scroll response cinematic on touch devices. The previous 120 ms
+  // damping plus a 0.5 progress snap could skip most of the assembly in one
+  // inertial swipe. 650 ms is intentionally close to the old GSAP scrub feel.
+  var DAMPING_SECONDS = 0.65;
 
   // ── Small math helpers ──────────────────────────────────────────────────
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
@@ -386,7 +389,7 @@
     state.raf = null;
     var dt = Math.min(0.1, (now - state.last) / 1000);
     state.last = now;
-    if (state.current === null || Math.abs(state.target - state.current) > SNAP_DISTANCE) state.current = state.target;
+    if (state.current === null) state.current = state.target;
     var diff = state.target - state.current;
     state.current = Math.abs(diff) < 1e-4 ? state.target : state.current + diff * (1 - Math.exp(-dt / DAMPING_SECONDS));
     if (state.dirty || state.current !== state.rendered) renderAt(state.current);
@@ -404,7 +407,8 @@
     if (FORCED_S !== null || debugOverride !== null) return;
     state.target = scrollValue();
     updateCssState(state.target);
-    kick();
+    if (renderer) updateBackgroundMode(state.target);
+    if (!backgroundActive) kick();
   }
 
   // ── Resize ──────────────────────────────────────────────────────────────
@@ -536,7 +540,10 @@
         measure();
         state.target = FORCED_S !== null ? FORCED_S : scrollValue();
         if (FORCED_S !== null) debugOverride = FORCED_S;
-        state.current = state.target;
+        // If loading finished after the user already entered the sequence,
+        // do not jump straight to the current scroll position. Start at the
+        // beginning of assembly and smoothly catch up to the user's position.
+        state.current = FORCED_S !== null ? state.target : (state.target > 0 ? 0 : state.target);
         renderAt(state.current);
         section.classList.add('is-live');
         window.__machine.mode = 'live';
@@ -544,6 +551,8 @@
         window.__machine.loadMs = Math.round(performance.now() - t0);
         if (DEBUG) buildDebugPanel();
         observeVisibility();
+        if (state.current !== state.target) kick();
+        updateBackgroundMode(state.target);
       })
       .catch(function (error) {
         console.warn(error);
@@ -551,17 +560,91 @@
       });
   }
 
+  // ── Assembled background mode (Portfolio) ───────────────────────────────
+  // Mirrors the behaviour of the old homepage: after the assembly handoff,
+  // keep the assembled machine slowly rotating behind Portfolio. The render
+  // loop only runs while Portfolio is on screen.
+  var backgroundActive = false;
+  var backgroundRaf = null;
+  var backgroundLast = 0;
+  var backgroundAngle = 0;
+
+  function renderBackground(now) {
+    if (!backgroundActive || !renderer || document.hidden) {
+      backgroundRaf = null;
+      return;
+    }
+    if (!backgroundLast) backgroundLast = now;
+    var dt = Math.min(0.1, (now - backgroundLast) / 1000);
+    backgroundLast = now;
+    backgroundAngle = (backgroundAngle + dt * 0.048) % (Math.PI * 2); // old scene ≈0.0008 rad/frame at 60 fps
+
+    // Hero-pose camera/light, fully assembled geometry.
+    applyGroups(0.78);
+    applyCamera(0.78, 1);
+    applyLight(0.78);
+    machineRoot.rotation.y += backgroundAngle;
+    renderer.render(scene, camera);
+    state.frames += 1;
+    backgroundRaf = requestAnimationFrame(renderBackground);
+  }
+
+  function startBackgroundLoop() {
+    if (backgroundRaf !== null || document.hidden || !renderer) return;
+    backgroundLast = 0;
+    backgroundRaf = requestAnimationFrame(renderBackground);
+  }
+
+  function stopBackgroundLoop() {
+    if (backgroundRaf !== null) cancelAnimationFrame(backgroundRaf);
+    backgroundRaf = null;
+    backgroundLast = 0;
+  }
+
+  function setBackgroundActive(active) {
+    if (backgroundActive === active) return;
+    backgroundActive = active;
+    if (active) {
+      stopLoop();
+      section.classList.add('is-background');
+      state.visible = true;
+      startBackgroundLoop();
+    } else {
+      stopBackgroundLoop();
+      section.classList.remove('is-background');
+      state.dirty = true;
+      kick();
+    }
+  }
+
+  function updateBackgroundMode(s) {
+    if (!portfolio || !renderer) return;
+    var rect = portfolio.getBoundingClientRect();
+    var portfolioVisible = rect.top < window.innerHeight && rect.bottom > 0;
+    setBackgroundActive(portfolioVisible && s >= 0.995);
+  }
+
   function observeVisibility() {
     if (!('IntersectionObserver' in window)) return;
     new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
-        state.visible = entry.isIntersecting;
+        state.visible = entry.isIntersecting || backgroundActive;
+        if (backgroundActive) return;
         if (state.visible) { state.dirty = true; kick(); } else { stopLoop(); }
       });
     }).observe(section);
   }
 
-  document.addEventListener('visibilitychange', function () { if (document.hidden) stopLoop(); else kick(); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      stopLoop();
+      stopBackgroundLoop();
+    } else if (backgroundActive) {
+      startBackgroundLoop();
+    } else {
+      kick();
+    }
+  });
   window.addEventListener('scroll', onScroll, { passive: true });
   window.addEventListener('resize', onResize);
   measure();
@@ -571,9 +654,12 @@
     start();
   } else {
     window.addEventListener('scroll', start, { passive: true });
+    // Start loading shortly after LCP instead of waiting 1.5–3.5 seconds.
+    // This keeps the hero static but makes the model far more likely to be
+    // ready before the user reaches the assembly section.
     window.addEventListener('load', function () {
       var idle = window.requestIdleCallback || function (cb) { return setTimeout(cb, 1); };
-      setTimeout(function () { idle(start, { timeout: 2000 }); }, 1500);
+      setTimeout(function () { idle(start, { timeout: 500 }); }, 100);
     });
   }
 })();
