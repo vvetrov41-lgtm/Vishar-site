@@ -1,0 +1,33 @@
+name: Jev environment credential compatibility
+
+on:
+  push:
+    branches:
+      - 'ops/preflight-jev-secret-check'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    environment: jev-eval
+    timeout-minutes: 5
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Check secret presence only
+        shell: bash
+        run: |
+          set -euo pipefail
+          openrouter=false
+          cloudflare=false
+          [ -n "$OPENROUTER_API_KEY" ] && openrouter=true
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && cloudflare=true
+          echo "openrouter_present=$openrouter"
+          echo "cloudflare_present=$cloudflare"
+          [ "$openrouter" = true ]
+          [ "$cloudflare" = true ]
