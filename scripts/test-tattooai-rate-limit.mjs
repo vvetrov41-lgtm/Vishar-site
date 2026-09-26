@@ -28,15 +28,7 @@ const env = { ALLOWED_ORIGINS: 'https://vishartattoo.com', VISHAR_ENVIRONMENT: '
 
 assert.equal(rateLimitClass(request('OPTIONS', '1.2.3.4')), null, 'preflight is never counted');
 assert.equal(rateLimitClass(request('POST', '1.2.3.4')), 'write');
-{
-  const body = new FormData();
-  body.set('preflight', '1');
-  assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight=1', {
-    method: 'POST',
-    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '1.2.3.4' },
-    body,
-  })), null, 'multipart semantic preflight never consumes the final-intake write bucket');
-}
+assert.equal(rateLimitClass(request('POST', '1.2.3.4')), 'write');
 assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight=1', {
   method: 'POST',
   headers: {
@@ -45,7 +37,7 @@ assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight
     'content-type': 'application/json',
   },
   body: '{}',
-})), 'write', 'query marker alone never grants the semantic bucket to a non-intake POST');
+})), 'write', 'query marker alone never changes the generic request class');
 assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
 
 {
@@ -59,6 +51,18 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
   });
   assert.equal(await enforcePublicRateLimit(preflight, { ...env, PUBLIC_WRITE_RATE_LIMIT: write }), null);
   assert.equal(write.calls.length, 0, 'semantic preflight does not spend final-submission capacity');
+
+  const finalBody = new FormData();
+  finalBody.set('name', 'Client');
+  const disguisedFinal = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.11' },
+    body: finalBody,
+  });
+  const finalLimiter = limiter(0);
+  const refused = await enforcePublicRateLimit(disguisedFinal, { ...env, PUBLIC_WRITE_RATE_LIMIT: finalLimiter });
+  assert.equal(refused.status, 429, 'multipart query marker without body preflight remains a normal write');
+  assert.deepEqual(finalLimiter.calls, ['write:198.51.100.11']);
 }
 
 {
@@ -137,6 +141,16 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
   assert.equal(await enforceSemanticPreflightRateLimit(fakeJson, egressEnv), null);
   assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress'],
     'non-multipart POSTs never consume or gain the semantic-preflight bucket');
+  const disguisedBody = new FormData();
+  disguisedBody.set('name', 'Client');
+  const disguised = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.13' },
+    body: disguisedBody,
+  });
+  assert.equal(await enforceSemanticPreflightRateLimit(disguised, egressEnv), null);
+  assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress'],
+    'body marker is required before the semantic limiter applies');
   const finalSubmit = new Request('https://tattooai.vvetrov41.workers.dev/', {
     method: 'POST',
     headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
