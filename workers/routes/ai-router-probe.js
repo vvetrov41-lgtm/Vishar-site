@@ -29,7 +29,7 @@ import {
   ENQUIRY_AI_SYSTEM, diagnoseEnquiryAnalysis, normalizeEnquiryAnalysis, validateEnquiryAnalysis,
 } from '../lib/ai/enquiry-schema.js';
 import {
-  CLIENT_STATE_SYSTEM, CLIENT_STATE_V2_SYSTEM, diagnoseClientStateAnalysis, diagnoseClientStateV2,
+  CLIENT_STATE_SYSTEM, CLIENT_STATE_V2_SYSTEM, diagnoseClientStateAnalysis, diagnoseClientStateV2, normalizeClientStateV2,
   validateClientStateAnalysis,
 } from '../lib/ai/client-state-schema.js';
 import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../lib/ai/eval-fixtures.js';
@@ -208,7 +208,7 @@ async function runEvalProbe(env, body, fetchImpl) {
   if (!input) return json(500, { ok: false, error: 'fixture_projection_failed' });
   const allowed = fixture.input.attention?.allowed_actions ?? [];
   const validateJson = v2
-    ? (value) => diagnoseClientStateV2(value, allowed) ?? true
+    ? (value) => diagnoseClientStateV2(normalizeClientStateV2(value), allowed) ?? true
     : isState
     ? (value) => (validateClientStateAnalysis(value) ? true : diagnoseClientStateAnalysis(value) ?? 'contract')
     : (value) => validateEnquiryAnalysis(normalizeEnquiryAnalysis(value))
@@ -233,7 +233,7 @@ async function runEvalProbe(env, body, fetchImpl) {
     durationMs: result.durationMs,
     inputChars: input.length,
     attempts: result.attempts,
-    answer: result.ok ? result.json : null,
+    answer: result.ok ? (v2 ? normalizeClientStateV2(result.json) : result.json) : null,
   });
 }
 

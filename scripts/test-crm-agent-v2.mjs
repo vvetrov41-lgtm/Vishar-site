@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { processCrmAgentJob, projectClientStateInput, contractVersion } from '../workers/lib/crm-agent.js';
 import {
   CLIENT_DRAFT_PROMPT_VERSION, CLIENT_DRAFT_SYSTEM, CLIENT_STATE_V2_PROMPT_VERSION, CLIENT_STATE_V2_SYSTEM,
-  diagnoseClientStateV2,
+  diagnoseClientStateV2, normalizeClientStateV2,
 } from '../workers/lib/ai/client-state-schema.js';
 
 const JOB_ID = '33333333-3333-4333-8333-333333333333';
@@ -139,10 +139,52 @@ await test('the v2 prompt never asks the model for stage, waiting side or a draf
 
 await test('v2 and draft prompt versions are pinned to the prompt text', () => {
   const sha = (t) => createHash('sha256').update(t).digest('hex');
-  assert.equal(sha(CLIENT_STATE_V2_SYSTEM), 'd5c30779fdd299368c613defe609d7dff095aeca017b331e14908ac7b17a9399',
+  assert.equal(sha(CLIENT_STATE_V2_SYSTEM), '2c76759e64247aea73a3f917740004e1f3a91c013c909a5f7b8f7d4f0d2e8883',
     `v2 prompt changed: bump CLIENT_STATE_V2_PROMPT_VERSION (${CLIENT_STATE_V2_PROMPT_VERSION})`);
   assert.equal(sha(CLIENT_DRAFT_SYSTEM), '3eef5743c982374f5a1b8619ae08c8caea199cf54661e62a7d14673790079e0b',
     `draft prompt changed: bump CLIENT_DRAFT_PROMPT_VERSION (${CLIENT_DRAFT_PROMPT_VERSION})`);
+});
+
+await test('container repair fixes blanks and bare strings, never content', () => {
+  const allowed = attention.allowed_actions;
+  const base = answer();
+  const broken = { ...base, brief: { ...base.brief, size: '  ', open_questions: ['Which arm?', '', ' '], constraints: 'No red ink' },
+    next_action: { ...base.next_action, missing_information: ['', 'placement'] } };
+  assert.equal(diagnoseClientStateV2(broken, allowed), 'brief.size.empty');
+  const fixed = normalizeClientStateV2(broken);
+  assert.equal(diagnoseClientStateV2(fixed, allowed), null);
+  assert.equal(fixed.brief.size, null);
+  assert.deepEqual(fixed.brief.open_questions, ['Which arm?']);
+  assert.deepEqual(fixed.brief.constraints, ['No red ink']);
+  assert.deepEqual(fixed.next_action.missing_information, ['placement']);
+  assert.equal(broken.brief.size, '  ', 'the input is not mutated');
+  const loneMissing = normalizeClientStateV2({ ...base, next_action: { ...base.next_action, missing_information: 'placement' } });
+  assert.deepEqual(loneMissing.next_action.missing_information, ['placement']);
+  assert.equal(diagnoseClientStateV2(loneMissing, allowed), null);
+  const objectMissing = normalizeClientStateV2({ ...base, next_action: { ...base.next_action, missing_information: [{ f: 1 }] } });
+  assert.equal(diagnoseClientStateV2(objectMissing, allowed), 'next_action.missing_information');
+  // Objects, numbers and over-long values stay invalid, with a content-free location.
+  const objectItem = normalizeClientStateV2({ ...base, brief: { ...base.brief, open_questions: [{ q: 'x' }] } });
+  assert.equal(diagnoseClientStateV2(objectItem, allowed), 'brief.open_questions.item_object');
+  const numericSize = normalizeClientStateV2({ ...base, brief: { ...base.brief, size: 15 } });
+  assert.equal(diagnoseClientStateV2(numericSize, allowed), 'brief.size.number');
+  const long = normalizeClientStateV2({ ...base, brief: { ...base.brief, size: 'x'.repeat(301) } });
+  assert.equal(diagnoseClientStateV2(long, allowed), 'brief.size.long');
+  const blankNotDiscussed = { ...base, brief: { ...base.brief,
+    discussed: { ...base.brief.discussed, price: { value: '', status: 'not_discussed' } } } };
+  assert.equal(diagnoseClientStateV2(blankNotDiscussed, allowed), 'brief.discussed.price.value_without_mention');
+  assert.equal(diagnoseClientStateV2(normalizeClientStateV2(blankNotDiscussed), allowed), null);
+  // A real value marked not_discussed is a contradiction, not a container problem.
+  const claimed = normalizeClientStateV2({ ...base, brief: { ...base.brief,
+    discussed: { ...base.brief.discussed, price: { value: '300', status: 'not_discussed' } } } });
+  assert.equal(diagnoseClientStateV2(claimed, allowed), 'brief.discussed.price.value_without_mention');
+  const badStatus = { ...base, brief: { ...base.brief,
+    discussed: { ...base.brief.discussed, deposit: { value: null, status: 'agreed' } } } };
+  assert.equal(diagnoseClientStateV2(badStatus, allowed), 'brief.discussed.deposit.status');
+  assert.equal(normalizeClientStateV2(null), null);
+  for (const code of ['brief.open_questions.item_object', 'brief.size.number', 'brief.size.long']) {
+    assert.match(code, /^[a-z][a-z0-9_.]{2,79}$/, 'telemetry code format');
+  }
 });
 
 console.log(`crm agent v2: ${passes} tests passed`);
