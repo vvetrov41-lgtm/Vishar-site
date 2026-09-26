@@ -141,6 +141,15 @@ jobs:
           grep -Fq 'Use POST request' /tmp/tattooai-get.txt
           test "$(curl -sS -o /tmp/tattooai-json.txt -w '%{http_code}' -X POST "$endpoint" -H 'content-type: application/json' --data '{"type":"tattoo-enquiry"}')" = '415'
           grep -Fq 'multipart_required' /tmp/tattooai-json.txt
+
+          # Regression guard for the semantic-preflight route bypass fixed in
+          # PR #919. Unknown multipart paths must be rejected before they can
+          # reach enquiry intake, the paid provider or preflight telemetry.
+          bypass_status="$(curl -sS -o /tmp/tattooai-preflight-bypass.txt -w '%{http_code}' -X POST "${endpoint}zz-audit?preflight=1" \
+            -H 'Origin: https://vishartattoo.com' \
+            -F 'preflight=1')"
+          test "$bypass_status" = '404'
+          grep -Fq 'Not found' /tmp/tattooai-preflight-bypass.txt
       - name: Read back first-party API host
         # Audit M-8. The Custom Domain is created by this deploy; its
         # certificate can take a few minutes on the first run, so the probe
