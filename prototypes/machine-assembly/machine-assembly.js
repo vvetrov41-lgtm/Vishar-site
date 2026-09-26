@@ -552,6 +552,7 @@
 
   // ── Start-up ────────────────────────────────────────────────────────────
   var started = false;
+  var loadPhase = 'idle';
   function start() {
     if (started) return;
     started = true;
@@ -563,14 +564,17 @@
     updateDiagnostic();
     showPoster('exploded');
     var t0 = performance.now();
+    loadPhase = 'libraries';
     loadLibraries()
       .then(function () {
         timeline = window.MACHINE_TIMELINE;
+        loadPhase = 'model';
         return new Promise(function (resolve, reject) {
           new window.THREE.GLTFLoader().load(ASSETS.model, resolve, null, reject);
         });
       })
       .then(function (gltf) {
+        loadPhase = 'scene';
         buildScene(gltf);
         measure();
         state.target = FORCED_S !== null ? FORCED_S : scrollValue();
@@ -593,7 +597,8 @@
       })
       .catch(function (error) {
         console.warn(error);
-        enterStaticMode('load failed');
+        var detail = error && (error.message || error.statusText) ? ': ' + (error.message || error.statusText) : '';
+        enterStaticMode('load failed [' + loadPhase + ']' + detail);
       });
   }
 
