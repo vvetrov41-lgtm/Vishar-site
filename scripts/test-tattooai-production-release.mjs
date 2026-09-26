@@ -34,7 +34,7 @@ expectIncludes('.name == "CRM_AI_IMAGES_ENABLED" and .text == "false"', 'images 
 expectIncludes("endpoint='https://tattooai.vvetrov41.workers.dev/'", 'live Worker boundary');
 expectIncludes('zz-audit?preflight=1', 'live preflight route-bypass regression probe');
 expectIncludes("test \"$bypass_status\" = '404'", 'unknown multipart path rejection readback');
-expectIncludes("preflight-probe@example.test", 'synthetic non-customer route-bypass probe identity');
+expectIncludes("-F 'preflight=1'", 'minimal non-persistent route-bypass probe body');
 expectIncludes("host='https://api.vishartattoo.com/'", 'first-party API host readback');
 expectIncludes('node scripts/probe-kristina-live-booking-contract.mjs', 'Kristina live booking release guard');
 
