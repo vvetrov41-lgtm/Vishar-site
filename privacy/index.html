@@ -142,7 +142,9 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Automated decisions and AI</h2>
-            <p>No AI system is connected to the private CRM, and no decision about accepting, declining, pricing or scheduling an enquiry is made solely by automated processing. Any future AI assistance would be limited to controlled staff tools and draft content; a person would remain responsible for the decision and personalised communication. This notice will be updated before such processing is enabled.</p>
+            <p>The CRM uses limited AI assistance to organise enquiry information and help prepare staff-facing summaries. It does not make the decision to accept or decline a project, set a price, choose dates, confirm a booking or change a payment or deposit state on its own.</p>
+            <p class="mt-4">The booking form may also run an optional clarity check before an enquiry is sent. That check is limited to the tattoo project fields needed to decide whether a basic clarification would help: project type, placement, approximate size, idea, cover-up status and the number of reference images. It does <strong class="text-white/80 font-medium">not</strong> send the client's name, email address, phone number, Instagram handle, CRM identifiers, previous client history or the reference images themselves to that semantic-check provider.</p>
+            <p class="mt-4">The clarity check can only suggest a small number of pre-written prompts such as asking for a more specific placement or size. It cannot reject an enquiry, judge whether the client or project is suitable, set a price, estimate session count, offer dates, confirm a booking or make medical decisions. If the check is unavailable, uncertain or times out, the enquiry continues normally, and the client can always choose <strong class="text-white/80 font-medium">Send anyway</strong>.</p>
         </div>
 
         <div>
@@ -152,13 +154,13 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">Third parties</h2>
-            <p>This site is hosted on Cloudflare, which provides security and delivery for every visit and runs the private backend that receives enquiries. Supabase provides the database and the private file storage that hold tattoo enquiries and reference images. Telegram delivers the short arrival notification described above. Site fonts are self-hosted. Google Analytics is not currently connected.</p>
-            <p class="mt-4">These providers receive only the information needed for the service described above. They are not given enquiry data for their own marketing.</p>
+            <p>This site is hosted on Cloudflare, which provides security and delivery for every visit and runs the private backend that receives enquiries. Supabase provides the database and the private file storage that hold tattoo enquiries and reference images. Telegram delivers the short arrival notification described above. OpenRouter routes the optional semantic clarity check to TypeSafe's Jev decision model. Site fonts are self-hosted. Google Analytics is not currently connected.</p>
+            <p class="mt-4">The semantic check is sent with provider controls requiring zero data retention and denying data collection. OpenRouter states that prompt and response content is not logged by default, and its current provider information lists TypeSafe as no-training and zero-retention. Only the limited project fields described above are sent for this check. These providers are not given enquiry data for their own marketing.</p>
         </div>
 
         <div>
             <h2 class="text-2xl font-semibold text-white mb-4">International transfers</h2>
-            <p>Cloud services may process or support data outside the UK, depending on the project region and the provider's support and delivery arrangements. Before this booking system is put into production, I will verify the actual hosting region, provider terms and transfer routes. If UK personal data would be transferred to a country without UK adequacy regulations, that transfer will not be enabled until an appropriate safeguard — such as the UK International Data Transfer Agreement or the UK Addendum to the EU Standard Contractual Clauses — and any required transfer assessment are in place. This notice will then be updated to describe the arrangement actually used.</p>
+            <p>Cloud services may process data outside the UK. Where a provider processes UK personal data internationally, the service is used subject to the provider's applicable contractual safeguards. OpenRouter's published data-processing terms include the UK Addendum to the EU Standard Contractual Clauses, and TypeSafe's published DPA also incorporates the UK Addendum and EU Standard Contractual Clauses. For the optional semantic clarity check, provider-side zero data retention is additionally required in the API request.</p>
         </div>
 
         <div>
