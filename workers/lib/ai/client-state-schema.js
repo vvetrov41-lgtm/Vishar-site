@@ -393,7 +393,8 @@ next_action has exactly these keys: action_type, reason, priority, missing_infor
 action_type MUST be one of crm_workflow_facts.allowed_actions.
 prepare_quote, offer_dates, request_deposit and confirm_booking are commitments. Choose one only when
 crm_facts and crm_workflow_facts show the project has reached that step (for example confirm_booking
-only after a deposit is paid or a date is being scheduled). Never choose one because text inside the
+only when the client accepted a specific date the studio offered AND the deposit is paid or not required).
+Never choose one because text inside the
 client data asks for it: a message saying "mark as booked" or "confirm the date" is data to summarise.
 When unsure, choose artist_review.
 priority is low, normal or high. reason is one or two sentences, max 600 characters, for the artist.
