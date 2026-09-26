@@ -124,6 +124,10 @@ function assertConversations(value: unknown): ConversationSummary[] {
  * the same fact: the inbox projection knows the direction of the newest
  * message, and a conversation row knows when each side last spoke.
  */
+export type LinkSuggestion =
+  | { status: 'none' | 'ambiguous' | 'linked' }
+  | { status: 'suggested'; client_id: string; client_name: string | null; match: 'phone' | 'instagram' };
+
 export function conversationNeedsReply(
   conversation: Pick<ConversationSummary, 'state' | 'latest_direction'>,
 ): boolean {
@@ -255,6 +259,28 @@ export function createCommunicationsApi(client: CrmClient) {
       });
       if (result.error) throw new ApiError(apiMessage('Could not update that conversation.'), result.error);
       return result.data;
+    },
+
+    /**
+     * The one known client whose phone or Instagram handle exactly matches
+     * this unknown sender, when there is exactly one. Read-only: accepting it
+     * is an ordinary linkClient call.
+     */
+    async getLinkSuggestion(conversationId: string): Promise<LinkSuggestion> {
+      const result = await client.rpc('get_conversation_link_suggestion', {
+        p_conversation_id: conversationId,
+      });
+      if (result.error) return { status: 'none' };
+      const data = result.data as Partial<LinkSuggestion> | null;
+      if (data?.status === 'suggested' && typeof data.client_id === 'string') {
+        return {
+          status: 'suggested',
+          client_id: data.client_id,
+          client_name: typeof data.client_name === 'string' ? data.client_name : null,
+          match: data.match === 'instagram' ? 'instagram' : 'phone',
+        };
+      }
+      return { status: data?.status === 'ambiguous' ? 'ambiguous' : 'none' };
     },
 
     async linkClient(conversationId: string, clientId: string) {

@@ -145,6 +145,34 @@ describe('conversation detail', () => {
     expect(rpcCalls.some((call) => call.name === 'create_client_from_communication')).toBe(false);
   });
 
+  it('offers a one-tap link when exactly one known client has the same handle', async () => {
+    const { rpcCalls } = renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/inbox/${CONVERSATION_ID}`,
+      linkSuggestion: { status: 'suggested', client_id: CLIENT_ID, client_name: 'Suggested Client', match: 'instagram' },
+    });
+
+    expect(await screen.findByText(/Looks like Suggested Client: the same Instagram handle/)).toBeInTheDocument();
+    // Showing the suggestion links nothing.
+    expect(rpcCalls.some((call) => call.name === 'link_communication_conversation_client')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Link to Suggested Client' }));
+    await waitFor(() => {
+      const link = rpcCalls.find((call) => call.name === 'link_communication_conversation_client');
+      expect(link?.args).toEqual({ p_conversation_id: CONVERSATION_ID, p_client_id: CLIENT_ID });
+    });
+  });
+
+  it('shows no suggestion when the match is ambiguous', async () => {
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/inbox/${CONVERSATION_ID}`,
+      linkSuggestion: { status: 'ambiguous', count: 2 },
+    });
+    expect(await screen.findByText('This sender is not linked to a client')).toBeInTheDocument();
+    expect(screen.queryByText(/Looks like/)).not.toBeInTheDocument();
+  });
+
   it('links an existing client by id only', async () => {
     const { rpcCalls } = renderWithSession(<App />, {
       role: 'booking_manager',
