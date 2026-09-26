@@ -109,7 +109,9 @@ await test('a good answer becomes a typed decision; the key and text stay out of
   assert.equal(result.decision.answered.next_action, 'no_action');
   assert.equal(result.model, 'typesafe/jev-1.13-20260917');
   assert.equal(seen[0].init.redirect, 'manual');
-  assert.deepEqual(Object.keys(JSON.parse(seen[0].init.body).questions.next_action.criteria), allowed);
+  const requestBody = JSON.parse(seen[0].init.body);
+  assert.deepEqual(requestBody.provider, { zdr: true, data_collection: 'deny' });
+  assert.deepEqual(Object.keys(requestBody.questions.next_action.criteria), allowed);
   const serialized = JSON.stringify(result);
   assert.ok(!serialized.includes(KEY));
   assert.ok(!serialized.includes('see you'));
