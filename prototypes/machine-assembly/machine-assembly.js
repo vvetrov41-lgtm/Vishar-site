@@ -39,6 +39,9 @@
   var FORCED_S = params.has('s') ? clamp(parseFloat(params.get('s')), -1, 1) : null;
   var FORCED_LAYOUT = params.get('layout');
   var FORCE_STATIC = params.has('static');
+  var FORCE_LIVE = params.has('forceLive');
+  var DIAG = params.has('diag');
+  var staticReason = '';
 
   // Keep the scroll response cinematic on touch devices. The previous 120 ms
   // damping plus a 0.5 progress snap could skip most of the assembly in one
@@ -87,13 +90,18 @@
 
   // Static fallback: reduced motion, no WebGL, weak device, load or GPU failure.
   function enterStaticMode(reason) {
+    staticReason = reason || 'unknown';
     if (reason) console.warn('[machine] static mode: ' + reason);
     stopLoop();
     section.classList.remove('is-live');
     section.classList.add('is-static');
     docEl.classList.add('machine-static');
     showPoster('assembled');
-    if (window.__machine) window.__machine.mode = 'static';
+    if (window.__machine) {
+      window.__machine.mode = 'static';
+      window.__machine.staticReason = staticReason;
+    }
+    updateDiagnostic();
   }
 
   // ── Scroll metrics ──────────────────────────────────────────────────────
@@ -409,6 +417,7 @@
     updateCssState(state.target);
     if (renderer) updateBackgroundMode(state.target);
     if (!backgroundActive) kick();
+    updateDiagnostic();
   }
 
   // ── Resize ──────────────────────────────────────────────────────────────
@@ -488,6 +497,7 @@
   window.__machine = {
     mode: 'pending',
     ready: false,
+    staticReason: '',
     setS: function (s) {
       debugOverride = clamp(s, -1, 1);
       state.target = state.current = debugOverride;
@@ -517,15 +527,40 @@
     }
   };
 
+  // ── Diagnostic overlay (prototype only) ────────────────────────────────
+  var diagEl = null;
+  function updateDiagnostic() {
+    if (!DIAG) return;
+    if (!diagEl) {
+      diagEl = document.createElement('div');
+      diagEl.style.cssText = 'position:fixed;left:8px;top:64px;z-index:9999;max-width:calc(100vw - 16px);padding:7px 9px;border-radius:8px;background:rgba(0,0,0,.78);border:1px solid rgba(255,255,255,.18);font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;color:#fff;pointer-events:none';
+      document.body.appendChild(diagEl);
+    }
+    var mode = window.__machine ? window.__machine.mode : 'pending';
+    var ready = window.__machine && window.__machine.ready ? 'yes' : 'no';
+    var s = renderer ? state.current : scrollValue();
+    var target = renderer ? state.target : scrollValue();
+    diagEl.textContent = 'mode=' + mode + ' ready=' + ready +
+      ' forceLive=' + FORCE_LIVE +
+      ' reduced=' + prefersReducedMotion() +
+      ' weak=' + isWeakDevice() +
+      ' webgl=' + hasWebGL() +
+      (staticReason ? ' reason=' + staticReason : '') +
+      ' s=' + Number(s || 0).toFixed(3) +
+      ' target=' + Number(target || 0).toFixed(3);
+  }
+
   // ── Start-up ────────────────────────────────────────────────────────────
   var started = false;
   function start() {
     if (started) return;
     started = true;
     window.removeEventListener('scroll', start);
-    if (FORCE_STATIC || prefersReducedMotion()) return enterStaticMode(FORCE_STATIC ? 'forced' : 'reduced motion');
-    if (isWeakDevice()) return enterStaticMode('weak device or data saver');
+    if (FORCE_STATIC) return enterStaticMode('forced');
+    if (!FORCE_LIVE && prefersReducedMotion()) return enterStaticMode('reduced motion');
+    if (!FORCE_LIVE && isWeakDevice()) return enterStaticMode('weak device or data saver');
     if (!hasWebGL()) return enterStaticMode('WebGL unavailable');
+    updateDiagnostic();
     showPoster('exploded');
     var t0 = performance.now();
     loadLibraries()
@@ -549,6 +584,8 @@
         window.__machine.mode = 'live';
         window.__machine.ready = true;
         window.__machine.loadMs = Math.round(performance.now() - t0);
+        window.__machine.staticReason = '';
+        updateDiagnostic();
         if (DEBUG) buildDebugPanel();
         observeVisibility();
         if (state.current !== state.target) kick();
@@ -650,7 +687,9 @@
   measure();
   updateCssState(scrollValue());
 
-  if (FORCED_S !== null || DEBUG || FORCE_STATIC) {
+  updateDiagnostic();
+
+  if (FORCED_S !== null || DEBUG || FORCE_STATIC || FORCE_LIVE) {
     start();
   } else {
     window.addEventListener('scroll', start, { passive: true });
