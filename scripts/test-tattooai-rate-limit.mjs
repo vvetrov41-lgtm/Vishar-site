@@ -28,17 +28,34 @@ const env = { ALLOWED_ORIGINS: 'https://vishartattoo.com', VISHAR_ENVIRONMENT: '
 
 assert.equal(rateLimitClass(request('OPTIONS', '1.2.3.4')), null, 'preflight is never counted');
 assert.equal(rateLimitClass(request('POST', '1.2.3.4')), 'write');
+{
+  const body = new FormData();
+  body.set('preflight', '1');
+  assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '1.2.3.4' },
+    body,
+  })), null, 'multipart semantic preflight never consumes the final-intake write bucket');
+}
 assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight=1', {
   method: 'POST',
-  headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '1.2.3.4' },
-})), null, 'semantic preflight never consumes the final-intake write bucket');
+  headers: {
+    Origin: 'https://vishartattoo.com',
+    'CF-Connecting-IP': '1.2.3.4',
+    'content-type': 'application/json',
+  },
+  body: '{}',
+})), 'write', 'query marker alone never grants the semantic bucket to a non-intake POST');
 assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
 
 {
   const write = limiter(0);
+  const preflightBody = new FormData();
+  preflightBody.set('preflight', '1');
   const preflight = new Request('https://api.vishartattoo.com/?preflight=1', {
     method: 'POST',
     headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.11' },
+    body: preflightBody,
   });
   assert.equal(await enforcePublicRateLimit(preflight, { ...env, PUBLIC_WRITE_RATE_LIMIT: write }), null);
   assert.equal(write.calls.length, 0, 'semantic preflight does not spend final-submission capacity');
@@ -78,9 +95,12 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
 {
   const semantic = limiter(1);
   const e = { ...env, INTAKE_PREFLIGHT_RATE_LIMIT: semantic };
+  const directBody = new FormData();
+  directBody.set('preflight', '1');
   const direct = new Request('https://api.vishartattoo.com/?preflight=1', {
     method: 'POST',
     headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.10' },
+    body: directBody,
   });
   assert.equal(await enforceSemanticPreflightRateLimit(direct, e), null);
   const refused = await enforceSemanticPreflightRateLimit(direct, e);
@@ -90,9 +110,12 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
   const missing = await enforceSemanticPreflightRateLimit(direct, env);
   assert.equal(missing.status, 503, 'missing semantic limiter disables only the optional preflight');
 
+  const workerBody = new FormData();
+  workerBody.set('preflight', '1');
   const workerEgress = new Request('https://tattooai.vvetrov41.workers.dev/?preflight=1', {
     method: 'POST',
     headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
+    body: workerBody,
   });
   assert.equal((await enforceSemanticPreflightRateLimit(workerEgress, env)).status, 503,
     'Worker egress is never exempt: without the limiter the paid preflight is unavailable');
@@ -102,6 +125,18 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
   assert.equal((await enforceSemanticPreflightRateLimit(workerEgress, egressEnv)).status, 429,
     'any Cloudflare Worker (first-party or not) shares one bounded egress budget');
   assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress']);
+  const fakeJson = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: {
+      Origin: 'https://vishartattoo.com',
+      'CF-Connecting-IP': '198.51.100.12',
+      'content-type': 'application/json',
+    },
+    body: '{}',
+  });
+  assert.equal(await enforceSemanticPreflightRateLimit(fakeJson, egressEnv), null);
+  assert.deepEqual(shared.calls, ['preflight:worker-egress', 'preflight:worker-egress'],
+    'non-multipart POSTs never consume or gain the semantic-preflight bucket');
   const finalSubmit = new Request('https://tattooai.vvetrov41.workers.dev/', {
     method: 'POST',
     headers: { 'CF-Connecting-IP': '2a06:98c0:3600::103' },
