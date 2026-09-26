@@ -5,7 +5,8 @@
 // client text is sent to this processor, and the first integration is shadow
 // only: decisions go to telemetry and change nothing the operator sees.
 //
-// Hot-path rules: one attempt, short timeout, no retry, fail-closed. Any
+// Hot-path rules: one attempt, short timeout, no retry, fail-closed. Every
+// request explicitly requires provider ZDR and denies data collection. Any
 // transport problem returns a bounded code and the caller keeps the existing
 // path. The request body and the answer are never logged.
 
@@ -43,7 +44,14 @@ export async function requestTypedDecision(config, { state, questions }, { fetch
     response = await fetchImpl(DECISION_ENDPOINT, {
       method: 'POST',
       headers: { authorization: `Bearer ${config.apiKey}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ model: config.model, state, questions }),
+      // Enforce provider-side privacy on every request instead of relying on
+      // an account/dashboard setting that could drift independently of code.
+      body: JSON.stringify({
+        model: config.model,
+        state,
+        questions,
+        provider: { zdr: true, data_collection: 'deny' },
+      }),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'manual',
     });
