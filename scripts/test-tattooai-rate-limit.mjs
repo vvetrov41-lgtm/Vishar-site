@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import entry, { __testing, enforceSemanticPreflightRateLimit, rateLimitClass } from '../workers/tattooai-entry.js';
 
-const { enforcePublicRateLimit } = __testing;
+const { classifySemanticPreflightRequest, enforcePublicRateLimit } = __testing;
 
 function limiter(allowed) {
   const calls = [];
@@ -41,6 +41,45 @@ assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight
 assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
 
 {
+  const body = new FormData();
+  body.set('preflight', '1');
+  const valid = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.5' },
+    body,
+  });
+  assert.equal(await classifySemanticPreflightRequest(valid), true);
+
+  const actionBody = new FormData();
+  actionBody.set('preflight', '1');
+  const appointmentAction = new Request('https://api.vishartattoo.com/appointments/respond/test-token?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.5' },
+    body: actionBody,
+  });
+  assert.equal(await classifySemanticPreflightRequest(appointmentAction), false,
+    'non-intake mutation routes never receive the semantic exemption');
+
+  const oversizedBody = new FormData();
+  oversizedBody.set('preflight', '1');
+  const oversized = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: {
+      Origin: 'https://vishartattoo.com',
+      'CF-Connecting-IP': '198.51.100.5',
+      'Content-Length': String(13 * 1024 * 1024 + 1),
+    },
+    body: oversizedBody,
+  });
+  const oversizedResponse = await enforceSemanticPreflightRateLimit(oversized, {
+    ...env,
+    INTAKE_PREFLIGHT_RATE_LIMIT: limiter(10),
+  });
+  assert.equal(oversizedResponse.status, 413,
+    'semantic classification applies the intake size bound before multipart parsing');
+}
+
+{
   const write = limiter(0);
   const preflightBody = new FormData();
   preflightBody.set('preflight', '1');
@@ -64,6 +103,24 @@ assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
   assert.equal(refused.status, 429, 'multipart query marker without body preflight remains a normal write');
   assert.deepEqual(finalLimiter.calls, ['write:198.51.100.11']);
 }
+
+{
+  const actionBody = new FormData();
+  actionBody.set('preflight', '1');
+  const appointmentAction = new Request('https://api.vishartattoo.com/appointments/respond/test-token?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.14' },
+    body: actionBody,
+  });
+  const write = limiter(0);
+  const semantic = limiter(10);
+  assert.equal(await enforceSemanticPreflightRateLimit(appointmentAction, { ...env, INTAKE_PREFLIGHT_RATE_LIMIT: semantic }), null);
+  const refused = await enforcePublicRateLimit(appointmentAction, { ...env, PUBLIC_WRITE_RATE_LIMIT: write });
+  assert.equal(refused.status, 429, 'appointment mutation remains in the generic write bucket');
+  assert.equal(semantic.calls.length, 0);
+  assert.deepEqual(write.calls, ['write:198.51.100.14']);
+}
+
 
 {
   const write = limiter(2);
