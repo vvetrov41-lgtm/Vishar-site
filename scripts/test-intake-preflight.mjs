@@ -316,6 +316,27 @@ await test('the static booking page loads the same browser module the Worker inl
   assert.doesNotThrow(() => new Function(INTAKE_PREFLIGHT_BROWSER_JS));
 });
 
+await test('the browser mints a v4 correlation id even without crypto.randomUUID', async () => {
+  const { webcrypto } = await import('node:crypto');
+  const { runInNewContext } = await import('node:vm');
+  const sent = [];
+  const window = { crypto: { getRandomValues: (a) => webcrypto.getRandomValues(a) }, location: { href: 'https://vishartattoo.com/booking/' } };
+  runInNewContext(INTAKE_PREFLIGHT_BROWSER_JS, {
+    window, URL, FormData, AbortController, setTimeout, clearTimeout, Uint8Array,
+    fetch: async (url, init) => { sent.push({ url, body: init.body }); throw new Error('timeout'); },
+  });
+  const form = { querySelectorAll: () => [], elements: {} };
+  const flight = window.VisharIntakePreflight.create({ form, endpoint: 'https://api.vishartattoo.com/', enabled: true });
+  const payload = new FormData();
+  payload.append('idea', 'Rose');
+  assert.equal(await flight.gate(payload), true, 'a failed preflight never blocks the submit');
+  const v4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+  const id = sent[0].body.get('preflightId');
+  assert.match(id, v4);
+  assert.equal(new URL(sent[0].url).searchParams.get('preflight'), '1');
+  assert.equal(payload.get('preflightId'), id, 'the final submit carries the same id after a timeout');
+});
+
 await test('the Vladimir booking page ships with the preflight switched off', () => {
   const html = readFileSync(new URL('../booking/index.html', import.meta.url), 'utf8');
   assert.match(html, /<meta name="vishar-intake-preflight" content="">/);
