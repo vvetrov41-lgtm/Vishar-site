@@ -22,9 +22,9 @@
 var MACHINE_TIMELINE = {
   stages: [
     { id: 'A', name: 'Opening frame', from: 0.0, to: 0.06 },
-    { id: 'B', name: 'Frame, tube stem, needle', from: 0.0, to: 0.26 },
-    { id: 'C', name: 'Coils and capacitor', from: 0.2, to: 0.41 },
-    { id: 'D', name: 'Upper mechanism', from: 0.36, to: 0.62 },
+    { id: 'B', name: 'Frame, tube stem, needle', from: 0.0, to: 0.2 },
+    { id: 'C', name: 'Coils and capacitor', from: 0.02, to: 0.31 },
+    { id: 'D', name: 'Upper mechanism', from: 0.27, to: 0.58 },
     { id: 'E', name: 'Grip and tip', from: 0.52, to: 0.66 },
     { id: 'F', name: 'Fine hardware, wiring, bands', from: 0.58, to: 0.745 },
     { id: 'G', name: 'Hero moment', from: 0.745, to: 0.8 },
@@ -34,56 +34,56 @@ var MACHINE_TIMELINE = {
 
   groups: {
     G01_frame: {
-      window: [0.0, 0.12],
+      window: [0.0, 0.08],
       offset: { landscape: [0, -0.004, 0], portrait: [0, -0.004, 0] },
       rot: { axis: [0, 1, 0], angle: 0.14 }
     },
     /* Starts fully below the vise so the frame can settle around it. */
     G14_tube_stem: {
-      window: [0.08, 0.18],
+      window: [0.03, 0.13],
       offset: { landscape: [0, -0.05, 0], portrait: [0, -0.06, 0] }
     },
     /* The needle drops through the column before the armature arrives: it is
      * 20 cm long, so any hover above its seat crosses the armature's path.
      * Grip and tip later slide up around it, coaxially. */
     G17_needle: {
-      window: [0.14, 0.26],
+      window: [0.07, 0.2],
       offset: { landscape: [0, 0.06, 0], portrait: [0, 0.09, 0] }
     },
     /* The frame's side plate occupies the camera side (+Z) from y 21 to 99 mm,
      * so coils come straight down from above (only the yoke is below them). */
     G02_coil_rear: {
-      window: [0.2, 0.33],
+      window: [0.02, 0.16],
       offset: { landscape: [-0.01, 0.065, -0.025], portrait: [-0.008, 0.08, -0.02] },
       via: { landscape: [0, 0.035, 0], portrait: [0, 0.035, 0] },
       rot: { axis: [0, 1, 0], angle: 0.7 }
     },
     G03_coil_front: {
-      window: [0.24, 0.37],
+      window: [0.09, 0.23],
       offset: { landscape: [0.0, 0.075, -0.02], portrait: [0.004, 0.09, -0.015] },
       via: { landscape: [0, 0.04, 0], portrait: [0, 0.04, 0] },
       rot: { axis: [0, 1, 0], angle: -0.6 }
     },
     /* Trapped between the coils and the upright: only a drop from above is clear. */
     G04_capacitor: {
-      window: [0.33, 0.41],
+      window: [0.24, 0.31],
       offset: { landscape: [-0.012, 0.075, -0.004], portrait: [-0.008, 0.075, -0.004] },
       via: { landscape: [0, 0.045, -0.001], portrait: [0, 0.045, -0.001] }
     },
     G06_armature_bar: {
-      window: [0.36, 0.48],
+      window: [0.27, 0.4],
       offset: { landscape: [0, 0.045, -0.06], portrait: [0, 0.06, -0.06] },
       via: { landscape: [0, 0.02, 0], portrait: [0, 0.02, 0] },
       rot: { axis: [0, 0, 1], angle: 0.08 }
     },
     G07_spring: {
-      window: [0.46, 0.56],
+      window: [0.4, 0.5],
       offset: { landscape: [-0.05, 0.075, -0.03], portrait: [-0.03, 0.09, -0.02] },
       via: { landscape: [0, 0.018, 0], portrait: [0, 0.018, 0] },
       rot: { axis: [0, 0, 1], angle: 0.2 }
     },
     G10_contact_barrel: {
-      window: [0.48, 0.57],
+      window: [0.42, 0.51],
       along: 'axis',
       offset: { landscape: 0.085, portrait: 0.055 }
     },

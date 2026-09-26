@@ -104,3 +104,52 @@ The order can be changed later without changing the animation architecture.
 7. Machine continues slow rotation and working motion behind Portfolio.
 8. No renderer loop after the portfolio scene leaves the viewport.
 9. Production files remain untouched until visual approval.
+
+## Revision 2 (2026-09-26): iPhone pacing and handoff fixes
+
+### Root causes found
+
+1. **Late first assembly move.** `assemblyStart` was anchored to 50% of the
+   *stage*, but the machine occupies only 11–95% of the stage height, and the
+   first 20% of progress had no clearly visible move (frame yaw of 8°, tube stem
+   below the fold); the first large move (rear coil) started at p = 0.20.
+   Measured on a 390×844 viewport: the first large move started with **77%** of
+   the machine visible.
+2. **Distant machine between the close-up and the tattoos.** After p = 1 the
+   intro entered the viewport, `updateBackgroundMode()` saw
+   `introVisible && s >= 0.995` and switched the section to `.is-background`:
+   the stage became `position: fixed; opacity: .44` in the hero pose, the stage
+   handoff image got `display: none`, and the transparent rest of the section
+   showed the rotating distant machine before feature 1 faded in from black
+   with its own, unrelated enter formula.
+3. **Fast flings.** With 650 ms damping the 3D can still be mid-assembly when
+   an inertial swipe leaves the end of the sticky stage.
+4. **Negative frame delta.** `tick()` could compute a negative `dt` (rAF
+   timestamp earlier than `performance.now()` in `kick()`), overshooting the
+   exponential step (observed `current = −6.8` after a reload inside the
+   sequence).
+5. **Desktop/Android Chrome fell back to the poster.** The patched GLTFLoader
+   still used `ImageBitmapLoader` outside iOS; it `fetch()`es the texture blob
+   URLs, which the CSP blocks (`connect-src` has no `blob:`).
+
+### Changes
+
+- Reveal/assembly anchors use the machine's projected bounding box
+  (`measureMachineBox()`): reveal at 2% visibility, assembly anchor at 30%.
+  Timeline: rear coil from p = 0.02, needle after the frame settles, front coil
+  0.09; anticipation (parts gather ~8%) from 30% of the reveal path.
+  Measured: first large move at **35%** visibility (y ≈ 180 px instead of 481 px).
+- Handoff: `#portfolio-intro` overlaps the last viewport of the machine section
+  (`margin-top: −100vh`, z-index above the stage). Feature 1 *is* the handoff
+  image, faded in by the sequence (p 0.955 → 1) over the black close-up; the
+  separate stage handoff image was removed. Feature 2 slides over feature 1
+  (both opaque, no black gap).
+- Background machine: enabled only while the grid is on screen and faded in
+  with it (`--bg-reveal`); never during the tattoo intro.
+- Fast flings: past the end of the stage the stage blacks out first
+  (`--stage-blackout`), then feature 1 fades in, so the order stays
+  machine → black → tattoo. Damping is adaptive (650 ms near the target, faster
+  when far behind), no snap.
+- `dt` clamped to ≥ 0; on entering background mode or loading below the stage,
+  the sequence state aligns with the scroll position.
+- GLTFLoader: `TextureLoader` on every browser (no CSP change).

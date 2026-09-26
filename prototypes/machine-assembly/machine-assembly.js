@@ -107,16 +107,27 @@
   }
 
   // ── Scroll metrics ──────────────────────────────────────────────────────
-  var metrics = { top: 0, distance: 1, revealStart: 0, assemblyStart: 0, assemblyEnd: 1 };
+  // Reveal and assembly are anchored to the visible share of the machine
+  // itself, not of the stage: the model occupies only part of the stage, so
+  // "half the stage visible" meant much less than half the machine visible.
+  // box.top/box.bottom are the machine's projected top/bottom as fractions of
+  // the stage height in the opening pose (measured after the model loads).
+  var REVEAL_VISIBILITY = 0.02;   // first sliver of the machine above the fold
+  var ASSEMBLY_VISIBILITY = 0.30; // assembly anchor; first clear move lands at ~30–40%
+  var metrics = { top: 0, distance: 1, revealStart: 0, assemblyStart: 0, assemblyEnd: 1, box: { top: 0.12, bottom: 0.93 } };
   function measure() {
     var rect = section.getBoundingClientRect();
     var vh = Math.max(1, stage.clientHeight || window.innerHeight || 1);
     metrics.top = rect.top + window.scrollY;
     metrics.distance = Math.max(1, section.offsetHeight - stage.offsetHeight);
-    // Reveal starts with only the lower ~15% of the stage entering view.
-    // Assembly begins when roughly half the stage is visible.
-    metrics.revealStart = metrics.top - vh * 0.85;
-    metrics.assemblyStart = metrics.top - vh * 0.50;
+    // Scroll position at which a given share of the machine is visible above
+    // the bottom of the viewport while the stage is still rising.
+    var boxHeight = Math.max(0.1, metrics.box.bottom - metrics.box.top);
+    var scrollForVisibility = function (share) {
+      return metrics.top + (metrics.box.top + share * boxHeight) * vh - vh;
+    };
+    metrics.revealStart = Math.min(scrollForVisibility(REVEAL_VISIBILITY), metrics.top - vh * 0.05);
+    metrics.assemblyStart = Math.max(metrics.revealStart + vh * 0.12, scrollForVisibility(ASSEMBLY_VISIBILITY));
     metrics.assemblyEnd = metrics.top + metrics.distance;
   }
   function scrollValue() {
@@ -127,28 +138,53 @@
     }
     return clamp((y - metrics.assemblyStart) / Math.max(1, metrics.assemblyEnd - metrics.assemblyStart), 0, 1);
   }
+
+  // Handoff: the first full-screen tattoo is the continuation of the final
+  // close-up. It lies over the last viewport of the machine section and fades
+  // in while the exposure falls to black. Once the page scrolls past the end
+  // of the sticky stage it is forced opaque, so a lagging (damped) 3D state
+  // can never show the stage sliding away underneath.
+  function pastStageShare() {
+    var vh = Math.max(1, window.innerHeight || 1);
+    return (window.scrollY - metrics.assemblyEnd) / vh;
+  }
+  function handoffAmount(p) {
+    var fromSequence = smooth((p - 0.955) / 0.045);
+    var pastStage = smooth((pastStageShare() - 0.03) / 0.12);
+    return Math.max(fromSequence, pastStage);
+  }
+
   function updateCssState(s) {
     var e = clamp(s + 1, 0, 1);
     var p = clamp(s, 0, 1);
-    var handoff = smooth((p - 0.955) / 0.045);
     section.style.setProperty('--entry-shade', (1 - smooth(e / 0.85)).toFixed(3));
     section.style.setProperty('--skip-opacity', (p > 0.02 && p < 0.9 ? 1 : 0).toString());
     section.style.setProperty('--glow', ((1 - smooth((p - 0.86) / 0.1)) * smooth(e / 0.9)).toFixed(3));
-    section.style.setProperty('--handoff-opacity', handoff.toFixed(3));
-    section.style.setProperty('--handoff-scale', (1.06 - 0.04 * handoff).toFixed(4));
+    // Fast flings past the end of the stage: black the stage out first, so
+    // the order stays machine → black → tattoo even if the damped 3D lags.
+    section.style.setProperty('--stage-blackout', smooth(pastStageShare() / 0.05).toFixed(3));
+    if (portfolioIntro && !section.classList.contains('is-static')) {
+      var handoff = handoffAmount(p);
+      portfolioIntro.style.setProperty('--handoff', handoff.toFixed(3));
+      portfolioIntro.style.setProperty('--handoff-scale', (1.05 - 0.05 * handoff).toFixed(4));
+    }
   }
 
+  // Feature 1 is driven by the handoff (see above). Feature 2 slides over
+  // feature 1 by normal scrolling; both stay opaque, so no black gap and no
+  // background machine shows between them. Only the last feature fades as the
+  // grid arrives, revealing the background machine behind the grid.
   function updatePortfolioIntro() {
     if (!featurePanels.length) return;
     var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    featurePanels.forEach(function (panel) {
+    var staticMode = section.classList.contains('is-static');
+    featurePanels.forEach(function (panel, index) {
+      if (index === 0 && !staticMode) return; // handled by updateCssState
       var rect = panel.getBoundingClientRect();
-      var enter = clamp((vh - rect.top) / (vh * 0.82), 0, 1);
-      var leave = clamp(rect.bottom / (vh * 0.58), 0, 1);
-      var visibility = Math.min(smooth(enter), smooth(leave));
-      panel.style.setProperty('--feature-opacity', visibility.toFixed(3));
-      panel.style.setProperty('--feature-scale', (1.06 - 0.055 * visibility).toFixed(4));
-      panel.style.setProperty('--feature-shade', (1 - visibility).toFixed(3));
+      var enter = staticMode && index === 0 ? smooth((vh - rect.top) / (vh * 0.6)) : 1;
+      var drift = clamp((vh - rect.top) / vh, 0, 1);
+      panel.style.setProperty('--feature-opacity', enter.toFixed(3));
+      panel.style.setProperty('--feature-scale', (1.05 - 0.05 * smooth(drift)).toFixed(4));
     });
   }
 
@@ -261,11 +297,20 @@
     return [lerp(via[0], offset[0], g), lerp(via[1], offset[1], g), lerp(via[2], offset[2], g)];
   }
 
+  // Anticipation during the reveal: the exploded parts start ~8% wider and
+  // gather toward their seats from ~30% of the reveal path, so the machine is
+  // already "alive" before the first real assembly move.
+  var entryE = 1;
+  function anticipationScale() {
+    return 1 + 0.08 * (1 - smooth((entryE - 0.3) / 0.7));
+  }
+
   function applyGroups(p) {
+    var gather = anticipationScale();
     groups.forEach(function (g) {
       var spec = g.spec;
       var t = clamp((p - spec.window[0]) / (spec.window[1] - spec.window[0]), 0, 1);
-      var k = 1 - easeInOutCubic(t); // 1 = exploded, 0 = seated
+      var k = (1 - easeInOutCubic(t)) * (t < 1 ? gather : 1); // 1 = exploded, 0 = seated
       var node = g.node;
 
       node.position.copy(g.rest);
@@ -417,7 +462,10 @@
     var h = stage.clientHeight || 1;
     fittedKeys[layout] = keys.map(function (key) {
       if (!key.fit) return key;
+      var savedE = entryE;
+      entryE = 1;
       applyGroups(key.p);
+      entryE = savedE;
       machineRoot.position.set(0, 0, 0);
       machineRoot.rotation.set(0, 0, 0);
       machineRoot.updateMatrixWorld(true);
@@ -498,6 +546,7 @@
   function renderAt(s, now) {
     var e = clamp(s + 1, 0, 1), p = clamp(s, 0, 1);
     var frameNow = now || performance.now();
+    entryE = e;
     applyGroups(p);
     applyCamera(p, e);
     applyLight(p);
@@ -512,11 +561,18 @@
 
   function tick(now) {
     state.raf = null;
-    var dt = Math.min(0.1, (now - state.last) / 1000);
+    // rAF timestamps can precede the performance.now() taken in kick(); a
+    // negative dt would make the exponential step overshoot.
+    var dt = clamp((now - state.last) / 1000, 0, 0.1);
     state.last = now;
     if (state.current === null) state.current = state.target;
     var diff = state.target - state.current;
-    state.current = Math.abs(diff) < 1e-4 ? state.target : state.current + diff * (1 - Math.exp(-dt / DAMPING_SECONDS));
+    // Adaptive damping, no snap: ~650 ms near the target, progressively
+    // faster when a fast inertial swipe leaves the 3D far behind, so the close-up
+    // and black frame are reached before the tattoo handoff covers the stage.
+    var lag = Math.abs(diff);
+    var tau = DAMPING_SECONDS / (1 + 5 * Math.max(0, lag - 0.08));
+    state.current = lag < 1e-4 ? state.target : state.current + diff * (1 - Math.exp(-dt / tau));
     var working = state.current >= 0.74 && state.current < 0.995;
     if (state.dirty || state.current !== state.rendered || working) renderAt(state.current, now);
     if (state.current !== state.target || working) kick();
@@ -551,9 +607,37 @@
     camera.updateProjectionMatrix();
     layout = currentLayout();
     fitCameraKeys();
+    measureMachineBox();
     measure();
     state.dirty = true;
     kick();
+  }
+
+  // Projected top/bottom of the machine (opening pose, fitted camera) as
+  // fractions of the stage height; feeds the visibility-based scroll anchors.
+  function measureMachineBox() {
+    var savedE = entryE;
+    entryE = 1;
+    applyGroups(0);
+    applyCamera(0, 1);
+    machineRoot.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    var box = new THREE_.Box3();
+    var v = new THREE_.Vector3();
+    var minY = Infinity, maxY = -Infinity;
+    groups.forEach(function (g) {
+      if (g.spec.fade) return; // hidden in the opening pose
+      box.setFromObject(g.node);
+      for (var i = 0; i < 8; i += 1) {
+        v.set(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camera);
+        minY = Math.min(minY, v.y);
+        maxY = Math.max(maxY, v.y);
+      }
+    });
+    entryE = savedE;
+    metrics.box.top = clamp((1 - maxY) / 2, 0, 1);
+    metrics.box.bottom = clamp((1 - minY) / 2, 0, 1);
+    state.dirty = true;
   }
   var resizeTimer = null;
   function onResize() {
@@ -624,6 +708,23 @@
       if (renderer) renderAt(debugOverride, performance.now());
     },
     followScroll: function () { debugOverride = null; onScroll(); },
+    // Read-only snapshot for automated pacing checks (prototype only).
+    debugState: function () {
+      var vh = Math.max(1, window.innerHeight || 1);
+      var stageRect = stage.getBoundingClientRect();
+      var boxHeight = (metrics.box.bottom - metrics.box.top) * stageRect.height;
+      var machineTop = stageRect.top + metrics.box.top * stageRect.height;
+      return {
+        target: state.target,
+        current: state.current,
+        visibleShare: clamp((vh - machineTop) / Math.max(1, boxHeight), 0, 1),
+        box: { top: metrics.box.top, bottom: metrics.box.bottom },
+        revealStart: Math.round(metrics.revealStart),
+        assemblyStart: Math.round(metrics.assemblyStart),
+        assemblyEnd: Math.round(metrics.assemblyEnd),
+        background: backgroundActive
+      };
+    },
     // Renders position s and returns the canvas as a PNG data URL (poster generation).
     capture: function (s) {
       window.__machine.setS(s);
@@ -701,7 +802,10 @@
         // If loading finished after the user already entered the sequence,
         // do not jump straight to the current scroll position. Start at the
         // beginning of assembly and smoothly catch up to the user's position.
-        state.current = FORCED_S !== null ? state.target : (state.target > 0 ? 0 : state.target);
+        // When the stage is already covered by the tattoo handoff (reload
+        // further down the page), start at the scroll position: nothing to show.
+        var covered = handoffAmount(clamp(state.target, 0, 1)) >= 0.999;
+        state.current = FORCED_S !== null || covered ? state.target : (state.target > 0 ? 0 : state.target);
         renderAt(state.current);
         section.classList.add('is-live');
         window.__machine.mode = 'live';
@@ -768,6 +872,10 @@
     backgroundActive = active;
     if (active) {
       stopLoop();
+      // The sequence stage is hidden under Portfolio now; align its state with
+      // the scroll position so returning upward does not replay the assembly.
+      state.current = state.target;
+      state.rendered = null;
       section.classList.add('is-background');
       state.visible = true;
       startBackgroundLoop();
@@ -779,20 +887,21 @@
     }
   }
 
+  // The background machine belongs to the grid only. During the cinematic
+  // tattoo intro (opaque, full screen) it is not active, so it can never show
+  // between the close-up and the tattoos. It fades in with the grid.
   function updateBackgroundMode(s) {
     if (!renderer) return;
     var vh = window.innerHeight || document.documentElement.clientHeight || 1;
-    var introVisible = false;
-    if (portfolioIntro) {
-      var introRect = portfolioIntro.getBoundingClientRect();
-      introVisible = introRect.top < vh && introRect.bottom > 0;
-    }
-    var portfolioVisible = false;
+    var gridVisible = false;
+    var reveal = 0;
     if (portfolio) {
       var rect = portfolio.getBoundingClientRect();
-      portfolioVisible = rect.top < vh && rect.bottom > 0;
+      gridVisible = rect.top < vh && rect.bottom > 0;
+      reveal = smooth((vh - rect.top) / (vh * 0.6));
     }
-    setBackgroundActive((introVisible || portfolioVisible) && s >= 0.995);
+    section.style.setProperty('--bg-reveal', reveal.toFixed(3));
+    setBackgroundActive(gridVisible && s >= 0.995);
   }
 
   function observeVisibility() {

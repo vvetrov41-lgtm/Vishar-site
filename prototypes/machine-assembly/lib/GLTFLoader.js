@@ -1741,14 +1741,14 @@
 			// expensive work of uploading a texture to the GPU off the main thread.
 
 			// Three r128 selects ImageBitmapLoader whenever createImageBitmap exists.
-			// On iOS all browsers use WebKit, and ImageBitmap decoding of embedded
-			// glTF textures is unreliable enough to fail the entire GLB load. Force
-			// the regular TextureLoader on iPhone/iPad (including Chrome/Edge iOS).
-			const isIOS = /iPad|iPhone|iPod/.test( navigator.platform ) ||
-				( /^Mac/.test( navigator.platform ) && navigator.maxTouchPoints > 1 );
-			const isSafari = /^((?!chrome|android).)*safari/i.test( navigator.userAgent ) === true;
+			// That path fetch()es the blob: URLs of embedded textures, which the
+			// site CSP blocks (connect-src has no blob:), and on iOS WebKit its
+			// decoding is unreliable. The prototype therefore always uses the
+			// regular TextureLoader (<img src="blob:…">, allowed by img-src blob:),
+			// on every browser. The ImageBitmap branch below is kept but unused.
+			const useImageBitmap = false;
 
-			if ( typeof createImageBitmap !== 'undefined' && ! isIOS && ! isSafari && /Firefox/.test( navigator.userAgent ) === false ) {
+			if ( useImageBitmap && typeof createImageBitmap !== 'undefined' ) {
 
 				this.textureLoader = new THREE.ImageBitmapLoader( this.options.manager );
 
