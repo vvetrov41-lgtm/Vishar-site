@@ -17,12 +17,12 @@ select results_eq(
   $$,
   $$
     values
-      ('kristina'::text, false, false, 'Label Tattoo Private'::text,
+      ('kristina'::text, true, false, 'Label Tattoo Private'::text,
        '2026-11-01 00:00:00+00'::timestamptz),
-      ('vladimir'::text, false, false, 'Label Tattoo Private'::text,
+      ('vladimir'::text, true, false, 'Label Tattoo Private'::text,
        '2026-11-01 00:00:00+00'::timestamptz)
   $$,
-  'London booking-card configuration is present but fail-closed until activation'
+  'London Email cards are active while WhatsApp remains fail-closed pending Meta approval'
 );
 
 select ok(
