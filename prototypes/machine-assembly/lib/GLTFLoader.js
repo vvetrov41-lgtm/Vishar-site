@@ -1740,7 +1740,15 @@
 			this.nodeNamesUsed = {}; // Use an THREE.ImageBitmapLoader if imageBitmaps are supported. Moves much of the
 			// expensive work of uploading a texture to the GPU off the main thread.
 
-			if ( typeof createImageBitmap !== 'undefined' && /Firefox/.test( navigator.userAgent ) === false ) {
+			// Three r128 selects ImageBitmapLoader whenever createImageBitmap exists.
+			// On iOS all browsers use WebKit, and ImageBitmap decoding of embedded
+			// glTF textures is unreliable enough to fail the entire GLB load. Force
+			// the regular TextureLoader on iPhone/iPad (including Chrome/Edge iOS).
+			const isIOS = /iPad|iPhone|iPod/.test( navigator.platform ) ||
+				( /^Mac/.test( navigator.platform ) && navigator.maxTouchPoints > 1 );
+			const isSafari = /^((?!chrome|android).)*safari/i.test( navigator.userAgent ) === true;
+
+			if ( typeof createImageBitmap !== 'undefined' && ! isIOS && ! isSafari && /Firefox/.test( navigator.userAgent ) === false ) {
 
 				this.textureLoader = new THREE.ImageBitmapLoader( this.options.manager );
 
