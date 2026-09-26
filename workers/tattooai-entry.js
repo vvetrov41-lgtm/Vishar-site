@@ -36,13 +36,15 @@ const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
 // A missing or failing limiter never blocks a request.
 const WORKER_EGRESS_PREFIX = '2a06:98c0:3600:';
 
-function isSemanticPreflightRequest(request) {
+async function isSemanticPreflightRequest(request) {
   try {
     const url = new URL(request?.url ?? '');
     const contentType = String(request?.headers?.get?.('content-type') || '').toLowerCase();
-    return String(request?.method || '').toUpperCase() === 'POST'
-      && url.searchParams.get('preflight') === '1'
-      && contentType.includes('multipart/form-data');
+    if (String(request?.method || '').toUpperCase() !== 'POST') return false;
+    if (url.searchParams.get('preflight') !== '1') return false;
+    if (!contentType.includes('multipart/form-data')) return false;
+    const form = await request.clone().formData();
+    return form.get('preflight') === '1';
   } catch {
     return false;
   }
@@ -51,11 +53,11 @@ function isSemanticPreflightRequest(request) {
 export function rateLimitClass(request) {
   const method = String(request?.method || '').toUpperCase();
   if (method === 'OPTIONS') return null;
-  if (isSemanticPreflightRequest(request)) return null;
   return method === 'POST' ? 'write' : 'read';
 }
 
 async function enforcePublicRateLimit(request, env) {
+  if (await isSemanticPreflightRequest(request)) return null;
   const kind = rateLimitClass(request);
   if (!kind) return null;
   const limiter = kind === 'write' ? env?.PUBLIC_WRITE_RATE_LIMIT : env?.PUBLIC_READ_RATE_LIMIT;
@@ -82,7 +84,7 @@ async function enforcePublicRateLimit(request, env) {
 }
 
 export async function enforceSemanticPreflightRateLimit(request, env) {
-  if (!isSemanticPreflightRequest(request)) return null;
+  if (!(await isSemanticPreflightRequest(request))) return null;
 
   const ip = request.headers.get('CF-Connecting-IP') || '';
   // First-party booking Workers enforce their own client-aware limit, but the
