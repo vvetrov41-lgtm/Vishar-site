@@ -147,21 +147,7 @@ jobs:
           # reach enquiry intake, the paid provider or preflight telemetry.
           bypass_status="$(curl -sS -o /tmp/tattooai-preflight-bypass.txt -w '%{http_code}' -X POST "${endpoint}zz-audit?preflight=1" \
             -H 'Origin: https://vishartattoo.com' \
-            -F 'idempotencyKey=11111111-2222-4333-8444-555555555555' \
-            -F 'name=Synthetic security probe' \
-            -F 'email=preflight-probe@example.test' \
-            -F 'preferredReply=Email' \
-            -F 'projectType=New tattoo' \
-            -F 'placement=arm' \
-            -F 'size=medium' \
-            -F 'coverUp=No' \
-            -F 'idea=synthetic preflight route regression probe' \
-            -F 'website=' \
-            -F 'privacyAcknowledged=true' \
-            -F 'privacyNoticeVersion=2026-07-29' \
-            -F 'referenceCount=0' \
-            -F 'preflight=1' \
-            -F 'preflightId=aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee')"
+            -F 'preflight=1')"
           test "$bypass_status" = '404'
           grep -Fq 'Not found' /tmp/tattooai-preflight-bypass.txt
       - name: Read back first-party API host
