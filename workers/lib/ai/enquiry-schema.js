@@ -115,15 +115,27 @@ function fallbackDraft(fields) {
   return `Thanks for your enquiry. Could you also share your ${list}? Estimates and dates can be discussed after artist review.`;
 }
 
+// Colour words clients and the form use (project type "Colour realism",
+// "Black and grey realism"), reduced to the three CRM tokens.
+const COLOUR_SYNONYMS = Object.freeze({
+  colour: ['color', 'colour', 'coloured', 'colored', 'full_colour', 'full_color', 'in_colour', 'in_color',
+    'colour_realism', 'color_realism', 'realistic_colour', 'realistic_color', 'vibrant_colour', 'vibrant_color'],
+  black_and_grey: ['black_and_grey', 'black_and_gray', 'black_grey', 'black_gray', 'black_and_white',
+    'black_and_grey_realism', 'black_and_gray_realism', 'b_and_g', 'bng', 'greyscale', 'grayscale', 'grey', 'gray',
+    'black', 'black_ink', 'black_only', 'monochrome', 'black_and_grey_only'],
+  mixed: ['mixed', 'mix', 'colour_and_black_and_grey', 'color_and_black_and_gray', 'black_and_grey_and_colour',
+    'black_and_grey_with_colour', 'black_and_gray_with_color', 'black_and_grey_with_colour_accents',
+    'colour_accents', 'color_accents', 'partial_colour', 'partial_color', 'some_colour', 'some_color'],
+});
+
 function normalizeEnum(name, value) {
   if (typeof value !== 'string') return value;
-  const normalized = value.trim().toLowerCase().replace(/[&+]/g, 'and').replace(/[\s-]+/g, '_');
+  const normalized = value.trim().toLowerCase().replace(/[&+/]/g, ' and ').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
   if (name === 'colour') {
-    if (['black_and_grey', 'black_and_gray', 'black_grey', 'black_gray'].includes(normalized)) return 'black_and_grey';
-    if (['color', 'colour'].includes(normalized)) return 'colour';
+    for (const [token, words] of Object.entries(COLOUR_SYNONYMS)) if (words.includes(normalized)) return token;
   }
   if (name === 'discovery_source' && normalized === 'returning_client') return 'returning_client';
-  return ENUMS[name]?.includes(normalized) ? normalized : value.trim();
+  return ENUMS[name]?.includes(normalized) ? normalized : null;
 }
 
 // Hosted models occasionally return semantically valid extraction with harmless
@@ -150,7 +162,13 @@ export function normalizeEnquiryAnalysis(value) {
     // A boolean reported as missing is not a fact: keep it missing rather than
     // promote a model default (usually false) into an extracted answer.
     if (BOOLEAN_FIELDS.has(name) && status === 'missing') fieldValue = null;
-    if (ENUMS[name] && typeof fieldValue === 'string') fieldValue = normalizeEnum(name, fieldValue);
+    // An enum word outside the CRM taxonomy ("not sure", "realism") is not a
+    // storable fact: that one field becomes missing instead of failing the
+    // whole extraction. Other fields are untouched.
+    if (ENUMS[name] && typeof fieldValue === 'string') {
+      fieldValue = normalizeEnum(name, fieldValue);
+      if (fieldValue === null) status = 'missing';
+    }
     if (typeof fieldValue === 'string') fieldValue = fieldValue.trim();
     fields[name] = { value: fieldValue, status };
   }

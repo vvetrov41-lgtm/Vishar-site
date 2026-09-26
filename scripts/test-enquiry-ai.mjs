@@ -117,6 +117,29 @@ await test('boolean fields accept yes/no words and never promote a missing defau
   assert.equal(validateEnquiryAnalysis(normalizeEnquiryAnalysis(result({ fields: { cover_up: field('maybe later') } }))), null);
 });
 
+await test('colour synonyms map to CRM tokens and unknown enum words become missing', () => {
+  const colour = (value) => normalizeEnquiryAnalysis(result({ fields: { colour: field(value) } }));
+  for (const [word, token] of [
+    ['Colour realism', 'colour'], ['Full color', 'colour'], ['Black and grey realism', 'black_and_grey'],
+    ['B&G', 'black_and_grey'], ['black/grey', 'black_and_grey'], ['Black and white', 'black_and_grey'],
+    ['Black and grey with colour accents', 'mixed'], ['Mixed', 'mixed'],
+  ]) {
+    const repaired = colour(word);
+    assert.equal(repaired.fields.colour.value, token, word);
+    assert.ok(validateEnquiryAnalysis(repaired), word);
+  }
+  for (const word of ['Not sure yet', 'realism', 'neon', 'unknown']) {
+    const repaired = colour(word);
+    assert.deepEqual(repaired.fields.colour, { value: null, status: 'missing' }, word);
+    assert.ok(repaired.missing_information.includes('colour'), word);
+    assert.ok(validateEnquiryAnalysis(repaired), word);
+    assert.equal(repaired.fields.placement.value, result().fields.placement.value, 'other fields are untouched');
+  }
+  const source = normalizeEnquiryAnalysis(result({ fields: { discovery_source: field('TikTok') } }));
+  assert.deepEqual(source.fields.discovery_source, { value: null, status: 'missing' });
+  assert.ok(validateEnquiryAnalysis(source));
+});
+
 await test('the validation diagnosis names the kind of break without content', () => {
   assert.equal(diagnoseEnquiryAnalysis(result({ fields: { cover_up: field('maybe') } })), 'fields.cover_up.string');
   assert.equal(diagnoseEnquiryAnalysis(result({ fields: { cover_up: { value: false, status: 'missing' } } })), 'fields.cover_up.missing_has_value');

@@ -1,6 +1,6 @@
 # Tasks
 
-Status as of 2026-09-25. Evidence is content-free: counts, bounded codes and
+Status as of 2026-09-26. Evidence is content-free: counts, bounded codes and
 timings from `crm_private.ai_runs`, `crm_private.attention_shadow_runs` and the
 guarded live eval. No client text is recorded here.
 
@@ -9,10 +9,16 @@ guarded live eval. No client text is recorded here.
   - First real production job 2026-09-24 08:05 UTC: Qwen `provider_timeout`
     at 30 000 ms, Llama fallback succeeded in 3 436 ms, per-attempt tokens and
     finish reason recorded.
-- [ ] Phase 1: model reliability and evaluation (PRs #871, #873, #876, #880–#884, #886, #888)
-  - Open until real production telemetry confirms each route: client state
-    is confirmed (below); intake and vision are confirmed only by synthetic
-    probes/evals so far, which create no production records.
+- [x] Phase 1: model reliability and evaluation (PRs #871, #873, #876, #880–#884, #886, #888)
+  - Accepted on natural production traffic, 2026-09-26 14:51–15:31 UTC:
+    - vision: 3/3 `reference-image.2026-09-10` runs succeeded on Workers AI
+      (2 attempts each, 20–34 s);
+    - intake: 1 `enquiry-intake.2026-09-10` run succeeded in 3.0 s;
+    - 2 intake runs failed with `all_providers_failed` /
+      `fields.colour.enum` after 2 attempts (30–36 s): a colour word outside
+      the three CRM tokens failed the whole extraction. Fixed by a
+      deterministic colour synonym map; an unknown enum word now makes only
+      that field `missing`.
   - 4006 (2026-09-24 ~19:15 UTC onward): a Workers AI platform code taken
     from the binding exception, kept separate from our class
     (`provider_rate_limited`). It is not in the public error table, which
@@ -48,9 +54,18 @@ guarded live eval. No client text is recorded here.
     `gathering_information`; Gmail acknowledgements were never matched.
     waiting_on disagreement fell to 14/32 after release.
   - Remaining stage disagreement is mostly against stale AI briefs (Phase 6a).
-- [ ] Phase 3: narrow client-state contract (#890, draft; CRM validation
-      36179775264 green on head ff27a7f; waits for
-      the Phase 2 shadow report on briefs refreshed by the sweep)
+- [x] Phase 3: narrow client-state contract (#890, #895, #897–#900, #902)
+  - v2 active since 2026-09-26 08:06 UTC. Accepted on natural traffic by
+    15:31 UTC:
+    - 6/6 `client-state.2026-09-26c` runs succeeded on Workers AI, 1 attempt,
+      no fallback, 2.9–5.3 s;
+    - refreshed briefs: stage and waiting_on differ from `client_attention`
+      in 0 of 3;
+    - 6 proposed actions (`artist_review`, `request_information`), all
+      within `allowed_actions`; `service_contract_rule_summary(24)` reports 0
+      rule-disallowed;
+    - `confirm_booking` is a deterministic invariant (#902, migration
+      20260924080000): 0 open, `confirm_booking_ready` false for every client.
 - [ ] Phase 4: unified Today / Pulse (#891, stacked on #890; behind
       `crm_agent_config.today_pulse` and `CRM_TODAY_PULSE_ENABLED`)
 - [ ] Phase 5: unmatched communication triage (#892, stacked on #891)
