@@ -31,12 +31,15 @@ export const STAGES = Object.freeze([
 export function allowedActions({
   stage, deposit_state: deposit, has_future_tattoo_session: session,
   has_future_consultation: consultation, last_speaker: lastSpeaker,
+  confirm_booking_ready: confirmReady = false,
 }) {
   const responseDebt = lastSpeaker === 'client';
   return CRM_ACTIONS.filter((a) => !(
     (a === 'request_information' && (session || consultation || ['booked', 'aftercare'].includes(stage)))
     || (a === 'request_deposit' && ['paid', 'requested', 'not_required'].includes(deposit))
-    || (['offer_dates', 'confirm_booking'].includes(a) && session)
+    || (a === 'offer_dates' && session)
+    // 20260924080000: only an accepted proposed date with a settled deposit.
+    || (a === 'confirm_booking' && !confirmReady)
     || (a === 'prepare_quote' && ['booked', 'aftercare', 'deposit_pending', 'scheduling'].includes(stage))
     || (a === 'await_client' && responseDebt)
   ));
