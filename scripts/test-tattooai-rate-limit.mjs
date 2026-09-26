@@ -28,7 +28,21 @@ const env = { ALLOWED_ORIGINS: 'https://vishartattoo.com', VISHAR_ENVIRONMENT: '
 
 assert.equal(rateLimitClass(request('OPTIONS', '1.2.3.4')), null, 'preflight is never counted');
 assert.equal(rateLimitClass(request('POST', '1.2.3.4')), 'write');
+assert.equal(rateLimitClass(new Request('https://api.vishartattoo.com/?preflight=1', {
+  method: 'POST',
+  headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '1.2.3.4' },
+})), null, 'semantic preflight never consumes the final-intake write bucket');
 assert.equal(rateLimitClass(request('GET', '1.2.3.4')), 'read');
+
+{
+  const write = limiter(0);
+  const preflight = new Request('https://api.vishartattoo.com/?preflight=1', {
+    method: 'POST',
+    headers: { Origin: 'https://vishartattoo.com', 'CF-Connecting-IP': '198.51.100.11' },
+  });
+  assert.equal(await enforcePublicRateLimit(preflight, { ...env, PUBLIC_WRITE_RATE_LIMIT: write }), null);
+  assert.equal(write.calls.length, 0, 'semantic preflight does not spend final-submission capacity');
+}
 
 {
   const write = limiter(2);
