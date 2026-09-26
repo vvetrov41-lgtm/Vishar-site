@@ -13,8 +13,8 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 @media (min-width: 640px) { .hero-featured { font-size: .875rem; } }
 @media (min-width: 768px) { .hero-featured { margin-top: 3.5rem; } }
 
-:root { --seq-overlap: 22vh; --seq-distance: 140vh; }
-@media (max-width: 767px) { :root { --seq-overlap: 14vh; --seq-distance: 110vh; } }
+:root { --seq-overlap: 22vh; --seq-distance: 110vh; }
+@media (max-width: 767px) { :root { --seq-overlap: 14vh; --seq-distance: 80vh; } }
 
 .machine-seq {
   position: relative;
@@ -38,7 +38,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   background: radial-gradient(ellipse 55% 50% at 50% 48%, rgba(58, 56, 54, .55) 0%, rgba(20, 20, 20, .35) 45%, rgba(0, 0, 0, 0) 75%);
   opacity: var(--glow, 1);
 }
-.machine-canvas, .machine-poster {
+.machine-canvas, .machine-poster, .machine-tattoo-handoff {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -50,6 +50,16 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 .machine-poster { object-fit: cover; opacity: 0; transition: opacity .5s ease; }
 .machine-poster.is-shown { opacity: 1; }
 .machine-seq.is-live .machine-poster { opacity: 0; }
+
+.machine-tattoo-handoff {
+  z-index: 4;
+  object-fit: cover;
+  opacity: var(--handoff-opacity, 0);
+  transform: scale(var(--handoff-scale, 1.06));
+  filter: brightness(.72) saturate(.92);
+  pointer-events: none;
+  will-change: opacity, transform;
+}
 
 /* After the assembly handoff, keep the assembled machine as a subtle fixed
    background behind Portfolio, matching the old homepage behaviour. */
@@ -66,12 +76,58 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   opacity: .44;
 }
 .machine-seq.is-background .machine-entry-shade,
-.machine-seq.is-background .machine-skip {
+.machine-seq.is-background .machine-skip,
+.machine-seq.is-background .machine-tattoo-handoff {
   display: none;
 }
+
+.portfolio-intro,
 #portfolio {
   position: relative;
   z-index: 1;
+}
+
+.portfolio-intro {
+  background: #000;
+}
+
+.portfolio-feature {
+  position: relative;
+  min-height: 100svh;
+  overflow: hidden;
+  background: #000;
+}
+
+.portfolio-feature-media {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  overflow: hidden;
+}
+
+.portfolio-feature img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: var(--feature-opacity, 0);
+  transform: scale(var(--feature-scale, 1.06));
+  filter: saturate(.94) contrast(1.03);
+  will-change: opacity, transform;
+}
+
+.portfolio-feature-shade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--feature-shade, 1);
+  pointer-events: none;
+}
+
+@media (min-width: 900px) {
+  .portfolio-feature img {
+    object-fit: contain;
+    background: #000;
+  }
 }
 
 /* Black shade over the top of the stage while it is still inside the hero, so
