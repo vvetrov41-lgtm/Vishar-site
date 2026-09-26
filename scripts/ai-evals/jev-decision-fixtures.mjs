@@ -128,6 +128,13 @@ const DEV = [
   fx('dev', 'client_declines_for_now',
     { latest_client_message: 'Thanks. I am going to think about it and come back to you in a few weeks.' },
     { reply: false, actions: ['no_action'], commitment: false, review: false }),
+  // The only state where confirm_booking is reachable: the CRM holds an
+  // authoritative acceptance of a proposed date and a settled deposit
+  // (crm_private.attention_confirm_booking_ready, 20260924080000).
+  fx('dev', 'recorded_date_acceptance',
+    { stage: 'booked', deposit_state: 'paid', has_future_tattoo_session: true, confirm_booking_ready: true,
+      previous_studio_message: 'I have pencilled you in for the 10th at 11am.', latest_client_message: 'Yes, the 10th at 11 is perfect, thank you!' },
+    { reply: true, actions: ['confirm_booking', 'artist_review'], commitment: true, review: true }),
   fx('dev', 'candidate_date_acceptance',
     { stage: 'scheduling', deposit_state: 'paid', previous_studio_message: 'I may be able to offer the 10th or 11th, subject to confirmation.', latest_client_message: 'The 10th works perfectly for me, please book it.' },
     { reply: true, actions: ['confirm_booking', 'artist_review'], commitment: true, review: true }),

@@ -100,6 +100,16 @@ select is(pg_temp.ready(), false, 'moving the date clears the client''s acceptan
 select pg_temp.accept();
 select is(pg_temp.ready(), true, 'the client accepts the new date');
 
+-- Reachability today: the only client-acceptance capability (0098) is issued
+-- for confirmed sessions only, so a proposed date cannot gain an authoritative
+-- acceptance through the product. confirm_booking therefore stays withheld in
+-- production until a proposed-date acceptance path exists. This pins that fact
+-- so the day it changes, this test says so.
+select throws_ok(
+  $$ select * from crm_private.issue_appointment_client_actions('e9851111-1111-4111-8111-111111111111') $$,
+  '42501', null,
+  'no client-acceptance capability can be issued for a proposed session today');
+
 -- A confirmed session is already booked: nothing left to confirm.
 update public.sessions set status = 'confirmed' where id = 'e9851111-1111-4111-8111-111111111111';
 select is(pg_temp.ready(), false, 'a confirmed session needs no confirm_booking');

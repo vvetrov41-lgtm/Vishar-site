@@ -24,6 +24,13 @@
 -- trigger client_ai_next_action_allowed supersedes any confirm_booking row
 -- written outside this rule, whatever the model or prompt says.
 --
+-- Reachability: the only client-acceptance capability today (0098 tokens) is
+-- issued for confirmed sessions only, so no proposed date can carry an
+-- authoritative acceptance yet. confirm_booking is therefore withheld in every
+-- production state until a proposed-date acceptance path exists. That is the
+-- intended safety posture: a model reading "the 10th works" in chat is not an
+-- authoritative acceptance. pgTAP 302 pins this fact.
+--
 -- No data changes: at release time production has no open confirm_booking
 -- recommendation and no proposed future session.
 
