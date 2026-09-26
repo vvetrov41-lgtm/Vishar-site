@@ -7,7 +7,8 @@
 -- contract was evaluated on Llama. The Worker switch CRM_AGENT_CONTRACT=v2
 -- ships in the same change.
 --
--- Rollback: CRM_AGENT_CONTRACT unset on the Worker (v1 contract), and a later
+-- Rollback: CRM_AGENT_CONTRACT = "v1" on the Worker (unsetting it is not
+-- enough: releases deploy with --keep-vars), and a later
 -- migration setting deterministic_state = false. Neither loses a row; briefs
 -- written meanwhile stay valid under both contracts.
 

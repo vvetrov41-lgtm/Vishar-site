@@ -44,7 +44,8 @@ CRM_AGENT_ENABLED = "true"
 CRM_AGENT_VISION_ENABLED = "true"
 # Phase 3 narrow client-state contract (20260924040000): the model returns
 # semantic fields and one action from allowed_actions; stage and waiting side
-# come from the deterministic layer. Remove to return to the v1 contract.
+# come from the deterministic layer. To roll back, set it to "v1" in a release:
+# deploys use --keep-vars, so removing the line would leave "v2" in place.
 CRM_AGENT_CONTRACT = "v2"
 # Stale-brief convergence (Phase 6a), enabled after the Llama routing passed
 # post-deploy acceptance. A refresh costs ~15-30 Neurons on Llama; the
