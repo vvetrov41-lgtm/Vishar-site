@@ -1,7 +1,9 @@
 -- 20260926210000_booking_card_london_configuration.sql
 --
 -- Production-ready London booking-card metadata for Vladimir and Kristina.
--- Channels remain disabled. The November start cutoff prevents London details
+-- Email is enabled after the reviewed Gmail backend redeploy; WhatsApp remains
+-- fail-closed until both Meta Utility templates are read back as APPROVED.
+-- The November start cutoff prevents London details
 -- from ever being attached to the remaining October Manchester appointments.
 
 insert into crm_private.booking_card_artist_settings (
@@ -20,7 +22,7 @@ insert into crm_private.booking_card_artist_settings (
 )
 select
   a.id,
-  false,
+  true,
   false,
   'Label Tattoo Private',
   '16 Exhibition House, Addison Bridge Place, London W14 8XP',
@@ -37,7 +39,7 @@ where a.id in (
   'a2222222-2222-4222-8222-222222222222'::uuid
 )
 on conflict (artist_id) do update
-set email_enabled = false,
+set email_enabled = true,
     whatsapp_enabled = false,
     studio_name = excluded.studio_name,
     studio_address = excluded.studio_address,
