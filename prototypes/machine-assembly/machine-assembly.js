@@ -173,6 +173,8 @@
   var THREE_ = null;
   var renderer, scene, camera, machineRoot, keyLight, rimLight;
   var groups = []; // { node, spec, rest, axis, materials[] }
+  var groupByName = {};
+  var sparkCore = null, sparkHalo = null, tipFlash = null, workingBox = null;
   var timeline = null;
   var layout = 'landscape';
   var tmpV = null, tmpQ = null, tmpAxis = null;
@@ -231,11 +233,13 @@
         }
       });
       groups.push(entry);
+      groupByName[node.name] = entry;
     });
     if (groups.length !== 18) throw new Error('Expected 18 groups, found ' + groups.length);
     groups.forEach(function (g) {
       g.node.traverse(function (o) { if (o.isMesh) o.material.envMapIntensity = 1.0; });
     });
+    createWorkingFx();
 
     if (DEBUG) addPivotHelpers();
     resizeRenderer(true);
@@ -298,6 +302,89 @@
         });
       }
     });
+  }
+
+  function createWorkingFx() {
+    workingBox = new THREE_.Box3();
+    function makeSpark(radius, color, opacity) {
+      var material = new THREE_.MeshBasicMaterial({
+        color: color,
+        transparent: true,
+        opacity: opacity,
+        blending: THREE_.AdditiveBlending,
+        depthWrite: false,
+        depthTest: false
+      });
+      var mesh = new THREE_.Mesh(new THREE_.SphereGeometry(radius, 10, 8), material);
+      mesh.visible = false;
+      mesh.renderOrder = 30;
+      scene.add(mesh);
+      return mesh;
+    }
+    sparkCore = makeSpark(0.0014, 0xf5fbff, 1);
+    sparkHalo = makeSpark(0.0045, 0x8fc7ff, 0.34);
+    tipFlash = makeSpark(0.0032, 0xffffff, 0.7);
+  }
+
+  function hideWorkingFx() {
+    if (sparkCore) sparkCore.visible = false;
+    if (sparkHalo) sparkHalo.visible = false;
+    if (tipFlash) tipFlash.visible = false;
+  }
+
+  function applyWorkingFx(p, now, intensityScale) {
+    var active = smooth((p - 0.74) / 0.035) * (intensityScale == null ? 1 : intensityScale);
+    var needle = groupByName.G17_needle;
+    var armature = groupByName.G06_armature_bar;
+    var spring = groupByName.G07_spring;
+    if (!needle || !armature || !spring || active <= 0.001) {
+      hideWorkingFx();
+      return false;
+    }
+
+    var seconds = now * 0.001;
+    // Deliberately lower than a real machine frequency so the motion reads
+    // cleanly on 60 Hz phone displays instead of aliasing into a frozen blur.
+    var wave = Math.sin(seconds * Math.PI * 2 * 18);
+    needle.node.position.y += wave * 0.00145 * active;
+    armature.node.position.y += wave * 0.00085 * active;
+    spring.node.rotateZ(wave * 0.009 * active);
+
+    machineRoot.updateMatrixWorld(true);
+    workingBox.setFromObject(needle.node);
+
+    var cycle = (seconds % 1.6) / 1.6;
+    var travelShare = 0.34;
+    var pulse = cycle < travelShare ? Math.sin(Math.PI * cycle / travelShare) : 0;
+    pulse *= active;
+
+    if (pulse > 0.01) {
+      var t = clamp(cycle / travelShare, 0, 1);
+      var cx = (workingBox.min.x + workingBox.max.x) * 0.5;
+      var cz = (workingBox.min.z + workingBox.max.z) * 0.5;
+      var y = lerp(workingBox.max.y, workingBox.min.y, t);
+
+      sparkCore.position.set(cx, y, cz);
+      sparkHalo.position.copy(sparkCore.position);
+      sparkCore.material.opacity = pulse;
+      sparkHalo.material.opacity = pulse * 0.34;
+      sparkCore.scale.setScalar(0.8 + pulse * 0.7);
+      sparkHalo.scale.setScalar(0.75 + pulse * 1.3);
+      sparkCore.visible = sparkHalo.visible = true;
+
+      var tipPulse = t > 0.82 ? smooth((t - 0.82) / 0.18) * pulse : 0;
+      if (tipPulse > 0.01) {
+        tipFlash.position.set(cx, workingBox.min.y, cz);
+        tipFlash.material.opacity = tipPulse * 0.75;
+        tipFlash.scale.setScalar(0.7 + tipPulse * 1.2);
+        tipFlash.visible = true;
+      } else if (tipFlash) {
+        tipFlash.visible = false;
+      }
+    } else {
+      hideWorkingFx();
+    }
+    return true;
   }
 
   function keyPosition(key) {
@@ -408,11 +495,13 @@
   // ── Render loop (on demand) ─────────────────────────────────────────────
   var state = { target: 0, current: null, rendered: null, raf: null, last: 0, visible: true, frames: 0, dirty: true };
 
-  function renderAt(s) {
+  function renderAt(s, now) {
     var e = clamp(s + 1, 0, 1), p = clamp(s, 0, 1);
+    var frameNow = now || performance.now();
     applyGroups(p);
     applyCamera(p, e);
     applyLight(p);
+    applyWorkingFx(p, frameNow, 1);
     renderer.render(scene, camera);
     state.frames += 1;
     state.rendered = s;
@@ -428,8 +517,9 @@
     if (state.current === null) state.current = state.target;
     var diff = state.target - state.current;
     state.current = Math.abs(diff) < 1e-4 ? state.target : state.current + diff * (1 - Math.exp(-dt / DAMPING_SECONDS));
-    if (state.dirty || state.current !== state.rendered) renderAt(state.current);
-    if (state.current !== state.target) kick();
+    var working = state.current >= 0.74 && state.current < 0.995;
+    if (state.dirty || state.current !== state.rendered || working) renderAt(state.current, now);
+    if (state.current !== state.target || working) kick();
   }
   function kick() {
     if (state.raf !== null || !state.visible || document.hidden || !renderer || section.classList.contains('is-static')) return;
@@ -531,7 +621,7 @@
       debugOverride = clamp(s, -1, 1);
       state.target = state.current = debugOverride;
       state.dirty = true;
-      if (renderer) renderAt(debugOverride);
+      if (renderer) renderAt(debugOverride, performance.now());
     },
     followScroll: function () { debugOverride = null; onScroll(); },
     // Renders position s and returns the canvas as a PNG data URL (poster generation).
@@ -655,6 +745,7 @@
     applyCamera(0.78, 1);
     applyLight(0.78);
     machineRoot.rotation.y = backgroundAngle;
+    applyWorkingFx(0.78, now, 0.72);
     renderer.render(scene, camera);
     state.frames += 1;
     backgroundRaf = requestAnimationFrame(renderBackground);
@@ -689,10 +780,19 @@
   }
 
   function updateBackgroundMode(s) {
-    if (!portfolio || !renderer) return;
-    var rect = portfolio.getBoundingClientRect();
-    var portfolioVisible = rect.top < window.innerHeight && rect.bottom > 0;
-    setBackgroundActive(portfolioVisible && s >= 0.995);
+    if (!renderer) return;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 1;
+    var introVisible = false;
+    if (portfolioIntro) {
+      var introRect = portfolioIntro.getBoundingClientRect();
+      introVisible = introRect.top < vh && introRect.bottom > 0;
+    }
+    var portfolioVisible = false;
+    if (portfolio) {
+      var rect = portfolio.getBoundingClientRect();
+      portfolioVisible = rect.top < vh && rect.bottom > 0;
+    }
+    setBackgroundActive((introVisible || portfolioVisible) && s >= 0.995);
   }
 
   function observeVisibility() {
