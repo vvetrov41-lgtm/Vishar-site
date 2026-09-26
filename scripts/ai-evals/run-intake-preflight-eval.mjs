@@ -168,7 +168,8 @@ async function live() {
       if (Number.isFinite(c) && c >= 0) cost += c;
       const decision = decidePreflight(result.data?.answers, fixture.state);
       if (decision.status === 'skipped') { rows.push({ id: fixture.id, split: fixture.split, ok: false, code: decision.reason ?? 'skipped' }); continue; }
-      rows.push({ id: fixture.id, split: fixture.split, fixture, ok: true, durationMs: result.durationMs, decision, score: scoreRun(fixture, decision) });
+      const probs = Object.fromEntries(Object.keys(fixture.questions).map((q) => [q, round(Number(result.data?.answers?.[q]?.noul), 3)]));
+      rows.push({ id: fixture.id, split: fixture.split, fixture, ok: true, durationMs: result.durationMs, decision, probs, score: scoreRun(fixture, decision) });
     }
   }
   const bySplit = {};
@@ -182,7 +183,7 @@ async function live() {
     stability: stability(rows),
     // Content-free per-fixture outcomes for error analysis.
     outcomes: rows.map((r) => (r.ok
-      ? { id: r.id, split: r.split, status: r.decision.status, categories: r.decision.categories, false: r.score.falseCategories, missed: r.score.missed }
+      ? { id: r.id, split: r.split, status: r.decision.status, categories: r.decision.categories, false: r.score.falseCategories, missed: r.score.missed, p: r.probs }
       : { id: r.id, split: r.split, error: r.code })),
   };
   writeFileSync('intake-preflight-eval-results.json', `${JSON.stringify(report, null, 2)}\n`);
