@@ -523,12 +523,23 @@
     function openAiAdsServerContext() {
       if (storedConsent(OPENAI_ADS_CONSENT_KEY) !== 'granted') return null;
       let sourceUrl = '';
-      try { sourceUrl = window.location.origin + window.location.pathname; } catch (error) { sourceUrl = ''; }
+      let params;
+      try {
+        sourceUrl = window.location.origin + window.location.pathname;
+        params = new URLSearchParams(window.location.search);
+      } catch (error) {
+        sourceUrl = '';
+        params = new URLSearchParams('');
+      }
       if (!sourceUrl) return null;
+
+      // OpenAI appends oppref to eligible ad landing URLs. Prefer the original
+      // query value and fall back to the SDK cookie so server-side CAPI keeps
+      // the click identifier even when cookie capture is delayed.
+      const queryOppref = (params.get('oppref') || '').slice(0, 1000);
       return {
         sourceUrl,
-        oppref: cookieValue('__oppref'),
-        obref: cookieValue('__obref')
+        oppref: queryOppref || cookieValue('__oppref')
       };
     }
 
@@ -680,7 +691,6 @@
           payload.append('openaiAdsMeasurementConsent', 'granted');
           payload.append('openaiAdsSourceUrl', adsContext.sourceUrl);
           if (adsContext.oppref) payload.append('openaiAdsOppref', adsContext.oppref);
-          if (adsContext.obref) payload.append('openaiAdsObref', adsContext.obref);
         }
 
         files.forEach(function (file) { payload.append('references', file, file.name); });
