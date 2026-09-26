@@ -25,3 +25,9 @@ geo_agent/data/raw/qfo/
 geo_agent/data/raw/xmlriver/
 geo_agent/data/raw/provider-responses/
 geo_agent/logs/
+
+# Public deploy boundary: Cloudflare Pages build output (scripts/build-public.mjs).
+dist/
+
+# Purchased 3D model sources. Never published and never committed.
+source-assets/

@@ -37,6 +37,12 @@ jobs:
       - name: Validate static site
         run: npm run validate:site
 
+      - name: Public deploy boundary self-test
+        run: npm run build:public:self-test
+
+      - name: Public deploy boundary build check
+        run: npm run build:public:check
+
       - name: CRM scheduler watchdog self-test
         run: node scripts/crm-scheduler-watchdog.mjs --self-test
 

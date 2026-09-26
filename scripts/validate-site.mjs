@@ -159,7 +159,9 @@ async function listFiles(dir, predicate = () => true) {
   const files = [];
 
   for (const entry of entries) {
-    if (entry.name === '.git' || entry.name === 'node_modules') continue;
+    // dist/ is the generated public output (scripts/build-public.mjs) and
+    // source-assets/ holds unpublished purchased sources; neither is site source.
+    if (entry.name === '.git' || entry.name === 'node_modules' || (dir === rootDir && (entry.name === 'dist' || entry.name === 'source-assets'))) continue;
     const entryPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       files.push(...await listFiles(entryPath, predicate));
