@@ -23,6 +23,9 @@ jobs:
       - name: Enforce public repository workflow safety
         run: node scripts/check-public-repo-workflow-safety.mjs
 
+      - name: Scan repository for committed secrets
+        run: node scripts/scan-secrets.mjs
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
