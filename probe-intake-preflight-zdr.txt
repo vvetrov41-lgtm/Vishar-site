@@ -1,0 +1,1 @@
+Synthetic-only probe: verify OpenRouter Decisions API accepts provider.zdr=true and provider.data_collection=deny.
