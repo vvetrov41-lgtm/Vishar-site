@@ -11,7 +11,12 @@
 import tattooai from './tattooai.js';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
 import { convergeClientAiBriefs, drainCrmAgent, recordAttentionShadow } from './lib/crm-agent.js';
-import { getCorsHeaders, isRegistryBookingRequest } from './lib/http.js';
+import {
+  RequestError,
+  getCorsHeaders,
+  isRegistryBookingRequest,
+  parseBoundedMultipartFormData,
+} from './lib/http.js';
 import { handleHostedBookingRequest, isHostedBookingPath } from './routes/hosted-booking.js';
 import { handlePublicBookingRequest, isPublicBookingPath } from './routes/public-booking.js';
 import {
@@ -25,14 +30,58 @@ import {
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
 
-// Public per-IP rate limits (audit M-8). Every browser-reachable request is
-// counted: POST (enquiries, AI tools, client actions) against the write
-// limiter, everything else against the generous read limiter. CORS preflights
-// are never counted. Subrequests from Cloudflare Workers all share one egress
+// Public per-IP rate limits (audit M-8). Normal browser-reachable POSTs
+// (enquiries, AI tools, client actions) use the write limiter and reads use
+// the generous read limiter. Semantic preflight has its own stricter limiter
+// and is deliberately excluded from the write bucket so it cannot consume
+// capacity reserved for the actual enquiry submission. CORS preflights are
+// never counted. Subrequests from Cloudflare Workers all share one egress
 // address, so the first-party booking edges that proxy to this Worker would
 // otherwise throttle every visitor together; they are not counted here.
 // A missing or failing limiter never blocks a request.
 const WORKER_EGRESS_PREFIX = '2a06:98c0:3600:';
+
+function isEnquiryIntakeRoute(request) {
+  try {
+    const url = new URL(request?.url ?? '');
+    return url.pathname === '/'
+      || isPublicBookingPath(request)
+      || isHostedBookingPath(request);
+  } catch {
+    return false;
+  }
+}
+
+async function classifySemanticPreflightRequest(request) {
+  let url;
+  try { url = new URL(request?.url ?? ''); } catch { return false; }
+  if (String(request?.method || '').toUpperCase() !== 'POST') return false;
+  if (!isEnquiryIntakeRoute(request)) return false;
+  if (url.searchParams.get('preflight') !== '1') return false;
+  const contentType = String(request?.headers?.get?.('content-type') || '').toLowerCase();
+  if (!contentType.includes('multipart/form-data')) return false;
+
+  // Use the same streaming size cap as durable intake before parsing any
+  // attacker-controlled multipart body. The original request stays untouched
+  // for the downstream route because classification reads only a clone.
+  const form = await parseBoundedMultipartFormData(request.clone());
+  return form.get('preflight') === '1';
+}
+
+function requestErrorResponse(error, request, env) {
+  const origin = request.headers.get('Origin') || '';
+  return Response.json(
+    { ok: false, code: error.code, error: error.message },
+    {
+      status: error.status,
+      headers: {
+        ...getCorsHeaders(origin, env, request),
+        'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff',
+      },
+    }
+  );
+}
 
 export function rateLimitClass(request) {
   const method = String(request?.method || '').toUpperCase();
@@ -40,7 +89,16 @@ export function rateLimitClass(request) {
   return method === 'POST' ? 'write' : 'read';
 }
 
-async function enforcePublicRateLimit(request, env) {
+async function enforcePublicRateLimit(request, env, semanticPreflight = null) {
+  let isSemantic = semanticPreflight;
+  if (isSemantic === null) {
+    try { isSemantic = await classifySemanticPreflightRequest(request); }
+    catch (error) {
+      if (error instanceof RequestError) return requestErrorResponse(error, request, env);
+      throw error;
+    }
+  }
+  if (isSemantic) return null;
   const kind = rateLimitClass(request);
   if (!kind) return null;
   const limiter = kind === 'write' ? env?.PUBLIC_WRITE_RATE_LIMIT : env?.PUBLIC_READ_RATE_LIMIT;
@@ -66,10 +124,16 @@ async function enforcePublicRateLimit(request, env) {
   });
 }
 
-export async function enforceSemanticPreflightRateLimit(request, env) {
-  let url;
-  try { url = new URL(request.url); } catch { return null; }
-  if (request.method !== 'POST' || url.searchParams.get('preflight') !== '1') return null;
+export async function enforceSemanticPreflightRateLimit(request, env, semanticPreflight = null) {
+  let isSemantic = semanticPreflight;
+  if (isSemantic === null) {
+    try { isSemantic = await classifySemanticPreflightRequest(request); }
+    catch (error) {
+      if (error instanceof RequestError) return requestErrorResponse(error, request, env);
+      throw error;
+    }
+  }
+  if (!isSemantic) return null;
 
   const ip = request.headers.get('CF-Connecting-IP') || '';
   // First-party booking Workers enforce their own client-aware limit, but the
@@ -176,14 +240,25 @@ export default {
       return handleInternalCrmAgentDrain(request, env);
     }
 
+    // Classify once so a genuine preflight's bounded multipart body is not
+    // parsed twice before routing. Oversized/malformed intake bodies are
+    // rejected before either rate limiter or provider execution.
+    let semanticPreflight = false;
+    try {
+      semanticPreflight = await classifySemanticPreflightRequest(request);
+    } catch (error) {
+      if (error instanceof RequestError) return requestErrorResponse(error, request, env);
+      throw error;
+    }
+
     // Direct browser preflights receive a stricter paid-provider limiter.
     // Worker egress (first-party booking edges and any other Worker) shares one budget.
-    const preflightLimited = await enforceSemanticPreflightRateLimit(request, env);
+    const preflightLimited = await enforceSemanticPreflightRateLimit(request, env, semanticPreflight);
     if (preflightLimited) return preflightLimited;
 
     // Operator-only model-routing readback. Answers 404 unless explicitly
     // enabled and token-authenticated, and never emits CORS headers.
-    const limited = await enforcePublicRateLimit(request, env);
+    const limited = await enforcePublicRateLimit(request, env, semanticPreflight);
     if (limited) return limited;
 
     if (isAiRouterProbePath(request)) {
@@ -222,5 +297,6 @@ export const __testing = Object.freeze({
   handleInternalCrmAgentDrain,
   isInternalAiDrainRequest,
   isInternalCrmAgentDrainRequest,
+  classifySemanticPreflightRequest,
   enforcePublicRateLimit,
 });
