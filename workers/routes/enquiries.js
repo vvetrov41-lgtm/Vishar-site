@@ -23,6 +23,7 @@ import { createStorageClient } from '../lib/storage.js';
 import { scheduleEnquiryAi } from '../lib/enquiry-ai.js';
 import {
   markPreflightSubmitted,
+  readPreflightCandidateId,
   readPreflightFollowUp,
   readPreflightReferenceCount,
   recordPreflight,
@@ -191,7 +192,12 @@ async function handleEnquiryIntakeInternal(
     // as a real submit, then a clarity check on four free-text fields. Nothing
     // is persisted except metadata telemetry, no files are read, and every
     // failure answers "skipped" so the form submits normally.
-    if (form.get('preflight') === '1') {
+    const requestedPreflight = form.get('preflight') === '1';
+    const queryPreflight = new URL(request.url).searchParams.get('preflight') === '1';
+    if (requestedPreflight && !queryPreflight) {
+      throw new RequestError('preflight_marker_required', 'Please refresh this booking form and try again.', 400);
+    }
+    if (requestedPreflight) {
       const result = await runIntakePreflight(env, {
         projectType: enquiry.projectType,
         placement: enquiry.placement,
@@ -200,7 +206,7 @@ async function handleEnquiryIntakeInternal(
         coverUp: enquiry.coverUp,
         referenceCount: readPreflightReferenceCount(form),
       }, { fetchImpl });
-      const candidatePreflightId = crypto.randomUUID();
+      const candidatePreflightId = readPreflightCandidateId(form) ?? crypto.randomUUID();
       const formPath = hostedMode ? 'hosted'
         : String(env?.BOOKING_SOURCE_KEY ?? '').startsWith('public-slug:') ? 'slug' : 'external';
       let preflightId = '';
