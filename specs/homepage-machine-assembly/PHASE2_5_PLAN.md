@@ -153,3 +153,27 @@ The order can be changed later without changing the animation architecture.
 - `dt` clamped to ≥ 0; on entering background mode or loading below the stage,
   the sequence state aligns with the scroll position.
 - GLTFLoader: `TextureLoader` on every browser (no CSP change).
+
+## Revision 3 — needle light pass and flow-layout tattoo intro
+
+Feedback: the travelling light read as a sphere/orb that repeated in a loop,
+also behind Portfolio; the two full-screen tattoos behaved like sticky slides.
+
+Changes:
+
+- Light: `sparkCore`/`sparkHalo` spheres and the 1.6 s repeating cycle removed.
+  A single camera-facing strip (custom `ShaderMaterial`, 4 vertices, additive,
+  no postprocessing) runs along the needle's own long axis, measured once from
+  the needle group's local bounds. A short trace with a tiny leading edge
+  travels from the top of the needle bar to the tip in 620 ms, 300 ms after the
+  machine starts working (p ≥ 0.745), then a ~12 px tip flash (240 ms) and
+  nothing else. It plays once per page view; a fling past p 0.86 skips it; the
+  background loop runs the mechanics only.
+- Tattoo intro: sticky media and 150vh panels removed. Work 1 is a 100svh
+  full-frame block in normal flow that fades in out of the black close-up
+  (scale 1.02 → 1) and scrolls away with the page. Work 2 is smaller (78svh
+  mobile / 84svh desktop), offset right on black, then the grid. No snapping.
+- Background machine: unchanged trigger (grid entering the viewport); both
+  works sit on opaque black, so the machine is never visible behind them.
+- Test hook `__machine.lightFrame(ms)` renders the pass frozen at a given time
+  (software renderers cannot sample it in real time).

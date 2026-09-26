@@ -20,7 +20,6 @@
   if (!section) return;
   var portfolio = document.getElementById('portfolio');
   var portfolioIntro = document.getElementById('portfolio-intro');
-  var featurePanels = portfolioIntro ? Array.from(portfolioIntro.querySelectorAll('.portfolio-feature')) : [];
   var stage = section.querySelector('.machine-stage');
   var canvasHost = section.querySelector('.machine-canvas');
   var poster = section.querySelector('.machine-poster');
@@ -172,26 +171,8 @@
     if (portfolioIntro && !section.classList.contains('is-static')) {
       var handoff = handoffAmount(p);
       portfolioIntro.style.setProperty('--handoff', handoff.toFixed(3));
-      portfolioIntro.style.setProperty('--handoff-scale', (1.05 - 0.05 * handoff).toFixed(4));
+      portfolioIntro.style.setProperty('--handoff-scale', (1.02 - 0.02 * handoff).toFixed(4));
     }
-  }
-
-  // Feature 1 is driven by the handoff (see above). Feature 2 slides over
-  // feature 1 by normal scrolling; both stay opaque, so no black gap and no
-  // background machine shows between them. Only the last feature fades as the
-  // grid arrives, revealing the background machine behind the grid.
-  function updatePortfolioIntro() {
-    if (!featurePanels.length) return;
-    var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    var staticMode = section.classList.contains('is-static');
-    featurePanels.forEach(function (panel, index) {
-      if (index === 0 && !staticMode) return; // handled by updateCssState
-      var rect = panel.getBoundingClientRect();
-      var enter = staticMode && index === 0 ? smooth((vh - rect.top) / (vh * 0.6)) : 1;
-      var drift = clamp((vh - rect.top) / vh, 0, 1);
-      panel.style.setProperty('--feature-opacity', enter.toFixed(3));
-      panel.style.setProperty('--feature-scale', (1.05 - 0.05 * smooth(drift)).toFixed(4));
-    });
   }
 
   // ── Script loading ──────────────────────────────────────────────────────
@@ -216,8 +197,7 @@
   var renderer, scene, camera, machineRoot, keyLight, rimLight;
   var groups = []; // { node, spec, rest, axis, materials[] }
   var groupByName = {};
-  var sparkCore = null, sparkHalo = null, tipFlash = null, workingBox = null;
-  var timeline = null;
+    var timeline = null;
   var layout = 'landscape';
   var tmpV = null, tmpQ = null, tmpAxis = null;
 
@@ -355,40 +335,145 @@
     });
   }
 
+  // ── Working machine + one-off needle light pass ─────────────────────────
+  // The pass is a thin camera-facing strip along the needle's own long axis
+  // (not a sphere): a short trace with a tiny bright leading edge travels from
+  // the top of the needle bar to the tip, then a very small flash marks the
+  // tip and everything fades out. It plays once per page view, ~300 ms after
+  // the machine starts working, and never in the background loop.
+  var LIGHT_DELAY_MS = 300, LIGHT_TRAVEL_MS = 620, LIGHT_FLASH_MS = 240;
+  var lightPass = { done: false, start: 0 };
+  var needleAxis = null; // { a, b } needle end points in needle-node space
+  var beam = null, tipFlash = null, beamPos = null;
+  var tmpA = null, tmpB = null, tmpSide = null, tmpView = null, tmpMid = null;
+
+  function measureNeedleAxis(node) {
+    node.updateMatrixWorld(true);
+    var inv = new THREE_.Matrix4().copy(node.matrixWorld).invert();
+    var box = new THREE_.Box3(), part = new THREE_.Box3(), m = new THREE_.Matrix4();
+    node.traverse(function (o) {
+      if (!o.isMesh) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      m.multiplyMatrices(inv, o.matrixWorld);
+      box.union(part.copy(o.geometry.boundingBox).applyMatrix4(m));
+    });
+    var size = box.getSize(new THREE_.Vector3()), c = box.getCenter(new THREE_.Vector3());
+    var axis = size.x >= size.y && size.x >= size.z ? 'x' : (size.y >= size.z ? 'y' : 'z');
+    var a = c.clone(), b = c.clone();
+    a[axis] -= size[axis] / 2; b[axis] += size[axis] / 2;
+    return { a: a, b: b };
+  }
+
   function createWorkingFx() {
-    workingBox = new THREE_.Box3();
-    function makeSpark(radius, color, opacity) {
-      var material = new THREE_.MeshBasicMaterial({
-        color: color,
-        transparent: true,
-        opacity: opacity,
-        blending: THREE_.AdditiveBlending,
-        depthWrite: false,
-        depthTest: false
-      });
-      var mesh = new THREE_.Mesh(new THREE_.SphereGeometry(radius, 10, 8), material);
-      mesh.visible = false;
-      mesh.renderOrder = 30;
-      scene.add(mesh);
-      return mesh;
-    }
-    sparkCore = makeSpark(0.0014, 0xf5fbff, 1);
-    sparkHalo = makeSpark(0.0045, 0x8fc7ff, 0.34);
-    tipFlash = makeSpark(0.0032, 0xffffff, 0.7);
+    tmpA = new THREE_.Vector3(); tmpB = new THREE_.Vector3();
+    tmpSide = new THREE_.Vector3(); tmpView = new THREE_.Vector3(); tmpMid = new THREE_.Vector3();
+    var needle = groupByName.G17_needle;
+    if (!needle) return;
+    needleAxis = measureNeedleAxis(needle.node);
+
+    // Strip: x runs along the needle (0 top → 1 tip), y across (-1..1).
+    var beamGeo = new THREE_.BufferGeometry();
+    beamPos = new Float32Array(12);
+    beamGeo.setAttribute('position', new THREE_.BufferAttribute(beamPos, 3));
+    beamGeo.setAttribute('uv', new THREE_.BufferAttribute(new Float32Array([0, -1, 0, 1, 1, -1, 1, 1]), 2));
+    beamGeo.setIndex([0, 2, 1, 2, 3, 1]);
+    beam = new THREE_.Mesh(beamGeo, new THREE_.ShaderMaterial({
+      uniforms: { uHead: { value: 0 }, uTrail: { value: 0.2 }, uAlpha: { value: 0 }, uColor: { value: new THREE_.Color(0xeef5ff) } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: [
+        'uniform float uHead; uniform float uTrail; uniform float uAlpha; uniform vec3 uColor; varying vec2 vUv;',
+        'void main(){',
+        '  float d = uHead - vUv.x;',
+        '  float along = d >= 0.0 ? exp(-d / uTrail) : exp(d / 0.01);',
+        '  float edge = exp(-(d * d) / 0.00035);',
+        '  float y2 = vUv.y * vUv.y;',
+        '  float a = (along * 0.55 * exp(-y2 * 9.0) + edge * exp(-y2 * 45.0)) * uAlpha;',
+        '  gl_FragColor = vec4(uColor, a);',
+        '}'
+      ].join('\n'),
+      transparent: true, blending: THREE_.AdditiveBlending, depthWrite: false, depthTest: false,
+      side: THREE_.DoubleSide // winding flips with the camera side of the needle
+    }));
+    beam.frustumCulled = false;
+    beam.renderOrder = 30;
+    beam.visible = false;
+    scene.add(beam);
+
+    tipFlash = new THREE_.Mesh(new THREE_.PlaneGeometry(1, 1), new THREE_.ShaderMaterial({
+      uniforms: { uAlpha: { value: 0 }, uColor: { value: new THREE_.Color(0xffffff) } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv * 2.0 - 1.0; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform float uAlpha; uniform vec3 uColor; varying vec2 vUv; void main(){ float r2 = dot(vUv, vUv); float a = (exp(-r2 * 30.0) + 0.25 * exp(-vUv.y * vUv.y * 400.0) * exp(-vUv.x * vUv.x * 6.0)) * uAlpha; gl_FragColor = vec4(uColor, a); }',
+      transparent: true, blending: THREE_.AdditiveBlending, depthWrite: false, depthTest: false
+    }));
+    tipFlash.renderOrder = 31;
+    tipFlash.visible = false;
+    scene.add(tipFlash);
   }
 
   function hideWorkingFx() {
-    if (sparkCore) sparkCore.visible = false;
-    if (sparkHalo) sparkHalo.visible = false;
+    if (beam) beam.visible = false;
     if (tipFlash) tipFlash.visible = false;
   }
 
-  function applyWorkingFx(p, now, intensityScale) {
+  // World size of one CSS pixel at a given point.
+  function worldPerPixel(point) {
+    var dist = tmpView.copy(point).sub(camera.position).length();
+    return 2 * dist * Math.tan(camera.fov * Math.PI / 360) / Math.max(1, stage.clientHeight);
+  }
+
+  function drawLightPass(now) {
+    var t = (now - lightPass.start) / LIGHT_TRAVEL_MS;
+    if (t < 0) { hideWorkingFx(); return; }
+    var flashT = (now - lightPass.start - LIGHT_TRAVEL_MS * 0.92) / LIGHT_FLASH_MS;
+    if (flashT >= 1) { lightPass.done = true; lightPass.start = 0; hideWorkingFx(); return; }
+
+    var node = groupByName.G17_needle.node;
+    tmpA.copy(needleAxis.a); node.localToWorld(tmpA);
+    tmpB.copy(needleAxis.b); node.localToWorld(tmpB);
+    if (tmpA.y < tmpB.y) { var sw = tmpA; tmpA = tmpB; tmpB = sw; } // tmpA top, tmpB tip
+
+    // Beam: head eases toward the tip, the trace fades out as it lands.
+    var travel = clamp(t, 0, 1);
+    var head = lerp(-0.04, 1.0, travel < 0.5 ? 2 * travel * travel : 1 - Math.pow(-2 * travel + 2, 2) / 2);
+    var alpha = smooth(t / 0.15) * (1 - smooth((t - 0.9) / 0.22));
+    if (alpha > 0.002) {
+      var mid = tmpMid.copy(tmpA).add(tmpB).multiplyScalar(0.5);
+      var halfWidth = 3.2 * worldPerPixel(mid);
+      tmpSide.copy(tmpB).sub(tmpA).cross(tmpView.copy(camera.position).sub(mid)).normalize().multiplyScalar(halfWidth);
+      beamPos[0] = tmpA.x - tmpSide.x; beamPos[1] = tmpA.y - tmpSide.y; beamPos[2] = tmpA.z - tmpSide.z;
+      beamPos[3] = tmpA.x + tmpSide.x; beamPos[4] = tmpA.y + tmpSide.y; beamPos[5] = tmpA.z + tmpSide.z;
+      beamPos[6] = tmpB.x - tmpSide.x; beamPos[7] = tmpB.y - tmpSide.y; beamPos[8] = tmpB.z - tmpSide.z;
+      beamPos[9] = tmpB.x + tmpSide.x; beamPos[10] = tmpB.y + tmpSide.y; beamPos[11] = tmpB.z + tmpSide.z;
+      beam.geometry.attributes.position.needsUpdate = true;
+      beam.material.uniforms.uHead.value = head;
+      beam.material.uniforms.uAlpha.value = alpha;
+      beam.visible = true;
+    } else {
+      beam.visible = false;
+    }
+
+    // Tip flash: tiny (≈12 px), short, camera-facing.
+    if (flashT > 0) {
+      var flash = Math.sin(Math.PI * Math.pow(clamp(flashT, 0, 1), 0.6));
+      tipFlash.position.copy(tmpB);
+      tipFlash.quaternion.copy(camera.quaternion);
+      tipFlash.scale.setScalar(12 * worldPerPixel(tmpB));
+      tipFlash.material.uniforms.uAlpha.value = flash * 0.9;
+      tipFlash.visible = flash > 0.002;
+    } else {
+      tipFlash.visible = false;
+    }
+  }
+
+  // allowPass is false for the background loop: mechanics only, no light.
+  function applyWorkingFx(p, now, intensityScale, allowPass) {
     var active = smooth((p - 0.74) / 0.035) * (intensityScale == null ? 1 : intensityScale);
     var needle = groupByName.G17_needle;
     var armature = groupByName.G06_armature_bar;
     var spring = groupByName.G07_spring;
     if (!needle || !armature || !spring || active <= 0.001) {
+      // Scrolled back out of the working pose before the pass finished: drop it.
+      if (lightPass.start) { lightPass.start = 0; lightPass.done = true; }
       hideWorkingFx();
       return false;
     }
@@ -401,37 +486,19 @@
     armature.node.position.y += wave * 0.00085 * active;
     spring.node.rotateZ(wave * 0.009 * active);
 
-    machineRoot.updateMatrixWorld(true);
-    workingBox.setFromObject(needle.node);
-
-    var cycle = (seconds % 1.6) / 1.6;
-    var travelShare = 0.34;
-    var pulse = cycle < travelShare ? Math.sin(Math.PI * cycle / travelShare) : 0;
-    pulse *= active;
-
-    if (pulse > 0.01) {
-      var t = clamp(cycle / travelShare, 0, 1);
-      var cx = (workingBox.min.x + workingBox.max.x) * 0.5;
-      var cz = (workingBox.min.z + workingBox.max.z) * 0.5;
-      var y = lerp(workingBox.max.y, workingBox.min.y, t);
-
-      sparkCore.position.set(cx, y, cz);
-      sparkHalo.position.copy(sparkCore.position);
-      sparkCore.material.opacity = pulse;
-      sparkHalo.material.opacity = pulse * 0.34;
-      sparkCore.scale.setScalar(0.8 + pulse * 0.7);
-      sparkHalo.scale.setScalar(0.75 + pulse * 1.3);
-      sparkCore.visible = sparkHalo.visible = true;
-
-      var tipPulse = t > 0.82 ? smooth((t - 0.82) / 0.18) * pulse : 0;
-      if (tipPulse > 0.01) {
-        tipFlash.position.set(cx, workingBox.min.y, cz);
-        tipFlash.material.opacity = tipPulse * 0.75;
-        tipFlash.scale.setScalar(0.7 + tipPulse * 1.2);
-        tipFlash.visible = true;
-      } else if (tipFlash) {
-        tipFlash.visible = false;
-      }
+    if (!allowPass || !needleAxis) {
+      hideWorkingFx();
+      return true;
+    }
+    // Arm once, when the assembled machine starts working. A fling that lands
+    // deep in the push-in skips the pass instead of playing it late.
+    if (!lightPass.done && !lightPass.start && p >= 0.745) {
+      if (p <= 0.86) lightPass.start = now + LIGHT_DELAY_MS;
+      else lightPass.done = true;
+    }
+    if (lightPass.start) {
+      machineRoot.updateMatrixWorld(true);
+      drawLightPass(now);
     } else {
       hideWorkingFx();
     }
@@ -556,7 +623,7 @@
     applyGroups(p);
     applyCamera(p, e);
     applyLight(p);
-    applyWorkingFx(p, frameNow, 1);
+    applyWorkingFx(p, frameNow, 1, true);
     renderer.render(scene, camera);
     state.frames += 1;
     state.rendered = s;
@@ -579,7 +646,7 @@
     var lag = Math.abs(diff);
     var tau = DAMPING_SECONDS / (1 + 5 * Math.max(0, lag - 0.08));
     state.current = lag < 1e-4 ? state.target : state.current + diff * (1 - Math.exp(-dt / tau));
-    var working = state.current >= 0.74 && state.current < 0.995;
+    var working = (state.current >= 0.74 && state.current < 0.995) || lightPass.start > 0;
     if (state.dirty || state.current !== state.rendered || working) renderAt(state.current, now);
     if (state.current !== state.target || working) kick();
   }
@@ -596,7 +663,6 @@
     state.target = scrollValue();
     updateCssState(state.target);
     if (renderer) updateBackgroundMode(state.target);
-    updatePortfolioIntro();
     if (!backgroundActive) kick();
     updateDiagnostic();
   }
@@ -728,8 +794,24 @@
         revealStart: Math.round(metrics.revealStart),
         assemblyStart: Math.round(metrics.assemblyStart),
         assemblyEnd: Math.round(metrics.assemblyEnd),
-        background: backgroundActive
+        background: backgroundActive,
+        light: {
+          done: lightPass.done,
+          playing: lightPass.start > 0,
+          beam: !!(beam && beam.visible),
+          head: beam ? beam.material.uniforms.uHead.value : 0,
+          flash: !!(tipFlash && tipFlash.visible)
+        }
       };
+    },
+    // Test hook: renders the current pose with the light pass frozen at `ms`
+    // after its start (slow software renderers cannot sample it in real time).
+    // lightFrame(null) ends the pass as played.
+    lightFrame: function (ms) {
+      stopLoop();
+      if (ms === null) { lightPass.start = 0; lightPass.done = true; hideWorkingFx(); }
+      else { lightPass.done = false; lightPass.start = 1; renderAt(state.current, 1 + ms); }
+      return window.__machine.debugState().light;
     },
     // Renders position s and returns the canvas as a PNG data URL (poster generation).
     capture: function (s) {
@@ -855,7 +937,7 @@
     applyCamera(0.78, 1);
     applyLight(0.78);
     machineRoot.rotation.y = backgroundAngle;
-    applyWorkingFx(0.78, now, 0.72);
+    applyWorkingFx(0.78, now, 0.72, false);
     renderer.render(scene, camera);
     state.frames += 1;
     backgroundRaf = requestAnimationFrame(renderBackground);
@@ -935,7 +1017,6 @@
   window.addEventListener('resize', onResize);
   measure();
   updateCssState(scrollValue());
-  updatePortfolioIntro();
 
   updateDiagnostic();
 

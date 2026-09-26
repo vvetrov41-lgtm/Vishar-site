@@ -61,20 +61,17 @@
         </div>
     </section>
 
-    <!-- Cinematic tattoo intro. It overlaps the last viewport of the machine
-         section: feature 1 continues the final close-up (handoff), feature 2
-         slides over it, then the grid reveals the background machine. -->
+    <!-- Cinematic tattoo intro, in normal document flow (no sticky panels).
+         It overlaps the last viewport of the machine section, so the first
+         work fades in out of the black close-up and then scrolls away with the
+         page; the second, smaller work follows below, then the grid. -->
     <section id="portfolio-intro" class="portfolio-intro" aria-label="Featured tattoo close-ups">
-        <article class="portfolio-feature" data-feature-index="0">
-            <div class="portfolio-feature-media">
-                <img src="/assets/portfolio/01.jpg" alt="Realism tattoo by Vladimir Vishar, featured work 1" loading="lazy" decoding="async">
-            </div>
-        </article>
-        <article class="portfolio-feature" data-feature-index="1">
-            <div class="portfolio-feature-media">
-                <img src="/assets/portfolio/02.jpg" alt="Realism tattoo by Vladimir Vishar, featured work 2" loading="lazy" decoding="async">
-            </div>
-        </article>
+        <figure class="portfolio-feature portfolio-feature--lead">
+            <img src="/assets/portfolio/01.jpg" alt="Realism tattoo by Vladimir Vishar, featured work 1" loading="lazy" decoding="async" width="900" height="1200">
+        </figure>
+        <figure class="portfolio-feature portfolio-feature--follow">
+            <img src="/assets/portfolio/02.jpg" alt="Realism tattoo by Vladimir Vishar, featured work 2" loading="lazy" decoding="async" width="900" height="1200">
+        </figure>
     </section>
 
     <!-- Portfolio grid follows the cinematic close-up handoff. -->
