@@ -11,7 +11,9 @@ import {
   CLARIFICATION_TEMPLATES, CLARIFY_CATEGORIES, PREFLIGHT_VERSION, buildPreflightQuestions,
   buildPreflightState, clarificationMessages, decidePreflight,
 } from '../workers/lib/intake-preflight/contract.js';
-import { preflightConfig, runIntakePreflight } from '../workers/lib/intake-preflight/provider.js';
+import {
+  markPreflightSubmitted, preflightConfig, readPreflightCandidateId, runIntakePreflight,
+} from '../workers/lib/intake-preflight/provider.js';
 
 let passes = 0;
 async function test(name, fn) {
@@ -92,9 +94,40 @@ await test('at most three hints, all server-owned text', () => {
   for (const c of CLARIFY_CATEGORIES) assert.ok(!/£|\$|price|available|book|deposit/i.test(CLARIFICATION_TEMPLATES[c].text));
 });
 
+await test('browser preflight mints correlation before fetch and uses an explicit query marker', () => {
+  assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes('window.crypto.randomUUID'));
+  assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes("u.searchParams.set('preflight','1')"));
+  assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes("body.append('preflightId',id)"));
+});
+
 await test('the browser preserves multiple server hints that target the same field', () => {
   assert.ok(INTAKE_PREFLIGHT_BROWSER_JS.includes("var existing=form.querySelectorAll('[data-preflight-hint=\"'+field+'\"]')"));
   assert.ok(!INTAKE_PREFLIGHT_BROWSER_JS.includes("if(old)old.remove()"));
+});
+
+await test('candidate id is validated and a briefly missing telemetry row is retried', async () => {
+  const form = new FormData();
+  form.set('preflightId', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+  assert.equal(readPreflightCandidateId(form), 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+  form.set('preflightId', 'not-a-uuid');
+  assert.equal(readPreflightCandidateId(form), null);
+
+  let calls = 0;
+  const waits = [];
+  const supabase = {
+    rpc: async () => {
+      calls += 1;
+      return { status: calls >= 2 ? 'marked' : 'ignored' };
+    },
+  };
+  markPreflightSubmitted(
+    supabase,
+    { id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', choice: 'unchanged' },
+    'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff',
+    (promise) => waits.push(promise),
+  );
+  await Promise.all(waits);
+  assert.equal(calls, 2);
 });
 
 await test('replayed completed intakes still mark the preflight as submitted', () => {
@@ -169,7 +202,7 @@ function preflightForm(overrides = {}) {
     idempotencyKey: '11111111-2222-4333-8444-555555555555', name: 'Test Client', email: 'client@example.test',
     preferredReply: 'Email', projectType: 'New tattoo', placement: 'arm', size: 'medium', coverUp: 'No',
     idea: 'realistic lion with flowers', website: '', privacyAcknowledged: 'true', privacyNoticeVersion: '2026-07-29',
-    preflight: '1', referenceCount: '1', ...overrides,
+    preflight: '1', preflightId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee', referenceCount: '1', ...overrides,
   };
   for (const [k, v] of Object.entries(values)) form.append(k, v);
   return form;
@@ -191,7 +224,7 @@ async function callPreflight(env, form, providerFetch) {
   };
   try {
     const response = await worker.fetch(
-      new Request('https://tattooai.vvetrov41.workers.dev/', { method: 'POST', headers: { Origin: 'https://vishartattoo.com' }, body: form }),
+      new Request('https://tattooai.vvetrov41.workers.dev/?preflight=1', { method: 'POST', headers: { Origin: 'https://vishartattoo.com' }, body: form }),
       env, { waitUntil: (p) => waits.push(p) },
     );
     await Promise.all(waits);
@@ -213,7 +246,7 @@ await test('a preflight never persists: no intake RPC, no files, one metadata ro
   assert.equal(r.body.ok, true);
   assert.equal(r.body.preflight.status, 'clarify');
   assert.deepEqual(r.body.preflight.messages.map((m) => m.field), ['placement', 'size']);
-  assert.match(r.body.preflight.id, /^[0-9a-f-]{36}$/);
+  assert.equal(r.body.preflight.id, 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
   const names = r.rpcs.map((c) => c.name);
   assert.ok(!names.some((n) => /create_.*enquiry_intake|finalize|mark_enquiry_file/.test(n)), names.join(','));
   const telemetry = r.rpcs.filter((c) => c.name === 'service_record_intake_preflight');
@@ -228,6 +261,37 @@ await test('with the switch off a preflight answers skipped and calls no provide
   const r = await callPreflight(ENV, preflightForm(), async () => { throw new Error('provider must not be called'); });
   assert.equal(r.body.preflight.status, 'skipped');
   assert.deepEqual(r.body.preflight.messages, []);
+});
+
+await test('body-only preflight marker is rejected before provider execution', async () => {
+  const form = preflightForm();
+  let providerCalled = false;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    const href = String(url);
+    if (href.includes('/rest/v1/rpc/')) return Response.json(null);
+    if (href.startsWith('https://openrouter.ai/')) {
+      providerCalled = true;
+      return providerOk(answers())(url, init);
+    }
+    throw new Error(`unexpected fetch ${href}`);
+  };
+  try {
+    const response = await worker.fetch(
+      new Request('https://tattooai.vvetrov41.workers.dev/', {
+        method: 'POST',
+        headers: { Origin: 'https://vishartattoo.com' },
+        body: form,
+      }),
+      { ...ENV, ...ON },
+      { waitUntil() {} },
+    );
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).code, 'preflight_marker_required');
+    assert.equal(providerCalled, false);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
 await test('deterministic validation still runs first: a bad email is a normal 400, not a preflight', async () => {
