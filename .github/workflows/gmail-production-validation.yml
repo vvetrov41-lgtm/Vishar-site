@@ -7,6 +7,8 @@ on:
       - 'workers/gmail-production-entrypoint.js'
       - 'workers/gmail-complete-discovery-api.js'
       - 'workers/gmail-operator-api.js'
+      - 'workers/gmail-metadata-snapshot.js'
+      - 'workers/gmail-metadata-snapshot.test.js'
       - 'workers/telegram-drain-worker.js'
       - 'workers/lib/google-gmail.js'
       - 'workers/lib/gmail-supabase.js'
@@ -64,6 +66,9 @@ jobs:
 
       - name: Complete known-client discovery regression
         run: node scripts/test-gmail-complete-discovery.mjs
+
+      - name: Test Gmail metadata snapshot and history lookup
+        run: node --test workers/gmail-metadata-snapshot.test.js
 
       - name: Gmail GPT host boundary regression
         run: node scripts/test-gmail-gpt-host-boundary.mjs
