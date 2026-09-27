@@ -1,9 +1,10 @@
+import { confirmEnquiryTransition } from '../lib/enquiry-transition-confirm';
 import { useState, type FormEvent } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { EnquiryBoard } from '../components/EnquiryBoard';
-import { Link } from '../lib/router';
+import { Link, useQueryState } from '../lib/router';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
@@ -63,15 +64,22 @@ export function EnquiriesPage() {
   const { profile } = useSession();
   const { t, label, language } = useLanguage();
   const copy = MANUAL_COPY[language];
-  const [status, setStatus] = useState<'' | EnquiryStatus>('');
-  const [search, setSearch] = useState('');
-  const [view, setView] = useState<'list' | 'board'>(() => {
+  // Filters live in the address so they survive opening an enquiry and
+  // coming back, a reload, and a shared link.
+  const [statusParam, setStatusParam] = useQueryState('status');
+  const status = statusParam as '' | EnquiryStatus;
+  const setStatus = setStatusParam;
+  const [search, setSearch] = useQueryState('q');
+  const [viewParam, setViewParam] = useQueryState('view');
+  const storedView: 'list' | 'board' = (() => {
     try {
       return window.localStorage.getItem('vishar-crm-enquiries-view') === 'board' ? 'board' : 'list';
     } catch {
       return 'list';
     }
-  });
+  })();
+  const view: 'list' | 'board' = viewParam === 'board' || viewParam === 'list' ? viewParam : storedView;
+  const setView = (next: 'list' | 'board') => setViewParam(next);
   const [movingEnquiryId, setMovingEnquiryId] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const debouncedSearch = useDebouncedValue(search.trim());
@@ -124,6 +132,7 @@ export function EnquiriesPage() {
 
   async function moveEnquiry(enquiry: Enquiry, to: EnquiryStatus) {
     if (movingEnquiryId) return;
+    if (!(await confirmEnquiryTransition(to, language, data?.clientNames.get(enquiry.client_id)))) return;
     setMovingEnquiryId(enquiry.id);
     setMoveError(null);
     try {

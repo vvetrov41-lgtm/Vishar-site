@@ -122,7 +122,7 @@ export function AppointmentsPage() {
     return typeFilter === 'all' ? rows : rows.filter((appointment) => appointment.appointment_type === typeFilter);
   }, [data?.appointments, optimisticMove, typeFilter]);
 
-  if (loading) return <LoadingState label={copy.loading} />;
+  if (loading && !data) return <LoadingState label={copy.loading} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return <EmptyState title={copy.none} />;
 

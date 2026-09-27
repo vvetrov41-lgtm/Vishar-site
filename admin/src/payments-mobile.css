@@ -224,6 +224,7 @@
 .deposit-sheet {
   width: min(520px, 100%);
   max-height: min(82vh, 660px);
+  max-height: min(82dvh, 660px);
   overflow: auto;
   padding: 18px;
   border: 1px solid var(--border-strong);

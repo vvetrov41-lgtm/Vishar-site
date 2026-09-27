@@ -1,21 +1,33 @@
 import { useArtistScope } from '../lib/artist-scope';
 import { useLanguage } from '../lib/i18n';
-import { Link } from '../lib/router';
+import { useRouter } from '../lib/router';
 
+/**
+ * Back to wherever the operator came from (keeping that list's filters and
+ * scroll position); on a direct link with no earlier CRM screen, to `to`.
+ */
 export function DetailBackLink({ to, sectionLabel }: { to: string; sectionLabel: string }) {
   const { language } = useLanguage();
-  const label = language === 'ru' ? `Назад: ${sectionLabel}` : `Back to ${sectionLabel}`;
+  const { canGoBack, goBack } = useRouter();
+  const label = canGoBack
+    ? (language === 'ru' ? 'Назад' : 'Back')
+    : (language === 'ru' ? `Назад: ${sectionLabel}` : `Back to ${sectionLabel}`);
 
   return (
     <nav aria-label={language === 'ru' ? 'Навигация по записи' : 'Record navigation'}>
       <div className="actions" style={{ marginTop: 0, marginBottom: 12 }}>
-        <Link
-          to={to}
+        <a
+          href={`#${to}`}
           className="badge"
           style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', paddingInline: 14 }}
+          onClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+            event.preventDefault();
+            goBack(to);
+          }}
         >
           ← {label}
-        </Link>
+        </a>
       </div>
     </nav>
   );
@@ -62,5 +74,23 @@ export function RecordArtistContext({ artistId }: { artistId: string }) {
         </>
       ) : null}
     </div>
+  );
+}
+/** Inline variant of DetailBackLink for compact headers. */
+export function BackButton({ to, fallbackLabel, className }: { to: string; fallbackLabel: string; className?: string }) {
+  const { language } = useLanguage();
+  const { canGoBack, goBack } = useRouter();
+  return (
+    <a
+      href={`#${to}`}
+      className={className}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        goBack(to);
+      }}
+    >
+      {canGoBack ? (language === 'ru' ? '← Назад' : '← Back') : fallbackLabel}
+    </a>
   );
 }

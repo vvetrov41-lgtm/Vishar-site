@@ -56,7 +56,7 @@ export function InvoicesPage() {
       .map(([currency, outstanding]) => ({ currency, outstanding }));
   }, [data?.invoices]);
 
-  if (loading) return <LoadingState label={copy.loading} />;
+  if (loading && !data) return <LoadingState label={copy.loading} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
 
   const invoices = data?.invoices ?? [];

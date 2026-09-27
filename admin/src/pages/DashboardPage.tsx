@@ -166,7 +166,7 @@ export function DashboardPage() {
     return () => { cancelled = true; };
   }, [api, gmailScopeKey, mayViewEnquiries, selectedArtistId]);
 
-  if (loading) return <LoadingState label={t('today.loading')} />;
+  if (loading && !data) return <LoadingState label={t('today.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return <EmptyState title={t('today.allClear')} />;
 

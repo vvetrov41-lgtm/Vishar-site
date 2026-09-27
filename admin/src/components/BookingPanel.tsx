@@ -461,7 +461,7 @@ export function BookingPanel({
             />
             <span className="meta">
               {priceIsAuto && projectPrice
-                ? `${copy.sessionPriceFromProject} ${priceSuggestionLabel(projectPrice, language, language === 'ru' ? 'ru-RU' : 'en-GB')}`
+                ? `${copy.sessionPriceFromProject} ${priceSuggestionLabel(projectPrice, language, language === 'ru' ? 'ru-RU' : 'en-GB', { showSource: false })}`
                 : copy.sessionPriceHint}
             </span>
             {priceIsAuto ? null : (

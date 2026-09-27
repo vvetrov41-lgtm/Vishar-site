@@ -21,6 +21,7 @@
 //   - the sections that are usually empty collapse to a heading and a count;
 //   - the reference images stay open, because they are what the artist came for.
 
+import { confirmEnquiryTransition } from '../lib/enquiry-transition-confirm';
 import { useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
@@ -162,9 +163,11 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const readyFiles = files.filter((file) => file.upload_state === 'ready');
   const nextAppointment = upcoming(appointments, new Date());
   const conversation = conversations[0] ?? null;
+  // With no thread yet, an empty Inbox would be a dead end; the reply options
+  // below start the conversation on the client's own channel instead.
   const replyHref = conversation
     ? `/inbox/${conversation.id}`
-    : emailThread ? `/inbox/email/${emailThread.key}` : '/inbox';
+    : emailThread ? `/inbox/email/${emailThread.key}` : null;
 
   const recommended: EnquiryNextAction = nextEnquiryAction({
     status: enquiry.status,
@@ -270,14 +273,26 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         <p className="meta" style={{ margin: '0 0 10px' }}>
           {t('enquiry.nextActionIs', { action: t(`enquiry.next.${recommended}`) })}
         </p>
-        <div className="actions" style={{ marginTop: 0 }}>
-          <Link
-            to={replyHref}
-            className={recommended === 'reply' || recommended === 'chase' ? 'action-link primary' : 'action-link'}
-          >
-            {t('enquiry.replyToClient')}
-          </Link>
-        </div>
+        {replyHref ? (
+          <div className="actions" style={{ marginTop: 0 }}>
+            <Link
+              to={replyHref}
+              className={recommended === 'reply' || recommended === 'chase' ? 'action-link primary' : 'action-link'}
+            >
+              {t('enquiry.replyToClient')}
+            </Link>
+          </div>
+        ) : (
+          <ReplyFallback
+            language={language}
+            primary={recommended === 'reply' || recommended === 'chase'}
+            preferred={client?.preferred_contact ?? enquiry.submitted_preferred_contact ?? null}
+            email={client?.email ?? enquiry.submitted_email ?? null}
+            phone={client?.phone ?? null}
+            instagram={client?.instagram ?? enquiry.submitted_instagram ?? null}
+            hasWhatsAppPanel={Boolean(client)}
+          />
+        )}
 
         {canBook ? <EnquiryConsultationPanel enquiry={enquiry} onChanged={reload} /> : null}
 
@@ -310,7 +325,12 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                       key={transition.to_status}
                       type="button"
                       disabled={busy}
-                      onClick={() => { void run(() => api.transitionEnquiry(enquiry.id, transition.to_status)); }}
+                      onClick={() => {
+                        void (async () => {
+                          if (!(await confirmEnquiryTransition(transition.to_status, language))) return;
+                          await run(() => api.transitionEnquiry(enquiry.id, transition.to_status));
+                        })();
+                      }}
                     >
                       {label('enquiryStatus', transition.to_status)}
                     </button>
@@ -434,7 +454,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       {/* WhatsApp setup belongs in Integrations. What belongs here is the
           thread, and one line saying whether there is one. */}
       {client ? (
-        <CollapsedSection title="WhatsApp" count={conversations.filter((row) => row.channel === 'whatsapp').length}>
+        <CollapsedSection id="enquiry-whatsapp" title="WhatsApp" count={conversations.filter((row) => row.channel === 'whatsapp').length}>
           <EnquiryWhatsAppPanel
             api={api}
             enquiryId={enquiry.id}
@@ -573,5 +593,72 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </Section>
       ) : null}
     </>
+  );
+}
+
+function ReplyFallback({
+  language,
+  primary,
+  preferred,
+  email,
+  phone,
+  instagram,
+  hasWhatsAppPanel,
+}: {
+  language: 'en' | 'ru';
+  primary: boolean;
+  preferred: string | null;
+  email: string | null;
+  phone: string | null;
+  instagram: string | null;
+  hasWhatsAppPanel: boolean;
+}) {
+  const ru = language === 'ru';
+  const handle = instagram ? instagram.replace(/^@/, '').trim() : '';
+  const options: { key: string; node: (className: string) => JSX.Element }[] = [];
+  if (hasWhatsAppPanel && phone) {
+    options.push({
+      key: 'WhatsApp',
+      node: (className) => (
+        <a
+          className={className}
+          href="#enquiry-whatsapp"
+          onClick={(event) => {
+            event.preventDefault();
+            const section = document.getElementById('enquiry-whatsapp') as HTMLDetailsElement | null;
+            if (section) {
+              section.open = true;
+              section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          }}
+        >
+          {ru ? 'Написать в WhatsApp' : 'Message on WhatsApp'}
+        </a>
+      ),
+    });
+  }
+  if (email) {
+    options.push({ key: 'Email', node: (className) => <a className={className} href={`mailto:${email}`}>{ru ? 'Написать на email' : 'Email the client'}</a> });
+  }
+  if (handle) {
+    options.push({
+      key: 'Instagram',
+      node: (className) => <a className={className} href={`https://instagram.com/${encodeURIComponent(handle)}`} target="_blank" rel="noreferrer">{`Instagram @${handle}`}</a>,
+    });
+  }
+  options.sort((left, right) => Number(right.key === preferred) - Number(left.key === preferred));
+  return (
+    <div className="reply-fallback">
+      <p className="meta" style={{ margin: '0 0 8px' }}>
+        {ru ? 'Переписки с клиентом пока нет. Начни её здесь:' : 'No conversation with this client yet. Start one here:'}
+      </p>
+      <div className="actions" style={{ marginTop: 0 }}>
+        {options.length ? options.map((option, index) => (
+          <span key={option.key}>{option.node(index === 0 && primary ? 'action-link primary' : 'action-link')}</span>
+        )) : (
+          <span className="meta">{ru ? 'У клиента нет контактов для ответа.' : 'The client has no contact details to reply to.'}</span>
+        )}
+      </div>
+    </div>
   );
 }
