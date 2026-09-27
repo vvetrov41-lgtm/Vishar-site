@@ -200,7 +200,13 @@ async function runProvisionScenario(overrides = {}) {
   const wabaResponseId = overrides.wabaResponseId ?? approved.wabaId;
   const phoneRows = overrides.phoneRows ?? fixture.phoneRows;
   const phonePaging = overrides.phonePaging ?? fixture.phonePaging;
-  const subscriptionApps = overrides.subscriptionApps ?? [{ id: META_APP_ID, name: 'Vishar CRM' }];
+  const subscriptionApps = overrides.subscriptionApps ?? [{
+    whatsapp_business_api_data: {
+      id: META_APP_ID,
+      name: 'Vishar CRM',
+      link: `https://www.facebook.com/games/?app_id=${META_APP_ID}`,
+    },
+  }];
   const missingSecretWorker = overrides.missingSecretWorker ?? null;
   const state = {
     metaValidationComplete: false,
@@ -375,6 +381,13 @@ assert.equal(ambiguousKristina.response.status, 409);
 assert.equal(ambiguousKristina.payload.error, 'meta_phone_selection_ambiguous');
 assert.deepEqual(ambiguousKristina.state.cloudflareWrites, []);
 assert.deepEqual(ambiguousKristina.state.supabaseMutations, []);
+
+const legacyTopLevelSubscription = await runProvisionScenario({
+  artistId: KRISTINA_ID,
+  subscriptionApps: [{ id: META_APP_ID, name: 'Vishar CRM' }],
+});
+assert.equal(legacyTopLevelSubscription.response.status, 200);
+assert.equal(legacyTopLevelSubscription.payload.connected, true);
 
 const missingSubscription = await runProvisionScenario({ artistId: KRISTINA_ID, subscriptionApps: [] });
 assert.equal(missingSubscription.response.status, 500);
