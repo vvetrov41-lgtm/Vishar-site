@@ -50,8 +50,6 @@ export function WhatsAppConnectionsPage() {
   const [metaSdkReady, setMetaSdkReady] = useState(false);
   const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
   const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
-  const [existingMetaAppIds, setExistingMetaAppIds] = useState<Record<string, string>>({});
-  const [existingMetaAppSecrets, setExistingMetaAppSecrets] = useState<Record<string, string>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewTemplate, setReviewTemplate] = useState<MetaReviewTemplateMetadata | null>(null);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
@@ -174,8 +172,6 @@ export function WhatsAppConnectionsPage() {
     setActionError(null);
     setMetaMessage(null);
     const existingMetaToken = existingMetaTokens[artist.id] ?? '';
-    const existingMetaAppId = existingMetaAppIds[artist.id] ?? '';
-    const existingMetaAppSecret = existingMetaAppSecrets[artist.id] ?? '';
     try {
       if (
         !api
@@ -188,19 +184,11 @@ export function WhatsAppConnectionsPage() {
           ? 'Прямое подключение существующего WhatsApp недоступно в этой CRM-сессии.'
           : 'Existing WhatsApp connection is unavailable in this CRM session.');
       }
-      const provisioned = artist.slug === 'kristina'
-        ? await api.provisionStandaloneProductionWhatsApp(
-            artist,
-            supabaseUrl,
-            existingMetaAppId,
-            existingMetaAppSecret,
-            existingMetaToken,
-          )
-        : await api.provisionExistingProductionWhatsApp(
-            artist,
-            supabaseUrl,
-            existingMetaToken,
-          );
+      const provisioned = await api.provisionExistingProductionWhatsApp(
+        artist,
+        supabaseUrl,
+        existingMetaToken,
+      );
       const identity = [provisioned.verified_name, provisioned.display_phone_number]
         .filter(Boolean)
         .join(' · ');
@@ -214,8 +202,6 @@ export function WhatsAppConnectionsPage() {
       setActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось подключить WhatsApp.' : 'Could not connect WhatsApp.'));
     } finally {
       setExistingMetaTokens((current) => ({ ...current, [artist.id]: '' }));
-      setExistingMetaAppSecrets((current) => ({ ...current, [artist.id]: '' }));
-      setExistingMetaAppIds((current) => ({ ...current, [artist.id]: '' }));
       setMetaBusyArtistId(null);
     }
   }
@@ -352,12 +338,9 @@ export function WhatsAppConnectionsPage() {
           const productionOnboardingAvailable = data.environment === 'production'
             && canManageArtist(profile?.role, artist.id, memberships)
             && integration?.is_enabled === true;
-          const standaloneAccount = productionOnboardingAvailable && artist.slug === 'kristina';
           const existingAccountAvailable = productionOnboardingAvailable
             && (artist.slug === 'vladimir' || artist.slug === 'kristina');
           const existingMetaToken = existingMetaTokens[artist.id] ?? '';
-          const existingMetaAppId = existingMetaAppIds[artist.id] ?? '';
-          const existingMetaAppSecret = existingMetaAppSecrets[artist.id] ?? '';
 
           return (
             <Section key={artist.id} title={artist.display_name}>
@@ -426,50 +409,11 @@ export function WhatsAppConnectionsPage() {
                   style={{ marginTop: 12 }}
                   onSubmit={(event) => {
                     event.preventDefault();
-                    const standaloneReady = !standaloneAccount || (
-                      /^[0-9]{5,32}$/.test(existingMetaAppId.trim())
-                      && existingMetaAppSecret.trim().length >= 16
-                    );
-                    if (standaloneReady && existingMetaToken.trim().length >= 40) {
+                    if (existingMetaToken.trim().length >= 40) {
                       void connectExistingMetaAccount(artist);
                     }
                   }}
                 >
-                  {standaloneAccount ? (
-                    <>
-                      <label>
-                        <span>{language === 'ru' ? 'Meta App ID Кристины' : 'Kristina Meta App ID'}</span>
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={existingMetaAppId}
-                          onChange={(event) => setExistingMetaAppIds((current) => ({
-                            ...current,
-                            [artist.id]: event.target.value,
-                          }))}
-                          autoComplete="off"
-                          spellCheck={false}
-                          disabled={metaBusyArtistId !== null}
-                          placeholder={language === 'ru' ? 'ID отдельного приложения Meta' : 'Standalone Meta app ID'}
-                        />
-                      </label>
-                      <label>
-                        <span>{language === 'ru' ? 'Meta App Secret Кристины' : 'Kristina Meta App Secret'}</span>
-                        <input
-                          type="password"
-                          value={existingMetaAppSecret}
-                          onChange={(event) => setExistingMetaAppSecrets((current) => ({
-                            ...current,
-                            [artist.id]: event.target.value,
-                          }))}
-                          autoComplete="off"
-                          spellCheck={false}
-                          disabled={metaBusyArtistId !== null}
-                          placeholder={language === 'ru' ? 'App Secret из Meta' : 'App Secret from Meta'}
-                        />
-                      </label>
-                    </>
-                  ) : null}
                   <label>
                     <span>{language === 'ru' ? 'System-user access token Meta' : 'Meta system-user access token'}</span>
                     <input
@@ -489,14 +433,7 @@ export function WhatsAppConnectionsPage() {
                     <button
                       type="submit"
                       className="primary"
-                      disabled={
-                        metaBusyArtistId !== null
-                        || existingMetaToken.trim().length < 40
-                        || (standaloneAccount && (
-                          !/^[0-9]{5,32}$/.test(existingMetaAppId.trim())
-                          || existingMetaAppSecret.trim().length < 16
-                        ))
-                      }
+                      disabled={metaBusyArtistId !== null || existingMetaToken.trim().length < 40}
                     >
                       {metaBusy
                         ? (language === 'ru' ? 'Проверяю и подключаю…' : 'Verifying and connecting…')
@@ -505,12 +442,8 @@ export function WhatsAppConnectionsPage() {
                   </div>
                   <p className="notice" style={{ marginTop: 8 }}>
                     {language === 'ru'
-                      ? (standaloneAccount
-                          ? 'App Secret и System User token отправляются только на backend CRM по HTTPS, проверяются через Meta и сразу записываются в отдельные encrypted Worker bindings Кристины. Они не сохраняются в Postgres или постоянном хранилище браузера и очищаются из формы после попытки.'
-                          : 'Токен отправляется только на backend CRM по HTTPS, проверяется Meta и сразу записывается в encrypted Worker bindings. После попытки поле очищается.')
-                      : (standaloneAccount
-                          ? 'The App Secret and System User token are sent only to the CRM backend over HTTPS, verified with Meta, and written directly to Kristina\'s isolated encrypted Worker bindings. They are not persisted in Postgres or browser storage and are cleared from the form after the attempt.'
-                          : 'The token is sent only to the CRM backend over HTTPS, verified with Meta, and written directly to encrypted Worker bindings. The field is cleared after the attempt.')}
+                      ? 'Токен отправляется только на backend CRM по HTTPS, проверяется Meta и сразу записывается в artist-scoped encrypted Worker bindings. После попытки поле очищается.'
+                      : 'The token is sent only to the CRM backend over HTTPS, verified with Meta, and written directly to artist-scoped encrypted Worker bindings. The field is cleared after the attempt.'}
                   </p>
                 </form>
               ) : productionOnboardingAvailable ? (
