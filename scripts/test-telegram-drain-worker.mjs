@@ -409,4 +409,24 @@ for (const invalid of [-1, 101, 0.5, null, '3', { created: 3 }]) {
 }
 await assert.rejects(runLifecycleFailureAlerts(alertEnv, async () => { throw new Error('offline'); }));
 
+// Linking webhook secret: compared in constant time, any mismatch is 401.
+{
+  const secret = 'x'.repeat(24);
+  const linkingEnv = {
+    TELEGRAM_LINKING_ENABLED: 'true',
+    TELEGRAM_WEBHOOK_SECRET: secret,
+    // Built at runtime so no credential-shaped literal is committed.
+    TELEGRAM_BOT_TOKEN: `${'1'.repeat(9)}:${'A'.repeat(35)}`,
+  };
+  const call = (token) => worker.fetch(new Request('https://telegram.example.test/webhook', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(token === null ? {} : { 'x-telegram-bot-api-secret-token': token }) },
+    body: 'not json',
+  }), linkingEnv);
+  for (const token of [null, '', 'y'.repeat(24), 'x'.repeat(23), 'x'.repeat(25)]) {
+    assert.equal((await call(token)).status, 401, `secret variant ${JSON.stringify(token?.length ?? null)} is rejected`);
+  }
+  assert.notEqual((await call(secret)).status, 401, 'the configured secret passes authentication');
+}
+
 console.log('Telegram drain Worker tests passed: appointment actions share the bounded HTTP runtime while Telegram, Gmail and automation keep one isolated cron.');
