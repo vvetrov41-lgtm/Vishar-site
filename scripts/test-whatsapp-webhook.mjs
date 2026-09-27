@@ -87,6 +87,20 @@ function inboundText({ from = '447700900001', id = 'wamid.SYNTHETICINBOUND0001',
   return { from, id, timestamp: TS, type: 'text', text: { body } };
 }
 
+function inboundBookingButton({
+  from = '447700900001',
+  id = 'wamid.SYNTHETICBOOKINGBUTTON0001',
+  payload = `booking_action:${'a'.repeat(64)}`,
+} = {}) {
+  return {
+    from,
+    id,
+    timestamp: TS,
+    type: 'button',
+    button: { payload, text: "I'll be there" },
+  };
+}
+
 function statusEvent({ id = 'wamid.SYNTHETICOUTBOUND0001', status = 'delivered' } = {}) {
   return { id, status, timestamp: TS, recipient_id: '447700900001' };
 }
@@ -251,6 +265,46 @@ await test('a signed Vladimir inbound message is routed only to Vladimir', async
   assert.equal(db.calls[0].args.p_contact_wa_id, '447700900001');
   assert.equal(db.calls[0].args.p_body, 'Hello');
   assert.equal(db.calls[0].args.p_message_type, 'text');
+});
+
+await test('a signed booking-card quick reply is applied through the atomic action RPC', async () => {
+  const db = fakeSupabase();
+  const payload = `booking_action:${'c'.repeat(64)}`;
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({ messages: [inboundBookingButton({ payload })] }), V_SECRET),
+    env(),
+    db
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].name, 'service_apply_whatsapp_booking_card_action');
+  assert.deepEqual(db.calls[0].args, {
+    p_artist_id: V_ID,
+    p_integration_key: 'vladimir-production',
+    p_contact_wa_id: '447700900001',
+    p_provider_message_id: 'wamid.SYNTHETICBOOKINGBUTTON0001',
+    p_provider_timestamp: new Date(Number(TS) * 1000).toISOString(),
+    p_payload: payload,
+  });
+});
+
+await test('an unrelated button is recorded generically and cannot invoke a booking action', async () => {
+  const db = fakeSupabase();
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({
+      messages: [inboundBookingButton({ payload: 'other_button_payload' })],
+    }), V_SECRET),
+    env(),
+    db
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].name, 'record_whatsapp_inbound_message');
+  assert.equal(db.calls[0].args.p_message_type, 'button');
+  assert.equal(db.calls[0].args.p_body, null);
+  assert.equal(JSON.stringify(db.calls[0].args).includes('other_button_payload'), false);
 });
 
 await test('a signed Kristina inbound message is routed only to Kristina', async () => {

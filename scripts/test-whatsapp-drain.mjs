@@ -106,6 +106,7 @@ function makeFetch({
   automaticClaim = claim,
   resolvedRoute = [route()],
   routesByOutbox = {},
+  bookingPayloadsByOutbox = {},
   graphStatus = 200,
   graphBody = { messages: [{ id: 'wamid.SYNTHETICSEND0001' }] },
   acknowledgementStatus = 200,
@@ -126,6 +127,19 @@ function makeFetch({
       if (name === 'claim_whatsapp_outbox') return Response.json(automaticClaim);
       if (name === 'resolve_outbox_route') {
         return Response.json(routesByOutbox[args.p_outbox_id] ?? resolvedRoute);
+      }
+      if (name === 'service_resolve_whatsapp_booking_card_payload') {
+        if (Object.prototype.hasOwnProperty.call(bookingPayloadsByOutbox, args.p_outbox_id)) {
+          return Response.json(bookingPayloadsByOutbox[args.p_outbox_id]);
+        }
+        const job = [...automaticClaim, ...claim].find((entry) => entry?.outbox_id === args.p_outbox_id);
+        return Response.json([{
+          is_booking_card: false,
+          booking_card_id: null,
+          communication_message_id: job?.whatsapp_message_id ?? null,
+          artist_id: job?.artist_id ?? null,
+          delivery_allowed: true,
+        }]);
       }
       if (name === 'record_whatsapp_outbox_result') {
         return Response.json({
@@ -168,6 +182,106 @@ await test('a successful send acknowledges with the provider message id', async 
   assert.equal(ack.args.p_succeeded, true);
   assert.equal(ack.args.p_provider_message_id, 'wamid.SYNTHETICSEND0001');
   assert.equal(ack.args.p_error_code, null);
+});
+
+await test('a booking card uses an approved template with location and exactly two quick replies', async () => {
+  const confirmPayload = `booking_action:${'a'.repeat(64)}`;
+  const reschedulePayload = `booking_action:${'b'.repeat(64)}`;
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
+    bookingPayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_booking_card: true,
+        booking_card_id: '8b111111-1111-4111-8111-111111111111',
+        communication_message_id: '9d111111-1111-4111-8111-111111111111',
+        artist_id: 'a1111111-1111-4111-8111-111111111111',
+        template_name: 'booking_card_tattoo_v1',
+        template_language: 'en_GB',
+        body_parameters: ['James', 'Vladimir', '10 November 2026', '10:00', '£250', '£730'],
+        location_name: 'Synthetic Studio',
+        location_address: '1 Synthetic Street, London',
+        location_latitude: 51.500001,
+        location_longitude: -0.100001,
+        confirm_payload: confirmPayload,
+        reschedule_payload: reschedulePayload,
+        delivery_allowed: true,
+      }],
+    },
+  });
+
+  const result = await drainWhatsappOutboxById(env, {
+    outboxId: VLADIMIR_OUTBOX,
+    fetchImpl,
+  });
+
+  assert.equal(result.outcome, 'succeeded');
+  assert.equal(graphCalls.length, 1);
+  const sent = graphCalls[0].body;
+  assert.equal(sent.type, 'template');
+  assert.equal(sent.template.name, 'booking_card_tattoo_v1');
+  assert.equal(sent.template.language.code, 'en_GB');
+  assert.deepEqual(sent.template.components[0], {
+    type: 'header',
+    parameters: [{
+      type: 'location',
+      location: {
+        latitude: 51.500001,
+        longitude: -0.100001,
+        name: 'Synthetic Studio',
+        address: '1 Synthetic Street, London',
+      },
+    }],
+  });
+  assert.deepEqual(
+    sent.template.components[1].parameters.map((parameter) => parameter.text),
+    ['James', 'Vladimir', '10 November 2026', '10:00', '£250', '£730']
+  );
+  assert.equal(sent.template.components[2].sub_type, 'quick_reply');
+  assert.equal(sent.template.components[2].index, '0');
+  assert.equal(sent.template.components[2].parameters[0].payload, confirmPayload);
+  assert.equal(sent.template.components[3].sub_type, 'quick_reply');
+  assert.equal(sent.template.components[3].index, '1');
+  assert.equal(sent.template.components[3].parameters[0].payload, reschedulePayload);
+
+  const resolver = rpcCalls.find((call) => call.name === 'service_resolve_whatsapp_booking_card_payload');
+  assert.equal(resolver.args.p_outbox_id, VLADIMIR_OUTBOX);
+  assert.match(resolver.args.p_worker_id, /^whatsapp-worker-/);
+
+  const serialisedResult = JSON.stringify(result);
+  assert.equal(serialisedResult.includes(confirmPayload), false);
+  assert.equal(serialisedResult.includes(reschedulePayload), false);
+});
+
+await test('an obsolete booking card fails before durable send intent or Meta contact', async () => {
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
+    bookingPayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_booking_card: true,
+        booking_card_id: '8b111111-1111-4111-8111-111111111111',
+        communication_message_id: '9d111111-1111-4111-8111-111111111111',
+        artist_id: 'a1111111-1111-4111-8111-111111111111',
+        template_name: 'booking_card_tattoo_v1',
+        template_language: 'en_GB',
+        body_parameters: ['James'],
+        location_name: 'Synthetic Studio',
+        location_address: '1 Synthetic Street, London',
+        location_latitude: 51.5,
+        location_longitude: -0.1,
+        confirm_payload: `booking_action:${'a'.repeat(64)}`,
+        reschedule_payload: `booking_action:${'b'.repeat(64)}`,
+        delivery_allowed: false,
+      }],
+    },
+  });
+
+  const result = await drainWhatsappOutboxById(env, {
+    outboxId: VLADIMIR_OUTBOX,
+    fetchImpl,
+  });
+
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'whatsapp_booking_card_obsolete');
+  assert.equal(graphCalls.length, 0);
+  assert.equal(rpcCalls.some((call) => call.name === 'service_begin_communication_send'), false);
 });
 
 await test('each artist sends through their own Meta phone number and token', async () => {

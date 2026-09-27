@@ -331,8 +331,14 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'record_whatsapp_message_status',
     'record_whatsapp_outbox_result',
     'resolve_outbox_route',
+    'service_apply_whatsapp_booking_card_action',
     // Durable WhatsApp send intent (audit M-2).
     'service_begin_communication_send',
+    // Template maintenance is backend-only and provider credentials stay in Worker bindings.
+    'service_claim_booking_card_template_targets',
+    'service_record_booking_card_template_status',
+    // Leased, backend-only structured payload for booking-card Utility templates.
+    'service_resolve_whatsapp_booking_card_payload',
   ]);
 });
 

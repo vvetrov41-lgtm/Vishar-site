@@ -84,6 +84,38 @@ describe('booking a session by asking for one', () => {
     });
   });
 
+  it('stores an explicit tattoo-session price through the atomic booking path', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    await openPanel({ rpcCalls });
+
+    const price = screen.getByLabelText(/Session price/);
+    fireEvent.change(price, { target: { value: '980' } });
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    fireEvent.click(slots[0]);
+    const summary = await screen.findByRole('group', { name: 'Booking summary' });
+    fireEvent.click(within(summary).getByRole('button', { name: 'Book it' }));
+
+    await waitFor(() => {
+      const call = rpcCalls.find((entry) => entry.name === 'schedule_appointment_with_price');
+      expect(call?.args?.p_price).toBe(980);
+      expect(call?.args?.p_artist_id).toBe(VLADIMIR_ARTIST_ID);
+      expect(call?.args?.p_appointment_type).toBe('tattoo_session');
+    });
+  });
+
+  it('keeps consultations free and hides the session-price control', async () => {
+    await openPanel();
+
+    fireEvent.change(screen.getByLabelText('Appointment type'), {
+      target: { value: 'in_person_consultation' },
+    });
+
+    expect(screen.queryByLabelText(/Session price/)).not.toBeInTheDocument();
+  });
+
   it('finds a short consultation slot where a long session does not fit', async () => {
     await openPanel();
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
+import { SessionPriceSuggestion } from './SessionPriceSuggestion';
 import { useApi } from '../lib/session';
 import type { Appointment, AppointmentConflict, AppointmentType } from '../lib/appointment-api';
 
@@ -13,10 +14,14 @@ const DURATION_MINUTES: Record<AppointmentType, number[]> = {
 
 export function ProjectAppointmentEditor({
   appointment,
+  sessionPrice = null,
+  canManagePrice = false,
   disabled = false,
   onSaved,
 }: {
   appointment: Appointment;
+  sessionPrice?: number | null;
+  canManagePrice?: boolean;
   disabled?: boolean;
   onSaved: () => void;
 }) {
@@ -26,6 +31,7 @@ export function ProjectAppointmentEditor({
   const [open, setOpen] = useState(false);
   const [startAt, setStartAt] = useState(() => toDateTimeLocal(new Date(appointment.start_at)));
   const [endAt, setEndAt] = useState(() => toDateTimeLocal(new Date(appointment.end_at)));
+  const [price, setPrice] = useState(() => moneyInput(sessionPrice));
   const [note, setNote] = useState('');
   const [conflicts, setConflicts] = useState<AppointmentConflict[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
@@ -36,10 +42,11 @@ export function ProjectAppointmentEditor({
     if (open) return;
     setStartAt(toDateTimeLocal(new Date(appointment.start_at)));
     setEndAt(toDateTimeLocal(new Date(appointment.end_at)));
+    setPrice(moneyInput(sessionPrice));
     setNote('');
     setConflicts([]);
     setError(null);
-  }, [appointment.start_at, appointment.end_at, open]);
+  }, [appointment.start_at, appointment.end_at, open, sessionPrice]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -75,9 +82,18 @@ export function ProjectAppointmentEditor({
     && (startIso !== appointment.start_at || endIso !== appointment.end_at)
   );
   const hasNote = note.trim().length > 0;
+  const paidWork = appointment.appointment_type === 'tattoo_session'
+    || appointment.appointment_type === 'touch_up';
+  const showPrice = canManagePrice && paidWork;
+  const parsedPrice = parseMoneyInput(price);
+  const priceInputValid = !showPrice || price.trim() === '' || parsedPrice !== null;
+  const priceChanged = showPrice
+    && parsedPrice !== null
+    && parsedPrice !== sessionPrice;
+  const hasChange = timeChanged || hasNote || priceChanged;
 
   async function save() {
-    if (!startIso || !endIso || !timeValid || (!timeChanged && !hasNote)) return;
+    if (!startIso || !endIso || !timeValid || !priceInputValid || !hasChange) return;
     setSaving(true);
     setError(null);
     try {
@@ -87,6 +103,9 @@ export function ProjectAppointmentEditor({
           startAt: startIso,
           endAt: endIso,
         });
+      }
+      if (priceChanged && parsedPrice !== null) {
+        await api.setAppointmentPrice(appointment.id, parsedPrice);
       }
       if (hasNote) {
         await api.createAppointmentInternalNote(appointment.id, note.trim());
@@ -157,6 +176,34 @@ export function ProjectAppointmentEditor({
             ))}
           </div>
 
+          {showPrice ? (
+            <>
+              <label htmlFor={`project-appointment-price-${appointment.id}`}>
+                {copy.price} ({appointment.currency})
+              </label>
+              <input
+                id={`project-appointment-price-${appointment.id}`}
+                type="number"
+                inputMode="decimal"
+                min="0.01"
+                max="100000"
+                step="0.01"
+                value={price}
+                onChange={(event) => setPrice(event.target.value)}
+                placeholder={copy.pricePlaceholder}
+              />
+              <SessionPriceSuggestion
+                artistId={appointment.artist_id}
+                durationMinutes={startIso && endIso ? Math.round((Date.parse(endIso) - Date.parse(startIso)) / 60_000) : null}
+                enabled={appointment.appointment_type === 'tattoo_session'}
+                currentValue={price}
+                onUse={setPrice}
+              />
+              <p className="meta">{copy.priceHint}</p>
+              {!priceInputValid ? <p className="notice warn">{copy.invalidPrice}</p> : null}
+            </>
+          ) : null}
+
           <label htmlFor={`project-appointment-note-${appointment.id}`}>{copy.note}</label>
           <textarea
             id={`project-appointment-note-${appointment.id}`}
@@ -185,7 +232,7 @@ export function ProjectAppointmentEditor({
           <div className="actions">
             <button
               type="button"
-              disabled={saving || !timeValid || (!timeChanged && !hasNote)}
+              disabled={saving || !timeValid || !priceInputValid || !hasChange}
               onClick={() => { void save(); }}
             >
               {saving ? copy.saving : copy.save}
@@ -209,6 +256,17 @@ function toDateTimeLocal(value: Date): string {
   return local.toISOString().slice(0, 16);
 }
 
+function moneyInput(value: number | null): string {
+  return value === null ? '' : value.toFixed(2);
+}
+
+function parseMoneyInput(value: string): number | null {
+  const trimmed = value.trim();
+  if (!/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(trimmed)) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 100000 ? parsed : null;
+}
+
 function durationShortcut(minutes: number, language: Language): string {
   if (minutes < 60) return language === 'ru' ? `${minutes} мин` : `${minutes} min`;
   return language === 'ru' ? `${minutes / 60} ч` : `${minutes / 60} h`;
@@ -221,6 +279,10 @@ const COPY = {
     start: 'Start',
     end: 'End',
     duration: 'Duration shortcuts',
+    price: 'Session price',
+    pricePlaceholder: 'Enter the exact session price',
+    priceHint: 'Booking cards use this exact stored amount. The suggestion comes from the artist\'s own session rates.',
+    invalidPrice: 'Enter a price between 0.01 and 100000 with no more than two decimal places.',
     note: 'Add internal note',
     notePlaceholder: 'Optional note for the CRM team',
     noteHint: 'The note stays in CRM. It is not copied to Google Calendar.',
@@ -239,6 +301,10 @@ const COPY = {
     start: 'Начало',
     end: 'Окончание',
     duration: 'Быстрый выбор длительности',
+    price: 'Стоимость сеанса',
+    pricePlaceholder: 'Укажи точную стоимость сеанса',
+    priceHint: 'Карточки записи используют именно эту сохранённую сумму. Подсказка берётся из ставок этого артиста.',
+    invalidPrice: 'Укажи сумму от 0,01 до 100000 максимум с двумя знаками после запятой.',
     note: 'Добавить внутреннюю заметку',
     notePlaceholder: 'Необязательная заметка для CRM',
     noteHint: 'Заметка останется только в CRM и не попадёт в Google Calendar.',

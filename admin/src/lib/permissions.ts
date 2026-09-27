@@ -177,6 +177,22 @@ export function canManageArtistSessions(
   );
 }
 
+/** Artist-scoped finance affordance; the database remains authoritative. */
+export function canManageArtistFinance(
+  role: CrmRole | null | undefined,
+  memberships: ArtistMembership[] | undefined,
+  artistId: string | null | undefined
+): boolean {
+  if (!role) return false;
+  if (role === 'owner') return can(role, 'manageFinance');
+  if (!artistId) return false;
+  return canAccess(
+    role,
+    'manageFinance',
+    (memberships ?? []).filter((membership) => membership.artist_id === artistId)
+  );
+}
+
 export function capabilitiesFor(role: CrmRole | null | undefined): Capability[] {
   if (!role) return [];
   return [...CAPABILITIES[role]];

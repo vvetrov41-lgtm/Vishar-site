@@ -18,6 +18,7 @@ const required = [
   'VISHAR_ENVIRONMENT = "production"',
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
   'WHATSAPP_DRAIN_ENABLED = "false"',
+  'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"',
 ];
 for (const needle of required) {
   if (!text.includes(needle)) throw new Error(`production template is missing ${needle}`);
@@ -47,8 +48,13 @@ if (/^\s*\[triggers\]\s*$/m.test(text) || /^\s*crons\s*=/m.test(text)) {
 }
 
 text = text.replace('WHATSAPP_DRAIN_ENABLED = "false"', 'WHATSAPP_DRAIN_ENABLED = "true"');
-if (!text.includes('WHATSAPP_DRAIN_ENABLED = "true"')) {
-  throw new Error('failed to enable the production drain in generated config');
+text = text.replace(
+  'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"',
+  'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"',
+);
+if (!text.includes('WHATSAPP_DRAIN_ENABLED = "true"')
+    || !text.includes('WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"')) {
+  throw new Error('failed to enable the production drain/template maintenance in generated config');
 }
 
 // The account is on the Workers Free plan, which allows five cron triggers

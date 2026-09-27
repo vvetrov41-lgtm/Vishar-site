@@ -18,6 +18,7 @@ import {
 import { apiMessage, createApi, type Api, type CrmClient } from './api';
 import { createAccountApi, type AccountApi, type AccountOverview } from './account-api';
 import { createAppointmentApi, type AppointmentApi } from './appointment-api';
+import { createSessionPricingApi, type SessionPricingApi } from './session-pricing';
 import { createAvailabilityApi, type AvailabilityApi } from './availability-api';
 import {
   createCalendarConnectionsApi,
@@ -78,7 +79,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -172,6 +173,7 @@ export function SessionProvider({
       createLifecycleApi(client),
       createSignupApi(client),
       createStatisticsApi(client),
+      createSessionPricingApi(client),
     );
   }, [client, teamInviteUrl]);
 

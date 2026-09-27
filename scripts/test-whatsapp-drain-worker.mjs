@@ -22,8 +22,17 @@ assert.equal(typeof worker.scheduled, 'function');
   const preview = await (await handleInternalDrain({ VISHAR_ENVIRONMENT: 'preview', WHATSAPP_DRAIN_ENABLED: 'true' },
     async () => { throw new Error('must not drain'); })).json();
   assert.equal(preview.skipped, true, 'only production drains');
-  const ran = await (await handleInternalDrain(env, async () => ({ claimed: 2, succeeded: 1, failed: 1, unrecorded: 0 }))).json();
+  let templateMaintenanceCalls = 0;
+  const ran = await (await handleInternalDrain(
+    { ...env, WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED: 'true' },
+    async () => ({ claimed: 2, succeeded: 1, failed: 1, unrecorded: 0 }),
+    async () => {
+      templateMaintenanceCalls += 1;
+      return { targets: 1, checked: 1, created: 0, approved: 1, failed: 0 };
+    },
+  )).json();
   assert.deepEqual(ran, { ok: true, skipped: false, claimed: 2, succeeded: 1, failed: 1, unrecorded: 0 });
+  assert.equal(templateMaintenanceCalls, 1);
   const quiet = console.error; console.error = () => {};
   const failed = await (await handleInternalDrain(env, async () => { throw Object.assign(new Error('x'), { code: 'database_unavailable' }); })).json();
   console.error = quiet;

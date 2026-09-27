@@ -1,4 +1,5 @@
 import { drainWhatsappOutbox } from './lib/whatsapp-drain.js';
+import { maintainWhatsappBookingTemplates } from './lib/whatsapp-booking-templates.js';
 
 // Outbound WhatsApp drain. It has no public surface: workers_dev and preview
 // URLs are off and the Worker has no route. Production invokes it from the
@@ -62,10 +63,35 @@ function json(body, status = 200) {
   });
 }
 
-export async function handleInternalDrain(env, drain = drainWhatsappOutbox) {
+export async function handleInternalDrain(
+  env,
+  drain = drainWhatsappOutbox,
+  maintainTemplates = maintainWhatsappBookingTemplates,
+) {
   if (env?.VISHAR_ENVIRONMENT !== 'production' || env?.WHATSAPP_DRAIN_ENABLED !== 'true') {
     return json({ ok: true, skipped: true, claimed: 0, succeeded: 0, failed: 0, unrecorded: 0 });
   }
+
+  if (env?.WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED === 'true') {
+    try {
+      const templateSummary = await maintainTemplates(env);
+      console.log('whatsapp booking template maintenance', JSON.stringify({
+        targets: templateSummary.targets,
+        checked: templateSummary.checked,
+        created: templateSummary.created,
+        approved: templateSummary.approved,
+        failed: templateSummary.failed,
+      }));
+    } catch (error) {
+      console.error('whatsapp booking template maintenance failed', JSON.stringify({
+        code: safeFailureCode(error),
+      }));
+      // Template provisioning is independent of ordinary outbound draining.
+      // Existing WhatsApp replies must keep flowing if Meta template admin is
+      // temporarily unavailable.
+    }
+  }
+
   try {
     const result = await drain(env);
     const summary = {

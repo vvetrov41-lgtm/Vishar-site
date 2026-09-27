@@ -1,3 +1,4 @@
+import { isBlockingDetailLoad } from '../lib/detail-loading';
 import { useEffect, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
@@ -5,6 +6,7 @@ import { ActivityFeed } from '../components/ActivityFeed';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
+import { BookingCardStatusLine } from '../components/BookingCardStatusLine';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectInvoicesPanel } from '../components/ProjectInvoicesPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
@@ -94,7 +96,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     }
   }
 
-  if (loading) return <LoadingState label={t('project.loading')} />;
+  if (isBlockingDetailLoad(loading, data?.project?.id, projectId)) return <LoadingState label={t('project.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 
@@ -259,9 +261,21 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
                     {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
+                  {active ? (
+                    <BookingCardStatusLine
+                      sessionId={appointment.id}
+                      refreshKey={`${appointment.status}:${appointment.start_at}:${appointment.calendar_version}:${price ?? ''}:${project.deposit_status}`}
+                    />
+                  ) : null}
 
                   {mayManageAppointments && active ? (
-                    <ProjectAppointmentEditor appointment={appointment} disabled={busy} onSaved={reload} />
+                    <ProjectAppointmentEditor
+                      appointment={appointment}
+                      sessionPrice={price}
+                      canManagePrice={mayManageFinance}
+                      disabled={busy}
+                      onSaved={reload}
+                    />
                   ) : null}
 
                   {mayManageAppointments ? (
