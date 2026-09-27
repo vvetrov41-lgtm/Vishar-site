@@ -277,7 +277,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
       if (artist.id !== 'a2222222-2222-4222-8222-222222222222' || artist.slug !== 'kristina') {
-        throw new ApiError(apiMessage('Standalone WhatsApp onboarding is unavailable for this artist.'));
+        throw new ApiError(apiMessage('Production WhatsApp onboarding is unavailable for this artist.'));
       }
       const appId = metaAppId.trim();
       const appSecret = metaAppSecret.trim();
