@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { ActivityFeed } from '../components/ActivityFeed';
-import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { DetailHeader } from '../components/DetailContext';
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { BookingCardStatusLine } from '../components/BookingCardStatusLine';
@@ -160,8 +160,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <DetailBackLink to="/projects" sectionLabel={t('nav.projects')} />
-      <RecordArtistContext artistId={project.artist_id} />
+      <DetailHeader to="/projects" sectionLabel={t('nav.projects')} artistId={project.artist_id} />
 
       <div className="card">
         <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap' }}>
@@ -216,20 +215,14 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       {lifecycleMismatch ? <div className="notice warn" role="status">{copy.draftMismatch}</div> : null}
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
 
-      <Section title={t('project.estimate')}>
-        <ProjectEstimatePanel
-          project={project}
-          finance={finance}
-          appointments={appointments}
-          mayViewFinance={mayViewFinance}
-          mayManage={mayEditEstimate}
-          onSaved={reload}
-        />
-        {!mayViewFinance ? <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p> : null}
-      </Section>
+      <ProjectSectionNav
+        ru={language === 'ru'}
+        showNotes={can(role, 'viewNotes')}
+        showActivity={can(role, 'viewActivity')}
+      />
 
       {mayManageAppointments ? (
-        <Section title={t('booking.title')}>
+        <Section title={t('booking.title')} id="project-book">
           <BookingPanel
             artistId={project.artist_id}
             clientId={project.client_id}
@@ -240,7 +233,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         </Section>
       ) : null}
 
-      <Section title={copy.appointments}>
+      <Section title={copy.appointments} id="project-sessions">
         {mayManageFinance ? (
           <SessionPricesPanel
             artistId={project.artist_id}
@@ -326,6 +319,25 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         </details>
       </Section>
 
+      <Section title={t('project.estimate')} id="project-money">
+        <ProjectEstimatePanel
+          project={project}
+          finance={finance}
+          appointments={appointments}
+          mayViewFinance={mayViewFinance}
+          mayManage={mayEditEstimate}
+          onSaved={reload}
+        />
+        {!mayViewFinance ? <p className="notice" style={{ marginTop: 12 }}>{t('project.ratesOwnerOnly')}</p> : null}
+      </Section>
+
+      {mayManageFinance ? (
+        <Section title={copy.deposit}>
+          <ProjectDepositRequirementControl project={project} onChanged={reload} />
+          <ProjectDepositPanel project={project} finance={finance} appointments={appointments} onChanged={reload} />
+        </Section>
+      ) : null}
+
       {mayViewFinance ? (
         <Section title={copy.invoices}>
           <ProjectInvoicesPanel
@@ -336,15 +348,8 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         </Section>
       ) : null}
 
-      {mayManageFinance ? (
-        <Section title={copy.deposit}>
-          <ProjectDepositRequirementControl project={project} onChanged={reload} />
-          <ProjectDepositPanel project={project} finance={finance} appointments={appointments} onChanged={reload} />
-        </Section>
-      ) : null}
-
       {can(role, 'viewNotes') ? (
-        <Section title={t('project.notes')}>
+        <Section title={t('project.notes')} id="project-notes">
           {notes.length === 0 ? <p className="meta" style={{ margin: 0 }}>{t('project.noNotes')}</p> : (
             <ul className="timeline">
               {notes.map((note) => (
@@ -359,7 +364,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       ) : null}
 
       {can(role, 'viewActivity') ? (
-        <Section title={t('project.activity')}>
+        <Section title={t('project.activity')} id="project-activity">
           <ActivityFeed
             filter={{ projectId: project.id }}
             emptyTitle={t('project.noActivity')}
@@ -441,3 +446,31 @@ const COPY = {
     calendarNotice: 'Расписание в CRM является основным. Предложенные записи остаются в CRM, а у каждой подтверждённой записи выше показывается фактический статус синхронизации с Google Calendar.',
   },
 } as const;
+
+/**
+ * The project page is long: sessions, money, notes and activity. A row of
+ * jump buttons under the header reaches each part in one tap. Buttons, not
+ * links: the CRM routes with the URL hash, so a #fragment would navigate.
+ */
+function ProjectSectionNav({ ru, showNotes, showActivity }: { ru: boolean; showNotes: boolean; showActivity: boolean }) {
+  const targets = [
+    { id: 'project-sessions', label: ru ? 'Сеансы' : 'Sessions' },
+    { id: 'project-money', label: ru ? 'Деньги' : 'Money' },
+    ...(showNotes ? [{ id: 'project-notes', label: ru ? 'Заметки' : 'Notes' }] : []),
+    ...(showActivity ? [{ id: 'project-activity', label: ru ? 'История' : 'Activity' }] : []),
+  ];
+  return (
+    <nav className="section-jump" aria-label={ru ? 'Разделы проекта' : 'Project sections'}>
+      {targets.map((target) => (
+        <button
+          key={target.id}
+          type="button"
+          className="section-jump-link"
+          onClick={() => document.getElementById(target.id)?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })}
+        >
+          {target.label}
+        </button>
+      ))}
+    </nav>
+  );
+}

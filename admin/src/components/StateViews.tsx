@@ -48,9 +48,9 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry?: ()
   );
 }
 
-export function Section({ title, children, action }: { title: string; children: ReactNode; action?: ReactNode }) {
+export function Section({ title, children, action, id }: { title: string; children: ReactNode; action?: ReactNode; id?: string }) {
   return (
-    <section className="card">
+    <section className="card" id={id}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
         <h2>{title}</h2>
         {action}

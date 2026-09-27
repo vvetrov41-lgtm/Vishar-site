@@ -10,7 +10,7 @@
 import { useBlockingLoad } from '../lib/detail-loading';
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
-import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { DetailHeader } from '../components/DetailContext';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { formatDate, formatDateTime, formatMoney } from '../lib/format';
@@ -78,8 +78,7 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
   return (
     <>
-      <DetailBackLink to="/invoices" sectionLabel={copy.section} />
-      <RecordArtistContext artistId={invoice.artist_id} />
+      <DetailHeader to="/invoices" sectionLabel={copy.section} artistId={invoice.artist_id} />
 
       {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
       {actionNotice ? <p className="notice" role="status">{actionNotice}</p> : null}
