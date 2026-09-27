@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const booking = await fs.readFile(path.join(rootDir, 'booking', 'index.html'), 'utf8');
 const privacy = await fs.readFile(path.join(rootDir, 'privacy', 'index.html'), 'utf8');
+const headers = await fs.readFile(path.join(rootDir, '_headers'), 'utf8');
 
 assert.match(booking, /pixelId: 'XkQY5Xq3FbxJvAx2qDD9my'/);
 assert.match(booking, /const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent'/);
@@ -42,5 +43,14 @@ assert.ok(!booking.includes("payload.append('openaiAdsObref'"),
 assert.match(privacy, /server-to-server through the OpenAI Ads Conversions API/);
 assert.match(privacy, /<code>__obref<\/code>/);
 assert.match(privacy, /does not manually send your name, email, phone number, Instagram username, reference images or tattoo description/);
+
+// The pixel is loaded by booking/index.html and disclosed in the privacy
+// notice; the site-wide CSP must let it load and report, or it silently
+// never measures anything.
+const csp = headers.match(/^\s*Content-Security-Policy: (.+)$/m)?.[1] ?? '';
+const directive = (name) => (csp.match(new RegExp(`(?:^|;)\\s*${name} ([^;]+)`))?.[1] ?? '').split(/\s+/);
+assert.ok(booking.includes("'https://bzrcdn.openai.com/sdk/oaiq.min.js'"));
+assert.ok(directive('script-src').includes('https://bzrcdn.openai.com'), 'CSP script-src must allow the OpenAI Ads pixel SDK');
+assert.ok(directive('connect-src').includes('https://bzr.openai.com'), 'CSP connect-src must allow the OpenAI Ads pixel event endpoint');
 
 console.log('OpenAI Ads browser context checks passed.');
