@@ -6,6 +6,8 @@ const GMAIL_PUBLIC_HOST = 'gmail.vishartattoo.com';
 const METADATA_CONCURRENCY = 5;
 const PROVIDER_TIMEOUT_MS = 5000;
 const SNAPSHOT_WINDOW_DAYS = 30;
+const HISTORY_CLIENTS_PER_RUN = 5;
+const HISTORY_MESSAGES_PER_CLIENT = 3;
 
 function uuid(value) {
   return typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
@@ -191,15 +193,10 @@ async function serviceRpc(env, name, args, fetchImpl = fetch) {
   }, fetchImpl);
 }
 
+// artist_integrations is not readable with the backend key (it never was, so
+// a direct table read got 403 on every run); the backend RPC lists mailboxes.
 async function listEnabledMailboxes(env, fetchImpl = fetch) {
-  const url = new URL('/rest/v1/artist_integrations', projectOrigin(env));
-  url.searchParams.set('select', 'artist_id,integration_key,external_account_label');
-  url.searchParams.set('integration_type', 'eq.email');
-  url.searchParams.set('provider', 'eq.google');
-  url.searchParams.set('is_enabled', 'eq.true');
-  const rows = await supabaseJson(url, {
-    method: 'GET', headers: { apikey: secretKey(env), accept: 'application/json' },
-  }, fetchImpl);
+  const rows = await serviceRpc(env, 'service_list_gmail_mailboxes', {}, fetchImpl);
   return (Array.isArray(rows) ? rows : []).filter((row) =>
     uuid(row?.artist_id) && typeof row?.integration_key === 'string' && safeEmail(row?.external_account_label));
 }
@@ -260,6 +257,87 @@ async function persistSnapshot(env, artistId, rows, refreshedAt, fetchImpl = fet
   await supabaseJson(stale, { method: 'DELETE', headers: { ...headers, prefer: 'return=minimal' } }, fetchImpl);
 }
 
+function gmailQueryAddress(email) {
+  // safeEmail already rejects whitespace, quotes and angle brackets.
+  return `"${email}"`;
+}
+
+/**
+ * The newest message between the mailbox and one client address, as
+ * direction and time only. Messages that are not strictly between the two
+ * (for example the client only in Cc) do not count.
+ */
+function historyEvidence(message, mailboxEmail, clientEmail) {
+  const mailbox = safeEmail(mailboxEmail);
+  const client = safeEmail(clientEmail);
+  if (!mailbox || !client || mailbox === client) return null;
+  const headers = headerMap(message?.payload?.headers);
+  const from = extractEmails(headers.get('from'));
+  const to = extractEmails(headers.get('to'));
+  let direction = null;
+  if (from.has(client) && to.has(mailbox)) direction = 'inbound';
+  else if (from.has(mailbox) && to.has(client)) direction = 'outbound';
+  if (!direction) return null;
+  const internal = Number(message?.internalDate);
+  if (!Number.isFinite(internal) || internal <= 0) return null;
+  return { direction, last_message_at: new Date(internal).toISOString() };
+}
+
+async function newestClientMessage(accessToken, mailboxEmail, clientEmail, fetchImpl = fetch) {
+  const address = gmailQueryAddress(clientEmail);
+  const params = new URLSearchParams({
+    maxResults: String(HISTORY_MESSAGES_PER_CLIENT),
+    q: `{from:${address} to:${address}} -in:drafts -in:chats -in:spam -in:trash`,
+  });
+  const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
+  const ids = (Array.isArray(listing.messages) ? listing.messages : [])
+    .map((item) => safeProviderId(item?.id))
+    .filter(Boolean);
+  let newest = null;
+  for (const id of ids) {
+    const message = await gmailJson(
+      `/gmail/v1/users/me/messages/${encodeURIComponent(id)}`
+        + '?format=metadata&metadataHeaders=From&metadataHeaders=To',
+      accessToken,
+      fetchImpl,
+    );
+    const evidence = historyEvidence(message, mailboxEmail, clientEmail);
+    if (evidence && (!newest || evidence.last_message_at > newest.last_message_at)) newest = evidence;
+  }
+  return newest;
+}
+
+/**
+ * Older Gmail history for clients with upcoming appointments, so an email-only
+ * client is recognised without anyone opening the thread in the CRM. Bounded:
+ * a few clients per run, each re-checked at most daily by the database.
+ */
+async function backfillClientHistory(env, artistId, accessToken, mailboxEmail, fetchImpl = fetch) {
+  const candidates = await serviceRpc(env, 'service_list_gmail_history_candidates', {
+    p_artist_id: artistId,
+    p_limit: HISTORY_CLIENTS_PER_RUN,
+  }, fetchImpl);
+  let checked = 0;
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const clientId = uuid(candidate?.client_id);
+    const clientEmail = safeEmail(candidate?.client_email);
+    if (!clientId || !clientEmail) continue;
+    try {
+      const newest = await newestClientMessage(accessToken, mailboxEmail, clientEmail, fetchImpl);
+      await serviceRpc(env, 'service_record_gmail_client_history', {
+        p_artist_id: artistId,
+        p_client_id: clientId,
+        p_last_message_at: newest?.last_message_at ?? null,
+        p_direction: newest?.direction ?? null,
+      }, fetchImpl);
+      checked += 1;
+    } catch {
+      // Left unchecked; the next run retries this client.
+    }
+  }
+  return checked;
+}
+
 export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch) {
   if (env?.VISHAR_ENVIRONMENT !== 'production' || env?.GMAIL_READ_ENABLED !== 'true') {
     return { skipped: true, artists: 0, refreshed: 0, failed: 0 };
@@ -284,6 +362,9 @@ export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch) {
       const refreshedAt = new Date().toISOString();
       const rows = latestKnownRows(mailbox.artist_id, metadata, matched, refreshedAt);
       await persistSnapshot(env, mailbox.artist_id, rows, refreshedAt, fetchImpl);
+      await backfillClientHistory(
+        env, mailbox.artist_id, accessToken, mailbox.external_account_label, fetchImpl,
+      );
       refreshed += 1;
     } catch (error) {
       failed += 1;
@@ -357,6 +438,11 @@ export const __testing = Object.freeze({
   METADATA_CONCURRENCY,
   PROVIDER_TIMEOUT_MS,
   SNAPSHOT_WINDOW_DAYS,
+  HISTORY_CLIENTS_PER_RUN,
+  HISTORY_MESSAGES_PER_CLIENT,
   metadataCorrespondent,
   latestKnownRows,
+  listEnabledMailboxes,
+  historyEvidence,
+  backfillClientHistory,
 });

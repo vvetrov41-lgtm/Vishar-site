@@ -134,6 +134,13 @@ artist ("latest conversation channel wins"):
   message, a Gmail metadata snapshot, or a Gmail thread with the client (first
   observed time, because re-reading a thread moves its update time).
 
+Email evidence is detected automatically: the shared production cron's Gmail
+metadata snapshot (30 days, lists mailboxes through a backend RPC) and a daily
+per-client lookup of the newest Gmail message for clients with upcoming
+appointments both feed `crm_private.gmail_client_email_activity`, a durable
+record of the newest message time and direction only (no subject, body,
+address or provider id). Nobody has to open a thread in the CRM.
+
 Outcomes, recorded per card revision with channel, reason, evidence source,
 conversation/message ids and decision time, never message content:
 

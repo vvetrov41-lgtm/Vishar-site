@@ -25,6 +25,9 @@ insert into gmail_acl_expectations values
   -- address-to-client matching that decides who is known.
   ('public.service_resolve_gmail_mailbox(uuid)', false, false, true),
   ('public.service_match_gmail_clients(uuid,text[])', false, false, true),
+  ('public.service_list_gmail_mailboxes()', false, false, true),
+  ('public.service_list_gmail_history_candidates(uuid,integer)', false, false, true),
+  ('public.service_record_gmail_client_history(uuid,uuid,timestamptz,text)', false, false, true),
   ('public.service_resolve_gmail_outbox_target(uuid,text)', false, false, true),
   ('public.service_set_gmail_integration(uuid,text,text,text[])', false, false, true),
   ('public.service_disable_gmail_integration(uuid,text,text)', false, false, true),
