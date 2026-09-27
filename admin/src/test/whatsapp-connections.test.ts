@@ -225,6 +225,75 @@ describe('WhatsApp Connections safety', () => {
     }
   });
 
+  it('sends Kristina standalone Meta credentials only to her fixed same-origin provisioning boundary', async () => {
+    const productionUrl = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
+    const syntheticAppId = '123456789012345';
+    const syntheticAppSecret = `synthetic-app-secret-${'s'.repeat(32)}`;
+    const syntheticMetaToken = `synthetic-system-user-token-${'x'.repeat(64)}`;
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      connected: true,
+      connected_at: '2026-09-27T18:00:00.000Z',
+      integration_key: 'kristina-production',
+      waba_name: 'Kristina Standalone WABA',
+      display_phone_number: '+44 7000 000002',
+      verified_name: 'Kristina',
+    }));
+
+    try {
+      await expect(api.provisionStandaloneProductionWhatsApp(
+        KRISTINA,
+        productionUrl,
+        syntheticAppId,
+        syntheticAppSecret,
+        syntheticMetaToken,
+      )).resolves.toMatchObject({
+        connected: true,
+        integration_key: 'kristina-production',
+        verified_name: 'Kristina',
+      });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe('/api/whatsapp/standalone-account/provision');
+      expect(init?.method).toBe('POST');
+      expect(init?.credentials).toBe('same-origin');
+      expect(init?.headers).toMatchObject({
+        authorization: 'Bearer crm-owner-session-token-for-test',
+        'content-type': 'application/json',
+      });
+      expect(JSON.parse(String(init?.body))).toEqual({
+        artist_id: KRISTINA.id,
+        app_id: syntheticAppId,
+        app_secret: syntheticAppSecret,
+        access_token: syntheticMetaToken,
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  it('rejects non-Kristina artists from the standalone path before sending credentials', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+
+    try {
+      await expect(api.provisionStandaloneProductionWhatsApp(
+        VLADIMIR,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        '123456789012345',
+        `synthetic-app-secret-${'s'.repeat(32)}`,
+        `synthetic-system-user-token-${'x'.repeat(64)}`,
+      )).rejects.toThrow(/unavailable for this artist/i);
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('rejects Kristina from the Vladimir existing-account path before sending her token', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
@@ -325,6 +394,7 @@ describe('WhatsApp Connections safety', () => {
       'prepareWhatsAppIntegration',
       'provisionExistingProductionWhatsApp',
       'provisionProductionWhatsApp',
+      'provisionStandaloneProductionWhatsApp',
       'setWhatsAppIntegrationEnabled',
     ].sort());
 
