@@ -319,10 +319,17 @@
   <script src="/assets/js/intake-preflight.js"></script>
   <script>
   (function () {
+    const canonicalBookingHost = 'vishartattoo.com';
+    if (window.location.hostname === 'www.vishartattoo.com') {
+      const canonicalUrl = new URL(window.location.href);
+      canonicalUrl.hostname = canonicalBookingHost;
+      window.location.replace(canonicalUrl.toString());
+      return;
+    }
+
     const productionEndpoint = 'https://api.vishartattoo.com/';
     const configuredEndpoint = (document.querySelector('meta[name="vishar-booking-endpoint"]') || {}).content || '';
-    const productionHost = window.location.hostname === 'vishartattoo.com'
-      || window.location.hostname === 'www.vishartattoo.com';
+    const productionHost = window.location.hostname === canonicalBookingHost;
     const endpoint = configuredEndpoint.trim() || (productionHost ? productionEndpoint : '');
     const form = document.getElementById('tattoo-enquiry-form');
     const filesInput = document.getElementById('reference-files');
