@@ -79,4 +79,43 @@ describe('pre-fill follows late suggestions but never overwrites typing', () => 
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(input).toHaveValue('1100');
   });
+
+  it('tells the operator that a legacy appointment gets no card when its price is saved', async () => {
+    const { rpcCalls } = renderWithSession(<App />, {
+      role: 'owner',
+      path: `/projects/${PROJECT_ID}`,
+      bookingCardReason: 'appointment_before_activation',
+      extraSessions: [{
+        id: FUTURE_SESSION_ID,
+        artist_id: VLADIMIR_ARTIST_ID,
+        client_id: CLIENT_ID,
+        project_id: PROJECT_ID,
+        enquiry_id: null,
+        appointment_type: 'tattoo_session',
+        status: 'confirmed',
+        start_at: futureDay(40, 11),
+        end_at: futureDay(40, 18),
+        duration_hours: 7,
+        currency: 'GBP',
+        payment_status: 'unpaid',
+        calendar_provider: 'none',
+        calendar_event_id: null,
+        calendar_version: 0,
+        notes: null,
+        cancelled_at: null,
+      }],
+    });
+
+    const panel = await screen.findByRole('region', { name: 'Session prices' });
+    const input = within(panel).getByLabelText('Session price');
+    await waitFor(() => expect(input).toHaveValue('980.00'));
+    fireEvent.click(within(panel).getByRole('button', { name: /Save prices \(1\)/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('booked before booking cards were switched on, so no booking card goes to the client');
+    expect(dialog).not.toHaveTextContent('straight away');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(rpcCalls.some((call) => call.name === 'set_appointment_price')).toBe(true);
+    });
+  });
 });

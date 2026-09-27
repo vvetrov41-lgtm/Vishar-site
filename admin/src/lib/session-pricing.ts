@@ -68,7 +68,8 @@ export type BookingCardReason =
   | 'session_price_missing'
   | 'deposit_not_paid_for_session'
   | 'deposit_currency_mismatch'
-  | 'deposit_exceeds_price';
+  | 'deposit_exceeds_price'
+  | 'appointment_before_activation';
 
 export interface BookingCardDelivery {
   channel: 'email' | 'whatsapp';
@@ -94,6 +95,8 @@ export interface BookingCardStatus {
   channels_enabled: boolean;
   in_rollout_window: boolean;
   rollout_starts_at: string | null;
+  /** Only appointments booked (created) at or after this time get cards. */
+  cards_for_appointments_booked_from?: string | null;
   card: { revision: number; created_at: string; card_kind: string } | null;
   /** The one channel the card uses: the client's newest real conversation. */
   channel: BookingCardChannel | null;
@@ -214,6 +217,7 @@ const REASON_COPY: Record<'en' | 'ru', Record<string, string>> = {
     deposit_currency_mismatch: 'The deposit currency differs from the session currency.',
     deposit_exceeds_price: 'The deposit is larger than the session price. Check the price.',
     session_not_found: 'Appointment not found.',
+    appointment_before_activation: 'Booked before booking cards were switched on, so no card is sent for it.',
   },
   ru: {
     ready: 'Готово',
@@ -228,6 +232,7 @@ const REASON_COPY: Record<'en' | 'ru', Record<string, string>> = {
     deposit_currency_mismatch: 'Валюта депозита не совпадает с валютой сеанса.',
     deposit_exceeds_price: 'Депозит больше стоимости сеанса. Проверь цену.',
     session_not_found: 'Запись не найдена.',
+    appointment_before_activation: 'Запись создана до включения карточек, поэтому карточка по ней не отправляется.',
   },
 };
 
