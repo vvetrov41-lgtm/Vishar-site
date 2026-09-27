@@ -27,6 +27,7 @@
 // Fields subscribed: messages, message_reactions, messaging_seen.
 
 export const INSTAGRAM_WEBHOOK_PATH = '/webhook';
+const BOOKING_ACTION_PAYLOAD = /^booking_action:[0-9a-f]{64}$/;
 export const MAX_WEBHOOK_BYTES = 256 * 1024;
 
 const PROVIDER_ID = /^[0-9]{5,40}$/;
@@ -336,6 +337,26 @@ async function ingestEvent(event, entryAccountId, route, supabase, counters, rou
   if (senderId === entryAccountId
       || !(await businessSideMatches(recipientId, entryAccountId, supabase, routeCache, counters))) {
     skip(counters, 'cross_account');
+    return;
+  }
+
+  // A booking-card quick reply carries the one-time appointment capability.
+  // The database records the message and applies the action in one step,
+  // through the same canonical response flow as WhatsApp and Email.
+  const quickReplyPayload = typeof event.message?.quick_reply?.payload === 'string'
+    ? event.message.quick_reply.payload
+    : '';
+  if (BOOKING_ACTION_PAYLOAD.test(quickReplyPayload)) {
+    await supabase.rpc('service_apply_instagram_booking_card_action', {
+      p_artist_id: route.artist_id,
+      p_integration_key: route.integration_key,
+      p_external_contact_id: senderId,
+      p_provider_message_id: normalised.mid,
+      p_provider_timestamp: providerTimestamp,
+      p_payload: quickReplyPayload,
+      p_body: normalised.body,
+    });
+    counters.inbound += 1;
     return;
   }
 

@@ -27,6 +27,8 @@ const BACKEND_RPCS = new Set([
   'record_communication_outbox_result',
   'resolve_outbox_route',
   'service_begin_communication_send',
+  'service_resolve_instagram_booking_card_payload',
+  'service_apply_instagram_booking_card_action',
 ]);
 
 // Retained as an explicit empty surface so tests can prove no browser-scoped RPC

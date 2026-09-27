@@ -599,11 +599,15 @@ function instagramDeliver(env, db, fetchImpl) {
       return { delivered: false, errorCode: 'instagram_token_binding_mismatch' };
     }
 
+    const card = message.extras?.bookingCard ?? null;
     return sendInstagramMessage({
       accessToken: token.access_token,
       instagramUserId: routeAccount,
       recipientId: message.recipientId,
-      body: message.body,
+      // A booking card sends its rendered text and quick replies; the short
+      // CRM timeline body is never what the client receives.
+      body: card ? card.text : message.body,
+      quickReplies: card ? card.quickReplies : null,
       fetchImpl,
     });
   };
@@ -685,11 +689,68 @@ async function internalMaintenance(request, url, env) {
     return null;
   }
   if (request.method !== 'POST') return json(405, { ok: false, errorCode: 'method_not_allowed' });
+  let summary;
   try {
-    return json(200, await runInstagramMaintenance(env));
+    summary = await runInstagramMaintenance(env);
   } catch (error) {
-    return json(200, { ok: false, errorCode: safeCode(error, 'instagram_maintenance_failed') });
+    summary = { ok: false, errorCode: safeCode(error, 'instagram_maintenance_failed') };
   }
+  // The Instagram Worker has no cron of its own; the shared production cron
+  // calls this endpoint every tick, so the outbound drain rides the same call
+  // when it is switched on. A drain failure never hides the maintenance result.
+  if (env?.INSTAGRAM_DRAIN_ENABLED === 'true') {
+    try {
+      const drained = await runInstagramDrain(env);
+      console.log('instagram outbox drain', JSON.stringify({
+        claimed: drained.claimed,
+        succeeded: drained.succeeded,
+        failed: drained.failed,
+        unrecorded: drained.unrecorded,
+      }));
+    } catch (error) {
+      console.error('instagram outbox drain failed', JSON.stringify({ code: safeFailureCode(error) }));
+    }
+  }
+  return json(200, summary);
+}
+
+const BOOKING_ACTION_PAYLOAD = /^booking_action:[0-9a-f]{64}$/;
+
+/**
+ * Booking cards ride the ordinary Instagram outbox. Before a send intent is
+ * recorded, the database says whether this job is a card, whether it is still
+ * current, and what it must say; an obsolete card is closed, never sent.
+ */
+function instagramPrepare(db) {
+  return async (job, _route, workerId) => {
+    const rows = await db.rpc('service_resolve_instagram_booking_card_payload', {
+      p_outbox_id: job.outbox_id,
+      p_worker_id: workerId,
+    });
+    const list = Array.isArray(rows) ? rows : rows == null ? [] : [rows];
+    if (list.length !== 1) return { skipErrorCode: 'instagram_booking_card_resolution_invalid' };
+    const row = list[0];
+    if (row?.is_booking_card !== true) return null;
+    if (row.delivery_allowed !== true) return { skipErrorCode: 'instagram_booking_card_obsolete' };
+    if (row.communication_message_id !== job.communication_message_id
+        || row.artist_id !== job.artist_id
+        || typeof row.message_text !== 'string' || !row.message_text.trim()
+        || !BOOKING_ACTION_PAYLOAD.test(row.confirm_payload ?? '')
+        || !BOOKING_ACTION_PAYLOAD.test(row.reschedule_payload ?? '')) {
+      return { skipErrorCode: 'instagram_booking_card_payload_invalid' };
+    }
+    return {
+      extras: {
+        bookingCard: {
+          text: row.message_text,
+          quickReplies: [
+            { title: "I'll be there", payload: row.confirm_payload },
+            { title: 'Need another time', payload: row.reschedule_payload },
+          ],
+        },
+      },
+    };
+  };
 }
 
 export async function runInstagramDrain(env, fetchImpl = fetch) {
@@ -698,6 +759,7 @@ export async function runInstagramDrain(env, fetchImpl = fetch) {
     supabase: db,
     channel: 'instagram',
     deliver: instagramDeliver(env, db, fetchImpl),
+    prepare: instagramPrepare(db),
     workerId: randomWorkerId('instagram-worker'),
   });
 }
@@ -851,6 +913,8 @@ export const __testing = Object.freeze({
   connectionStatus,
   disconnect,
   instagramDeliver,
+  instagramPrepare,
+  internalMaintenance,
   runScheduled,
   safeFailureCode,
   ensureWebhookSubscription,

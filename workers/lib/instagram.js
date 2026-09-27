@@ -454,11 +454,31 @@ function deliveryError(status, payload) {
  * Nothing here throws. Every failure is a short machine code that is safe to
  * log and safe to store in `integration_outbox.last_error_code`.
  */
+// Meta: at most 13 quick replies, titles up to 20 characters, text only.
+const MAX_QUICK_REPLIES = 13;
+const QUICK_REPLY_TITLE_MAX = 20;
+const QUICK_REPLY_PAYLOAD = /^booking_action:[0-9a-f]{64}$/;
+
+function quickRepliesPayload(quickReplies) {
+  if (quickReplies == null) return null;
+  if (!Array.isArray(quickReplies) || quickReplies.length === 0
+      || quickReplies.length > MAX_QUICK_REPLIES) return false;
+  const rows = [];
+  for (const reply of quickReplies) {
+    const title = typeof reply?.title === 'string' ? reply.title.trim() : '';
+    const payload = typeof reply?.payload === 'string' ? reply.payload : '';
+    if (!title || title.length > QUICK_REPLY_TITLE_MAX || !QUICK_REPLY_PAYLOAD.test(payload)) return false;
+    rows.push({ content_type: 'text', title, payload });
+  }
+  return rows;
+}
+
 export async function sendInstagramMessage({
   accessToken,
   instagramUserId,
   recipientId,
   body,
+  quickReplies = null,
   fetchImpl = fetch,
 }) {
   if (!INSTAGRAM_USER_ID.test(instagramUserId ?? '')) {
@@ -474,6 +494,10 @@ export async function sendInstagramMessage({
   if (typeof accessToken !== 'string' || !accessToken) {
     return { delivered: false, errorCode: 'instagram_token_missing' };
   }
+  const replies = quickRepliesPayload(quickReplies);
+  if (replies === false) {
+    return { delivered: false, errorCode: 'instagram_message_invalid' };
+  }
 
   let response;
   try {
@@ -487,7 +511,7 @@ export async function sendInstagramMessage({
         },
         body: JSON.stringify({
           recipient: { id: recipientId },
-          message: { text },
+          message: replies ? { text, quick_replies: replies } : { text },
         }),
         // `manual`, never the `error` redirect mode: the Workers runtime rejects
         // that mode and throws before the subrequest is dispatched. A redirect

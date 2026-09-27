@@ -82,7 +82,7 @@ export function BookingCardStatusLine({
       : `sending starts with appointments from ${status.rollout_starts_at ? formatDateTime(status.rollout_starts_at, language) : '—'}`;
   } else if (status.deliveries.length) {
     delivery = status.deliveries
-      .map((item) => `${item.channel === 'email' ? 'Email' : 'WhatsApp'}: ${deliveryLabel(item.status, ru)}`)
+      .map((item) => `${bookingCardChannelName(item.channel)}: ${deliveryLabel(item.status, ru)}`)
       .join(', ');
   } else {
     delivery = ru ? 'будет отправлена' : 'will be sent';

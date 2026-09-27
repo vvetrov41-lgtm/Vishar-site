@@ -66,6 +66,21 @@ describe('booking card status line', () => {
     expect(text).not.toMatch(/Email|WhatsApp/);
   });
 
+  it('names Instagram and explains a closed messaging window without falling back', async () => {
+    expect(await line({ channel: 'instagram', channel_evidence_source: 'instagram_message' }))
+      .toBe('Booking card · Instagram · will be sent');
+    const closed = await line({ channel: 'instagram', channel_outcome: 'messaging_window_closed' });
+    expect(closed).toBe('Booking card: the Instagram messaging window is closed; the card goes when the client writes again');
+    expect(closed).not.toMatch(/Email|WhatsApp/);
+    expect(await line({
+      channel: 'instagram',
+      deliveries: [{
+        channel: 'instagram', status: 'sent', skip_reason: null,
+        queued_at: null, sent_at: '2026-09-20T10:05:00Z', failed_at: null,
+      }],
+    })).toBe('Booking card · Instagram · Instagram: sent');
+  });
+
   it('shows the delivery state of the single channel', async () => {
     expect(await line({
       deliveries: [{

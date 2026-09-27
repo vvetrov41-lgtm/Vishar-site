@@ -304,8 +304,8 @@ select results_eq(
 select results_eq(
   $$ select whatsapp_deliveries, email_deliveries, decided_channel, outcome, evidence_source
      from card_channels where session_id = 'fd6f1111-1111-4111-8111-111111111111' $$,
-  $$ values (0, 0, 'instagram'::text, 'conversation_channel_unsupported'::text, 'instagram_message'::text) $$,
-  'F: Instagram-only conversation sends nothing to Email or WhatsApp and says why'
+  $$ values (0, 0, 'instagram'::text, 'conversation_channel_disabled'::text, 'instagram_message'::text) $$,
+  'F: Instagram-only conversation with Instagram cards off sends nothing to Email or WhatsApp and says why'
 );
 
 -- The chosen channel being switched off never falls back to the other one.

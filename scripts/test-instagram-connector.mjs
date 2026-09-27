@@ -1133,6 +1133,7 @@ await test('the connector service credential can call only the intended RPCs', (
     'record_communication_outbox_result',
     'record_communication_read_receipt',
     'resolve_outbox_route',
+    'service_apply_instagram_booking_card_action',
     'service_authorize_instagram_connection',
     'service_begin_communication_send',
     'service_disable_instagram_integration',
@@ -1140,6 +1141,7 @@ await test('the connector service credential can call only the intended RPCs', (
     'service_list_unenriched_participants',
     'service_record_instagram_webhook_delivery',
     'service_record_instagram_webhook_subscription',
+    'service_resolve_instagram_booking_card_payload',
     'service_resolve_instagram_route',
     'service_set_instagram_integration',
     'service_update_communication_participant',
@@ -1157,6 +1159,160 @@ await test('the connector cannot use its service credential for CRM finance or u
   ]) {
     assert.ok(!supabaseTesting.BACKEND_RPCS.has(forbidden), forbidden);
     assert.ok(!supabaseTesting.USER_RPCS.has(forbidden), forbidden);
+  }
+});
+
+
+// ---------------------------------------------------------------------------
+// Booking cards over the existing Instagram transport
+// ---------------------------------------------------------------------------
+
+const CONFIRM = `booking_action:${'a'.repeat(64)}`;
+const RESCHEDULE = `booking_action:${'b'.repeat(64)}`;
+
+function cardPayload(overrides = {}) {
+  return {
+    is_booking_card: true,
+    booking_card_id: 'b4444444-4444-4444-8444-444444444444',
+    communication_message_id: MESSAGE_ID,
+    artist_id: V_ARTIST,
+    message_text: 'Hi Sam, your consultation with Vladimir is booked ✓',
+    confirm_payload: CONFIRM,
+    reschedule_payload: RESCHEDULE,
+    delivery_allowed: true,
+    ...overrides,
+  };
+}
+
+function cardDrainDouble(payloadRow) {
+  const calls = [];
+  return {
+    calls,
+    async rpc(name, args) {
+      calls.push({ name, args });
+      if (name === 'claim_communication_outbox') return [claimedJob({ body: 'Your consultation is booked.' })];
+      if (name === 'resolve_outbox_route') return [route()];
+      if (name === 'service_resolve_instagram_booking_card_payload') return payloadRow ? [payloadRow] : [];
+      if (name === 'service_begin_communication_send') return { proceed: true };
+      return { changed: true };
+    },
+  };
+}
+
+await test('quick replies follow the documented Instagram contract', async () => {
+  const requests = [];
+  const fetchImpl = async (url, init) => {
+    requests.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ message_id: 'ig_mid_CARD0000000001' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const sent = await sendInstagramMessage({
+    accessToken: 't', instagramUserId: V_ACCOUNT, recipientId: RECIPIENT, body: 'Card',
+    quickReplies: [{ title: "I'll be there", payload: CONFIRM }, { title: 'Need another time', payload: RESCHEDULE }],
+    fetchImpl,
+  });
+  assert.equal(sent.delivered, true);
+  assert.deepEqual(requests[0].message.quick_replies, [
+    { content_type: 'text', title: "I'll be there", payload: CONFIRM },
+    { content_type: 'text', title: 'Need another time', payload: RESCHEDULE },
+  ]);
+  for (const bad of [
+    [{ title: 'A title that is far too long', payload: CONFIRM }],
+    [{ title: 'Ok', payload: 'free-form' }],
+    [],
+  ]) {
+    const refused = await sendInstagramMessage({
+      accessToken: 't', instagramUserId: V_ACCOUNT, recipientId: RECIPIENT, body: 'Card',
+      quickReplies: bad, fetchImpl: async () => { throw new Error('must not send'); },
+    });
+    assert.equal(refused.errorCode, 'instagram_message_invalid');
+  }
+});
+
+await test('a booking card job sends the card text with two quick replies, never the timeline body', async () => {
+  const environment = env();
+  await storeToken(environment, tokenRecord());
+  const db = cardDrainDouble(cardPayload());
+  const bodies = [];
+  const fetchImpl = async (url, init) => {
+    bodies.push(JSON.parse(init.body));
+    return new Response(JSON.stringify({ message_id: 'ig_mid_CARD0000000002' }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    });
+  };
+  const result = await drainCommunicationOutbox({
+    supabase: db,
+    channel: 'instagram',
+    deliver: workerTesting.instagramDeliver(environment, db, fetchImpl),
+    prepare: workerTesting.instagramPrepare(db),
+    workerId: 'instagram-test-worker',
+  });
+  assert.equal(result.succeeded, 1);
+  assert.equal(bodies.length, 1);
+  assert.equal(bodies[0].message.text, 'Hi Sam, your consultation with Vladimir is booked ✓');
+  assert.deepEqual(bodies[0].message.quick_replies.map((reply) => reply.title), ["I'll be there", 'Need another time']);
+  const order = db.calls.map((call) => call.name);
+  assert.ok(order.indexOf('service_resolve_instagram_booking_card_payload') < order.indexOf('service_begin_communication_send'));
+});
+
+await test('an obsolete booking card is closed without contacting Instagram', async () => {
+  const environment = env();
+  await storeToken(environment, tokenRecord());
+  const db = cardDrainDouble(cardPayload({ delivery_allowed: false }));
+  let provider = 0;
+  const result = await drainCommunicationOutbox({
+    supabase: db,
+    channel: 'instagram',
+    deliver: workerTesting.instagramDeliver(environment, db, async () => { provider += 1; return new Response('{}'); }),
+    prepare: workerTesting.instagramPrepare(db),
+    workerId: 'instagram-test-worker',
+  });
+  assert.equal(provider, 0);
+  assert.equal(result.failed, 1);
+  assert.ok(!db.calls.some((call) => call.name === 'service_begin_communication_send'));
+  const ack = db.calls.find((call) => call.name === 'record_communication_outbox_result');
+  assert.equal(ack.args.p_error_code, 'instagram_booking_card_obsolete');
+});
+
+await test('an ordinary CRM reply still sends its own body with no quick replies', async () => {
+  const environment = env();
+  await storeToken(environment, tokenRecord());
+  const db = cardDrainDouble({ ...cardPayload(), is_booking_card: false });
+  const bodies = [];
+  await drainCommunicationOutbox({
+    supabase: db,
+    channel: 'instagram',
+    deliver: workerTesting.instagramDeliver(environment, db, async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ message_id: 'ig_mid_REPLY000000001' }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    }),
+    prepare: workerTesting.instagramPrepare(db),
+    workerId: 'instagram-test-worker',
+  });
+  assert.deepEqual(bodies[0].message, { text: 'Your consultation is booked.' });
+});
+
+await test('the outbound drain rides the shared maintenance call only when switched on', async () => {
+  const maintenanceRequest = () => new Request('https://instagram.internal/internal/instagram/maintain', { method: 'POST' });
+  const url = new URL('https://instagram.internal/internal/instagram/maintain');
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (target, init = {}) => {
+    const href = String(target);
+    calls.push(href);
+    return new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await workerTesting.internalMaintenance(maintenanceRequest(), url, env({ INSTAGRAM_DRAIN_ENABLED: 'false' }));
+    assert.ok(!calls.some((href) => href.includes('claim_communication_outbox')), 'drain off: nothing claimed');
+    calls.length = 0;
+    await workerTesting.internalMaintenance(maintenanceRequest(), url, env({ INSTAGRAM_DRAIN_ENABLED: 'true' }));
+    assert.ok(calls.some((href) => href.includes('claim_communication_outbox')), 'drain on: the outbox is claimed');
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

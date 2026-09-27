@@ -498,5 +498,31 @@ await test('an ingestion failure surfaces as a retryable error, not a silent suc
   assert.equal(response.status, 503);
 });
 
+
+await test('a booking card quick reply enters the canonical response flow', async () => {
+  const supabase = supabaseDouble();
+  const payload = `booking_action:${'c'.repeat(64)}`;
+  await processPayload(messagePayload({
+    message: { mid: 'ig_mid_SYNTHETIC000077', text: "I'll be there", quick_reply: { payload } },
+  }), supabase);
+  const action = supabase.calls.find((call) => call.name === 'service_apply_instagram_booking_card_action');
+  assert.equal(action.args.p_artist_id, V_ARTIST);
+  assert.equal(action.args.p_integration_key, 'vladimir-instagram');
+  assert.equal(action.args.p_external_contact_id, SENDER);
+  assert.equal(action.args.p_payload, payload);
+  assert.equal(action.args.p_body, "I'll be there");
+  assert.ok(!supabase.calls.some((call) => call.name === 'record_communication_inbound_message'),
+    'the action RPC records the message itself, exactly once');
+});
+
+await test('any other quick reply is an ordinary inbound message', async () => {
+  const supabase = supabaseDouble();
+  await processPayload(messagePayload({
+    message: { mid: 'ig_mid_SYNTHETIC000078', text: 'Maybe', quick_reply: { payload: 'something_else' } },
+  }), supabase);
+  assert.ok(supabase.calls.some((call) => call.name === 'record_communication_inbound_message'));
+  assert.ok(!supabase.calls.some((call) => call.name === 'service_apply_instagram_booking_card_action'));
+});
+
 console.log(`instagram webhook: ${passes} passed, ${failures} failed`);
 if (failures > 0) process.exit(1);
