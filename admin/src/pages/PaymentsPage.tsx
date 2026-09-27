@@ -1,3 +1,4 @@
+import { SessionPricingPanel } from '../components/SessionPricingPanel';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { LoadingState } from '../components/StateViews';
 import { daysAgoIso } from '../lib/appointment-api';
@@ -1340,6 +1341,13 @@ export function PaymentsPage() {
                 <div className="notice">{copy.viewOnly}</div>
               )}
             </section>
+          ) : null}
+          {canViewReconciliation ? (
+            <SessionPricingPanel
+              artistId={selectedArtist.id}
+              artistName={selectedArtist.display_name}
+              canManage={canManageReconciliation}
+            />
           ) : null}
           </details>
         </section>

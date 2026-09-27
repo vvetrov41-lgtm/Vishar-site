@@ -5,6 +5,7 @@ import { ActivityFeed } from '../components/ActivityFeed';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
+import { BookingCardStatusLine } from '../components/BookingCardStatusLine';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectInvoicesPanel } from '../components/ProjectInvoicesPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
@@ -259,6 +260,12 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
                     {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
+                  {active ? (
+                    <BookingCardStatusLine
+                      sessionId={appointment.id}
+                      refreshKey={`${appointment.status}:${appointment.start_at}:${appointment.calendar_version}:${price ?? ''}:${project.deposit_status}`}
+                    />
+                  ) : null}
 
                   {mayManageAppointments && active ? (
                     <ProjectAppointmentEditor

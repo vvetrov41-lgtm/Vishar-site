@@ -9,7 +9,7 @@ create table crm_private.booking_card_whatsapp_payloads (
   communication_message_id uuid not null unique
     references public.communication_messages(id) on delete restrict,
   template_name text not null
-    check (template_name ~ '^[a-z0-9_]{1,512}$'),
+    check (template_name ~ '^[a-z0-9_]+$' and char_length(template_name) <= 512),
   template_language text not null
     check (template_language ~ '^[a-z]{2}(_[A-Z]{2})?$'),
   body_parameters jsonb not null

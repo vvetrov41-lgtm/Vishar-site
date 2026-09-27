@@ -108,10 +108,10 @@ create table crm_private.booking_card_artist_settings (
   ),
   constraint booking_card_settings_template_names check (
     (whatsapp_tattoo_template_name is null
-      or whatsapp_tattoo_template_name ~ '^[a-z0-9_]{1,512}$')
+      or (whatsapp_tattoo_template_name ~ '^[a-z0-9_]+$' and char_length(whatsapp_tattoo_template_name) <= 512))
     and
     (whatsapp_consultation_template_name is null
-      or whatsapp_consultation_template_name ~ '^[a-z0-9_]{1,512}$')
+      or (whatsapp_consultation_template_name ~ '^[a-z0-9_]+$' and char_length(whatsapp_consultation_template_name) <= 512))
   ),
   constraint booking_card_settings_email_ready check (
     not email_enabled

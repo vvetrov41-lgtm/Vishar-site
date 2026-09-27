@@ -51,6 +51,7 @@ import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { canManageArtistFinance } from '../lib/permissions';
 import { useApi, useSession } from '../lib/session';
+import { SessionPriceSuggestion } from './SessionPriceSuggestion';
 import type { AppointmentType } from '../lib/appointment-api';
 import type { BookingConflict, ScheduleOverride, SchedulingPreferences } from '../lib/scheduling-api';
 
@@ -433,6 +434,15 @@ export function BookingPanel({
               aria-invalid={sessionPriceInvalid}
             />
             <span className="meta">{copy.sessionPriceHint}</span>
+            <SessionPriceSuggestion
+              artistId={artistId}
+              durationMinutes={manual && manualStart && manualEndOverride
+                ? durationBetween(manualStart, manualEndOverride)
+                : durationMinutes}
+              enabled={appointmentType === 'tattoo_session'}
+              currentValue={sessionPrice}
+              onUse={setSessionPrice}
+            />
           </label>
         ) : null}
         {sessionPriceInvalid ? (

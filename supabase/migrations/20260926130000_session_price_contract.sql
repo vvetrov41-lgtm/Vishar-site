@@ -200,7 +200,7 @@ begin
 
   return v_result || jsonb_build_object(
     'price', round(p_price, 2),
-    'currency', 'GBP'
+    'currency', (select s.currency from public.sessions s where s.id = v_appointment_id)
   );
 end;
 $$;

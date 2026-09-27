@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
+import { SessionPriceSuggestion } from './SessionPriceSuggestion';
 import { useApi } from '../lib/session';
 import type { Appointment, AppointmentConflict, AppointmentType } from '../lib/appointment-api';
 
@@ -191,6 +192,13 @@ export function ProjectAppointmentEditor({
                 onChange={(event) => setPrice(event.target.value)}
                 placeholder={copy.pricePlaceholder}
               />
+              <SessionPriceSuggestion
+                artistId={appointment.artist_id}
+                durationMinutes={startIso && endIso ? Math.round((Date.parse(endIso) - Date.parse(startIso)) / 60_000) : null}
+                enabled={appointment.appointment_type === 'tattoo_session'}
+                currentValue={price}
+                onUse={setPrice}
+              />
               <p className="meta">{copy.priceHint}</p>
               {!priceInputValid ? <p className="notice warn">{copy.invalidPrice}</p> : null}
             </>
@@ -273,7 +281,7 @@ const COPY = {
     duration: 'Duration shortcuts',
     price: 'Session price',
     pricePlaceholder: 'Enter the exact session price',
-    priceHint: 'This exact amount is the price source used by booking cards. It is not recalculated from an hourly or full-day rate.',
+    priceHint: 'Booking cards use this exact stored amount. The suggestion comes from the artist\'s own session rates.',
     invalidPrice: 'Enter a price between 0.01 and 100000 with no more than two decimal places.',
     note: 'Add internal note',
     notePlaceholder: 'Optional note for the CRM team',
@@ -295,7 +303,7 @@ const COPY = {
     duration: 'Быстрый выбор длительности',
     price: 'Стоимость сеанса',
     pricePlaceholder: 'Укажи точную стоимость сеанса',
-    priceHint: 'Эта сумма будет источником цены для карточек записи. CRM не пересчитывает её из почасовой ставки или full day.',
+    priceHint: 'Карточки записи используют именно эту сохранённую сумму. Подсказка берётся из ставок этого артиста.',
     invalidPrice: 'Укажи сумму от 0,01 до 100000 максимум с двумя знаками после запятой.',
     note: 'Добавить внутреннюю заметку',
     notePlaceholder: 'Необязательная заметка для CRM',

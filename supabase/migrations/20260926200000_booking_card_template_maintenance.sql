@@ -36,7 +36,7 @@ alter table crm_private.booking_card_artist_settings
     or (
       nullif(btrim(studio_name), '') is not null
       and nullif(btrim(studio_address), '') is not null
-      and studio_map_url ~ '^https://[^[:space:]]{1,1900}$'
+      and studio_map_url ~ '^https://[^[:space:]]+$' and char_length(studio_map_url) <= 1900
       and location_latitude is not null
       and location_longitude is not null
       and whatsapp_tattoo_template_name is not null
