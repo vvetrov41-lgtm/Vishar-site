@@ -17,6 +17,12 @@ const APPROVED_ARTISTS = Object.freeze({
     wabaId: '341184815737145',
     phoneNumberId: '328102027058293',
   }),
+  'a2222222-2222-4222-8222-222222222222': Object.freeze({
+    integrationKey: 'kristina-production',
+    bindingName: 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION',
+    wabaId: '462106700328578',
+    phoneNumberId: null,
+  }),
 });
 
 function json(body, status = 200) {
@@ -172,14 +178,28 @@ async function verifyExistingTarget(accessToken, approved) {
 
   const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${approved.wabaId}/phone_numbers`);
   phonesUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
-  phonesUrl.searchParams.set('limit', '100');
+  phonesUrl.searchParams.set('limit', approved.phoneNumberId ? '100' : '2');
   const phones = await graph(phonesUrl.toString(), { headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' } });
   const rows = Array.isArray(phones?.data) ? phones.data : [];
-  const phone = rows.find((row) => String(row?.id || '') === approved.phoneNumberId) || null;
-  if (!phone) throw Object.assign(new Error('meta_phone_not_in_waba'), { status: 409 });
+
+  let phone = null;
+  if (approved.phoneNumberId) {
+    phone = rows.find((row) => String(row?.id || '') === approved.phoneNumberId) || null;
+    if (!phone) throw Object.assign(new Error('meta_phone_not_in_waba'), { status: 409 });
+  } else {
+    if (rows.length !== 1 || Boolean(phones?.paging?.next)) {
+      throw Object.assign(new Error('meta_phone_selection_ambiguous'), { status: 409 });
+    }
+    phone = rows[0];
+  }
+
+  const phoneNumberId = String(phone?.id || '').trim();
+  if (!/^[0-9]{5,32}$/.test(phoneNumberId)) {
+    throw Object.assign(new Error('meta_phone_mismatch'), { status: 409 });
+  }
 
   return {
-    phoneNumberId: approved.phoneNumberId,
+    phoneNumberId,
     wabaName: typeof waba.name === 'string' ? waba.name : null,
     displayPhoneNumber: typeof phone.display_phone_number === 'string' ? phone.display_phone_number : null,
     verifiedName: typeof phone.verified_name === 'string' ? phone.verified_name : null,
@@ -248,7 +268,7 @@ async function requireWabaSubscriptionReadback(accessToken, wabaId) {
 
 async function markIntegrationConnected(operator, env, artistId, approved) {
   const publishableKey = binding(env, 'SUPABASE_PUBLISHABLE_KEY');
-  const response = await noFollowFetch(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/rpc/complete_vladimir_whatsapp_connection`, {
+  const response = await noFollowFetch(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/rpc/complete_artist_whatsapp_connection`, {
     method: 'POST',
     headers: {
       apikey: publishableKey,
@@ -256,7 +276,10 @@ async function markIntegrationConnected(operator, env, artistId, approved) {
       'content-type': 'application/json',
       accept: 'application/json',
     },
-    body: '{}',
+    body: JSON.stringify({
+      p_artist_id: artistId,
+      p_integration_key: approved.integrationKey,
+    }),
   });
   if (!response.ok) throw Object.assign(new Error('crm_connected_state_update_failed'), { status: 502 });
   const route = await responseJson(response);
