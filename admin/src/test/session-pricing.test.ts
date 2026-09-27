@@ -83,3 +83,38 @@ describe('labels', () => {
     expect(bookingCardReasonLabel('unknown_reason', 'en')).toBe('unknown_reason');
   });
 });
+
+describe('project rate is the exact price source', () => {
+  it('uses the project hourly rate times this session length', () => {
+    expect(suggestSessionPrice(4 * 60, { projectHourlyRate: 140, projectCurrency: 'GBP' }))
+      .toMatchObject({ price: 560, basis: 'hourly', source: 'project', rate: 140 });
+  });
+
+  it('a standard-rate full day becomes the artist day price', () => {
+    expect(suggestSessionPrice(7 * 60, { projectHourlyRate: 140, artistPricing: vladimir }))
+      .toMatchObject({ price: 980, basis: 'full_day', source: 'project' });
+  });
+
+  it('a project with its own (non-standard) rate is not capped by the artist day price', () => {
+    expect(suggestSessionPrice(8 * 60, { projectHourlyRate: 150, artistPricing: vladimir }))
+      .toMatchObject({ price: 1200, basis: 'hourly', source: 'project' });
+  });
+
+  it('wins over artist rates and needs no artist rates at all', () => {
+    expect(suggestSessionPrice(5 * 60, { projectHourlyRate: 110, artistPricing: otherArtist }))
+      .toMatchObject({ price: 550, source: 'project' });
+    expect(suggestSessionPrice(5 * 60, { projectHourlyRate: 110 }))
+      .toMatchObject({ price: 550, source: 'project' });
+  });
+
+  it('falls back to the artist rates only as a convenience', () => {
+    expect(suggestSessionPrice(4 * 60, { projectHourlyRate: null, artistPricing: vladimir }))
+      .toMatchObject({ price: 560, source: 'artist' });
+    expect(suggestSessionPrice(4 * 60, { projectHourlyRate: null })).toBeNull();
+  });
+
+  it('labels the project source', () => {
+    expect(priceSuggestionLabel(suggestSessionPrice(240, { projectHourlyRate: 140 })!, 'en', 'en-GB'))
+      .toBe('£560 · 4 h × £140, project rate');
+  });
+});

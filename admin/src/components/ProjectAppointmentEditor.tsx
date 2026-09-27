@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
-import { SessionPriceSuggestion } from './SessionPriceSuggestion';
+import { SessionPriceSuggestion, useSessionPriceSuggestion } from './SessionPriceSuggestion';
 import { useApi } from '../lib/session';
 import type { Appointment, AppointmentConflict, AppointmentType } from '../lib/appointment-api';
 
@@ -15,12 +15,14 @@ const DURATION_MINUTES: Record<AppointmentType, number[]> = {
 export function ProjectAppointmentEditor({
   appointment,
   sessionPrice = null,
+  projectHourlyRate = null,
   canManagePrice = false,
   disabled = false,
   onSaved,
 }: {
   appointment: Appointment;
   sessionPrice?: number | null;
+  projectHourlyRate?: number | null;
   canManagePrice?: boolean;
   disabled?: boolean;
   onSaved: () => void;
@@ -82,6 +84,13 @@ export function ProjectAppointmentEditor({
     && (startIso !== appointment.start_at || endIso !== appointment.end_at)
   );
   const hasNote = note.trim().length > 0;
+  const priceSuggestion = useSessionPriceSuggestion({
+    artistId: appointment.artist_id,
+    projectHourlyRate,
+    projectCurrency: appointment.currency,
+    durationMinutes: startIso && endIso ? Math.round((Date.parse(endIso) - Date.parse(startIso)) / 60_000) : null,
+    enabled: open && canManagePrice && appointment.appointment_type === 'tattoo_session',
+  });
   const paidWork = appointment.appointment_type === 'tattoo_session'
     || appointment.appointment_type === 'touch_up';
   const showPrice = canManagePrice && paidWork;
@@ -193,9 +202,7 @@ export function ProjectAppointmentEditor({
                 placeholder={copy.pricePlaceholder}
               />
               <SessionPriceSuggestion
-                artistId={appointment.artist_id}
-                durationMinutes={startIso && endIso ? Math.round((Date.parse(endIso) - Date.parse(startIso)) / 60_000) : null}
-                enabled={appointment.appointment_type === 'tattoo_session'}
+                suggestion={priceSuggestion}
                 currentValue={price}
                 onUse={setPrice}
               />

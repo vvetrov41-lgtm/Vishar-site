@@ -75,12 +75,42 @@ describe('booking a session by asking for one', () => {
     fireEvent.click(within(summary).getByRole('button', { name: 'Book it' }));
 
     await waitFor(() => {
-      const call = rpcCalls.find((entry) => entry.name === 'schedule_appointment');
+      // The project's own rate (£140/h) times 7 h is this booking's price, so
+      // it is stored with the appointment instead of being typed again.
+      const call = rpcCalls.find((entry) => entry.name === 'schedule_appointment_with_price');
       expect(call?.args?.p_artist_id).toBe(VLADIMIR_ARTIST_ID);
       expect(call?.args?.p_client_id).toBe(CLIENT_ID);
       expect(call?.args?.p_appointment_type).toBe('tattoo_session');
+      expect(call?.args?.p_price).toBe(980);
       // Proposed, not confirmed: the client has not agreed yet.
       expect(call?.args?.p_status).toBe('proposed');
+    });
+  });
+
+  it('fills the price from the project rate, visibly and editably', async () => {
+    await openPanel();
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    const price = await screen.findByDisplayValue('980.00');
+    expect(price).toHaveAccessibleName(/Session price/);
+    expect(screen.getByText(/Filled in from the project rate/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '4 h' }));
+    expect(await screen.findByDisplayValue('560.00')).toBe(price);
+  });
+
+  it('books without a price when the operator clears it', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    await openPanel({ rpcCalls });
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    const price = await screen.findByDisplayValue('980.00');
+    fireEvent.change(price, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    fireEvent.click(slots[0]);
+    const summary = await screen.findByRole('group', { name: 'Booking summary' });
+    fireEvent.click(within(summary).getByRole('button', { name: 'Book it' }));
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => entry.name === 'schedule_appointment')).toBe(true);
+      expect(rpcCalls.some((entry) => entry.name === 'schedule_appointment_with_price')).toBe(false);
     });
   });
 
@@ -202,7 +232,7 @@ describe('booking a session by asking for one', () => {
   });
 
   async function bookAndFail(failRpcError?: { code: string; message: string; hint?: string }) {
-    await openPanel({ failRpc: 'schedule_appointment', failRpcError });
+    await openPanel({ failRpc: 'schedule_appointment_with_price', failRpcError });
 
     fireEvent.click(screen.getByRole('button', { name: '7 h' }));
     fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
