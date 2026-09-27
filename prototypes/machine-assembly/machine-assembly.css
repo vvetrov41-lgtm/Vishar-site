@@ -109,18 +109,45 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   filter: saturate(.94) contrast(1.03);
 }
 
-/* Work 1: full frame, continuation of the close-up. */
+/* Work 1: selected portrait, large and softly dissolved into black. */
 .portfolio-feature--lead {
   height: 100vh;
   height: 100svh;
   overflow: hidden;
-  background: rgba(0, 0, 0, var(--handoff, 0));
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .portfolio-feature--lead img {
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: 92vh;
+  height: 92svh;
+  max-width: none;
+  flex: 0 0 auto;
+  object-fit: contain;
   opacity: var(--handoff, 0);
-  transform: scale(var(--handoff-scale, 1.02));
+  transform: scale(var(--handoff-scale, 1.015));
+  -webkit-mask-image: radial-gradient(
+    ellipse 90% 94% at 50% 50%,
+    #000 0%,
+    #000 64%,
+    rgba(0, 0, 0, .96) 72%,
+    rgba(0, 0, 0, .78) 82%,
+    rgba(0, 0, 0, .38) 91%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 90% 94% at 50% 50%,
+    #000 0%,
+    #000 64%,
+    rgba(0, 0, 0, .96) 72%,
+    rgba(0, 0, 0, .78) 82%,
+    rgba(0, 0, 0, .38) 91%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
   will-change: opacity, transform;
 }
 :root.machine-static .portfolio-feature--lead { --handoff: 1; --handoff-scale: 1; }
@@ -138,7 +165,10 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 }
 
 @media (min-width: 900px) {
-  .portfolio-feature--lead img { object-fit: contain; }
+  .portfolio-feature--lead img {
+    height: 104vh;
+    height: 104svh;
+  }
   .portfolio-feature--follow { padding: 14vh 0 6vh; }
   .portfolio-feature--follow img {
     width: auto;
