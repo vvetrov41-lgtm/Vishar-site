@@ -40,7 +40,8 @@ describe('project session prices', () => {
 
     const panel = await screen.findByRole('region', { name: 'Session prices' });
     const input = within(panel).getByLabelText('Session price');
-    expect(input).toHaveValue('980.00');
+    // The pre-fill arrives with the suggestion, which may be a moment later.
+    await waitFor(() => expect(input).toHaveValue('980.00'));
     expect(panel).toHaveTextContent('Suggestion: £980 · 7 h × £140, from the project rate');
     expect(panel).toHaveTextContent('These are suggestions');
 
@@ -54,5 +55,28 @@ describe('project session prices', () => {
       expect(call?.args?.p_appointment_id).toBe(FUTURE_SESSION_ID);
       expect(call?.args?.p_price).toBe(980);
     });
+  });
+});
+
+describe('pre-fill follows late suggestions but never overwrites typing', () => {
+  it('keeps what the operator typed', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/projects/${PROJECT_ID}`,
+      extraSessions: [{
+        id: FUTURE_SESSION_ID, artist_id: VLADIMIR_ARTIST_ID, client_id: CLIENT_ID, project_id: PROJECT_ID,
+        enquiry_id: null, appointment_type: 'tattoo_session', status: 'confirmed',
+        start_at: futureDay(41, 11), end_at: futureDay(41, 18), duration_hours: 7, currency: 'GBP',
+        payment_status: 'unpaid', calendar_provider: 'none', calendar_event_id: null, calendar_version: 0,
+        notes: null, cancelled_at: null,
+      }],
+    });
+    const panel = await screen.findByRole('region', { name: 'Session prices' });
+    const input = within(panel).getByLabelText('Session price');
+    await waitFor(() => expect(input).toHaveValue('980.00'));
+    fireEvent.change(input, { target: { value: '1100' } });
+    expect(input).toHaveValue('1100');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(input).toHaveValue('1100');
   });
 });

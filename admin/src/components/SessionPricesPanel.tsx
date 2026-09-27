@@ -71,6 +71,10 @@ export function SessionPricesPanel({
     }),
   ])), [pending, projectHourlyRate, currency, artistPricing]);
   const [values, setValues] = useState<Record<string, string>>({});
+  // Rows the operator has typed into keep their value; untouched rows follow
+  // the suggestion, which can arrive after the first render (rates load
+  // asynchronously).
+  const [touched, setTouched] = useState<Set<string>>(() => new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,9 +88,10 @@ export function SessionPricesPanel({
     setValues((current) => {
       const next: Record<string, string> = {};
       for (const appointment of pending) {
-        const existing = current[appointment.id];
         const suggestion = suggestions.get(appointment.id);
-        next[appointment.id] = existing ?? (suggestion ? suggestion.price.toFixed(2) : '');
+        next[appointment.id] = touched.has(appointment.id)
+          ? current[appointment.id] ?? ''
+          : (suggestion ? suggestion.price.toFixed(2) : '');
       }
       return next;
     });
@@ -160,7 +165,11 @@ export function SessionPricesPanel({
                 aria-label={ru ? 'Цена сеанса' : 'Session price'}
                 style={{ width: '7.5rem', minHeight: 44 }}
                 value={values[appointment.id] ?? ''}
-                onChange={(event) => setValues((current) => ({ ...current, [appointment.id]: event.target.value }))}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setTouched((current) => new Set(current).add(appointment.id));
+                  setValues((current) => ({ ...current, [appointment.id]: value }));
+                }}
                 placeholder={currency}
               />
             </label>
