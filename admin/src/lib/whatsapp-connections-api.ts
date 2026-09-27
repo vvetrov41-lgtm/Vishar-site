@@ -266,6 +266,49 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       return assertExistingProvisioningResponse(result);
     },
 
+    async provisionStandaloneProductionWhatsApp(
+      artist: WhatsAppArtist,
+      supabaseUrl: string,
+      metaAppId: string,
+      metaAppSecret: string,
+      metaAccessToken: string,
+    ): Promise<ExistingWhatsAppProvisioningResult> {
+      if (whatsappCrmEnvironment(supabaseUrl) !== 'production') {
+        throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
+      }
+      if (artist.id !== 'a2222222-2222-4222-8222-222222222222' || artist.slug !== 'kristina') {
+        throw new ApiError(apiMessage('Standalone WhatsApp onboarding is unavailable for this artist.'));
+      }
+      const appId = metaAppId.trim();
+      const appSecret = metaAppSecret.trim();
+      const token = metaAccessToken.trim();
+      if (
+        !/^[0-9]{5,32}$/.test(appId)
+        || appSecret.length < 16
+        || appSecret.length > 512
+        || /\s/.test(appSecret)
+        || token.length < 40
+        || token.length > 4096
+        || /\s/.test(token)
+      ) {
+        throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+      }
+      const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, artist.slug);
+      const accessToken = await crmAccessToken();
+      const result = await provisioningRequest(
+        '/api/whatsapp/standalone-account/provision',
+        accessToken,
+        {
+          artist_id: artist.id,
+          app_id: appId,
+          app_secret: appSecret,
+          access_token: token,
+        },
+        expectedIntegrationKey,
+      );
+      return assertExistingProvisioningResponse(result);
+    },
+
     async provisionProductionWhatsApp(
       artist: WhatsAppArtist,
       supabaseUrl: string,
