@@ -99,7 +99,7 @@ jobs:
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-before.json"
           jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai")' "$RUNNER_TEMP/tattooai-settings-before.json" >/dev/null
       - name: Deploy exact code snapshot
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
