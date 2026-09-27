@@ -3,15 +3,17 @@ import { useLanguage } from '../lib/i18n';
 import { formatDateTime } from '../lib/format';
 import { useApi } from '../lib/session';
 import {
+  bookingCardChannelLabel,
+  bookingCardChannelName,
   bookingCardReasonLabel,
   formatSessionMoney,
   type BookingCardStatus,
 } from '../lib/session-pricing';
 
 /**
- * Shows, for one appointment, whether the Email/WhatsApp booking card goes
- * out and with which amounts, or exactly what is missing. Read-only: the
- * card itself is produced by the database from the stored CRM facts.
+ * Shows, for one appointment, whether the booking card goes out, in which one
+ * channel and with which amounts, or exactly what is missing. Read-only: the
+ * card and its channel are decided by the database from the stored CRM facts.
  */
 export function BookingCardStatusLine({
   sessionId,
@@ -56,6 +58,21 @@ export function BookingCardStatusLine({
       : ` · deposit ${formatSessionMoney(status.deposit_paid, status.currency, locale)}, balance ${formatSessionMoney(status.remaining_balance, status.currency, locale)}`)
     : '';
 
+  const channelBlock = status.channels_enabled && status.in_rollout_window
+    ? bookingCardChannelLabel(status.channel_outcome, status.channel, language)
+    : '';
+  if (channelBlock) {
+    return (
+      <p className="meta booking-card-status" data-state="blocked">
+        {label}: {channelBlock}
+      </p>
+    );
+  }
+
+  const channel = status.channel_outcome === 'selected' && status.channel
+    ? ` · ${bookingCardChannelName(status.channel)}`
+    : '';
+
   let delivery: string;
   if (!status.channels_enabled) {
     delivery = ru ? 'отправка карточек выключена' : 'card sending is off';
@@ -73,7 +90,7 @@ export function BookingCardStatusLine({
 
   return (
     <p className="meta booking-card-status" data-state="ready">
-      {label}{money} · {delivery}
+      {label}{money}{channel} · {delivery}
     </p>
   );
 }

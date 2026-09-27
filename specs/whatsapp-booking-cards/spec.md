@@ -2,9 +2,13 @@
 
 ## Product rules
 
-One server-owned booking-card event renders to both supported client channels:
+One server-owned booking-card event can render to either supported client channel:
 - email;
 - WhatsApp.
+
+A card is delivered in exactly one channel: the one the client actually talks
+to the studio in (see "Conversation channel" below). It is never sent to Email
+and WhatsApp at the same time, and contact details alone never pick a channel.
 
 The channels must share the same authoritative appointment/payment facts and client-action semantics. Provider-specific rendering must never recalculate business data.
 
@@ -101,15 +105,51 @@ Both channels have identical semantics.
 - raises operator attention so the artist can offer alternative dates;
 - never auto-selects or moves to another slot.
 
-Each delivery channel gets its own two-action capability pair. A response on either channel invalidates every remaining sibling capability for the same session/version, so contradictory responses cannot both apply. This also means retrying one failed channel never breaks action links already delivered through the other channel.
+Each delivery gets its own two-action capability pair. A response on either channel invalidates every remaining sibling capability for the same session/version, so contradictory responses cannot both apply. This also means retrying one failed channel never breaks action links already delivered through the other channel.
 
 ## Event and delivery model
 
 - One canonical booking-card record/event is created per session/card reason/calendar version.
-- Delivery is fanned out independently to email and WhatsApp.
-- Each channel has its own durable delivery state and idempotency key.
-- Retry on one channel does not resend a successful sibling channel.
-- If only one channel is reachable, send that channel and record why the other was skipped.
+- canonical card -> resolve the conversation channel -> at most one delivery.
+- The delivery has a durable state and idempotency key. Retries, reconciliation
+  and later conversations never add a delivery in a second channel; the
+  database refuses a sibling delivery.
+- No second-channel delivery intent is created and then skipped: when the
+  channel is resolved, only that channel is materialised.
+- Cards created before 2026-09-27 may still carry an Email and a WhatsApp row
+  from the earlier fan-out model.
+
+### Conversation channel
+
+The CRM has no separate "preferred conversation channel" field; the form's
+"preferred contact" is a stated preference, not a conversation, and is not used.
+The channel is the newest real conversation evidence for this client with this
+artist ("latest conversation channel wins"):
+
+- WhatsApp / Instagram: linked conversation messages that are inbound, or
+  outbound by a person (CRM or provider app). Automated messages, including
+  booking cards and reminders, never count.
+- Email: CRM email to the client actually sent by a person or the assistant
+  (system mail such as deposit requests does not count), a recorded Gmail
+  message, a Gmail metadata snapshot, or a Gmail thread with the client (first
+  observed time, because re-reading a thread moves its update time).
+
+Outcomes, recorded per card revision with channel, reason, evidence source,
+conversation/message ids and decision time, never message content:
+
+| Outcome | Delivery |
+|---|---|
+| `selected` | one delivery in that channel |
+| `no_conversation_channel` | none; CRM shows "Booking card: no conversation channel yet" |
+| `conversation_channel_unsupported` | none; newest conversation is Instagram, no fallback |
+| `conversation_channel_disabled` | none; card sending is off for that channel, no fallback |
+| `conversation_channel_unreachable` | none; e.g. the WhatsApp conversation is not with the client's number |
+| `delivery_unavailable` | none; the channel could not be materialised (e.g. template missing) |
+
+A blocked card is re-resolved when new conversation evidence for the client
+appears (a message, a linked conversation, a sent email, a Gmail thread,
+excerpt or snapshot). The rollout window still applies: appointments before
+the artist's activation date never get cards retroactively.
 - A later appointment date/time mutation invalidates old client-action capabilities.
 - Reissuing a card after a real schedule change uses the new calendar version.
 
@@ -175,3 +215,6 @@ The model must never invent or override price, deposit state, appointment time, 
 7. Enable consultation cards on email and WhatsApp.
 8. Enable tattoo paid-deposit cards on email and WhatsApp.
 9. Verify production delivery/readback independently for both channels using legitimate existing events or controlled operator probes.
+10. Route each card to one conversation channel (latest conversation wins,
+    fail closed without a conversation, no Instagram fallback) and resolve
+    booking-card Email in the Gmail outbox target (it may have no enquiry).
