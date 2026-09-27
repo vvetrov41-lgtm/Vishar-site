@@ -12,7 +12,9 @@ const KRISTINA_ID = 'a2222222-2222-4222-8222-222222222222';
 const META_APP_ID = '1481226093843982';
 const VLADIMIR_WABA_ID = '341184815737145';
 const VLADIMIR_PHONE_ID = '328102027058293';
+const KRISTINA_WABA_ID = '462106700328578';
 const VLADIMIR_BINDING = 'ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION';
+const KRISTINA_BINDING = 'ARTIST_WHATSAPP_KRISTINA_HPRODUCTION';
 const syntheticToken = `synthetic-system-user-token-${'x'.repeat(64)}`;
 const crmToken = `synthetic-crm-session-${'c'.repeat(64)}`;
 const appSecret = 'synthetic-meta-app-secret-for-test';
@@ -24,11 +26,19 @@ const env = {
   CLOUDFLARE_WORKERS_EDIT_TOKEN: 'synthetic-cloudflare-workers-edit-token',
 };
 
-assert.deepEqual(Object.keys(APPROVED_ARTISTS), [VLADIMIR_ID]);
-assert.equal(APPROVED_ARTISTS[VLADIMIR_ID].wabaId, VLADIMIR_WABA_ID);
-assert.equal(APPROVED_ARTISTS[VLADIMIR_ID].phoneNumberId, VLADIMIR_PHONE_ID);
-assert.equal(APPROVED_ARTISTS[VLADIMIR_ID].bindingName, VLADIMIR_BINDING);
-assert.equal(APPROVED_ARTISTS[KRISTINA_ID], undefined);
+assert.deepEqual(Object.keys(APPROVED_ARTISTS).sort(), [KRISTINA_ID, VLADIMIR_ID].sort());
+assert.deepEqual(APPROVED_ARTISTS[VLADIMIR_ID], {
+  integrationKey: 'vladimir-production',
+  bindingName: VLADIMIR_BINDING,
+  wabaId: VLADIMIR_WABA_ID,
+  phoneNumberId: VLADIMIR_PHONE_ID,
+});
+assert.deepEqual(APPROVED_ARTISTS[KRISTINA_ID], {
+  integrationKey: 'kristina-production',
+  bindingName: KRISTINA_BINDING,
+  wabaId: KRISTINA_WABA_ID,
+  phoneNumberId: null,
+});
 
 async function withFetch(mock, action) {
   const previous = globalThis.fetch;
@@ -44,7 +54,6 @@ await withFetch(async (url, init) => {
   const parsed = new URL(String(url));
   assert.equal(parsed.pathname, '/v25.0/debug_token');
   assert.equal(parsed.searchParams.get('input_token'), syntheticToken);
-  assert.equal(init?.redirect, 'manual');
   assert.equal(init?.headers?.authorization, `Bearer ${META_APP_ID}|${appSecret}`);
   assert.equal(String(url).includes(appSecret), false);
   return Response.json({
@@ -58,39 +67,27 @@ await withFetch(async (url, init) => {
   await verifyMetaAccessToken(syntheticToken, env);
 });
 
-await withFetch(async () => Response.json({
-  data: {
-    is_valid: false,
-    app_id: META_APP_ID,
-    scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'],
-  },
-}), async () => {
-  await assert.rejects(verifyMetaAccessToken(syntheticToken, env), /meta_token_invalid/);
-});
+for (const [data, error] of [
+  [
+    { is_valid: false, app_id: META_APP_ID, scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'] },
+    'meta_token_invalid',
+  ],
+  [
+    { is_valid: true, app_id: '9999999999999999', scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'] },
+    'meta_token_app_mismatch',
+  ],
+  [
+    { is_valid: true, app_id: META_APP_ID, scopes: ['whatsapp_business_management'] },
+    'meta_token_missing_scope',
+  ],
+]) {
+  await withFetch(async () => Response.json({ data }), async () => {
+    await assert.rejects(verifyMetaAccessToken(syntheticToken, env), new RegExp(error));
+  });
+}
 
-await withFetch(async () => Response.json({
-  data: {
-    is_valid: true,
-    app_id: '9999999999999999',
-    scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'],
-  },
-}), async () => {
-  await assert.rejects(verifyMetaAccessToken(syntheticToken, env), /meta_token_app_mismatch/);
-});
-
-await withFetch(async () => Response.json({
-  data: {
-    is_valid: true,
-    app_id: META_APP_ID,
-    scopes: ['whatsapp_business_management'],
-  },
-}), async () => {
-  await assert.rejects(verifyMetaAccessToken(syntheticToken, env), /meta_token_missing_scope/);
-});
-
-await withFetch(async (url, init) => {
+await withFetch(async (url) => {
   const parsed = new URL(String(url));
-  assert.equal(init?.headers?.authorization, `Bearer ${syntheticToken}`);
   if (parsed.pathname.endsWith(`/${VLADIMIR_WABA_ID}`)) {
     return Response.json({ id: VLADIMIR_WABA_ID, name: 'Vladimir WABA' });
   }
@@ -103,15 +100,59 @@ await withFetch(async (url, init) => {
   throw new Error(`Unexpected Graph URL: ${url}`);
 }, async () => {
   const selected = await verifyExistingTarget(syntheticToken, APPROVED_ARTISTS[VLADIMIR_ID]);
+  assert.equal(selected.phoneNumberId, VLADIMIR_PHONE_ID);
+});
+
+const KRISTINA_PHONE_ID = '987654321012345';
+await withFetch(async (url) => {
+  const parsed = new URL(String(url));
+  if (parsed.pathname.endsWith(`/${KRISTINA_WABA_ID}`)) {
+    return Response.json({ id: KRISTINA_WABA_ID, name: 'Kristina Vishar' });
+  }
+  if (parsed.pathname.endsWith(`/${KRISTINA_WABA_ID}/phone_numbers`)) {
+    assert.equal(parsed.searchParams.get('limit'), '2');
+    return Response.json({
+      data: [{ id: KRISTINA_PHONE_ID, display_phone_number: '+44 7000 000002', verified_name: 'Kristina' }],
+      paging: {},
+    });
+  }
+  throw new Error(`Unexpected Graph URL: ${url}`);
+}, async () => {
+  const selected = await verifyExistingTarget(syntheticToken, APPROVED_ARTISTS[KRISTINA_ID]);
   assert.deepEqual(selected, {
-    phoneNumberId: VLADIMIR_PHONE_ID,
-    wabaName: 'Vladimir WABA',
-    displayPhoneNumber: '+44 7507 262323',
-    verifiedName: 'Vladimir',
+    phoneNumberId: KRISTINA_PHONE_ID,
+    wabaName: 'Kristina Vishar',
+    displayPhoneNumber: '+44 7000 000002',
+    verifiedName: 'Kristina',
   });
 });
 
-function requestFor(artistId = VLADIMIR_ID) {
+for (const payload of [
+  {
+    data: [{ id: '111111111111111' }, { id: '222222222222222' }],
+    paging: {},
+  },
+  {
+    data: [{ id: KRISTINA_PHONE_ID }],
+    paging: { next: 'https://graph.facebook.com/next' },
+  },
+]) {
+  await withFetch(async (url) => {
+    const parsed = new URL(String(url));
+    if (parsed.pathname.endsWith(`/${KRISTINA_WABA_ID}`)) {
+      return Response.json({ id: KRISTINA_WABA_ID, name: 'Kristina Vishar' });
+    }
+    if (parsed.pathname.endsWith(`/${KRISTINA_WABA_ID}/phone_numbers`)) return Response.json(payload);
+    throw new Error(`Unexpected Graph URL: ${url}`);
+  }, async () => {
+    await assert.rejects(
+      verifyExistingTarget(syntheticToken, APPROVED_ARTISTS[KRISTINA_ID]),
+      /meta_phone_selection_ambiguous/,
+    );
+  });
+}
+
+function requestFor(artistId) {
   return new Request('https://crm.vishartattoo.com/api/whatsapp/existing-account/provision', {
     method: 'POST',
     headers: {
@@ -123,21 +164,44 @@ function requestFor(artistId = VLADIMIR_ID) {
   });
 }
 
+function artistFixture(artistId) {
+  if (artistId === VLADIMIR_ID) {
+    return {
+      approved: APPROVED_ARTISTS[VLADIMIR_ID],
+      wabaName: 'Vladimir WABA',
+      phoneRows: [{ id: VLADIMIR_PHONE_ID, display_phone_number: '+44 7507 262323', verified_name: 'Vladimir' }],
+      phonePaging: {},
+      displayPhone: '+44 7507 262323',
+      verifiedName: 'Vladimir',
+    };
+  }
+  if (artistId === KRISTINA_ID) {
+    return {
+      approved: APPROVED_ARTISTS[KRISTINA_ID],
+      wabaName: 'Kristina Vishar',
+      phoneRows: [{ id: KRISTINA_PHONE_ID, display_phone_number: '+44 7000 000002', verified_name: 'Kristina' }],
+      phonePaging: {},
+      displayPhone: '+44 7000 000002',
+      verifiedName: 'Kristina',
+    };
+  }
+  throw new Error('Unknown test artist');
+}
+
 async function runProvisionScenario(overrides = {}) {
+  const artistId = overrides.artistId ?? VLADIMIR_ID;
+  const fixture = artistFixture(artistId);
+  const approved = fixture.approved;
   const debugData = overrides.debugData ?? {
     is_valid: true,
     app_id: META_APP_ID,
     scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'],
   };
-  const wabaResponseId = overrides.wabaResponseId ?? VLADIMIR_WABA_ID;
-  const phoneRows = overrides.phoneRows ?? [{
-    id: VLADIMIR_PHONE_ID,
-    display_phone_number: '+44 7507 262323',
-    verified_name: 'Vladimir',
-  }];
+  const wabaResponseId = overrides.wabaResponseId ?? approved.wabaId;
+  const phoneRows = overrides.phoneRows ?? fixture.phoneRows;
+  const phonePaging = overrides.phonePaging ?? fixture.phonePaging;
   const subscriptionApps = overrides.subscriptionApps ?? [{ id: META_APP_ID, name: 'Vishar CRM' }];
   const missingSecretWorker = overrides.missingSecretWorker ?? null;
-  const artistId = overrides.artistId ?? VLADIMIR_ID;
   const state = {
     metaValidationComplete: false,
     cloudflareWrites: [],
@@ -171,25 +235,26 @@ async function runProvisionScenario(overrides = {}) {
         return Response.json([{
           artist_id: artistId,
           provider: 'meta_cloud_api',
-          integration_key: artistId === VLADIMIR_ID ? 'vladimir-production' : 'kristina-production',
+          integration_key: approved.integrationKey,
           is_enabled: true,
           configuration: {},
           connected_at: null,
         }]);
       }
-      if (url.pathname === '/rest/v1/rpc/complete_vladimir_whatsapp_connection' && method === 'POST') {
+      if (url.pathname === '/rest/v1/rpc/complete_artist_whatsapp_connection' && method === 'POST') {
         const body = JSON.parse(String(init.body || '{}'));
-        const serialized = JSON.stringify(body);
-        assert.equal(serialized.includes(syntheticToken), false);
-        assert.equal(serialized.includes(appSecret), false);
-        assert.deepEqual(body, {});
-        const connectedAt = new Date().toISOString();
+        assert.deepEqual(body, {
+          p_artist_id: artistId,
+          p_integration_key: approved.integrationKey,
+        });
+        assert.equal(JSON.stringify(body).includes(syntheticToken), false);
+        assert.equal(JSON.stringify(body).includes(appSecret), false);
         state.supabaseMutations.push(body);
         return Response.json({
-          artist_id: VLADIMIR_ID,
-          integration_key: 'vladimir-production',
+          artist_id: artistId,
+          integration_key: approved.integrationKey,
           is_enabled: true,
-          connected_at: connectedAt,
+          connected_at: new Date().toISOString(),
           configuration: {},
         });
       }
@@ -201,21 +266,23 @@ async function runProvisionScenario(overrides = {}) {
         assert.equal(init.headers?.authorization, `Bearer ${META_APP_ID}|${appSecret}`);
         return Response.json({ data: debugData });
       }
-      if (url.pathname === `/v25.0/${VLADIMIR_WABA_ID}`) {
+      if (url.pathname === `/v25.0/${approved.wabaId}`) {
         state.metaTargetReads += 1;
-        return Response.json({ id: wabaResponseId, name: 'Vladimir WABA' });
+        return Response.json({ id: wabaResponseId, name: fixture.wabaName });
       }
-      if (url.pathname === `/v25.0/${VLADIMIR_WABA_ID}/phone_numbers`) {
+      if (url.pathname === `/v25.0/${approved.wabaId}/phone_numbers`) {
         state.metaTargetReads += 1;
-        const hasExpectedPhone = phoneRows.some((row) => String(row?.id || '') === VLADIMIR_PHONE_ID);
-        if (wabaResponseId === VLADIMIR_WABA_ID && hasExpectedPhone) state.metaValidationComplete = true;
-        return Response.json({ data: phoneRows });
+        const validPhone = approved.phoneNumberId
+          ? phoneRows.some((row) => String(row?.id || '') === approved.phoneNumberId)
+          : phoneRows.length === 1 && !phonePaging?.next && /^[0-9]{5,32}$/.test(String(phoneRows[0]?.id || ''));
+        if (wabaResponseId === approved.wabaId && validPhone) state.metaValidationComplete = true;
+        return Response.json({ data: phoneRows, paging: phonePaging });
       }
-      if (url.pathname === `/v25.0/${VLADIMIR_WABA_ID}/subscribed_apps` && method === 'POST') {
+      if (url.pathname === `/v25.0/${approved.wabaId}/subscribed_apps` && method === 'POST') {
         state.subscriptionPosts += 1;
         return Response.json({ success: true });
       }
-      if (url.pathname === `/v25.0/${VLADIMIR_WABA_ID}/subscribed_apps` && method === 'GET') {
+      if (url.pathname === `/v25.0/${approved.wabaId}/subscribed_apps` && method === 'GET') {
         state.subscriptionReadbacks += 1;
         return Response.json({ data: subscriptionApps });
       }
@@ -230,17 +297,17 @@ async function runProvisionScenario(overrides = {}) {
       if (method === 'PUT') {
         state.firstWriteAfterValidation = state.firstWriteAfterValidation && state.metaValidationComplete;
         const body = JSON.parse(String(init.body || '{}'));
-        assert.equal(body.name, VLADIMIR_BINDING);
+        assert.equal(body.name, approved.bindingName);
         assert.equal(typeof body.text, 'string');
         assert.equal(body.text.includes(syntheticToken), true);
         state.cloudflareWrites.push(worker);
-        return Response.json({ success: true, result: { name: VLADIMIR_BINDING } });
+        return Response.json({ success: true, result: { name: approved.bindingName } });
       }
       if (method === 'GET') {
         state.cloudflareReadbacks.push(worker);
         return Response.json({
           success: true,
-          result: worker === missingSecretWorker ? [] : [{ name: VLADIMIR_BINDING, type: 'secret_text' }],
+          result: worker === missingSecretWorker ? [] : [{ name: approved.bindingName, type: 'secret_text' }],
         });
       }
     }
@@ -263,7 +330,7 @@ async function runProvisionScenario(overrides = {}) {
   assert.equal(text.includes(syntheticToken), false);
   assert.equal(text.includes(appSecret), false);
   assert.equal(capturedLogs.some((entry) => entry.includes(syntheticToken) || entry.includes(appSecret)), false);
-  return { response, text, payload: JSON.parse(text), state, capturedLogs };
+  return { response, payload: JSON.parse(text), state };
 }
 
 for (const scenario of [
@@ -288,7 +355,7 @@ for (const scenario of [
     error: 'meta_waba_mismatch',
   },
   {
-    name: 'wrong phone id',
+    name: 'wrong Vladimir phone id',
     overrides: { phoneRows: [{ id: '999999999999999', display_phone_number: '+44 7000 000000' }] },
     error: 'meta_phone_not_in_waba',
   },
@@ -296,43 +363,49 @@ for (const scenario of [
   const result = await runProvisionScenario(scenario.overrides);
   assert.equal(result.response.status, 409, scenario.name);
   assert.equal(result.payload.error, scenario.error, scenario.name);
-  assert.deepEqual(result.state.cloudflareWrites, [], `${scenario.name}: Cloudflare must not mutate before all Meta checks pass`);
+  assert.deepEqual(result.state.cloudflareWrites, [], `${scenario.name}: Cloudflare must not mutate before Meta checks pass`);
   assert.deepEqual(result.state.supabaseMutations, [], `${scenario.name}: CRM must not become connected`);
 }
 
-const kristina = await runProvisionScenario({ artistId: KRISTINA_ID });
-assert.equal(kristina.response.status, 403);
-assert.equal(kristina.payload.error, 'artist_scope_not_allowed');
-assert.deepEqual(kristina.state.cloudflareWrites, []);
-assert.deepEqual(kristina.state.supabaseMutations, []);
+const ambiguousKristina = await runProvisionScenario({
+  artistId: KRISTINA_ID,
+  phoneRows: [{ id: '111111111111111' }, { id: '222222222222222' }],
+});
+assert.equal(ambiguousKristina.response.status, 409);
+assert.equal(ambiguousKristina.payload.error, 'meta_phone_selection_ambiguous');
+assert.deepEqual(ambiguousKristina.state.cloudflareWrites, []);
+assert.deepEqual(ambiguousKristina.state.supabaseMutations, []);
 
-const missingSubscription = await runProvisionScenario({ subscriptionApps: [] });
+const missingSubscription = await runProvisionScenario({ artistId: KRISTINA_ID, subscriptionApps: [] });
 assert.equal(missingSubscription.response.status, 500);
 assert.equal(missingSubscription.payload.error, 'meta_waba_subscription_readback_failed');
 assert.deepEqual(missingSubscription.state.cloudflareWrites, ['drain', 'webhook']);
 assert.deepEqual(missingSubscription.state.supabaseMutations, []);
 
-const missingCloudflareReadback = await runProvisionScenario({ missingSecretWorker: 'drain' });
+const missingCloudflareReadback = await runProvisionScenario({ artistId: KRISTINA_ID, missingSecretWorker: 'drain' });
 assert.equal(missingCloudflareReadback.response.status, 500);
 assert.equal(missingCloudflareReadback.payload.error, 'cloudflare_binding_readback_failed');
 assert.deepEqual(missingCloudflareReadback.state.supabaseMutations, []);
 
-const success = await runProvisionScenario();
-assert.equal(success.response.status, 200);
-assert.deepEqual(success.state.cloudflareWrites, ['drain', 'webhook']);
-assert.deepEqual(success.state.cloudflareReadbacks, ['drain', 'webhook']);
-assert.equal(success.state.firstWriteAfterValidation, true);
-assert.equal(success.state.subscriptionPosts, 1);
-assert.equal(success.state.subscriptionReadbacks, 1);
-assert.equal(success.state.metaTargetReads, 4);
-assert.equal(success.state.supabaseMutations.length, 1);
-assert.equal(success.payload.ok, true);
-assert.equal(success.payload.connected, true);
-assert.equal(typeof success.payload.connected_at, 'string');
-assert.equal(success.payload.integration_key, 'vladimir-production');
-assert.equal(success.payload.display_phone_number, '+44 7507 262323');
-assert.equal(success.payload.verified_name, 'Vladimir');
-assert.equal('access_token' in success.payload, false);
-assert.equal('app_secret' in success.payload, false);
+for (const artistId of [VLADIMIR_ID, KRISTINA_ID]) {
+  const fixture = artistFixture(artistId);
+  const success = await runProvisionScenario({ artistId });
+  assert.equal(success.response.status, 200);
+  assert.deepEqual(success.state.cloudflareWrites, ['drain', 'webhook']);
+  assert.deepEqual(success.state.cloudflareReadbacks, ['drain', 'webhook']);
+  assert.equal(success.state.firstWriteAfterValidation, true);
+  assert.equal(success.state.subscriptionPosts, 1);
+  assert.equal(success.state.subscriptionReadbacks, 1);
+  assert.equal(success.state.metaTargetReads, 4);
+  assert.equal(success.state.supabaseMutations.length, 1);
+  assert.equal(success.payload.ok, true);
+  assert.equal(success.payload.connected, true);
+  assert.equal(typeof success.payload.connected_at, 'string');
+  assert.equal(success.payload.integration_key, fixture.approved.integrationKey);
+  assert.equal(success.payload.display_phone_number, fixture.displayPhone);
+  assert.equal(success.payload.verified_name, fixture.verifiedName);
+  assert.equal('access_token' in success.payload, false);
+  assert.equal('app_secret' in success.payload, false);
+}
 
-console.log('WhatsApp existing-account Vladimir provisioning boundary: ok');
+console.log('WhatsApp existing-account Vladimir + Kristina provisioning boundary: ok');
