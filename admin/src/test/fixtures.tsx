@@ -429,6 +429,8 @@ export interface FakeClientOptions {
   todayPulse?: unknown;
   /** What `get_conversation_link_suggestion` answers. Omitted means no match. */
   linkSuggestion?: unknown;
+  /** The eligibility reason `get_session_booking_card_status` reports. */
+  bookingCardReason?: string;
   /** Records PostgREST filters so detail pages can prove server-side scoping. */
   queryCalls?: { table: string; method: string; args: unknown[] }[];
   /** Force an error from one table, to exercise the error state. */
@@ -1143,6 +1145,17 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (name === 'get_today_pulse') {
         return {
           data: options.todayPulse ?? { generated_at: '2026-09-01T08:00:00Z', enabled: false, items: [], artists: [] },
+          error: null,
+        };
+      }
+      if (name === 'get_session_booking_card_status' && options.bookingCardReason) {
+        return {
+          data: {
+            session_id: (args as Record<string, unknown> | undefined)?.p_session_id ?? null,
+            eligible: false,
+            reason: options.bookingCardReason,
+            deliveries: [],
+          },
           error: null,
         };
       }

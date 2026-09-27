@@ -146,6 +146,16 @@ conversation/message ids and decision time, never message content:
 | `conversation_channel_unreachable` | none; e.g. the WhatsApp conversation is not with the client's number |
 | `delivery_unavailable` | none; the channel could not be materialised (e.g. template missing) |
 
+### Activation cutoff (grandfathering)
+
+Cards are only for appointments booked after booking cards were switched on:
+`sessions.created_at >= booking_card_artist_settings.appointment_created_from`
+(2026-09-27 05:00 UTC, the release that activated cards). An older appointment
+is ineligible with reason `appointment_before_activation`: saving its real
+`sessions.price`, recording a deposit or reconciling never creates or sends a
+card. The appointment-date window (`appointment_start_from`) still applies on
+top of this.
+
 A blocked card is re-resolved when new conversation evidence for the client
 appears (a message, a linked conversation, a sent email, a Gmail thread,
 excerpt or snapshot). The rollout window still applies: appointments before

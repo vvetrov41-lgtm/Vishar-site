@@ -110,11 +110,10 @@ export function SessionPricesPanel({
 
   async function save() {
     if (!ready.length || invalid) return;
+    const cardable = await countCardable(ready.map((row) => row.appointment.id));
     const approved = await confirmDialog({
       title: ru ? 'Сохранить реальные цены сеансов?' : 'Save real session prices?',
-      message: ru
-        ? `Суммы станут реальными ценами сеансов (${ready.length}). Для подтверждённого сеанса с оплаченным депозитом после этого может сразу уйти карточка записи клиенту по Email и WhatsApp, если отправка включена. Проверь каждую сумму.`
-        : `These amounts become real session prices (${ready.length}). For a confirmed session with its deposit paid, the booking card can then go to the client by email and WhatsApp straight away when sending is on. Check every amount.`,
+      message: saveMessage(ready.length, cardable, ru),
       confirmLabel: ru ? 'Сохранить' : 'Save',
       cancelLabel: cancelLabelFor(language),
       tone: 'primary',
@@ -133,6 +132,15 @@ export function SessionPricesPanel({
     } finally {
       setSaving(false);
     }
+  }
+
+  // Appointments booked before booking cards were switched on never get a
+  // card, so saving their price is safe. Unknown status counts as cardable.
+  async function countCardable(ids: string[]): Promise<number> {
+    const statuses = await Promise.all(ids.map((id) => api.getSessionBookingCardStatus(id)
+      .then((status) => status.reason)
+      .catch(() => null)));
+    return statuses.filter((reason) => reason !== 'appointment_before_activation').length;
   }
 
   return (
@@ -198,4 +206,15 @@ export function SessionPricesPanel({
       </div>
     </div>
   );
+}
+
+function saveMessage(total: number, cardable: number, ru: boolean): string {
+  if (cardable === 0) {
+    return ru
+      ? `Суммы станут реальными ценами сеансов (${total}). Эти записи созданы до включения карточек, поэтому карточка записи клиенту не уйдёт. Проверь каждую сумму.`
+      : `These amounts become real session prices (${total}). These appointments were booked before booking cards were switched on, so no booking card goes to the client. Check every amount.`;
+  }
+  return ru
+    ? `Суммы станут реальными ценами сеансов (${total}). Для ${cardable} из них, если сеанс подтверждён и депозит оплачен, может сразу уйти карточка записи в канал, где идёт переписка с клиентом. Проверь каждую сумму.`
+    : `These amounts become real session prices (${total}). For ${cardable} of them, once the session is confirmed and its deposit paid, the booking card can go straight away in the channel the client talks to you in. Check every amount.`;
 }
