@@ -16,6 +16,17 @@ create index if not exists appointment_client_action_tokens_booking_card_idx
     and consumed_at is null
     and invalidated_at is null;
 
+-- Lifecycle reminders keep "one live capability per session and action".
+-- Booking cards deliberately issue one pair per delivery channel (spec), so
+-- their capabilities are outside that rule; the per-channel delivery row and
+-- sibling invalidation on first response bound them instead.
+drop index if exists crm_private.appointment_client_action_one_live_per_action_idx;
+create unique index appointment_client_action_one_live_per_action_idx
+  on crm_private.appointment_client_action_tokens (session_id, action)
+  where consumed_at is null
+    and invalidated_at is null
+    and booking_card_id is null;
+
 comment on column crm_private.appointment_client_action_tokens.booking_card_id is
   'Present only for capabilities minted by a canonical booking card. Lifecycle reminder capabilities remain NULL.';
 

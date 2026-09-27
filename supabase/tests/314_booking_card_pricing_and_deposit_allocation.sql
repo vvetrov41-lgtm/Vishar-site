@@ -188,11 +188,17 @@ select is(
 
 -- Kristina: no per-session deposit configured. A project deposit is only
 -- attributable when exactly one tattoo session is booked.
+-- Clients are workspace-scoped; Kristina's client lives in her workspace.
+insert into public.clients (id, full_name, email, workspace_id)
+select 'f9222222-2222-4222-8222-222222222222', 'Allocation Client K', 'alloc-client-k@example.test', a.workspace_id
+from public.artists a
+where a.id = 'a2222222-2222-4222-8222-222222222222';
+
 insert into public.projects (
   id, client_id, artist_id, title, status, currency, deposit_status, deposit_amount
 ) values (
   'f9522222-2222-4222-8222-222222222222',
-  'f9211111-1111-4111-8111-111111111111',
+  'f9222222-2222-4222-8222-222222222222',
   'a2222222-2222-4222-8222-222222222222',
   'Floral piece', 'active', 'GBP', 'paid', 500.00
 );
@@ -202,7 +208,7 @@ insert into public.sessions (
   start_at, end_at, duration_hours, price, currency
 ) values
   ('f9655555-5555-4555-8555-555555555555', 'f9522222-2222-4222-8222-222222222222',
-   'f9211111-1111-4111-8111-111111111111', 'a2222222-2222-4222-8222-222222222222',
+   'f9222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
    'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '35 days', date_trunc('hour', now()) + interval '35 days 5 hours',
    5, 900.00, 'GBP');
 
@@ -219,7 +225,7 @@ insert into public.sessions (
   start_at, end_at, duration_hours, price, currency
 ) values
   ('f9666666-6666-4666-8666-666666666666', 'f9522222-2222-4222-8222-222222222222',
-   'f9211111-1111-4111-8111-111111111111', 'a2222222-2222-4222-8222-222222222222',
+   'f9222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
    'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '45 days', date_trunc('hour', now()) + interval '45 days 5 hours',
    5, 900.00, 'GBP');
 

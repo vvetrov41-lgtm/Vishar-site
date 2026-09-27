@@ -1,3 +1,4 @@
+import { isBlockingDetailLoad } from '../lib/detail-loading';
 import { useEffect, useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
@@ -95,7 +96,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     }
   }
 
-  if (loading) return <LoadingState label={t('project.loading')} />;
+  if (isBlockingDetailLoad(loading, data?.project?.id, projectId)) return <LoadingState label={t('project.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.project) return <EmptyState title={t('project.notFound')} />;
 

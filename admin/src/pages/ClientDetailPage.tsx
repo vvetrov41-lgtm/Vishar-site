@@ -11,6 +11,7 @@
 // owns the reasoning and is tested separately, so what this file does is fetch,
 // order and render.
 
+import { isBlockingDetailLoad } from '../lib/detail-loading';
 import { useEffect, useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
@@ -102,7 +103,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     return { client, enquiries, projects, notes, appointments, followUps, conversations, latestMessages };
   }, [api, clientId, role]);
 
-  if (loading) return <LoadingState label={t('client.loading')} />;
+  if (isBlockingDetailLoad(loading, data?.client?.id, clientId)) return <LoadingState label={t('client.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.client) return <EmptyState title={t('client.notFound')} />;
 
