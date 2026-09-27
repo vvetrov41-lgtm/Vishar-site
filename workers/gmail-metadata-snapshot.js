@@ -6,8 +6,26 @@ const GMAIL_PUBLIC_HOST = 'gmail.vishartattoo.com';
 const METADATA_CONCURRENCY = 5;
 const PROVIDER_TIMEOUT_MS = 5000;
 const SNAPSHOT_WINDOW_DAYS = 30;
-const HISTORY_CLIENTS_PER_RUN = 5;
-const HISTORY_MESSAGES_PER_CLIENT = 3;
+const HISTORY_CLIENTS_PER_RUN = 3;
+const HISTORY_MESSAGES_PER_CLIENT = 2;
+// Cloudflare caps subrequests per Worker invocation. Fetching metadata for
+// every message of the last 30 days hit that cap on every run, so no snapshot
+// was ever written. Each run now handles one mailbox (round robin) within a
+// fixed budget: the newest messages, then a few client history lookups.
+const SUBREQUEST_BUDGET = 40;
+const METADATA_MESSAGES_PER_RUN = 20;
+const RUN_INTERVAL_MS = 5 * 60 * 1000;
+
+function budgetedFetch(fetchImpl, limit = SUBREQUEST_BUDGET) {
+  let used = 0;
+  const wrapped = (...args) => {
+    if (used >= limit) return Promise.reject(new Error('gmail_subrequest_budget_exhausted'));
+    used += 1;
+    return fetchImpl(...args);
+  };
+  wrapped.used = () => used;
+  return wrapped;
+}
 
 function uuid(value) {
   return typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value) ? value : null;
@@ -145,42 +163,29 @@ function metadataCorrespondent(message, mailboxEmail) {
   };
 }
 
-async function listRecentMetadata(accessToken, mailboxEmail, fetchImpl = fetch) {
+async function listRecentMetadata(accessToken, mailboxEmail, fetchImpl = fetch, maxMessages = METADATA_MESSAGES_PER_RUN) {
   const query = `newer_than:${SNAPSHOT_WINDOW_DAYS}d -in:drafts -in:chats -in:spam -in:trash`;
-  const seenTokens = new Set();
-  const seenIds = new Set();
+  const params = new URLSearchParams({ maxResults: String(maxMessages), q: query });
+  const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
+  const ids = [...new Set((Array.isArray(listing.messages) ? listing.messages : [])
+    .map((item) => safeProviderId(item?.id))
+    .filter(Boolean))].slice(0, maxMessages);
   const rows = [];
-  let pageToken = null;
-  do {
-    const params = new URLSearchParams({ maxResults: '500', q: query });
-    if (pageToken) params.set('pageToken', pageToken);
-    const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
-    const ids = (Array.isArray(listing.messages) ? listing.messages : [])
-      .map((item) => safeProviderId(item?.id))
-      .filter((id) => id && !seenIds.has(id));
-    ids.forEach((id) => seenIds.add(id));
-    for (let offset = 0; offset < ids.length; offset += METADATA_CONCURRENCY) {
-      const batch = ids.slice(offset, offset + METADATA_CONCURRENCY);
-      const values = await Promise.all(batch.map(async (id) => {
-        try {
-          const message = await gmailJson(
-            `/gmail/v1/users/me/messages/${encodeURIComponent(id)}`
-              + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date',
-            accessToken,
-            fetchImpl,
-          );
-          return metadataCorrespondent(message, mailboxEmail);
-        } catch { return null; }
-      }));
-      rows.push(...values.filter(Boolean));
-    }
-    const next = typeof listing.nextPageToken === 'string' && listing.nextPageToken
-      ? listing.nextPageToken : null;
-    if (!next) break;
-    if (seenTokens.has(next)) throw new Error('gmail_discovery_pagination_loop');
-    seenTokens.add(next);
-    pageToken = next;
-  } while (pageToken);
+  for (let offset = 0; offset < ids.length; offset += METADATA_CONCURRENCY) {
+    const batch = ids.slice(offset, offset + METADATA_CONCURRENCY);
+    const values = await Promise.all(batch.map(async (id) => {
+      try {
+        const message = await gmailJson(
+          `/gmail/v1/users/me/messages/${encodeURIComponent(id)}`
+            + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date',
+          accessToken,
+          fetchImpl,
+        );
+        return metadataCorrespondent(message, mailboxEmail);
+      } catch { return null; }
+    }));
+    rows.push(...values.filter(Boolean));
+  }
   return rows;
 }
 
@@ -251,9 +256,12 @@ async function persistSnapshot(env, artistId, rows, refreshedAt, fetchImpl = fet
       body: JSON.stringify(rows),
     }, fetchImpl);
   }
+  // Incremental: each run upserts the newest messages and only forgets clients
+  // whose last message left the 30-day window.
+  const cutoff = new Date(Date.parse(refreshedAt) - SNAPSHOT_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const stale = new URL('/rest/v1/gmail_client_metadata_snapshots', origin);
   stale.searchParams.set('artist_id', `eq.${artistId}`);
-  stale.searchParams.set('refreshed_at', `lt.${refreshedAt}`);
+  stale.searchParams.set('last_message_at', `lt.${cutoff}`);
   await supabaseJson(stale, { method: 'DELETE', headers: { ...headers, prefer: 'return=minimal' } }, fetchImpl);
 }
 
@@ -338,43 +346,49 @@ async function backfillClientHistory(env, artistId, accessToken, mailboxEmail, f
   return checked;
 }
 
-export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch) {
+function safeRefreshCode(error) {
+  const message = error instanceof Error ? error.message : '';
+  if (/^[a-z][a-z0-9_]{2,63}$/.test(message)) return message;
+  if (/too many subrequests/i.test(message)) return 'gmail_subrequest_limit';
+  return 'gmail_metadata_refresh_failed';
+}
+
+export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch, now = Date.now()) {
   if (env?.VISHAR_ENVIRONMENT !== 'production' || env?.GMAIL_READ_ENABLED !== 'true') {
     return { skipped: true, artists: 0, refreshed: 0, failed: 0 };
   }
-  const mailboxes = await listEnabledMailboxes(env, fetchImpl);
-  let refreshed = 0;
-  let failed = 0;
-  for (const mailbox of mailboxes) {
-    try {
-      const { accessToken, stored } = await refreshAccessToken(env, mailbox.artist_id, fetchImpl);
-      if (stored.integration_key !== mailbox.integration_key
-          || stored.mailbox_email !== safeEmail(mailbox.external_account_label)) {
-        throw new Error('gmail_token_binding_mismatch');
-      }
-      const profile = await getProfile(accessToken, fetchImpl);
-      if (safeEmail(profile.emailAddress) !== safeEmail(mailbox.external_account_label)) {
-        throw new Error('gmail_profile_binding_mismatch');
-      }
-      const metadata = await listRecentMetadata(accessToken, mailbox.external_account_label, fetchImpl);
-      const matched = metadata.length
-        ? await matchKnownClients(env, mailbox.artist_id, metadata, fetchImpl) : [];
-      const refreshedAt = new Date().toISOString();
-      const rows = latestKnownRows(mailbox.artist_id, metadata, matched, refreshedAt);
-      await persistSnapshot(env, mailbox.artist_id, rows, refreshedAt, fetchImpl);
-      await backfillClientHistory(
-        env, mailbox.artist_id, accessToken, mailbox.external_account_label, fetchImpl,
-      );
-      refreshed += 1;
-    } catch (error) {
-      failed += 1;
-      console.error('gmail metadata snapshot refresh failed', JSON.stringify({
-        artist_id: mailbox.artist_id,
-        code: error instanceof Error ? error.message : 'gmail_metadata_refresh_failed',
-      }));
+  const budgeted = budgetedFetch(fetchImpl);
+  const mailboxes = await listEnabledMailboxes(env, budgeted);
+  if (!mailboxes.length) return { skipped: false, artists: 0, refreshed: 0, failed: 0 };
+  // One mailbox per run, in turn, so every run stays inside the budget.
+  const mailbox = mailboxes[Math.floor(now / RUN_INTERVAL_MS) % mailboxes.length];
+  try {
+    const { accessToken, stored } = await refreshAccessToken(env, mailbox.artist_id, budgeted);
+    if (stored.integration_key !== mailbox.integration_key
+        || stored.mailbox_email !== safeEmail(mailbox.external_account_label)) {
+      throw new Error('gmail_token_binding_mismatch');
     }
+    const profile = await getProfile(accessToken, budgeted);
+    if (safeEmail(profile.emailAddress) !== safeEmail(mailbox.external_account_label)) {
+      throw new Error('gmail_profile_binding_mismatch');
+    }
+    const metadata = await listRecentMetadata(accessToken, mailbox.external_account_label, budgeted);
+    const matched = metadata.length
+      ? await matchKnownClients(env, mailbox.artist_id, metadata, budgeted) : [];
+    const refreshedAt = new Date(now).toISOString();
+    const rows = latestKnownRows(mailbox.artist_id, metadata, matched, refreshedAt);
+    await persistSnapshot(env, mailbox.artist_id, rows, refreshedAt, budgeted);
+    await backfillClientHistory(
+      env, mailbox.artist_id, accessToken, mailbox.external_account_label, budgeted,
+    );
+    return { skipped: false, artists: 1, refreshed: 1, failed: 0 };
+  } catch (error) {
+    console.error('gmail metadata snapshot refresh failed', JSON.stringify({
+      artist_id: mailbox.artist_id,
+      code: safeRefreshCode(error),
+    }));
+    return { skipped: false, artists: 1, refreshed: 0, failed: 1 };
   }
-  return { skipped: false, artists: mailboxes.length, refreshed, failed };
 }
 
 export async function handleCachedGmailDiscoveryRequest(request, env, fetchImpl = fetch) {
@@ -440,6 +454,11 @@ export const __testing = Object.freeze({
   SNAPSHOT_WINDOW_DAYS,
   HISTORY_CLIENTS_PER_RUN,
   HISTORY_MESSAGES_PER_CLIENT,
+  SUBREQUEST_BUDGET,
+  METADATA_MESSAGES_PER_RUN,
+  budgetedFetch,
+  listRecentMetadata,
+  persistSnapshot,
   metadataCorrespondent,
   latestKnownRows,
   listEnabledMailboxes,
