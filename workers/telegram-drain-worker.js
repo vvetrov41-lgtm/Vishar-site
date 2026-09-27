@@ -9,6 +9,7 @@ import {
   runTransientOutboxRecovery,
 } from './lib/automation-tick.js';
 import { ConfigurationError } from './lib/http.js';
+import { constantTimeEqual } from './lib/whatsapp-webhook.js';
 import { createSupabaseClient, SupabaseError } from './lib/supabase.js';
 import {
   sendSharedTelegramNotification,
@@ -267,7 +268,7 @@ async function handleLinkingWebhook(request, env, fetchImpl = fetch) {
 
   const expected = env.TELEGRAM_WEBHOOK_SECRET.trim();
   const supplied = request.headers.get('x-telegram-bot-api-secret-token') || '';
-  if (supplied !== expected) return json(401, { error: 'webhook_unauthorized' });
+  if (!expected || !constantTimeEqual(supplied, expected)) return json(401, { error: 'webhook_unauthorized' });
 
   let update;
   try { update = await readWebhookJson(request); }
