@@ -174,13 +174,24 @@ select results_eq(
 select is(
   (select count(*)::int
    from public.integration_outbox o
-   where o.session_id = 'fc611111-1111-4111-8111-111111111111'
+   join crm_private.booking_cards b
+     on o.dedupe_key in ('email:booking_card:' || b.id::text, 'whatsapp:booking_card:' || b.id::text)
+   where b.session_id = 'fc611111-1111-4111-8111-111111111111'
      and o.kind in (
        'approved_email'::public.outbox_kind,
        'whatsapp_message'::public.outbox_kind
      )),
   2,
   'dispatch creates exactly two durable provider jobs and sends nothing inline'
+);
+
+select ok(
+  (select bool_and(o.next_attempt_at >= now() + interval '110 seconds')
+   from public.integration_outbox o
+   join crm_private.booking_cards b
+     on o.dedupe_key in ('email:booking_card:' || b.id::text, 'whatsapp:booking_card:' || b.id::text)
+   where b.session_id = 'fc611111-1111-4111-8111-111111111111'),
+  'card messages are held briefly so a follow-up edit supersedes them before sending'
 );
 
 -- Moving the appointment creates a new calendar version and supersedes the
