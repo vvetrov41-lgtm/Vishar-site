@@ -23,7 +23,7 @@ export function ProjectsPage() {
     };
   }, [api, selectedArtistId]);
 
-  if (loading) return <LoadingState label={t('projects.loading')} />;
+  if (loading && !data) return <LoadingState label={t('projects.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
 
   const creationGuide = (

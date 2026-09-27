@@ -15,8 +15,10 @@ export function CollapsedSection({
   title,
   count,
   defaultOpen = false,
+  id,
   children,
 }: {
+  id?: string;
   title: string;
   /** Shown beside the title. Zero is worth saying: it means nothing is waiting. */
   count: number;
@@ -24,7 +26,7 @@ export function CollapsedSection({
   children: ReactNode;
 }) {
   return (
-    <details className="card collapsed-section" open={defaultOpen}>
+    <details id={id} className="card collapsed-section" open={defaultOpen}>
       <summary>
         <span className="collapsed-section-title">{title}</span>
         <span className="collapsed-section-count">{count}</span>

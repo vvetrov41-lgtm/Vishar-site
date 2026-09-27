@@ -1,11 +1,10 @@
-import { useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { collectClientArtistIds } from '../lib/client-artist-relationships';
 import { formatDate } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
-import { Link } from '../lib/router';
+import { Link, useQueryState } from '../lib/router';
 import { useApi } from '../lib/session';
 import type { Client } from '../lib/types';
 import { useDebouncedValue } from '../lib/use-debounced-value';
@@ -13,7 +12,7 @@ import { useDebouncedValue } from '../lib/use-debounced-value';
 export function ClientsPage() {
   const api = useApi();
   const { t, language } = useLanguage();
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useQueryState('q');
   const debouncedSearch = useDebouncedValue(search.trim());
   const { data, loading, error, reload } = useAsync<Client[]>(
     () => api.listClients(debouncedSearch || undefined),

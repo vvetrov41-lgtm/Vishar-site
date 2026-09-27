@@ -14,13 +14,13 @@
 // it is waiting. Message history and email bodies load only when a row is
 // opened, so an artist with a busy account does not pay for it on every render.
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import './Inbox.css';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
-import { Link } from '../lib/router';
+import { Link, useQueryState } from '../lib/router';
 import { useApi } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import {
@@ -125,8 +125,10 @@ export function InboxPage() {
   const { language } = useLanguage();
   const copy = COPY[language];
   const { selectedArtistId } = useArtistScope();
-  const [channel, setChannel] = useState<ChannelFilter>('');
-  const [view, setView] = useState<ViewFilter>('');
+  const [channelParam, setChannel] = useQueryState('channel');
+  const [viewParam, setView] = useQueryState('view');
+  const channel = channelParam as ChannelFilter;
+  const view = viewParam as ViewFilter;
 
   // Needs-reply is decided from the newest message's direction, which the
   // projection already carries, so it is applied here rather than asked of the

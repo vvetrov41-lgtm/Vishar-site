@@ -4,6 +4,8 @@
 // Live Gmail is read-only. Draft approval still releases mail through the
 // existing outbox; this screen deliberately has no direct-send composer.
 
+import { useBlockingLoad } from '../lib/detail-loading';
+import { BackButton } from '../components/DetailContext';
 import { useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmailDraftEditor } from '../components/EmailDraftEditor';
@@ -120,7 +122,8 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
     }
   }
 
-  if (loading) return <LoadingState label={copy.loading} />;
+  const blockingLoad = useBlockingLoad(loading, data != null, threadKey);
+  if (blockingLoad) return <LoadingState label={copy.loading} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.thread) {
     return <EmptyState title={copy.notFound} hint={copy.notFoundHint} />;
@@ -131,7 +134,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
   return (
     <>
       <div className="card conversation-header">
-        <Link to="/inbox" className="badge">{copy.back}</Link>
+        <BackButton to="/inbox" className="badge" fallbackLabel={copy.back} />
         <h2 className="conversation-title">{thread.subject || copy.noSubject}</h2>
         <div className="meta conversation-badges">
           <span className="badge channel-email">{copy.email}</span>

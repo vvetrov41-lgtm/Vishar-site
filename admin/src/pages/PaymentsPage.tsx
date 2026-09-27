@@ -1,5 +1,6 @@
+import { useModalBehaviour } from '../lib/modal-behaviour';
 import { SessionPricingPanel } from '../components/SessionPricingPanel';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { LoadingState } from '../components/StateViews';
 import { daysAgoIso } from '../lib/appointment-api';
 import type { Appointment } from '../lib/appointment-api';
@@ -230,6 +231,14 @@ export function PaymentsPage() {
   const depositSheetAppointment = useMemo(
     () => eligibleAppointments.find((appointment) => appointment.id === depositSheetSessionId) ?? null,
     [depositSheetSessionId, eligibleAppointments]
+  );
+  const depositSheetRef = useRef<HTMLDivElement | null>(null);
+  const closeDepositSheet = useCallback(() => setDepositSheetSessionId(null), []);
+  useModalBehaviour(
+    Boolean(depositSheetAppointment),
+    depositSheetRef,
+    closeDepositSheet,
+    busySession === null || busySession !== depositSheetSessionId
   );
 
   const selectedGroupAppointments = useMemo(
@@ -917,6 +926,7 @@ export function PaymentsPage() {
             }}
           >
             <div
+              ref={depositSheetRef}
               className="deposit-sheet"
               role="dialog"
               aria-modal="true"

@@ -20,3 +20,33 @@
   overflow-wrap: normal;
   word-break: normal;
 }
+
+/* Touch targets: the controls operators tap all day reach 44px (Apple HIG). */
+.enquiry-view-toggle button,
+.follow-up-done,
+.payments-session-action {
+  min-height: 44px;
+}
+
+/* Phone chrome: on global pages the scope notice explained itself in two
+   lines on every screen. Keep the one-line title visible and leave the
+   explanation to screen readers, so the sticky header gives the page back
+   its space. The artist selector itself is unchanged. */
+@media (max-width: 639px) {
+  .topbar {
+    gap: 8px;
+    padding-bottom: 8px;
+  }
+  .artist-scope-control .notice {
+    padding: 6px 10px;
+    font-size: 0.82rem;
+  }
+  .artist-scope-control .notice > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}

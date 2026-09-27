@@ -57,7 +57,7 @@ export function UsersPage() {
     }
   }
 
-  if (loading) return <LoadingState label={t('users.loading')} />;
+  if (loading && !data) return <LoadingState label={t('users.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return <EmptyState title={t('users.noStaff')} />;
 

@@ -7,6 +7,7 @@
 // why a rejected payment leaves the screen showing the server's numbers rather
 // than an optimistic guess.
 
+import { useBlockingLoad } from '../lib/detail-loading';
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
@@ -47,7 +48,8 @@ export function InvoiceDetailPage({ invoiceId }: { invoiceId: string }) {
 
   useEffect(() => { setActionNotice(null); }, [invoiceId]);
 
-  if (loading) return <LoadingState label={copy.loading} />;
+  const blockingLoad = useBlockingLoad(loading, data != null, invoiceId);
+  if (blockingLoad) return <LoadingState label={copy.loading} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data) return <EmptyState title={copy.notFound} hint={copy.notFoundHint} />;
 

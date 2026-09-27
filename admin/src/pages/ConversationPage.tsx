@@ -11,6 +11,8 @@
 // the server. Every action names the conversation and lets the database
 // resolve the rest.
 
+import { useBlockingLoad } from '../lib/detail-loading';
+import { BackButton } from '../components/DetailContext';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { captureEvent } from '../lib/product-analytics';
 import './Inbox.css';
@@ -211,7 +213,8 @@ export function ConversationPage({ conversationId }: { conversationId: string })
     }
   }, [reload, reloadMessages]);
 
-  if (loading) return <LoadingState label={copy.loading} />;
+  const blockingLoad = useBlockingLoad(loading, conversation != null, conversationId);
+  if (blockingLoad) return <LoadingState label={copy.loading} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!conversation) {
     return <EmptyState title={copy.notFound} hint={copy.notFoundHint} />;
@@ -254,7 +257,7 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   return (
     <>
       <div className="card conversation-header">
-        <Link to="/inbox" className="badge">{copy.back}</Link>
+        <BackButton to="/inbox" className="badge" fallbackLabel={copy.back} />
         <h2 className="conversation-title">{label}</h2>
         <div className="meta conversation-badges">
           <span className={`badge channel-${conversation.channel}`}>
