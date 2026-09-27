@@ -95,8 +95,24 @@ export interface BookingCardStatus {
   in_rollout_window: boolean;
   rollout_starts_at: string | null;
   card: { revision: number; created_at: string; card_kind: string } | null;
+  /** The one channel the card uses: the client's newest real conversation. */
+  channel: BookingCardChannel | null;
+  channel_outcome: BookingCardChannelOutcome | null;
+  channel_evidence_source: string | null;
+  channel_evidence_at: string | null;
+  channel_decided_at: string | null;
   deliveries: BookingCardDelivery[];
 }
+
+export type BookingCardChannel = 'email' | 'whatsapp' | 'instagram';
+
+export type BookingCardChannelOutcome =
+  | 'selected'
+  | 'no_conversation_channel'
+  | 'conversation_channel_unsupported'
+  | 'conversation_channel_disabled'
+  | 'conversation_channel_unreachable'
+  | 'delivery_unavailable';
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
@@ -218,6 +234,42 @@ const REASON_COPY: Record<'en' | 'ru', Record<string, string>> = {
 export function bookingCardReasonLabel(reason: string | null, language: 'en' | 'ru'): string {
   if (!reason) return '';
   return REASON_COPY[language][reason] ?? reason;
+}
+
+export function bookingCardChannelName(channel: string | null): string {
+  if (channel === 'email') return 'Email';
+  if (channel === 'whatsapp') return 'WhatsApp';
+  if (channel === 'instagram') return 'Instagram';
+  return channel ?? '';
+}
+
+/** Why a card has no delivery channel; empty when a channel is selected. */
+export function bookingCardChannelLabel(
+  outcome: string | null,
+  channel: string | null,
+  language: 'en' | 'ru'
+): string {
+  const name = bookingCardChannelName(channel);
+  const ru = language === 'ru';
+  switch (outcome) {
+    case null:
+    case 'selected':
+      return '';
+    case 'no_conversation_channel':
+      return ru ? 'пока нет канала переписки' : 'no conversation channel yet';
+    case 'conversation_channel_unsupported':
+      return ru
+        ? `последняя переписка в ${name}, туда карточки пока не отправляются`
+        : `the latest conversation is on ${name}, where cards can't be sent yet`;
+    case 'conversation_channel_disabled':
+      return ru ? `отправка карточек в ${name} выключена` : `card sending to ${name} is off`;
+    case 'conversation_channel_unreachable':
+      return ru ? `клиент недоступен в ${name}` : `the client can't be reached on ${name}`;
+    case 'delivery_unavailable':
+      return ru ? `карточку для ${name} не удалось подготовить` : `the ${name} card could not be prepared`;
+    default:
+      return outcome;
+  }
 }
 
 function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): T {

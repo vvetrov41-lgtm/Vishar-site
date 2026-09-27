@@ -54,6 +54,25 @@ insert into public.clients (
   '+447700900321'
 );
 
+-- Cards follow the client's real conversation. This client talks on WhatsApp.
+insert into public.communication_conversations (
+  id, artist_id, channel, integration_key, external_contact_id,
+  client_id, link_state, state
+) values (
+  'fc311111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'vladimir-production', '447700900321',
+  'fc211111-1111-4111-8111-111111111111', 'linked', 'open'
+);
+
+insert into public.communication_messages (
+  conversation_id, artist_id, channel, direction, origin, status, message_type, body
+) values (
+  'fc311111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'inbound', 'contact', 'received', 'text', 'Hello'
+);
+
 insert into crm_private.booking_card_artist_settings (
   artist_id,
   email_enabled,
@@ -137,9 +156,20 @@ select is(
    from crm_private.booking_card_deliveries d
    join crm_private.booking_cards b on b.id = d.booking_card_id
    where b.session_id = 'fc611111-1111-4111-8111-111111111111'
-     and d.status = 'queued'),
-  2,
-  'one card queues Email and WhatsApp independently'
+     and d.status = 'queued'
+     and d.channel = 'whatsapp'),
+  1,
+  'one card queues exactly one delivery, in the conversation channel'
+);
+
+select is(
+  (select count(*)::int
+   from crm_private.booking_card_deliveries d
+   join crm_private.booking_cards b on b.id = d.booking_card_id
+   where b.session_id = 'fc611111-1111-4111-8111-111111111111'
+     and d.channel = 'email'),
+  0,
+  'an email address on file does not add an Email delivery'
 );
 
 select is(
@@ -148,18 +178,8 @@ select is(
    where t.session_id = 'fc611111-1111-4111-8111-111111111111'
      and t.consumed_at is null
      and t.invalidated_at is null),
-  4,
-  'each queued channel has its own two-action capability pair'
-);
-
-select ok(
-  (select m.html_body is not null
-          and m.body not like '%Deposit%'
-          and m.body not like '%balance%'
-   from public.email_messages m
-   join crm_private.booking_cards b on b.id = m.booking_card_id
-   where b.session_id = 'fc611111-1111-4111-8111-111111111111'),
-  'consultation Email card is HTML-capable and financially empty'
+  2,
+  'the one queued channel has its two-action capability pair'
 );
 
 select results_eq(
@@ -181,8 +201,8 @@ select is(
        'approved_email'::public.outbox_kind,
        'whatsapp_message'::public.outbox_kind
      )),
-  2,
-  'dispatch creates exactly two durable provider jobs and sends nothing inline'
+  1,
+  'dispatch creates exactly one durable provider job and sends nothing inline'
 );
 
 select ok(
@@ -217,8 +237,8 @@ select is(
    where b.session_id = 'fc611111-1111-4111-8111-111111111111'
      and b.superseded_at is not null
      and d.status = 'superseded'),
-  2,
-  'superseded card closes both old channel deliveries'
+  1,
+  'superseded card closes its old channel delivery'
 );
 
 select is(
@@ -234,15 +254,6 @@ select is(
 );
 
 select ok(
-  (select m.status = 'cancelled'::public.email_message_status
-   from public.email_messages m
-   join crm_private.booking_cards b on b.id = m.booking_card_id
-   where b.session_id = 'fc611111-1111-4111-8111-111111111111'
-     and b.superseded_at is not null),
-  'superseded Email card cannot be claimed for provider delivery'
-);
-
-select ok(
   (select m.status = 'failed'::public.communication_status
           and m.error_code = 'booking_card_superseded'
    from public.communication_messages m
@@ -254,8 +265,8 @@ select ok(
   'superseded WhatsApp card cannot be claimed for provider delivery'
 );
 
--- One unavailable channel must not break the already queued sibling. Later
--- reconciliation can add the missing channel without invalidating Email links.
+-- The conversation channel being unreachable blocks the card; it never falls
+-- back to another channel. Once reachable, reconciliation queues it.
 insert into public.clients (
   id, full_name, email, phone
 ) values (
@@ -263,6 +274,24 @@ insert into public.clients (
   'Partial Channel Client',
   'partial-channel@example.test',
   null
+);
+
+insert into public.communication_conversations (
+  id, artist_id, channel, integration_key, external_contact_id,
+  client_id, link_state, state
+) values (
+  'fc322222-2222-4222-8222-222222222222',
+  'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'vladimir-production', '447700900654',
+  'fc222222-2222-4222-8222-222222222222', 'linked', 'open'
+);
+
+insert into public.communication_messages (
+  conversation_id, artist_id, channel, direction, origin, status, message_type, body
+) values (
+  'fc322222-2222-4222-8222-222222222222',
+  'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'inbound', 'contact', 'received', 'text', 'Hello'
 );
 
 insert into public.sessions (
@@ -289,21 +318,26 @@ select is(
    from crm_private.booking_card_deliveries d
    join crm_private.booking_cards b on b.id = d.booking_card_id
    where b.session_id = 'fc633333-3333-4333-8333-333333333333'),
-  1,
-  'Email queues even when WhatsApp is initially unreachable'
+  0,
+  'an unreachable WhatsApp conversation does not fall back to Email'
 );
 
-create temporary table partial_email_tokens as
-select t.token_hash
-from crm_private.appointment_client_action_tokens t
-where t.session_id = 'fc633333-3333-4333-8333-333333333333'
-  and t.consumed_at is null
-  and t.invalidated_at is null;
+select is(
+  (select x.outcome
+   from crm_private.booking_card_channel_decisions x
+   join crm_private.booking_cards b on b.id = x.booking_card_id
+   where b.session_id = 'fc633333-3333-4333-8333-333333333333'
+     and b.superseded_at is null),
+  'conversation_channel_unreachable',
+  'the blocked card records why'
+);
 
 select is(
-  (select count(*)::int from partial_email_tokens),
-  2,
-  'the unavailable WhatsApp subtransaction did not leave orphan live capabilities'
+  (select count(*)::int
+   from crm_private.appointment_client_action_tokens t
+   where t.session_id = 'fc633333-3333-4333-8333-333333333333'),
+  0,
+  'a blocked card leaves no orphan live capabilities'
 );
 
 update public.clients
@@ -315,16 +349,17 @@ select lives_ok(
     'a1111111-1111-4111-8111-111111111111',
     200
   ) $$,
-  'reconciliation can add a channel that becomes reachable later'
+  'reconciliation can queue a card whose channel becomes reachable later'
 );
 
-select is(
-  (select count(*)::int
-   from crm_private.booking_card_deliveries d
-   join crm_private.booking_cards b on b.id = d.booking_card_id
-   where b.session_id = 'fc633333-3333-4333-8333-333333333333'),
-  2,
-  'the previously missing WhatsApp delivery is added without requeueing Email'
+select results_eq(
+  $$ select d.channel::text, count(*)::int
+     from crm_private.booking_card_deliveries d
+     join crm_private.booking_cards b on b.id = d.booking_card_id
+     where b.session_id = 'fc633333-3333-4333-8333-333333333333'
+     group by d.channel $$,
+  $$ values ('whatsapp'::text, 1) $$,
+  'the repaired card has one WhatsApp delivery and no Email sibling'
 );
 
 select is(
@@ -333,20 +368,8 @@ select is(
    where t.session_id = 'fc633333-3333-4333-8333-333333333333'
      and t.consumed_at is null
      and t.invalidated_at is null),
-  4,
-  'the repaired card has two independent channel capability pairs'
-);
-
-select ok(
-  not exists (
-    select 1
-    from partial_email_tokens old
-    join crm_private.appointment_client_action_tokens t
-      on t.token_hash = old.token_hash
-    where t.invalidated_at is not null
-       or t.consumed_at is not null
-  ),
-  'retrying WhatsApp does not invalidate already queued Email actions'
+  2,
+  'the repaired card has one capability pair'
 );
 
 select ok(
