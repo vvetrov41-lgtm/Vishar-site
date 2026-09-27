@@ -148,10 +148,31 @@ conversation/message ids and decision time, never message content:
 |---|---|
 | `selected` | one delivery in that channel |
 | `no_conversation_channel` | none; CRM shows "Booking card: no conversation channel yet" |
-| `conversation_channel_unsupported` | none; newest conversation is Instagram, no fallback |
+| `conversation_channel_unsupported` | none; newest conversation is on a channel without card transport |
+| `messaging_window_closed` | none; Instagram 24-hour window closed, no fallback, waits for the client |
 | `conversation_channel_disabled` | none; card sending is off for that channel, no fallback |
 | `conversation_channel_unreachable` | none; e.g. the WhatsApp conversation is not with the client's number |
 | `delivery_unavailable` | none; the channel could not be materialised (e.g. template missing) |
+
+### Instagram
+
+Instagram is a full booking-card channel on the existing Instagram connector
+(conversation, `instagram_message` outbox, shared communications drain,
+`sendInstagramMessage`, signed webhook). The card is a text message rendered
+from the canonical card (consultation without money; tattoo with deposit paid
+and remaining balance), sent into the client's existing Instagram conversation
+with two quick replies, "I'll be there" and "Need another time", whose payload
+is the same one-time capability as WhatsApp. A quick reply is recorded as the
+client's message and applied through `service_apply_appointment_client_action`.
+Quick replies are not shown on desktop, so the text also carries the same
+capability links as the Email card. The CRM timeline shows only a short body.
+
+Meta allows a standard message only within 24 hours of the client's last
+message. Outside it the card is `messaging_window_closed`: nothing is sent, no
+other channel is used, and the card is re-evaluated when the client writes.
+Per-artist switch: `booking_card_artist_settings.instagram_enabled`. The
+Instagram Worker drains its outbox on the shared cron's maintenance call when
+`INSTAGRAM_DRAIN_ENABLED` is on.
 
 ### Activation cutoff (grandfathering)
 

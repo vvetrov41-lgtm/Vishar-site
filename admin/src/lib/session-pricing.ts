@@ -72,7 +72,7 @@ export type BookingCardReason =
   | 'appointment_before_activation';
 
 export interface BookingCardDelivery {
-  channel: 'email' | 'whatsapp';
+  channel: 'email' | 'whatsapp' | 'instagram';
   status: 'pending' | 'skipped' | 'queued' | 'sent' | 'failed' | 'superseded';
   skip_reason: string | null;
   queued_at: string | null;
@@ -115,6 +115,7 @@ export type BookingCardChannelOutcome =
   | 'conversation_channel_unsupported'
   | 'conversation_channel_disabled'
   | 'conversation_channel_unreachable'
+  | 'messaging_window_closed'
   | 'delivery_unavailable';
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
@@ -270,6 +271,10 @@ export function bookingCardChannelLabel(
       return ru ? `отправка карточек в ${name} выключена` : `card sending to ${name} is off`;
     case 'conversation_channel_unreachable':
       return ru ? `клиент недоступен в ${name}` : `the client can't be reached on ${name}`;
+    case 'messaging_window_closed':
+      return ru
+        ? `окно переписки в ${name} закрыто: карточка уйдёт, когда клиент снова напишет`
+        : `the ${name} messaging window is closed; the card goes when the client writes again`;
     case 'delivery_unavailable':
       return ru ? `карточку для ${name} не удалось подготовить` : `the ${name} card could not be prepared`;
     default:

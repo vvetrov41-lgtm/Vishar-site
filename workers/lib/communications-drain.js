@@ -149,6 +149,7 @@ export async function processClaimedJob({
   channel,
   workerId,
   deliver,
+  prepare = null,
 }) {
   let job;
   try {
@@ -165,6 +166,13 @@ export async function processClaimedJob({
   try {
     const resolved = await supabase.rpc('resolve_outbox_route', { p_outbox_id: job.outbox_id });
     const route = validateRoute(firstRow(resolved), job, channel);
+    // Optional channel hook, before any send intent: it can stop an obsolete
+    // job or attach what a structured message needs (for example a booking
+    // card's quick replies). It never sends.
+    const prepared = prepare ? await prepare(job, route, workerId) : null;
+    if (prepared?.skipErrorCode) {
+      return recordFailure(supabase, job.outbox_id, workerId, safeErrorCode({ code: prepared.skipErrorCode }));
+    }
     // Durable send intent (audit M-2): an outcome that was never recorded is
     // dead-lettered for the owner rather than sent to the client twice.
     const intent = firstRow(await supabase.rpc('service_begin_communication_send', {
@@ -178,6 +186,7 @@ export async function processClaimedJob({
       recipientId: job.external_contact_id,
       body: job.body,
       conversationId: job.conversation_id,
+      extras: prepared?.extras ?? null,
     });
   } catch (error) {
     return recordFailure(supabase, job.outbox_id, workerId, safeErrorCode(error));
@@ -208,6 +217,7 @@ export async function drainCommunicationOutbox({
   supabase,
   channel,
   deliver,
+  prepare = null,
   workerId = randomWorkerId(`${channel}-worker`),
   limit = DEFAULT_LIMIT,
   leaseSeconds = DEFAULT_LEASE_SECONDS,
@@ -231,6 +241,7 @@ export async function drainCommunicationOutbox({
       channel,
       workerId,
       deliver,
+      prepare,
     });
     aggregate[processed.outcome] += 1;
   }

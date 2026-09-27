@@ -679,6 +679,8 @@ insert into expected_function_acl values
   ('public.service_set_instagram_integration(uuid,text,text,text,text[])', false, false, true),
   ('public.service_disable_instagram_integration(uuid,text,text)', false, false, true),
   ('public.service_resolve_instagram_route(text)', false, false, true),
+  ('public.service_resolve_instagram_booking_card_payload(uuid,text)', false, false, true),
+  ('public.service_apply_instagram_booking_card_action(uuid,text,text,text,timestamptz,text,text)', false, false, true),
   ('public.service_record_instagram_webhook_delivery(jsonb)', false, false, true),
   ('public.service_list_instagram_maintenance_targets()', false, false, true),
   ('public.service_record_instagram_webhook_subscription(uuid,text,text[],text)', false, false, true),
