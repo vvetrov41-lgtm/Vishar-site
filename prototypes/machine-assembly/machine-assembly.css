@@ -109,7 +109,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   filter: saturate(.94) contrast(1.03);
 }
 
-/* Work 1: selected portrait, large and softly dissolved into black. */
+/* Work 1: smaller, softer cinematic portrait with dissolved edges. */
 .portfolio-feature--lead {
   height: 100vh;
   height: 100svh;
@@ -121,61 +121,92 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 }
 .portfolio-feature--lead img {
   width: auto;
-  height: 92vh;
-  height: 92svh;
-  max-width: none;
+  height: 79vh;
+  height: 79svh;
+  max-width: 88vw;
   flex: 0 0 auto;
   object-fit: contain;
-  opacity: var(--handoff, 0);
-  transform: scale(var(--handoff-scale, 1.015));
+  opacity: calc(var(--handoff, 0) * .96);
+  transform: scale(var(--handoff-scale, 1.004));
   -webkit-mask-image: radial-gradient(
-    ellipse 90% 94% at 50% 50%,
+    ellipse 108% 110% at 50% 50%,
     #000 0%,
-    #000 64%,
-    rgba(0, 0, 0, .96) 72%,
-    rgba(0, 0, 0, .78) 82%,
-    rgba(0, 0, 0, .38) 91%,
+    #000 52%,
+    rgba(0, 0, 0, .98) 64%,
+    rgba(0, 0, 0, .88) 74%,
+    rgba(0, 0, 0, .66) 84%,
+    rgba(0, 0, 0, .34) 93%,
     transparent 100%
   );
   mask-image: radial-gradient(
-    ellipse 90% 94% at 50% 50%,
+    ellipse 108% 110% at 50% 50%,
     #000 0%,
-    #000 64%,
-    rgba(0, 0, 0, .96) 72%,
-    rgba(0, 0, 0, .78) 82%,
-    rgba(0, 0, 0, .38) 91%,
+    #000 52%,
+    rgba(0, 0, 0, .98) 64%,
+    rgba(0, 0, 0, .88) 74%,
+    rgba(0, 0, 0, .66) 84%,
+    rgba(0, 0, 0, .34) 93%,
     transparent 100%
   );
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   will-change: opacity, transform;
+  transition: opacity .18s linear, transform .28s ease-out;
 }
 :root.machine-static .portfolio-feature--lead { --handoff: 1; --handoff-scale: 1; }
 
-/* Work 2: smaller, offset editorial frame on black, followed by the grid. */
+/* Work 2: natural-flow Pennywise frame with the same soft dissolve. */
 .portfolio-feature--follow {
   background: #000;
-  padding: 10vh 0 4vh;
+  padding: 8vh 0 5vh;
+  display: flex;
+  justify-content: center;
 }
 .portfolio-feature--follow img {
-  width: 86vw;
-  height: 78vh;
-  height: 78svh;
-  margin-left: auto;
+  width: auto;
+  height: 74vh;
+  height: 74svh;
+  max-width: 84vw;
+  object-fit: contain;
+  object-position: 50% 50%;
+  margin: 0 auto;
+  -webkit-mask-image: radial-gradient(
+    ellipse 108% 110% at 50% 50%,
+    #000 0%,
+    #000 52%,
+    rgba(0, 0, 0, .98) 64%,
+    rgba(0, 0, 0, .88) 74%,
+    rgba(0, 0, 0, .66) 84%,
+    rgba(0, 0, 0, .34) 93%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 108% 110% at 50% 50%,
+    #000 0%,
+    #000 52%,
+    rgba(0, 0, 0, .98) 64%,
+    rgba(0, 0, 0, .88) 74%,
+    rgba(0, 0, 0, .66) 84%,
+    rgba(0, 0, 0, .34) 93%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
 }
 
 @media (min-width: 900px) {
   .portfolio-feature--lead img {
-    height: 104vh;
-    height: 104svh;
+    height: 86vh;
+    height: 86svh;
+    max-width: min(72vw, 980px);
   }
-  .portfolio-feature--follow { padding: 14vh 0 6vh; }
+  .portfolio-feature--follow {
+    padding: 12vh 0 7vh;
+  }
   .portfolio-feature--follow img {
-    width: auto;
-    height: 84vh;
-    height: 84svh;
-    aspect-ratio: 3 / 4;
-    margin-left: 50%;
+    height: 82vh;
+    height: 82svh;
+    max-width: min(68vw, 920px);
   }
 }
 
