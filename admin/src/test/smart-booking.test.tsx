@@ -75,8 +75,8 @@ describe('booking a session by asking for one', () => {
     fireEvent.click(within(summary).getByRole('button', { name: 'Book it' }));
 
     await waitFor(() => {
-      // The project's own rate (£140/h) times 7 h is this booking's price, so
-      // it is stored with the appointment instead of being typed again.
+      // The visible pre-filled suggestion (project rate £140/h x 7 h) is
+      // confirmed by pressing Book and stored with the appointment.
       const call = rpcCalls.find((entry) => entry.name === 'schedule_appointment_with_price');
       expect(call?.args?.p_artist_id).toBe(VLADIMIR_ARTIST_ID);
       expect(call?.args?.p_client_id).toBe(CLIENT_ID);
@@ -92,7 +92,7 @@ describe('booking a session by asking for one', () => {
     fireEvent.click(screen.getByRole('button', { name: '7 h' }));
     const price = await screen.findByDisplayValue('980.00');
     expect(price).toHaveAccessibleName(/Session price/);
-    expect(screen.getByText(/Filled in from the project rate/)).toBeInTheDocument();
+    expect(screen.getByText(/Suggested from the project rate, check before booking/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '4 h' }));
     expect(await screen.findByDisplayValue('560.00')).toBe(price);
   });

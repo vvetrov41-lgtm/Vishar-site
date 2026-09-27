@@ -28,11 +28,14 @@ export interface SessionPricingInput {
 export type PriceBasis = 'full_day' | 'hourly';
 
 /**
- * Where a price came from. `project` means the project's own agreed hourly
- * rate times this session's length: exact for this booking, so the booking
- * form may fill it in. `artist` means the artist's general rates: a
- * convenience suggestion only. A project's total estimate is never split
- * across sessions, because sessions can differ in length and price.
+ * Where a suggested price came from. Every source is a suggestion: the only
+ * authoritative session price is the one the operator saves (`sessions.price`).
+ * - `project`: the project estimate's hourly rate times this session's length.
+ *   The final price can still depend on the actual time worked.
+ * - `artist`: the artist's optional general rates.
+ * A project's total estimate is never split across sessions, and a day price
+ * is never inferred from an hourly rate: it is only suggested when an explicit
+ * full-day price is configured.
  */
 export type PriceSource = 'project' | 'artist';
 
@@ -104,9 +107,14 @@ function artistFullDay(pricing: ArtistSessionPricing | null | undefined) {
 }
 
 /**
- * Suggest a price for one tattoo session. The project's own hourly rate wins
- * (a day at the artist's standard rate becomes the artist's day price, so a
- * 7 h day at £140/h is £980); without it the artist's optional rates apply.
+ * Suggest (never decide) a price for one tattoo session.
+ * - With a project hourly rate: hours x that rate. If the project uses the
+ *   artist's standard hourly rate and the artist has an explicit full-day
+ *   price, a session at least that long suggests the explicit day price.
+ * - Without one: the artist's explicit full-day price for a full day,
+ *   otherwise hours x the artist's hourly rate.
+ * No cap or discount is invented: a long part-day is not reduced to a day
+ * price unless that day price is explicitly configured and applies.
  * Returns null when nothing applies.
  */
 export function suggestSessionPrice(
@@ -126,11 +134,9 @@ export function suggestSessionPrice(
     const currency = inputs.projectCurrency || artist?.currency || 'GBP';
     const standardRate = artist?.hourly_rate != null && Number(artist.hourly_rate) === projectRate;
     if (fullDay && standardRate && hours >= fullDay.hours) {
-      return { price: roundMoney(fullDay.rate), basis: 'full_day', source: 'project', hours, rate: projectRate, currency };
+      return { price: roundMoney(fullDay.rate), basis: 'full_day', source: 'project', hours, rate: fullDay.rate, currency };
     }
-    const hourly = roundMoney(projectRate * hours);
-    const price = fullDay && standardRate ? Math.min(hourly, roundMoney(fullDay.rate)) : hourly;
-    return { price, basis: 'hourly', source: 'project', hours, rate: projectRate, currency };
+    return { price: roundMoney(projectRate * hours), basis: 'hourly', source: 'project', hours, rate: projectRate, currency };
   }
 
   if (!artist) return null;
@@ -139,9 +145,7 @@ export function suggestSessionPrice(
   }
   if (artist.hourly_rate != null) {
     const rate = Number(artist.hourly_rate);
-    const hourly = roundMoney(rate * hours);
-    const price = fullDay ? Math.min(hourly, roundMoney(fullDay.rate)) : hourly;
-    return { price, basis: 'hourly', source: 'artist', hours, rate, currency: artist.currency };
+    return { price: roundMoney(rate * hours), basis: 'hourly', source: 'artist', hours, rate, currency: artist.currency };
   }
   return null;
 }
@@ -169,11 +173,13 @@ export function priceSuggestionLabel(
   const price = formatSessionMoney(suggestion.price, suggestion.currency, locale);
   const rate = formatSessionMoney(suggestion.rate, suggestion.currency, locale);
   if (suggestion.basis === 'full_day') {
-    return language === 'ru' ? `${price} · полный день` : `${price} · full day`;
+    return language === 'ru'
+      ? `${price} · полный день, цена дня из настроек`
+      : `${price} · full day, configured day price`;
   }
   const hours = formatHours(suggestion.hours);
   const from = showSource && suggestion.source === 'project'
-    ? (language === 'ru' ? ', ставка проекта' : ', project rate')
+    ? (language === 'ru' ? ', по ставке проекта' : ', from the project rate')
     : '';
   return language === 'ru' ? `${price} · ${hours} ч × ${rate}${from}` : `${price} · ${hours} h × ${rate}${from}`;
 }

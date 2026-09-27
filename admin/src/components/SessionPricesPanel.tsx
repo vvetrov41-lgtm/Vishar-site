@@ -37,9 +37,10 @@ function parsePrice(value: string): number | null {
 
 /**
  * Tattoo sessions of this project that still have no price, in one place.
- * Each row is pre-filled from the project's own hourly rate (or the artist's
- * optional rates) and saved only when the operator confirms. Booking cards use
- * the saved price; nothing here is written silently.
+ * Rows are pre-filled with a price SUGGESTION (project estimate rate or the
+ * artist's optional rates). Nothing is written until the operator reviews the
+ * amounts and confirms Save; only then do they become real session prices,
+ * which booking cards use.
  */
 export function SessionPricesPanel({
   artistId,
@@ -105,10 +106,10 @@ export function SessionPricesPanel({
   async function save() {
     if (!ready.length || invalid) return;
     const approved = await confirmDialog({
-      title: ru ? 'Сохранить цены сеансов?' : 'Save session prices?',
+      title: ru ? 'Сохранить реальные цены сеансов?' : 'Save real session prices?',
       message: ru
-        ? `Будет сохранено цен: ${ready.length}. Для подтверждённого сеанса с оплаченным депозитом клиент получит карточку записи, если отправка карточек включена.`
-        : `${ready.length} price(s) will be saved. For a confirmed session with its deposit paid, the client receives the booking card when card sending is on.`,
+        ? `Суммы станут реальными ценами сеансов (${ready.length}). Для подтверждённого сеанса с оплаченным депозитом после этого может сразу уйти карточка записи клиенту по Email и WhatsApp, если отправка включена. Проверь каждую сумму.`
+        : `These amounts become real session prices (${ready.length}). For a confirmed session with its deposit paid, the booking card can then go to the client by email and WhatsApp straight away when sending is on. Check every amount.`,
       confirmLabel: ru ? 'Сохранить' : 'Save',
       cancelLabel: cancelLabelFor(language),
       tone: 'primary',
@@ -135,8 +136,8 @@ export function SessionPricesPanel({
         <strong>{ru ? 'Сеансы без цены' : 'Sessions without a price'}</strong>
         {' · '}
         {ru
-          ? 'Карточка записи берёт цену конкретного сеанса. Проверь и сохрани одним нажатием.'
-          : 'The booking card uses each session\'s own price. Check and save in one go.'}
+          ? 'Ниже только предложения по ставкам. Цена станет настоящей, когда ты её проверишь и сохранишь.'
+          : 'These are suggestions from the rates. A price becomes real only when you check and save it.'}
       </p>
       <div className="list">
         {pending.map((appointment) => {
@@ -149,7 +150,7 @@ export function SessionPricesPanel({
                 {(minutesOf(appointment) / 60).toLocaleString(locale)} {ru ? 'ч' : 'h'}
                 <span className="meta" style={{ display: 'block' }}>
                   {suggestion
-                    ? priceSuggestionLabel(suggestion, language, locale)
+                    ? `${ru ? 'Предложение' : 'Suggestion'}: ${priceSuggestionLabel(suggestion, language, locale)}`
                     : (ru ? 'Нет ставки: укажи цену' : 'No rate: enter the price')}
                 </span>
               </span>
