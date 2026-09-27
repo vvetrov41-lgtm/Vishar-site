@@ -148,3 +148,58 @@ test('history backfill records the newest message, or a checked miss, and sends 
     '{from:"client@example.com" to:"client@example.com"} -in:drafts -in:chats -in:spam -in:trash',
   );
 });
+
+test('a run stays inside the Worker subrequest limit even in the worst case', () => {
+  const worstCase = 1 // mailbox list RPC
+    + 1 // Google token refresh
+    + 1 // profile
+    + 1 // message list
+    + __testing.METADATA_MESSAGES_PER_RUN
+    + 1 // match known clients
+    + 2 // snapshot upsert and prune
+    + 1 // history candidates
+    + __testing.HISTORY_CLIENTS_PER_RUN * (1 + __testing.HISTORY_MESSAGES_PER_CLIENT + 1);
+  assert.ok(worstCase <= __testing.SUBREQUEST_BUDGET, `worst case ${worstCase}`);
+  assert.ok(__testing.SUBREQUEST_BUDGET < 50, 'below the free-plan cap of 50 subrequests');
+});
+
+test('the budgeted fetch refuses calls beyond its limit', async () => {
+  let calls = 0;
+  const budgeted = __testing.budgetedFetch(async () => { calls += 1; return jsonResponse({}); }, 2);
+  await budgeted('https://example.com/1');
+  await budgeted('https://example.com/2');
+  await assert.rejects(budgeted('https://example.com/3'), /gmail_subrequest_budget_exhausted/);
+  assert.equal(calls, 2);
+});
+
+test('the snapshot reads one bounded page of the newest messages', async () => {
+  const paths = [];
+  const rows = await __testing.listRecentMetadata('token-value', 'studio@example.com', async (url) => {
+    const href = String(url);
+    paths.push(href);
+    if (href.includes('/messages?')) {
+      return jsonResponse({
+        messages: Array.from({ length: 500 }, (_, index) => ({ id: `message${String(index).padStart(4, '0')}` })),
+        nextPageToken: 'more-pages-exist',
+      });
+    }
+    return jsonResponse({
+      internalDate: String(Date.parse('2026-09-20T10:00:00.000Z')),
+      payload: { headers: [{ name: 'From', value: 'client@example.com' }, { name: 'To', value: 'studio@example.com' }] },
+    });
+  });
+  const listCalls = paths.filter((href) => href.includes('/messages?'));
+  assert.equal(listCalls.length, 1, 'no pagination');
+  assert.equal(new URL(listCalls[0]).searchParams.get('maxResults'), String(__testing.METADATA_MESSAGES_PER_RUN));
+  assert.equal(paths.length, 1 + __testing.METADATA_MESSAGES_PER_RUN);
+  assert.equal(rows.length, __testing.METADATA_MESSAGES_PER_RUN);
+});
+
+test('the snapshot only forgets clients whose last message left the 30-day window', async () => {
+  const calls = [];
+  await __testing.persistSnapshot(ENV, ARTIST, [{ artist_id: ARTIST, client_id: CLIENT }], '2026-09-28T00:00:00.000Z',
+    async (url, init) => { calls.push({ url: new URL(String(url)), method: init.method }); return jsonResponse(null); });
+  const prune = calls.find((call) => call.method === 'DELETE');
+  assert.equal(prune.url.searchParams.get('last_message_at'), 'lt.2026-08-29T00:00:00.000Z');
+  assert.equal(prune.url.searchParams.get('refreshed_at'), null);
+});
