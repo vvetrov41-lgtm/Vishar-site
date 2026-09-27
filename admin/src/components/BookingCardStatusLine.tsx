@@ -32,7 +32,7 @@ export function BookingCardStatusLine({
     return () => { cancelled = true; };
   }, [api, sessionId, refreshKey]);
 
-  if (!status) return null;
+  if (!status || !status.reason) return null;
   const ru = language === 'ru';
   if (status.reason === 'appointment_type_without_card' || status.reason === 'appointment_in_past') {
     return null;

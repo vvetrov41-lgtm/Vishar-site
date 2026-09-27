@@ -35,7 +35,19 @@
 @media (max-width: 639px) {
   .topbar {
     gap: 8px;
+    padding-top: calc(8px + env(safe-area-inset-top));
     padding-bottom: 8px;
+  }
+  .topbar h1 { font-size: 1.05rem; }
+  /* The selected value ("All assigned artists", "Vladimir") names itself;
+     the uppercase caption stays for screen readers only. */
+  .artist-scope-control label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .artist-scope-control .notice {
     padding: 6px 10px;

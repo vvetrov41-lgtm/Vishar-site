@@ -163,7 +163,8 @@ function formatHours(hours: number): string {
 export function priceSuggestionLabel(
   suggestion: PriceSuggestion,
   language: 'en' | 'ru',
-  locale: string
+  locale: string,
+  { showSource = true }: { showSource?: boolean } = {}
 ): string {
   const price = formatSessionMoney(suggestion.price, suggestion.currency, locale);
   const rate = formatSessionMoney(suggestion.rate, suggestion.currency, locale);
@@ -171,7 +172,7 @@ export function priceSuggestionLabel(
     return language === 'ru' ? `${price} · полный день` : `${price} · full day`;
   }
   const hours = formatHours(suggestion.hours);
-  const from = suggestion.source === 'project'
+  const from = showSource && suggestion.source === 'project'
     ? (language === 'ru' ? ', ставка проекта' : ', project rate')
     : '';
   return language === 'ru' ? `${price} · ${hours} ч × ${rate}${from}` : `${price} · ${hours} h × ${rate}${from}`;
