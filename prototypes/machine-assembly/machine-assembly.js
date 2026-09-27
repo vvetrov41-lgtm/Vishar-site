@@ -154,8 +154,8 @@
   }
   function handoffAmount(p) {
     // Tattoo only starts after the close-up has gone fully black (see blackoutAmount).
-    var fromSequence = smooth((p - 0.968) / 0.032);
-    var pastStage = smooth((pastStageShare() - 0.03) / 0.12);
+    var fromSequence = smooth((p - 0.966) / 0.034);
+    var pastStage = smooth((pastStageShare() - 0.025) / 0.16);
     return Math.max(fromSequence, pastStage);
   }
 
@@ -171,7 +171,7 @@
     if (portfolioIntro && !section.classList.contains('is-static')) {
       var handoff = handoffAmount(p);
       portfolioIntro.style.setProperty('--handoff', handoff.toFixed(3));
-      portfolioIntro.style.setProperty('--handoff-scale', (1.02 - 0.02 * handoff).toFixed(4));
+      portfolioIntro.style.setProperty('--handoff-scale', (1.004 - 0.004 * handoff).toFixed(4));
     }
   }
 
