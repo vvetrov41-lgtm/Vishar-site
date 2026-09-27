@@ -163,6 +163,7 @@ select public.schedule_appointment_with_price(
   910.00
 );
 
+reset role;
 select is(
   (select s.price
    from public.sessions s
@@ -172,6 +173,11 @@ select is(
    )),
   910.00::numeric,
   'booking with an explicit price stores appointment and price atomically'
+);
+
+set local role authenticated;
+select pg_temp.price_claims(
+  '{"sub":"f7111111-1111-4111-8111-111111111111","role":"authenticated"}'
 );
 
 select is(

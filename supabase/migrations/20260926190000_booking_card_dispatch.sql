@@ -424,7 +424,9 @@ begin
     v_card.client_id,
     v_card.enquiry_id,
     v_card.project_id,
-    v_card.session_id,
+    -- integration_outbox_communication_entity: message jobs carry no
+    -- session_id; the card payload row links the message to its session.
+    null,
     v_message_id
   )
   on conflict (dedupe_key) do nothing
