@@ -21,7 +21,7 @@
 //     bookings but not all: rescheduling to a time the client already named,
 //     or booking outside the usual hours, is still typing two datetimes.
 
-import { useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { EmptyState } from './StateViews';
 import {
   appointmentFamily,
@@ -51,7 +51,8 @@ import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { canManageArtistFinance } from '../lib/permissions';
 import { useApi, useSession } from '../lib/session';
-import { SessionPriceSuggestion } from './SessionPriceSuggestion';
+import { SessionPriceSuggestion, useSessionPriceSuggestion } from './SessionPriceSuggestion';
+import { priceSuggestionLabel } from '../lib/session-pricing';
 import type { AppointmentType } from '../lib/appointment-api';
 import type { BookingConflict, ScheduleOverride, SchedulingPreferences } from '../lib/scheduling-api';
 
@@ -134,6 +135,9 @@ export function BookingPanel({
   const [manualStart, setManualStart] = useState('');
   const [manualEndOverride, setManualEndOverride] = useState('');
   const [sessionPrice, setSessionPrice] = useState('');
+  // True once the operator types or clears the price themselves; until then a
+  // price derived from the project's own rate follows the chosen duration.
+  const [sessionPriceTouched, setSessionPriceTouched] = useState(false);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
 
   const blocking = (conflicts ?? []).filter((conflict) => conflict.blocks);
@@ -167,6 +171,27 @@ export function BookingPanel({
     && mayManagePrice
     && sessionPrice.trim() !== ''
     && parsedSessionPrice === null;
+
+  const priceDurationMinutes = manual && manualStart && manualEndOverride
+    ? durationBetween(manualStart, manualEndOverride)
+    : durationMinutes;
+  const priceSuggestion = useSessionPriceSuggestion({
+    artistId,
+    projectId: effectiveProjectId,
+    durationMinutes: priceDurationMinutes,
+    enabled: appointmentType === 'tattoo_session' && mayManagePrice,
+  });
+  const projectPrice = priceSuggestion?.source === 'project' ? priceSuggestion : null;
+  const autoPrice = projectPrice ? projectPrice.price.toFixed(2) : '';
+  const priceIsAuto = !sessionPriceTouched && autoPrice !== '' && sessionPrice === autoPrice;
+
+  useEffect(() => {
+    // The project's agreed hourly rate times this session's length is this
+    // booking's price, so it is filled in (visibly, editable). The artist's
+    // general rates stay a one-tap suggestion only.
+    if (sessionPriceTouched) return;
+    setSessionPrice(autoPrice);
+  }, [autoPrice, sessionPriceTouched]);
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
   const automaticManualEnd = useMemo(
@@ -332,6 +357,7 @@ export function BookingPanel({
         price: paidAppointment && mayManagePrice ? parsedSessionPrice : null,
       });
       onBooked(result.appointment_id);
+      setSessionPriceTouched(false);
       setStage('search');
       setChosen(null);
       setSlots(null);
@@ -429,20 +455,22 @@ export function BookingPanel({
               max="100000"
               step="0.01"
               value={sessionPrice}
-              onChange={(event) => setSessionPrice(event.target.value)}
+              onChange={(event) => { setSessionPriceTouched(true); setSessionPrice(event.target.value); }}
               placeholder={copy.sessionPricePlaceholder}
               aria-invalid={sessionPriceInvalid}
             />
-            <span className="meta">{copy.sessionPriceHint}</span>
-            <SessionPriceSuggestion
-              artistId={artistId}
-              durationMinutes={manual && manualStart && manualEndOverride
-                ? durationBetween(manualStart, manualEndOverride)
-                : durationMinutes}
-              enabled={appointmentType === 'tattoo_session'}
-              currentValue={sessionPrice}
-              onUse={setSessionPrice}
-            />
+            <span className="meta">
+              {priceIsAuto && projectPrice
+                ? `${copy.sessionPriceFromProject} ${priceSuggestionLabel(projectPrice, language, language === 'ru' ? 'ru-RU' : 'en-GB')}`
+                : copy.sessionPriceHint}
+            </span>
+            {priceIsAuto ? null : (
+              <SessionPriceSuggestion
+                suggestion={priceSuggestion}
+                currentValue={sessionPrice}
+                onUse={(value) => { setSessionPriceTouched(true); setSessionPrice(value); }}
+              />
+            )}
           </label>
         ) : null}
         {sessionPriceInvalid ? (
@@ -845,6 +873,7 @@ const COPY = {
     noProject: 'No project',
     noEnquiry: 'No enquiry',
     sessionPrice: 'Session price',
+    sessionPriceFromProject: 'Filled in from the project rate:',
     sessionPricePlaceholder: 'Exact price for this session',
     sessionPriceHint: 'Booking cards use this exact stored amount. Leave it blank only if the price has not been decided yet.',
     invalidPrice: 'Enter a price between 0.01 and 100000 with no more than two decimal places.',
@@ -913,6 +942,7 @@ const COPY = {
     noProject: 'Без проекта',
     noEnquiry: 'Без заявки',
     sessionPrice: 'Стоимость сеанса',
+    sessionPriceFromProject: 'Подставлено по ставке проекта:',
     sessionPricePlaceholder: 'Точная стоимость этого сеанса',
     sessionPriceHint: 'Карточки записи используют именно эту сохранённую сумму. Оставьте пустым только если цена ещё не определена.',
     invalidPrice: 'Укажите сумму от 0,01 до 100000 максимум с двумя знаками после запятой.',
