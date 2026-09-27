@@ -5,15 +5,18 @@ import {
   priceSuggestionLabel,
   suggestSessionPrice,
   type ArtistSessionPricing,
+  type PriceSuggestion,
 } from '../lib/session-pricing';
 
-// One read per artist per page load; rates change rarely and a stale
-// suggestion is harmless because the operator still confirms the price.
+// One read per artist / project per page load; rates change rarely and a
+// stale suggestion is harmless because the operator still sees the price.
 const pricingCache = new Map<string, Promise<ArtistSessionPricing | null>>();
+const projectRateCache = new Map<string, Promise<{ rate: number | null; currency: string | null }>>();
 
 export function clearSessionPricingCache(artistId?: string) {
   if (artistId) pricingCache.delete(artistId);
   else pricingCache.clear();
+  projectRateCache.clear();
 }
 
 export function useArtistSessionPricing(artistId: string | null | undefined, enabled: boolean) {
@@ -40,26 +43,80 @@ export function useArtistSessionPricing(artistId: string | null | undefined, ena
   return pricing;
 }
 
+function useProjectHourlyRate(projectId: string | null | undefined, enabled: boolean) {
+  const api = useApi();
+  const [value, setValue] = useState<{ rate: number | null; currency: string | null } | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !projectId) {
+      setValue(null);
+      return undefined;
+    }
+    let cancelled = false;
+    let request = projectRateCache.get(projectId);
+    if (!request) {
+      request = api.getProjectFinance(projectId)
+        .then((finance) => ({
+          rate: finance?.hourly_rate != null ? Number(finance.hourly_rate) : null,
+          currency: finance?.currency ?? null,
+        }))
+        .catch(() => ({ rate: null, currency: null }));
+      projectRateCache.set(projectId, request);
+    }
+    void request.then((result) => {
+      if (!cancelled) setValue(result);
+    });
+    return () => { cancelled = true; };
+  }, [api, projectId, enabled]);
+
+  return value;
+}
+
 /**
- * One-tap price from the artist's own rates. It never fills the field on its
- * own: the operator chooses it, and the stored session price is what cards use.
+ * Price suggestion for one tattoo session. A project's own hourly rate is
+ * passed in when the caller already has it, or read for `projectId`.
  */
-export function SessionPriceSuggestion({
+export function useSessionPriceSuggestion({
   artistId,
+  projectId,
+  projectHourlyRate,
+  projectCurrency,
   durationMinutes,
   enabled,
+}: {
+  artistId: string | null | undefined;
+  projectId?: string | null;
+  projectHourlyRate?: number | null;
+  projectCurrency?: string | null;
+  durationMinutes: number | null;
+  enabled: boolean;
+}): PriceSuggestion | null {
+  const artistPricing = useArtistSessionPricing(artistId, enabled);
+  const fetched = useProjectHourlyRate(projectId, enabled && projectHourlyRate === undefined);
+  if (!enabled) return null;
+  const rate = projectHourlyRate !== undefined ? projectHourlyRate : fetched?.rate ?? null;
+  const currency = projectCurrency ?? fetched?.currency ?? null;
+  return suggestSessionPrice(durationMinutes, {
+    projectHourlyRate: rate,
+    projectCurrency: currency,
+    artistPricing,
+  });
+}
+
+/**
+ * One-tap price from the project's rate or the artist's own rates. It never
+ * fills the field on its own; the stored session price is what cards use.
+ */
+export function SessionPriceSuggestion({
+  suggestion,
   currentValue,
   onUse,
 }: {
-  artistId: string | null | undefined;
-  durationMinutes: number | null;
-  enabled: boolean;
+  suggestion: PriceSuggestion | null;
   currentValue: string;
   onUse: (price: string) => void;
 }) {
   const { language, locale } = useLanguage();
-  const pricing = useArtistSessionPricing(artistId, enabled);
-  const suggestion = enabled ? suggestSessionPrice(durationMinutes, pricing) : null;
   if (!suggestion) return null;
   const value = suggestion.price.toFixed(2);
   if (currentValue.trim() !== '' && Number(currentValue) === suggestion.price) return null;

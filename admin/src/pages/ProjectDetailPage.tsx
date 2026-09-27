@@ -7,6 +7,7 @@ import { DetailBackLink, RecordArtistContext } from '../components/DetailContext
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { BookingCardStatusLine } from '../components/BookingCardStatusLine';
+import { SessionPricesPanel } from '../components/SessionPricesPanel';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectInvoicesPanel } from '../components/ProjectInvoicesPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
@@ -240,6 +241,16 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       ) : null}
 
       <Section title={copy.appointments}>
+        {mayManageFinance ? (
+          <SessionPricesPanel
+            artistId={project.artist_id}
+            appointments={appointments}
+            priceFor={priceFor}
+            projectHourlyRate={finance?.hourly_rate ?? null}
+            currency={finance?.currency ?? project.currency}
+            onSaved={reload}
+          />
+        ) : null}
         {appointments.length === 0 ? (
           <EmptyState title={copy.noAppointments} />
         ) : (
@@ -272,6 +283,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     <ProjectAppointmentEditor
                       appointment={appointment}
                       sessionPrice={price}
+                      projectHourlyRate={finance?.hourly_rate ?? null}
                       canManagePrice={mayManageFinance}
                       disabled={busy}
                       onSaved={reload}

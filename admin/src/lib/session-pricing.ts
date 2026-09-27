@@ -27,12 +27,30 @@ export interface SessionPricingInput {
 
 export type PriceBasis = 'full_day' | 'hourly';
 
+/**
+ * Where a price came from. `project` means the project's own agreed hourly
+ * rate times this session's length: exact for this booking, so the booking
+ * form may fill it in. `artist` means the artist's general rates: a
+ * convenience suggestion only. A project's total estimate is never split
+ * across sessions, because sessions can differ in length and price.
+ */
+export type PriceSource = 'project' | 'artist';
+
 export interface PriceSuggestion {
   price: number;
   basis: PriceBasis;
+  source: PriceSource;
   hours: number;
   rate: number;
   currency: string;
+}
+
+export interface SessionPriceInputs {
+  /** `projects.hourly_rate` of the project this session belongs to. */
+  projectHourlyRate?: number | null;
+  projectCurrency?: string | null;
+  /** Optional per-artist convenience rates. */
+  artistPricing?: ArtistSessionPricing | null;
 }
 
 export type BookingCardReason =
@@ -79,31 +97,51 @@ export interface BookingCardStatus {
 
 const roundMoney = (value: number) => Math.round(value * 100) / 100;
 
+function artistFullDay(pricing: ArtistSessionPricing | null | undefined) {
+  return pricing && pricing.full_day_rate != null && pricing.full_day_hours != null
+    ? { rate: Number(pricing.full_day_rate), hours: Number(pricing.full_day_hours) }
+    : null;
+}
+
 /**
- * Suggest a price for one tattoo session from the artist's own rates:
- * a session at least as long as the artist's full day is the full-day rate,
- * a shorter one is hours × hourly rate (capped at the full-day rate, so a
- * long part-day is never dearer than a whole day). Returns null when the
- * artist has not configured a rate that applies.
+ * Suggest a price for one tattoo session. The project's own hourly rate wins
+ * (a day at the artist's standard rate becomes the artist's day price, so a
+ * 7 h day at £140/h is £980); without it the artist's optional rates apply.
+ * Returns null when nothing applies.
  */
 export function suggestSessionPrice(
   durationMinutes: number | null | undefined,
-  pricing: ArtistSessionPricing | null | undefined
+  pricingOrInputs: ArtistSessionPricing | SessionPriceInputs | null | undefined
 ): PriceSuggestion | null {
-  if (!pricing || !durationMinutes || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+  if (!durationMinutes || !Number.isFinite(durationMinutes) || durationMinutes <= 0) return null;
+  const inputs: SessionPriceInputs = pricingOrInputs && 'artist_id' in pricingOrInputs
+    ? { artistPricing: pricingOrInputs as ArtistSessionPricing }
+    : (pricingOrInputs as SessionPriceInputs | null) ?? {};
   const hours = durationMinutes / 60;
-  const fullDay = pricing.full_day_rate != null && pricing.full_day_hours != null
-    ? { rate: Number(pricing.full_day_rate), hours: Number(pricing.full_day_hours) }
-    : null;
+  const artist = inputs.artistPricing ?? null;
+  const fullDay = artistFullDay(artist);
 
-  if (fullDay && hours >= fullDay.hours) {
-    return { price: roundMoney(fullDay.rate), basis: 'full_day', hours, rate: fullDay.rate, currency: pricing.currency };
+  const projectRate = inputs.projectHourlyRate != null ? Number(inputs.projectHourlyRate) : null;
+  if (projectRate != null && Number.isFinite(projectRate) && projectRate > 0) {
+    const currency = inputs.projectCurrency || artist?.currency || 'GBP';
+    const standardRate = artist?.hourly_rate != null && Number(artist.hourly_rate) === projectRate;
+    if (fullDay && standardRate && hours >= fullDay.hours) {
+      return { price: roundMoney(fullDay.rate), basis: 'full_day', source: 'project', hours, rate: projectRate, currency };
+    }
+    const hourly = roundMoney(projectRate * hours);
+    const price = fullDay && standardRate ? Math.min(hourly, roundMoney(fullDay.rate)) : hourly;
+    return { price, basis: 'hourly', source: 'project', hours, rate: projectRate, currency };
   }
-  if (pricing.hourly_rate != null) {
-    const rate = Number(pricing.hourly_rate);
+
+  if (!artist) return null;
+  if (fullDay && hours >= fullDay.hours) {
+    return { price: roundMoney(fullDay.rate), basis: 'full_day', source: 'artist', hours, rate: fullDay.rate, currency: artist.currency };
+  }
+  if (artist.hourly_rate != null) {
+    const rate = Number(artist.hourly_rate);
     const hourly = roundMoney(rate * hours);
     const price = fullDay ? Math.min(hourly, roundMoney(fullDay.rate)) : hourly;
-    return { price, basis: 'hourly', hours, rate, currency: pricing.currency };
+    return { price, basis: 'hourly', source: 'artist', hours, rate, currency: artist.currency };
   }
   return null;
 }
@@ -133,7 +171,10 @@ export function priceSuggestionLabel(
     return language === 'ru' ? `${price} · полный день` : `${price} · full day`;
   }
   const hours = formatHours(suggestion.hours);
-  return language === 'ru' ? `${price} · ${hours} ч × ${rate}` : `${price} · ${hours} h × ${rate}`;
+  const from = suggestion.source === 'project'
+    ? (language === 'ru' ? ', ставка проекта' : ', project rate')
+    : '';
+  return language === 'ru' ? `${price} · ${hours} ч × ${rate}${from}` : `${price} · ${hours} h × ${rate}${from}`;
 }
 
 const REASON_COPY: Record<'en' | 'ru', Record<string, string>> = {
@@ -145,7 +186,7 @@ const REASON_COPY: Record<'en' | 'ru', Record<string, string>> = {
     artist_inactive: 'The artist is inactive.',
     artist_timezone_missing: 'The artist has no time zone set.',
     appointment_type_without_card: 'This appointment type has no booking card.',
-    session_price_missing: 'Set the session price to send the booking card.',
+    session_price_missing: 'No session price yet: set it in "Sessions without a price" above.',
     deposit_not_paid_for_session: 'No paid deposit covers this session yet.',
     deposit_currency_mismatch: 'The deposit currency differs from the session currency.',
     deposit_exceeds_price: 'The deposit is larger than the session price. Check the price.',
@@ -159,7 +200,7 @@ const REASON_COPY: Record<'en' | 'ru', Record<string, string>> = {
     artist_inactive: 'Артист неактивен.',
     artist_timezone_missing: 'У артиста не указан часовой пояс.',
     appointment_type_without_card: 'Для этого типа записи карточка не отправляется.',
-    session_price_missing: 'Укажи стоимость сеанса, чтобы отправить карточку.',
+    session_price_missing: 'Нет цены сеанса: укажи её в блоке «Сеансы без цены» выше.',
     deposit_not_paid_for_session: 'Оплаченный депозит пока не покрывает этот сеанс.',
     deposit_currency_mismatch: 'Валюта депозита не совпадает с валютой сеанса.',
     deposit_exceeds_price: 'Депозит больше стоимости сеанса. Проверь цену.',
