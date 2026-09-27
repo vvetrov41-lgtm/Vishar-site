@@ -255,13 +255,17 @@ async function subscribeWaba(accessToken, wabaId) {
 
 async function requireWabaSubscriptionReadback(accessToken, wabaId) {
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`);
-  url.searchParams.set('fields', 'id,name');
   const payload = await graph(url.toString(), {
     method: 'GET',
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
   const rows = Array.isArray(payload?.data) ? payload.data : [];
-  if (!rows.some((app) => String(app?.id || '') === META_APP_ID)) {
+  const subscribed = rows.some((app) => String(
+    app?.whatsapp_business_api_data?.id
+    || app?.id
+    || '',
+  ) === META_APP_ID);
+  if (!subscribed) {
     throw Object.assign(new Error('meta_waba_subscription_readback_failed'), { status: 502 });
   }
 }
