@@ -186,9 +186,10 @@ export function BookingPanel({
   const priceIsAuto = !sessionPriceTouched && autoPrice !== '' && sessionPrice === autoPrice;
 
   useEffect(() => {
-    // The project's agreed hourly rate times this session's length is this
-    // booking's price, so it is filled in (visibly, editable). The artist's
-    // general rates stay a one-tap suggestion only.
+    // A price calculated from the project estimate's rate is pre-filled as a
+    // visible, editable suggestion. Booking with the field filled in is the
+    // operator's confirmation of that amount; clearing it books without a
+    // price. The artist's general rates stay a one-tap suggestion only.
     if (sessionPriceTouched) return;
     setSessionPrice(autoPrice);
   }, [autoPrice, sessionPriceTouched]);
@@ -873,9 +874,9 @@ const COPY = {
     noProject: 'No project',
     noEnquiry: 'No enquiry',
     sessionPrice: 'Session price',
-    sessionPriceFromProject: 'Filled in from the project rate:',
-    sessionPricePlaceholder: 'Exact price for this session',
-    sessionPriceHint: 'Booking cards use this exact stored amount. Leave it blank only if the price has not been decided yet.',
+    sessionPriceFromProject: 'Suggested from the project rate, check before booking:',
+    sessionPricePlaceholder: 'Price for this session',
+    sessionPriceHint: 'The amount in this field becomes the session price when you book; booking cards use it. Leave it blank if the price is not decided yet.',
     invalidPrice: 'Enter a price between 0.01 and 100000 with no more than two decimal places.',
     search: 'Find free times',
     searching: 'Looking…',
@@ -942,9 +943,9 @@ const COPY = {
     noProject: 'Без проекта',
     noEnquiry: 'Без заявки',
     sessionPrice: 'Стоимость сеанса',
-    sessionPriceFromProject: 'Подставлено по ставке проекта:',
-    sessionPricePlaceholder: 'Точная стоимость этого сеанса',
-    sessionPriceHint: 'Карточки записи используют именно эту сохранённую сумму. Оставьте пустым только если цена ещё не определена.',
+    sessionPriceFromProject: 'Предложено по ставке проекта, проверь перед бронью:',
+    sessionPricePlaceholder: 'Цена этого сеанса',
+    sessionPriceHint: 'Сумма в этом поле станет ценой сеанса при бронировании, её использует карточка записи. Оставь пустым, если цена ещё не решена.',
     invalidPrice: 'Укажите сумму от 0,01 до 100000 максимум с двумя знаками после запятой.',
     search: 'Найти свободное время',
     searching: 'Ищем…',

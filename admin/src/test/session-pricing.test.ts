@@ -43,13 +43,13 @@ describe('suggestSessionPrice', () => {
   it('uses each artist\'s own configuration, never another artist\'s prices', () => {
     expect(suggestSessionPrice(6.5 * 60, otherArtist)).toMatchObject({ price: 750, basis: 'full_day' });
     expect(suggestSessionPrice(5 * 60, otherArtist)).toMatchObject({ price: 600, basis: 'hourly' });
-    // 6 h x £120 = £720, still below that artist's £750 day.
-    expect(suggestSessionPrice(6 * 60, otherArtist)).toMatchObject({ price: 720 });
+    // 6 h is shorter than that artist's configured 6.5 h day: hours x rate.
+    expect(suggestSessionPrice(6 * 60, otherArtist)).toMatchObject({ price: 720, basis: 'hourly' });
   });
 
-  it('never makes a part day dearer than a full day', () => {
+  it('does not invent a day cap: a long part day stays hours x rate', () => {
     const steepHourly = { ...otherArtist, hourly_rate: 140 };
-    expect(suggestSessionPrice(6 * 60, steepHourly)).toMatchObject({ price: 750, basis: 'hourly' });
+    expect(suggestSessionPrice(6 * 60, steepHourly)).toMatchObject({ price: 840, basis: 'hourly' });
   });
 
   it('suggests nothing without configured rates or a duration', () => {
@@ -73,7 +73,7 @@ describe('labels', () => {
   it('formats money and the suggestion basis', () => {
     expect(formatSessionMoney(1500, 'GBP', 'en-GB')).toBe('£1,500');
     expect(formatSessionMoney(62.5, 'GBP', 'en-GB')).toBe('£62.50');
-    expect(priceSuggestionLabel(suggestSessionPrice(420, vladimir)!, 'en', 'en-GB')).toBe('£980 · full day');
+    expect(priceSuggestionLabel(suggestSessionPrice(420, vladimir)!, 'en', 'en-GB')).toBe('£980 · full day, configured day price');
     expect(priceSuggestionLabel(suggestSessionPrice(240, vladimir)!, 'en', 'en-GB')).toBe('£560 · 4 h × £140');
   });
 
@@ -88,6 +88,16 @@ describe('project rate is the exact price source', () => {
   it('uses the project hourly rate times this session length', () => {
     expect(suggestSessionPrice(4 * 60, { projectHourlyRate: 140, projectCurrency: 'GBP' }))
       .toMatchObject({ price: 560, basis: 'hourly', source: 'project', rate: 140 });
+  });
+
+  it('a day price is suggested only when explicitly configured', () => {
+    // No artist day price configured: 7 h x £140, not an inferred day price.
+    expect(suggestSessionPrice(7 * 60, { projectHourlyRate: 140 }))
+      .toMatchObject({ price: 980, basis: 'hourly', source: 'project' });
+    // A configured day price different from 7 x hourly is suggested as-is.
+    const dayDeal = { ...vladimir, full_day_rate: 900 };
+    expect(suggestSessionPrice(7 * 60, { projectHourlyRate: 140, artistPricing: dayDeal }))
+      .toMatchObject({ price: 900, basis: 'full_day' });
   });
 
   it('a standard-rate full day becomes the artist day price', () => {
@@ -115,6 +125,6 @@ describe('project rate is the exact price source', () => {
 
   it('labels the project source', () => {
     expect(priceSuggestionLabel(suggestSessionPrice(240, { projectHourlyRate: 140 })!, 'en', 'en-GB'))
-      .toBe('£560 · 4 h × £140, project rate');
+      .toBe('£560 · 4 h × £140, from the project rate');
   });
 });

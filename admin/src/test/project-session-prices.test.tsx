@@ -41,7 +41,8 @@ describe('project session prices', () => {
     const panel = await screen.findByRole('region', { name: 'Session prices' });
     const input = within(panel).getByLabelText('Session price');
     expect(input).toHaveValue('980.00');
-    expect(panel).toHaveTextContent('7 h × £140, project rate');
+    expect(panel).toHaveTextContent('Suggestion: £980 · 7 h × £140, from the project rate');
+    expect(panel).toHaveTextContent('These are suggestions');
 
     fireEvent.click(within(panel).getByRole('button', { name: /Save prices \(1\)/ }));
     const dialog = await screen.findByRole('alertdialog');
