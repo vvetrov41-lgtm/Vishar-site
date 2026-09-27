@@ -41,8 +41,8 @@ alter table crm_private.booking_card_artist_settings
       and location_longitude is not null
       and whatsapp_tattoo_template_name is not null
       and whatsapp_consultation_template_name is not null
-      and whatsapp_tattoo_template_status = 'APPROVED'
-      and whatsapp_consultation_template_status = 'APPROVED'
+      and whatsapp_tattoo_template_status is not distinct from 'APPROVED'
+      and whatsapp_consultation_template_status is not distinct from 'APPROVED'
     )
   );
 

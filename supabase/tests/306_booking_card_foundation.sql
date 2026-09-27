@@ -115,6 +115,24 @@ select ok(
   'consultation cards contain no financial fields'
 );
 
+-- Duration-tiered session deposits need an active Monzo policy; configure a
+-- synthetic one as the owner (rolled back with the test).
+create function pg_temp.tier_setup_claims(p text) returns void language sql as $$
+  select set_config('request.jwt.claims', p, true)::void;
+$$;
+grant execute on function pg_temp.tier_setup_claims(text) to authenticated, service_role;
+set local role authenticated;
+select pg_temp.tier_setup_claims('{"sub":"f8111111-1111-4111-8111-111111111111","role":"authenticated"}');
+select lives_ok(
+  $$select public.configure_monzo_easy_bank_transfer(
+      'a1111111-1111-4111-8111-111111111111',
+      'https://monzo.com/pay/r/synthetic-booking-card', true
+    )$$,
+  'owner configures a synthetic duration-tiered deposit route'
+);
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
 insert into public.payment_requests (
   id, idempotency_key, artist_id, client_id, project_id, session_id,
   purpose, amount, currency, policy_id, policy_version, policy_snapshot

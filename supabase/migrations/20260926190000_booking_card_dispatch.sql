@@ -470,6 +470,8 @@ declare
   v_confirm_token text;
   v_reschedule_token text;
   v_message_id uuid;
+  v_error_constraint text;
+  v_error_table text;
 begin
   select b.* into v_card
   from crm_private.booking_cards b
@@ -545,7 +547,10 @@ begin
           using errcode = '23514';
       end if;
     exception when others then
-      raise warning 'booking card Email queue failed, sqlstate=%', sqlstate;
+      get stacked diagnostics v_error_constraint = constraint_name,
+                              v_error_table = table_name;
+      raise warning 'booking card Email queue failed, sqlstate=% constraint=% table=%',
+        sqlstate, coalesce(v_error_constraint, '-'), coalesce(v_error_table, '-');
     end;
   end if;
 
@@ -585,7 +590,10 @@ begin
           using errcode = '23514';
       end if;
     exception when others then
-      raise warning 'booking card WhatsApp queue failed, sqlstate=%', sqlstate;
+      get stacked diagnostics v_error_constraint = constraint_name,
+                              v_error_table = table_name;
+      raise warning 'booking card WhatsApp queue failed, sqlstate=% constraint=% table=%',
+        sqlstate, coalesce(v_error_constraint, '-'), coalesce(v_error_table, '-');
     end;
   end if;
 end;

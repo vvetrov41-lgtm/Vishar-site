@@ -133,7 +133,7 @@ select is(
 );
 
 -- Cancelling the first session releases its share to the next booked one.
-update public.sessions set status = 'cancelled'
+update public.sessions set status = 'cancelled', cancelled_at = now()
 where id = 'f9611111-1111-4111-8111-111111111111';
 
 select is(
@@ -255,10 +255,13 @@ insert into public.sessions (
    3, 420.00, 'GBP');
 
 insert into auth.users (id, email) values
-  ('f9133333-3333-4333-8333-333333333333', 'alloc-vladimir-finance@example.test');
+  ('f9133333-3333-4333-8333-333333333333', 'alloc-vladimir-finance@example.test'),
+  ('f9144444-4444-4444-8444-444444444444', 'alloc-owner@example.test');
 insert into public.profiles (id, email, display_name, role, is_active) values
   ('f9133333-3333-4333-8333-333333333333', 'alloc-vladimir-finance@example.test',
-   'Allocation Vladimir Finance', 'booking_manager', true);
+   'Allocation Vladimir Finance', 'booking_manager', true),
+  ('f9144444-4444-4444-8444-444444444444', 'alloc-owner@example.test',
+   'Allocation Owner', 'owner', true);
 insert into public.artist_memberships (
   profile_id, artist_id, access_level,
   can_view_finance, can_manage_finance,
@@ -267,6 +270,24 @@ insert into public.artist_memberships (
   'f9133333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
   'manager', true, true, true, false, true
 );
+
+-- Duration-tiered session deposits need an active Monzo policy; configure a
+-- synthetic one as the owner (rolled back with the test).
+create function pg_temp.tier_setup_claims(p text) returns void language sql as $$
+  select set_config('request.jwt.claims', p, true)::void;
+$$;
+grant execute on function pg_temp.tier_setup_claims(text) to authenticated, service_role;
+set local role authenticated;
+select pg_temp.tier_setup_claims('{"sub":"f9144444-4444-4444-8444-444444444444","role":"authenticated"}');
+select lives_ok(
+  $$select public.configure_monzo_easy_bank_transfer(
+      'a1111111-1111-4111-8111-111111111111',
+      'https://monzo.com/pay/r/synthetic-booking-card', true
+    )$$,
+  'owner configures a synthetic duration-tiered deposit route'
+);
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 insert into public.payment_requests (
   id, idempotency_key, artist_id, client_id, project_id, session_id,

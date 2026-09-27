@@ -115,11 +115,17 @@ select is(
   'a finance manager can set the exact tattoo session price'
 );
 
+reset role;
 select is(
   (select price from public.sessions
    where id = 'f7611111-1111-4111-8111-111111111111'),
   980.00::numeric,
   'the exact price is stored on the session'
+);
+
+set local role authenticated;
+select pg_temp.price_claims(
+  '{"sub":"f7111111-1111-4111-8111-111111111111","role":"authenticated"}'
 );
 
 select throws_ok(

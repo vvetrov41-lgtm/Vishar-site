@@ -300,10 +300,10 @@ set phone = '+447700900654'
 where id = 'fc222222-2222-4222-8222-222222222222';
 
 select lives_ok(
-  $ select * from crm_private.reconcile_booking_cards(
+  $$ select * from crm_private.reconcile_booking_cards(
     'a1111111-1111-4111-8111-111111111111',
     200
-  ) $,
+  ) $$,
   'reconciliation can add a channel that becomes reachable later'
 );
 

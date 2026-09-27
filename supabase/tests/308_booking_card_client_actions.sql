@@ -68,7 +68,9 @@ select is(
 );
 
 select ok(
-  (select bool_and(raw_token ~ '^[0-9a-f]{64}
+  (select bool_and(raw_token ~ '^[0-9a-f]{64}$') from issued_actions),
+  'booking-card capabilities are 256-bit opaque values'
+);
 
 select ok(
   not exists (
