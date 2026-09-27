@@ -49,20 +49,20 @@ select throws_ok(
 );
 
 select throws_ok(
-  $ update crm_private.booking_card_artist_settings
+  $$ update crm_private.booking_card_artist_settings
      set whatsapp_enabled = true
-     where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid $,
+     where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid $$,
   '23514', null,
   'WhatsApp booking cards cannot be enabled before both Meta templates are approved'
 );
 
 select lives_ok(
-  $ select public.service_record_booking_card_template_status(
+  $$ select public.service_record_booking_card_template_status(
     'a1111111-1111-4111-8111-111111111111'::uuid,
     'APPROVED',
     'APPROVED',
     null
-  ) $,
+  ) $$,
   'provider approval readback is accepted through the backend status path'
 );
 
@@ -74,12 +74,12 @@ select ok(
 );
 
 select lives_ok(
-  $ select public.service_record_booking_card_template_status(
+  $$ select public.service_record_booking_card_template_status(
     'a1111111-1111-4111-8111-111111111111'::uuid,
     'REJECTED',
     'APPROVED',
     'whatsapp_template_rejected'
-  ) $,
+  ) $$,
   'provider approval regression is recorded through the backend status path'
 );
 

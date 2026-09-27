@@ -101,6 +101,10 @@ create table crm_private.booking_card_artist_settings (
   whatsapp_template_language text not null default 'en_GB'
     check (whatsapp_template_language ~ '^[a-z]{2}(_[A-Z]{2})?$'),
   appointment_start_from timestamptz,
+  client_action_base_url text
+    check (client_action_base_url is null
+      or (client_action_base_url ~ '^https://[a-z0-9.-]+(/[A-Za-z0-9._~-]+)*/$'
+          and char_length(client_action_base_url) <= 200)),
   updated_at timestamptz not null default now(),
   constraint booking_card_settings_location_bounds check (
     (location_latitude is null or location_latitude between -90 and 90)
@@ -116,7 +120,8 @@ create table crm_private.booking_card_artist_settings (
   constraint booking_card_settings_email_ready check (
     not email_enabled
     or (
-      nullif(btrim(studio_name), '') is not null
+      client_action_base_url is not null
+      and nullif(btrim(studio_name), '') is not null
       and nullif(btrim(studio_address), '') is not null
       and studio_map_url ~ '^https://[^[:space:]]+$' and char_length(studio_map_url) <= 1900
     )
@@ -137,6 +142,8 @@ create table crm_private.booking_card_artist_settings (
 
 comment on table crm_private.booking_card_artist_settings is
   'Fail-closed artist-scoped rollout and studio/template configuration. Both channels default disabled.';
+comment on column crm_private.booking_card_artist_settings.client_action_base_url is
+  'Server-owned public base URL for one-time client action links (the token is appended). Kept as configuration so no domain is baked into function bodies.';
 comment on column crm_private.booking_card_artist_settings.appointment_start_from is
   'Optional earliest appointment start eligible for this artist booking-card location/configuration.';
 

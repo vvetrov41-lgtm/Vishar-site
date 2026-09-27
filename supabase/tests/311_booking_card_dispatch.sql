@@ -65,7 +65,11 @@ insert into crm_private.booking_card_artist_settings (
   location_longitude,
   whatsapp_tattoo_template_name,
   whatsapp_consultation_template_name,
-  whatsapp_template_language
+  whatsapp_template_language,
+  whatsapp_tattoo_template_status,
+  whatsapp_consultation_template_status,
+  appointment_start_from,
+  client_action_base_url
 ) values (
   'a1111111-1111-4111-8111-111111111111',
   true,
@@ -77,8 +81,28 @@ insert into crm_private.booking_card_artist_settings (
   -0.100001,
   'booking_card_tattoo_v1',
   'booking_card_consultation_v1',
-  'en_GB'
-);
+  'en_GB',
+  'APPROVED',
+  'APPROVED',
+  null,
+  'https://booking.example.test/appointments/respond/'
+)
+-- 20260926210000 already configures Vladimir (London, from November).
+on conflict (artist_id) do update
+set email_enabled = excluded.email_enabled,
+    whatsapp_tattoo_template_status = excluded.whatsapp_tattoo_template_status,
+    whatsapp_consultation_template_status = excluded.whatsapp_consultation_template_status,
+    whatsapp_enabled = excluded.whatsapp_enabled,
+    studio_name = excluded.studio_name,
+    studio_address = excluded.studio_address,
+    studio_map_url = excluded.studio_map_url,
+    location_latitude = excluded.location_latitude,
+    location_longitude = excluded.location_longitude,
+    whatsapp_tattoo_template_name = excluded.whatsapp_tattoo_template_name,
+    whatsapp_consultation_template_name = excluded.whatsapp_consultation_template_name,
+    whatsapp_template_language = excluded.whatsapp_template_language,
+    appointment_start_from = excluded.appointment_start_from,
+    client_action_base_url = excluded.client_action_base_url;
 
 insert into public.sessions (
   id, project_id, client_id, enquiry_id, artist_id,

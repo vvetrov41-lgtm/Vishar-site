@@ -87,19 +87,19 @@ insert into public.sessions (
 ) values
   ('f9611111-1111-4111-8111-111111111111', 'f9511111-1111-4111-8111-111111111111',
    'f9211111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
-   'tattoo_session', 'confirmed', now() + interval '30 days', now() + interval '30 days 7 hours',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '30 days', date_trunc('hour', now()) + interval '30 days 7 hours',
    7, 980.00, 'GBP'),
   ('f9622222-2222-4222-8222-222222222222', 'f9511111-1111-4111-8111-111111111111',
    'f9211111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
-   'tattoo_session', 'confirmed', now() + interval '40 days', now() + interval '40 days 7 hours',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '40 days', date_trunc('hour', now()) + interval '40 days 7 hours',
    7, 980.00, 'GBP'),
   ('f9633333-3333-4333-8333-333333333333', 'f9511111-1111-4111-8111-111111111111',
    'f9211111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
-   'tattoo_session', 'confirmed', now() + interval '50 days', now() + interval '50 days 4 hours',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '50 days', date_trunc('hour', now()) + interval '50 days 4 hours',
    4, 560.00, 'GBP'),
   ('f9644444-4444-4444-8444-444444444444', 'f9511111-1111-4111-8111-111111111111',
    'f9211111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
-   'tattoo_session', 'confirmed', now() + interval '60 days', now() + interval '60 days 7 hours',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '60 days', date_trunc('hour', now()) + interval '60 days 7 hours',
    7, null, 'GBP');
 
 select results_eq(
@@ -203,7 +203,7 @@ insert into public.sessions (
 ) values
   ('f9655555-5555-4555-8555-555555555555', 'f9522222-2222-4222-8222-222222222222',
    'f9211111-1111-4111-8111-111111111111', 'a2222222-2222-4222-8222-222222222222',
-   'tattoo_session', 'confirmed', now() + interval '35 days', now() + interval '35 days 5 hours',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '35 days', date_trunc('hour', now()) + interval '35 days 5 hours',
    5, 900.00, 'GBP');
 
 select is(
@@ -220,7 +220,7 @@ insert into public.sessions (
 ) values
   ('f9666666-6666-4666-8666-666666666666', 'f9522222-2222-4222-8222-222222222222',
    'f9211111-1111-4111-8111-111111111111', 'a2222222-2222-4222-8222-222222222222',
-   'tattoo_session', 'confirmed', now() + interval '45 days', now() + interval '45 days 5 hours',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '45 days', date_trunc('hour', now()) + interval '45 days 5 hours',
    5, 900.00, 'GBP');
 
 select is(
@@ -228,6 +228,102 @@ select is(
    where project_id = 'f9522222-2222-4222-8222-222222222222' and superseded_at is null),
   0,
   'two booked sessions without a per-session deposit are ambiguous, so neither card claims the deposit'
+);
+
+-- Legacy project state that already has its money in the ledger as a
+-- session deposit is not counted a second time for the next session.
+insert into public.projects (
+  id, client_id, artist_id, title, status, currency, deposit_status, deposit_amount
+) values (
+  'f9533333-3333-4333-8333-333333333333',
+  'f9211111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'Two part piece', 'active', 'GBP', 'requested', 250.00
+);
+
+insert into public.sessions (
+  id, project_id, client_id, artist_id, appointment_type, status,
+  start_at, end_at, duration_hours, price, currency
+) values
+  ('f9677777-7777-4777-8777-777777777777', 'f9533333-3333-4333-8333-333333333333',
+   'f9211111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '70 days', date_trunc('hour', now()) + interval '70 days 7 hours',
+   7, 980.00, 'GBP'),
+  ('f9688888-8888-4888-8888-888888888888', 'f9533333-3333-4333-8333-333333333333',
+   'f9211111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
+   'tattoo_session', 'confirmed', date_trunc('hour', now()) + interval '71 days', date_trunc('hour', now()) + interval '71 days 3 hours',
+   3, 420.00, 'GBP');
+
+insert into auth.users (id, email) values
+  ('f9133333-3333-4333-8333-333333333333', 'alloc-vladimir-finance@example.test');
+insert into public.profiles (id, email, display_name, role, is_active) values
+  ('f9133333-3333-4333-8333-333333333333', 'alloc-vladimir-finance@example.test',
+   'Allocation Vladimir Finance', 'booking_manager', true);
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active
+) values (
+  'f9133333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
+  'manager', true, true, true, false, true
+);
+
+insert into public.payment_requests (
+  id, idempotency_key, artist_id, client_id, project_id, session_id,
+  purpose, amount, currency, policy_id, policy_version, policy_snapshot
+)
+select
+  'f9711111-1111-4111-8111-111111111111',
+  'f9722222-2222-4222-8222-222222222222',
+  'a1111111-1111-4111-8111-111111111111',
+  'f9211111-1111-4111-8111-111111111111',
+  'f9533333-3333-4333-8333-333333333333',
+  'f9677777-7777-4777-8777-777777777777',
+  'deposit', tier.amount, tier.currency, tier.policy_id, tier.policy_version,
+  jsonb_build_object('policy_id', tier.policy_id, 'policy_version', tier.policy_version, 'test_fixture', true)
+from crm_private.resolve_session_deposit_tier(
+  'a1111111-1111-4111-8111-111111111111',
+  'f9677777-7777-4777-8777-777777777777'
+) tier;
+
+create function pg_temp.legacy_claims(p text) returns void language sql as $$
+  select set_config('request.jwt.claims', p, true)::void;
+$$;
+grant execute on function pg_temp.legacy_claims(text) to authenticated, service_role;
+
+set local role authenticated;
+select pg_temp.legacy_claims(
+  '{"sub":"f9133333-3333-4333-8333-333333333333","role":"authenticated"}'
+);
+select lives_ok(
+  $$ select public.record_manual_payment(
+    'f9711111-1111-4111-8111-111111111111',
+    'f9733333-3333-4333-8333-333333333333',
+    (select amount from public.payment_requests where id = 'f9711111-1111-4111-8111-111111111111'),
+    now(),
+    'crm_manual_payment'
+  ) $$,
+  'the session deposit is settled through the payment ledger'
+);
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+-- The project also carries the same money as legacy "paid" state.
+update public.projects
+set deposit_status = 'paid',
+    deposit_amount = (select amount from public.payment_requests where id = 'f9711111-1111-4111-8111-111111111111')
+where id = 'f9533333-3333-4333-8333-333333333333';
+
+select is(
+  (select source_kind from crm_private.booking_card_deposit_for_session('f9677777-7777-4777-8777-777777777777')),
+  'session_request',
+  'a session-bound paid deposit is attributed to its own session'
+);
+
+select is(
+  (select reason from crm_private.booking_card_eligibility('f9688888-8888-4888-8888-888888888888')),
+  'deposit_not_paid_for_session',
+  'the same £250 recorded as project state is not attributed again to the next session'
 );
 
 -- Operator RPCs ----------------------------------------------------------------

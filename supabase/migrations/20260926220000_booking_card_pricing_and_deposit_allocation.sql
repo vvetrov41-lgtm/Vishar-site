@@ -375,11 +375,20 @@ begin
     v_pool_kind := 'project_request';
   else
     -- Legacy projects: the CRM project state (deposit marked paid with an
-    -- amount) is the only record of the payment.
+    -- amount) is the only record of the payment. Money already recorded in
+    -- the ledger as a session or group deposit of this project is the same
+    -- deposit, so it is not attributed twice.
     if v_project.deposit_amount is null or v_project.deposit_amount <= 0 then
       return;
     end if;
-    v_pool := v_project.deposit_amount;
+    v_pool := v_project.deposit_amount - coalesce((
+      select sum(r.amount)
+      from public.payment_requests r
+      where r.project_id = v_project.id
+        and r.purpose = 'deposit'::public.payment_request_purpose
+        and r.status = 'paid'::public.payment_request_status
+        and r.currency = v_project.currency
+    ), 0);
     v_pool_currency := v_project.currency;
     v_pool_source := v_project.id;
     v_pool_kind := 'project_status';

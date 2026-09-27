@@ -809,6 +809,18 @@ insert into expected_function_acl values
   -- Intake preflight telemetry (20260924090000). Backend only, metadata only.
   ('public.service_record_intake_preflight(jsonb)', false, false, true),
   ('public.service_mark_intake_preflight_submitted(uuid,text,uuid)', false, false, true),
+  -- Booking cards (20260926130000-20260926220000). Price and rate writes are
+  -- finance-gated operator RPCs; card status is an operator read; template
+  -- and WhatsApp action plumbing is backend only.
+  ('public.set_appointment_price(uuid,numeric)', false, true, false),
+  ('public.schedule_appointment_with_price(uuid,uuid,public.appointment_type,timestamptz,timestamptz,public.session_status,uuid,uuid,text,numeric)', false, true, false),
+  ('public.get_artist_session_pricing(uuid)', false, true, false),
+  ('public.set_artist_session_pricing(uuid,numeric,numeric,numeric,numeric,text)', false, true, false),
+  ('public.get_session_booking_card_status(uuid)', false, true, false),
+  ('public.service_apply_whatsapp_booking_card_action(uuid,text,text,text,timestamptz,text)', false, false, true),
+  ('public.service_claim_booking_card_template_targets(integer)', false, false, true),
+  ('public.service_record_booking_card_template_status(uuid,text,text,text)', false, false, true),
+  ('public.service_resolve_whatsapp_booking_card_payload(uuid,text)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
   -- of these re-derives the artist from the record it is given and requires

@@ -37,6 +37,8 @@ select ok(
   'only the trusted backend can resolve a leased WhatsApp booking-card payload'
 );
 
+select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
+
 select throws_ok(
   $$ select * from public.service_resolve_whatsapp_booking_card_payload(
     gen_random_uuid(),

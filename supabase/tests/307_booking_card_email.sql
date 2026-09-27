@@ -66,15 +66,28 @@ insert into crm_private.booking_card_artist_settings (
   whatsapp_enabled,
   studio_name,
   studio_address,
-  studio_map_url
+  studio_map_url,
+  appointment_start_from,
+  client_action_base_url
 ) values (
   'a1111111-1111-4111-8111-111111111111',
   true,
   false,
   'Synthetic Studio',
   '1 Synthetic Street, London',
-  'https://maps.example.test/synthetic'
-);
+  'https://maps.example.test/synthetic',
+  null,
+  'https://booking.example.test/appointments/respond/'
+)
+-- 20260926210000 already configures Vladimir (London, from November).
+on conflict (artist_id) do update
+set email_enabled = excluded.email_enabled,
+    whatsapp_enabled = excluded.whatsapp_enabled,
+    studio_name = excluded.studio_name,
+    studio_address = excluded.studio_address,
+    studio_map_url = excluded.studio_map_url,
+    appointment_start_from = excluded.appointment_start_from,
+    client_action_base_url = excluded.client_action_base_url;
 
 -- The tattoo renderer trusts only a canonical card. Foundation materialization
 -- is tested separately with a real payment transition.

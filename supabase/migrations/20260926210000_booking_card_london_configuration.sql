@@ -18,7 +18,8 @@ insert into crm_private.booking_card_artist_settings (
   whatsapp_tattoo_template_name,
   whatsapp_consultation_template_name,
   whatsapp_template_language,
-  appointment_start_from
+  appointment_start_from,
+  client_action_base_url
 )
 select
   a.id,
@@ -32,7 +33,8 @@ select
   'booking_card_tattoo_v1',
   'booking_card_consultation_v1',
   'en_GB',
-  '2026-11-01 00:00:00+00'::timestamptz
+  '2026-11-01 00:00:00+00'::timestamptz,
+  'https://booking.vishartattoo.com/appointments/respond/'
 from public.artists a
 where a.id in (
   'a1111111-1111-4111-8111-111111111111'::uuid,
@@ -50,4 +52,5 @@ set email_enabled = true,
     whatsapp_consultation_template_name = excluded.whatsapp_consultation_template_name,
     whatsapp_template_language = excluded.whatsapp_template_language,
     appointment_start_from = excluded.appointment_start_from,
+    client_action_base_url = excluded.client_action_base_url,
     updated_at = now();

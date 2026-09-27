@@ -253,8 +253,11 @@ begin
   v_first_name := split_part(btrim(v_client_name), ' ', 1);
   v_date := to_char(v_card.start_at at time zone v_card.timezone, 'FMDay, FMDD FMMonth YYYY');
   v_time := to_char(v_card.start_at at time zone v_card.timezone, 'HH24:MI');
-  v_confirm_url := 'https://booking.vishartattoo.com/appointments/respond/' || p_confirm_token;
-  v_reschedule_url := 'https://booking.vishartattoo.com/appointments/respond/' || p_reschedule_token;
+  if v_settings.client_action_base_url is null then
+    return;
+  end if;
+  v_confirm_url := v_settings.client_action_base_url || p_confirm_token;
+  v_reschedule_url := v_settings.client_action_base_url || p_reschedule_token;
 
   if v_card.card_kind = 'tattoo_deposit_paid' then
     v_title := 'Your tattoo session is booked';

@@ -75,7 +75,7 @@ insert into public.sessions (
   'f8311111-1111-4111-8111-111111111111',
   'a1111111-1111-4111-8111-111111111111',
   'tattoo_session', 'confirmed',
-  now() + interval '20 days', now() + interval '20 days 7 hours',
+  date_trunc('hour', now()) + interval '20 days', date_trunc('hour', now()) + interval '20 days 7 hours',
   7, 980.00, 'GBP'
 ), (
   'f8622222-2222-4222-8222-222222222222',
@@ -84,7 +84,7 @@ insert into public.sessions (
   null,
   'a1111111-1111-4111-8111-111111111111',
   'in_person_consultation', 'confirmed',
-  now() + interval '21 days', now() + interval '21 days 30 minutes',
+  date_trunc('hour', now()) + interval '21 days', date_trunc('hour', now()) + interval '21 days 30 minutes',
   0.5, null, 'GBP'
 );
 

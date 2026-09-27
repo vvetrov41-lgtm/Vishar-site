@@ -20,8 +20,8 @@ insert into public.sessions (
   'a1111111-1111-4111-8111-111111111111',
   'in_person_consultation',
   'confirmed',
-  now() + interval '30 days',
-  now() + interval '30 days 30 minutes',
+  date_trunc('hour', now()) + interval '30 days',
+  date_trunc('hour', now()) + interval '30 days 30 minutes',
   0.5,
   'GBP'
 );
@@ -82,7 +82,7 @@ select ok(
 
 select is(
   (select min(expires_at) from issued_actions),
-  now() + interval '7 days',
+  date_trunc('hour', now()) + interval '7 days',
   'booking-card actions are bounded to seven days even for a distant appointment'
 );
 
@@ -160,7 +160,7 @@ select ok(
 
 select is(
   (select min(expires_at) from issued_actions),
-  now() + interval '7 days',
+  date_trunc('hour', now()) + interval '7 days',
   'booking-card actions are bounded to seven days even for a distant appointment'
 );
 
