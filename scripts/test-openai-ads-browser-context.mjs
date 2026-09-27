@@ -50,7 +50,17 @@ assert.match(privacy, /does not manually send your name, email, phone number, In
 const csp = headers.match(/^\s*Content-Security-Policy: (.+)$/m)?.[1] ?? '';
 const directive = (name) => (csp.match(new RegExp(`(?:^|;)\\s*${name} ([^;]+)`))?.[1] ?? '').split(/\s+/);
 assert.ok(booking.includes("'https://bzrcdn.openai.com/sdk/oaiq.min.js'"));
+// Consent gate: the SDK script is only inserted by the loader, and the loader
+// only runs for a stored or newly given grant.
+const head = booking.slice(0, booking.indexOf('</head>'));
+assert.equal((head.match(/insertBefore\(js, first\)/g) || []).length, 1, 'one SDK insertion point');
+const loaderStart = head.indexOf('w.visharLoadOpenAiAdsPixel = function');
+const insertAt = head.indexOf('insertBefore(js, first)');
+assert.ok(loaderStart > 0 && insertAt > loaderStart, 'the SDK is inserted only inside the consent loader');
+assert.match(head, /if \(consent === 'granted'\) \{\s*w\.oaiq\('consent', true\);\s*w\.visharLoadOpenAiAdsPixel\(\);/);
+assert.match(booking, /if \(value === 'granted' && typeof window\.visharLoadOpenAiAdsPixel === 'function'\) \{\s*window\.visharLoadOpenAiAdsPixel\(\);/);
 assert.ok(directive('script-src').includes('https://bzrcdn.openai.com'), 'CSP script-src must allow the OpenAI Ads pixel SDK');
 assert.ok(directive('connect-src').includes('https://bzr.openai.com'), 'CSP connect-src must allow the OpenAI Ads pixel event endpoint');
+assert.ok(directive('connect-src').includes('https://bzrcdn.openai.com'), 'CSP connect-src must allow the OpenAI Ads pixel configuration fetch');
 
 console.log('OpenAI Ads browser context checks passed.');

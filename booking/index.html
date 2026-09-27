@@ -43,15 +43,26 @@
     w.oaiq('consent', false);
     w.oaiq('init', { pixelId: 'XkQY5Xq3FbxJvAx2qDD9my' });
 
+    // The SDK itself is only fetched after OpenAI Ads measurement consent.
+    // Loaded without consent it still contacts OpenAI and sets cookies, which
+    // the privacy notice rules out. Until then calls wait in the queue above.
+    var loaded = false;
+    w.visharLoadOpenAiAdsPixel = function () {
+      if (loaded) return;
+      loaded = true;
+      var js = d.createElement(s);
+      js.async = true;
+      js.src = u;
+      var first = d.getElementsByTagName(s)[0];
+      first.parentNode.insertBefore(js, first);
+    };
+
     var consent = null;
     try { consent = localStorage.getItem('vishar-openai-ads-consent'); } catch (error) { consent = null; }
-    if (consent === 'granted') w.oaiq('consent', true);
-
-    var js = d.createElement(s);
-    js.async = true;
-    js.src = u;
-    var first = d.getElementsByTagName(s)[0];
-    first.parentNode.insertBefore(js, first);
+    if (consent === 'granted') {
+      w.oaiq('consent', true);
+      w.visharLoadOpenAiAdsPixel();
+    }
   })(window, document, 'script', 'https://bzrcdn.openai.com/sdk/oaiq.min.js');
   </script>
   <!-- Staging must set its own preview Worker URL. Empty means production
@@ -366,6 +377,9 @@
       try { localStorage.setItem(OPENAI_ADS_CONSENT_KEY, value); } catch (error) { /* private browsing */ }
       try {
         if (typeof window.oaiq === 'function') window.oaiq('consent', value === 'granted');
+        if (value === 'granted' && typeof window.visharLoadOpenAiAdsPixel === 'function') {
+          window.visharLoadOpenAiAdsPixel();
+        }
       } catch (error) {
         console.warn('OpenAI Ads consent update failed', error);
       }
