@@ -192,13 +192,10 @@ select is(
 -- While the restriction is recorded, the target is probed once a day.
 insert into public.artist_integrations
   (artist_id, integration_type, provider, integration_key, configuration, is_enabled)
-select 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-       'vladimir-template-backoff-312', '{}'::jsonb, true
-where not exists (
-  select 1 from public.artist_integrations
-  where artist_id = 'a1111111-1111-4111-8111-111111111111'
-    and integration_type = 'whatsapp' and provider = 'meta_cloud_api' and is_enabled
-);
+values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
+        'vladimir-production', '{}'::jsonb, true)
+on conflict (artist_id, integration_type, integration_key)
+  do update set is_enabled = true, provider = 'meta_cloud_api';
 
 update crm_private.booking_card_artist_settings
 set whatsapp_template_checked_at = now() - interval '2 hours'
