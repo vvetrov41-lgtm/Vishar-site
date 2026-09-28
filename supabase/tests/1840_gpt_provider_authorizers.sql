@@ -23,6 +23,19 @@ insert into auth.users (id, email) values ('d0011111-1111-4111-8111-111111111111
 insert into public.profiles (id, email, display_name, role, is_active) values
   ('d0011111-1111-4111-8111-111111111111', 'gpt-provider-owner@example.test', 'GPT Provider Owner', 'owner', true);
 
+-- Members whose CRM rights stop short of what the provider Workers enforce.
+insert into auth.users (id, email) values
+  ('d0031111-1111-4111-8111-111111111111', 'gpt-provider-manager@example.test'),
+  ('d0032222-2222-4222-8222-222222222222', 'gpt-provider-readonly@example.test');
+insert into public.profiles (id, email, display_name, role, is_active) values
+  ('d0031111-1111-4111-8111-111111111111', 'gpt-provider-manager@example.test', 'GPT Provider Manager', 'booking_manager', true),
+  ('d0032222-2222-4222-8222-222222222222', 'gpt-provider-readonly@example.test', 'GPT Provider Read-only', 'booking_manager', true);
+insert into public.artist_memberships (profile_id, artist_id, access_level, can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active)
+values
+  ('d0031111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111', 'manager', false, false, true, false, true),
+  ('d0032222-2222-4222-8222-222222222222', 'a1111111-1111-4111-8111-111111111111', 'read_only', false, false, false, false, true);
+
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
 $$;
@@ -80,6 +93,22 @@ select throws_ok(
 select public.gpt_artist_context('a2222222-2222-4222-8222-222222222222');
 select is(public.gpt_authorize_provider_action('instagram_view') ->> 'artist_id', 'a2222222-2222-4222-8222-222222222222',
   'switching context moves the provider Artist with it');
+
+-- The GPT asks for exactly what the provider Workers enforce, so it never
+-- advertises a read the provider then refuses.
+select pg_temp.claims('{"sub":"d0031111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-unified-provider"}');
+select throws_ok($$select public.gpt_authorize_provider_action('instagram_view')$$, '42501', null,
+  'Instagram status needs integration management, like the Instagram connector');
+select is(public.gpt_authorize_provider_action('gmail_inbox') ->> 'artist_id', 'a1111111-1111-4111-8111-111111111111',
+  'a manager who manages communications reads the Gmail inbox');
+select pg_temp.claims('{"sub":"d0032222-2222-4222-8222-222222222222","role":"authenticated","client_id":"oauth-unified-provider"}');
+select throws_ok($$select public.gpt_authorize_provider_action('gmail_inbox')$$, '42501', null,
+  'a read-only member cannot read the Gmail inbox, like the Gmail operator Worker');
+select throws_ok(
+  $$select public.gpt_authorize_gmail_client((select (result ->> 'client_id')::uuid from provider_v))$$,
+  '42501', null,
+  'a read-only member cannot read client Gmail history'
+);
 
 select * from finish();
 rollback;

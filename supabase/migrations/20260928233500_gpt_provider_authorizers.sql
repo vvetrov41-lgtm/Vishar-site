@@ -7,6 +7,11 @@
 -- context, GPT client ceiling and CRM capability. The GPT Worker then calls the
 -- provider Worker for the Artist returned here, never an Artist from the model.
 -- Provider tokens never leave the provider Workers.
+--
+-- The capabilities are the ones the provider Workers themselves enforce, so the
+-- GPT never advertises a read the provider then refuses: Gmail operator reads
+-- need manage_communications, and the Instagram connector's status, start and
+-- disconnect all need integration management.
 
 create or replace function public.gpt_authorize_provider_action(p_action text)
 returns jsonb language plpgsql security definer
@@ -15,9 +20,9 @@ as $$
 declare v_ctx record;
 begin
   if p_action = 'gmail_inbox' then
-    select * into v_ctx from crm_private.require_gpt_domain_context('communications', 'view_communications');
+    select * into v_ctx from crm_private.require_gpt_domain_context('communications', 'manage_communications');
   elsif p_action = 'instagram_view' then
-    select * into v_ctx from crm_private.require_gpt_domain_context('integrations', 'view_integrations');
+    select * into v_ctx from crm_private.require_gpt_domain_context('integrations', 'manage_integrations');
   elsif p_action = 'instagram_manage' then
     select * into v_ctx from crm_private.require_gpt_domain_context('integrations', 'manage_integrations');
   else
@@ -33,7 +38,7 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare v_ctx record;
 begin
-  select * into v_ctx from crm_private.require_gpt_domain_context('communications', 'view_communications');
+  select * into v_ctx from crm_private.require_gpt_domain_context('communications', 'manage_communications');
   if not crm_private.gpt_client_in_artist_scope(p_client_id, v_ctx.artist_id) then
     raise exception 'client is outside the active GPT Artist scope' using errcode = '42501';
   end if;

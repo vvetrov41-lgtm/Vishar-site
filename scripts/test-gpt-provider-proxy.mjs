@@ -78,6 +78,8 @@ function jsonResponse(status, body) {
   assert.equal(response.status, 200);
   assert.equal(new URL(gmailRequest.url).pathname, `/v1/operator/clients/${CLIENT}/gmail/history`);
   assert.equal(new URL(gmailRequest.url).searchParams.get('thread_limit'), '2');
+  assert.equal(new URL(gmailRequest.url).searchParams.get('artist_id'), ARTIST,
+    'the database-chosen Artist qualifies a client shared by several Artists');
 }
 
 // Instagram start: POST with the database Artist in the body; the link comes back.

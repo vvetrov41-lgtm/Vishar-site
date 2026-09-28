@@ -211,6 +211,39 @@ await test('a client shared by two manageable artists is refused rather than gue
   assert.deepEqual(await response.json(), { error: 'artist_scope_denied' });
 });
 
+await test('a named artist resolves a shared client only when that artist is itself permitted', async () => {
+  const token = 'synthetic.crm.session.token.1234567890';
+  const otherArtist = 'a2222222-2222-4222-8222-222222222222';
+  const strangerArtist = 'a3333333-3333-4333-8333-333333333333';
+  const db = {
+    async userClientArtists() { return [artistId, otherArtist]; },
+    async userRpc() {
+      return [
+        { artist_id: artistId, capability: 'manage_communications' },
+        { artist_id: otherArtist, capability: 'manage_communications' },
+        { artist_id: strangerArtist, capability: 'manage_communications' },
+      ];
+    },
+  };
+  // The GPT edge already chose the artist from its server-side context.
+  assert.deepEqual(
+    await operator.authorizeOperatorForClient(db, token, clientId, otherArtist),
+    { artist_id: otherArtist, client_id: clientId },
+  );
+  // A manageable artist the client has no enquiry with opens nothing.
+  await assert.rejects(operator.authorizeOperatorForClient(db, token, clientId, strangerArtist), /gmail_operator_scope_invalid/);
+  // Without a name the shared client is still refused rather than guessed.
+  await assert.rejects(operator.authorizeOperatorForClient(db, token, clientId), /gmail_client_scope_ambiguous/);
+
+  let calls = 0;
+  const bad = await handleGmailOperatorRequest(new Request(`https://gmail.vishartattoo.com${clientPath}?artist_id=nope`, {
+    headers: { origin: 'https://crm.vishartattoo.com', authorization: `Bearer ${token}` },
+  }), productionEnv, async () => { calls += 1; throw new Error('must not fetch'); });
+  assert.equal(bad.status, 400);
+  assert.deepEqual(await bad.json(), { error: 'invalid_artist_id' });
+  assert.equal(calls, 0);
+});
+
 await test('client-scoped read never writes a Gmail thread context', async () => {
   const calls = [];
   const token = 'synthetic.crm.session.token.1234567890';
