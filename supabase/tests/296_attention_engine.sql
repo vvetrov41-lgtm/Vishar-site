@@ -194,6 +194,16 @@ insert into public.sessions (id, artist_id, client_id, enquiry_id, appointment_t
 values ('e7091111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
   'e7011111-1111-4111-8111-111111111111', 'e7021111-1111-4111-8111-111111111111', 'video_consultation', 'confirmed',
   date_trunc('hour', now()) + interval '2 days', date_trunc('hour', now()) + interval '2 days 30 minutes', 0.5);
+-- Booking the consultation moves a `new` enquiry to `reviewing` itself
+-- (20260928160000), so the contradiction no longer arises from a booking.
+select is(
+  (select status::text from public.enquiries where id = 'e7021111-1111-4111-8111-111111111111'),
+  'reviewing', 'booking a consultation moves the new enquiry to reviewing');
+select ok(
+  not ('consultation_booked_enquiry_new' = any(crm_private.attention_conflicts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111'))),
+  'a booked consultation leaves no new-enquiry contradiction behind');
+-- Historical rows that still disagree are still reported.
+update public.enquiries set status = 'new' where id = 'e7021111-1111-4111-8111-111111111111';
 select ok(
   'consultation_booked_enquiry_new' = any(crm_private.attention_conflicts('a1111111-1111-4111-8111-111111111111', 'e7011111-1111-4111-8111-111111111111')),
   'a booked consultation while the enquiry is still new is a conflict');
