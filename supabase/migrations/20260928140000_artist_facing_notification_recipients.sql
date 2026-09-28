@@ -16,11 +16,11 @@
 --     destination enabled, so a paused Telegram switch moved the artist's
 --     enquiries into the owner's notification centre.
 --
--- CRM producers now share artist_notification_recipients(): the artist's
--- active 'artist' members; if there are none, its active 'manager' members;
--- an active 'owner' member only when the artist has neither (the solo-owner
--- case, which is how a studio owner is the artist-facing profile of their own
--- artist). The tiers keep migration 0077's intent that a reminder goes to the
+-- CRM producers now share artist_notification_recipients(): the active
+-- members of the artist's artist-facing tier ('artist' memberships if it has
+-- any, otherwise 'manager' memberships); active owners only when that tier
+-- has nobody active (the solo-owner case, which is how a studio owner is the
+-- artist-facing profile of their own artist). The tiers keep migration 0077's intent that a reminder goes to the
 -- people who run the artist rather than every manager, while an artist whose
 -- own profile is a manager membership now receives their own notifications.
 --
@@ -49,30 +49,47 @@ stable
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+  -- The artist-facing tier is decided by how the artist is set up, not by who
+  -- happens to be active: an artist with an 'artist' membership is reached
+  -- through it, otherwise through its 'manager' memberships. A deactivated
+  -- member is not silently replaced by a colleague of a lower tier. When the
+  -- tier has nobody active (or the artist has no artist/manager membership at
+  -- all, the solo-owner case), the active owners receive.
   with members as (
     select a.profile_id,
-           case a.access_level
-             when 'artist' then 1
-             when 'manager' then 2
-             when 'owner' then 3
-           end as tier
+           a.access_level,
+           a.is_active and p.is_active as active
     from crm_private.artist_access a
     join crm_private.profile_access p on p.profile_id = a.profile_id
     where a.artist_id = p_artist_id
-      and a.is_active
-      and p.is_active
       and a.access_level in ('owner', 'artist', 'manager')
+  ),
+  tier as (
+    select case
+      when exists (select 1 from members where access_level = 'artist') then 'artist'
+      when exists (select 1 from members where access_level = 'manager') then 'manager'
+      else 'owner'
+    end as level
+  ),
+  facing as (
+    select m.profile_id
+    from members m, tier t
+    where m.active and m.access_level::text = t.level
   )
-  select distinct m.profile_id
+  select distinct f.profile_id from facing f
+  union
+  select m.profile_id
   from members m
-  where m.tier = (select min(x.tier) from members x);
+  where m.active
+    and m.access_level = 'owner'
+    and not exists (select 1 from facing);
 $$;
 
 revoke all on function crm_private.artist_notification_recipients(uuid)
   from public, anon, authenticated, service_role;
 
 comment on function crm_private.artist_notification_recipients(uuid) is
-  'Artist-facing recipients of an artist''s operational notifications: the active artist members; if none, the active manager members; an owner only when the artist has neither. Admin access alone is not a subscription.';
+  'Artist-facing recipients of an artist''s operational notifications: the active members of its artist tier (artist memberships if it has any, otherwise manager memberships); the active owners only when that tier has nobody active. Admin access alone is not a subscription.';
 
 -- ---------------------------------------------------------------------------
 -- 2. Automation, failure-alert and appointment-response producers

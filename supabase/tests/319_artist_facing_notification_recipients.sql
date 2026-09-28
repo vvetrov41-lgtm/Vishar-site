@@ -104,6 +104,18 @@ update public.artist_memberships set is_active = true
 where profile_id = 'f3190000-0000-4000-8000-000000000002'
   and artist_id = 'f3191000-0000-4000-8000-00000000000b';
 
+update public.artist_memberships set is_active = false
+where profile_id = 'f3190000-0000-4000-8000-000000000003'
+  and artist_id = 'f3191000-0000-4000-8000-00000000000c';
+select results_eq(
+  $$select profile_id from crm_private.artist_notification_recipients('f3191000-0000-4000-8000-00000000000c')$$,
+  $$values ('f3190000-0000-4000-8000-000000000001'::uuid)$$,
+  'a deactivated artist is not silently replaced by a helper manager; the owner is the safe fallback'
+);
+update public.artist_memberships set is_active = true
+where profile_id = 'f3190000-0000-4000-8000-000000000003'
+  and artist_id = 'f3191000-0000-4000-8000-00000000000c';
+
 -- Follow-ups: unassigned goes to the artist-facing profile; an explicit
 -- assignment to the owner stays with the owner.
 insert into public.clients (id, full_name, email) values
