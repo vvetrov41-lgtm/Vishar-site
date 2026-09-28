@@ -23,8 +23,9 @@ const SNOOZE_LABELS: Record<SnoozeChoice, { en: string; ru: string }> = {
 
 export function NotificationsPage() {
   const api = useApi();
-  const { language } = useLanguage();
+  const { t } = useLanguage();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [markingAll, setMarkingAll] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const state = useAsync(() => api.listNotifications(), [api]);
@@ -37,17 +38,33 @@ export function NotificationsPage() {
         await run();
         state.reload();
       } catch (cause) {
-        setActionError(cause instanceof Error ? cause.message : (language === 'ru' ? 'Не удалось выполнить действие.' : 'That did not work.'));
+        setActionError(cause instanceof Error ? cause.message : t('notifications.actionFailed'));
       } finally {
         setBusyId(null);
       }
     },
-    [state, language],
+    [state, t],
   );
 
+  // One server-side update covers every unread row the caller can see, not
+  // only the ones this page loaded.
+  const markAllRead = useCallback(async () => {
+    setMarkingAll(true);
+    setActionError(null);
+    try {
+      await api.markAllNotificationsRead();
+      state.reload();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : t('notifications.actionFailed'));
+    } finally {
+      setMarkingAll(false);
+    }
+  }, [api, state, t]);
+
   const notifications = state.data ?? [];
-  const unread = notifications.filter((item) => item.status !== 'read');
-  const read = notifications.filter((item) => item.status === 'read');
+  const visible = notifications.filter((item) => item.status !== 'dismissed');
+  const unread = visible.filter((item) => item.status !== 'read');
+  const read = visible.filter((item) => item.status === 'read');
 
   return (
     <div className="stack">
@@ -57,23 +74,23 @@ export function NotificationsPage() {
       {state.loading ? <LoadingState /> : null}
       {state.error ? <ErrorState message={state.error} onRetry={state.reload} /> : null}
 
-      {!state.loading && !state.error && notifications.length === 0 ? (
-        <EmptyState
-          title={language === 'ru' ? 'Пока ничего' : 'Nothing waiting'}
-          hint={language === 'ru'
-            ? 'Здесь появятся напоминания и уведомления, адресованные вам.'
-            : 'Reminders and notifications addressed to you will appear here.'}
-        />
+      {!state.loading && !state.error && visible.length === 0 ? (
+        <EmptyState title={t('notifications.emptyTitle')} hint={t('notifications.emptyHint')} />
       ) : null}
 
       {!state.loading && !state.error && unread.length > 0 ? (
-        <Section title={`${language === 'ru' ? 'Новые' : 'Unread'} (${unread.length})`}>
+        <Section title={t('notifications.unread', { count: unread.length })}>
+          <div className="actions">
+            <button type="button" disabled={markingAll || busyId !== null} onClick={markAllRead}>
+              {t('notifications.markAllRead')}
+            </button>
+          </div>
           <ul className="card-list">
             {unread.map((item) => (
               <NotificationCard
                 key={item.id}
                 notification={item}
-                busy={busyId === item.id}
+                busy={markingAll || busyId === item.id}
                 onRead={() => act(item.id, () => api.markNotificationRead(item.id))}
                 onSnooze={(choice) => act(item.id, async () => {
                   if (item.entity_type !== 'follow_up' || !item.entity_id) return;
@@ -87,7 +104,7 @@ export function NotificationsPage() {
       ) : null}
 
       {!state.loading && !state.error && read.length > 0 ? (
-        <Section title={language === 'ru' ? 'Прочитанные' : 'Read'}>
+        <Section title={t('notifications.read')}>
           <ul className="card-list">
             {read.map((item) => (
               <NotificationCard key={item.id} notification={item} busy={false} />
@@ -110,7 +127,7 @@ function NotificationCard({
   onRead?: () => void;
   onSnooze?: (choice: SnoozeChoice) => void;
 }) {
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const overdue = describeDue(notification.scheduled_at, language);
   const copy = notificationCopy(notification, language);
   const target = entityLink(notification);
@@ -130,12 +147,12 @@ function NotificationCard({
 
       <div className="actions">
         {target ? (
-          <Link to={target}>{language === 'ru' ? 'Открыть' : 'Open'}</Link>
+          <Link to={target}>{t('notifications.open')}</Link>
         ) : null}
 
         {onRead ? (
           <button type="button" disabled={busy} onClick={onRead}>
-            {language === 'ru' ? 'Прочитано' : 'Mark read'}
+            {t('notifications.markRead')}
           </button>
         ) : null}
 
