@@ -37,6 +37,19 @@ routes = [
 # X-Telegram-Bot-Api-Secret-Token header before parsing an update. Cloudflare
 # Access must not be placed in front of that provider callback.
 
+
+# Workers Logs: console output only. Every console line in this Worker is a
+# task name with bounded codes and counts. Invocation logs stay off because
+# they record request URLs and metadata, and the Telegram webhook path carries
+# a secret.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
 [vars]
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"

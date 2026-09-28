@@ -203,3 +203,21 @@ test('the snapshot only forgets clients whose last message left the 30-day windo
   assert.equal(prune.url.searchParams.get('last_message_at'), 'lt.2026-08-29T00:00:00.000Z');
   assert.equal(prune.url.searchParams.get('refreshed_at'), null);
 });
+
+test('a failed mailbox list is one failed run, never a thrown Service Binding call', async () => {
+  const { refreshGmailMetadataSnapshots } = await import('./gmail-metadata-snapshot.js');
+  const env = { ...ENV, VISHAR_ENVIRONMENT: 'production', GMAIL_READ_ENABLED: 'true' };
+  const originalError = console.error;
+  const logged = [];
+  console.error = (...args) => logged.push(args.join(' '));
+  try {
+    const summary = await refreshGmailMetadataSnapshots(env, async () => jsonResponse({ message: 'upstream' }, 503));
+    // Valid for the shared scheduler: refreshed + failed <= artists.
+    assert.deepEqual(summary, { skipped: false, artists: 1, refreshed: 0, failed: 1 });
+    assert.equal(logged.length, 1);
+    assert.match(logged[0], /"stage":"list_mailboxes"/);
+    assert.doesNotMatch(logged[0], /sb_secret|supabase\.co/);
+  } finally {
+    console.error = originalError;
+  }
+});
