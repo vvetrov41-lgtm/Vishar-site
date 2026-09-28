@@ -12,7 +12,7 @@
 
 import { useState } from 'react';
 import { useLanguage } from '../lib/i18n';
-import { formatPhoneForDisplay } from '../lib/phone';
+import { formatPhoneForDisplay, samePhone } from '../lib/phone';
 import type { RecordEditApi } from '../lib/record-edit-api';
 import type { Client, Enquiry } from '../lib/types';
 
@@ -23,6 +23,7 @@ interface Field {
   current: string | null | undefined;
   submitted: string | null | undefined;
   display: (value: string | null | undefined) => string;
+  equal?: (left: string | null | undefined, right: string | null | undefined) => boolean;
 }
 
 function same(left: string | null | undefined, right: string | null | undefined) {
@@ -43,13 +44,14 @@ export function contactDifferences(
   const candidates: Field[] = [
     { key: 'fullName', current: client.full_name, submitted: enquiry.submitted_full_name, display: plain },
     { key: 'email', current: client.email, submitted: enquiry.submitted_email, display: plain },
-    { key: 'phone', current: client.phone, submitted: enquiry.submitted_phone, display: phone },
+    { key: 'phone', current: client.phone, submitted: enquiry.submitted_phone, display: phone, equal: samePhone },
     { key: 'instagram', current: client.instagram, submitted: enquiry.submitted_instagram, display: plain },
     { key: 'preferredContact', current: client.preferred_contact, submitted: enquiry.submitted_preferred_contact, display: plain },
     { key: 'travellingFrom', current: client.travelling_from, submitted: enquiry.submitted_travelling_from, display: plain },
   ];
   return candidates.filter(
-    (field) => (field.submitted ?? '').trim().length > 0 && !same(field.current, field.submitted)
+    (field) => (field.submitted ?? '').trim().length > 0
+      && !(field.equal ?? same)(field.current, field.submitted)
   );
 }
 
