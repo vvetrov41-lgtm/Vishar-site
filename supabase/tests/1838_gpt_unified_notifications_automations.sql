@@ -49,12 +49,15 @@ insert into auth.users (id, email) values
 insert into public.profiles (id, email, display_name, role, is_active) values
   ('de011111-1111-4111-8111-111111111111', 'gpt-auto-owner@example.test', 'GPT Automation Owner', 'owner', true);
 
--- Two notifications for the owner: one per Artist.
-insert into public.notifications (id, recipient_profile_id, artist_id, notification_type, title, body, status, dedupe_key) values
+-- Notifications for the owner in both Artists. The Kristina alert is the
+-- newest, so a limit applied before the Artist filter would hide Vladimir's.
+insert into public.notifications (id, recipient_profile_id, artist_id, notification_type, title, body, status, dedupe_key, scheduled_at) values
   ('de021111-1111-4111-8111-111111111111', 'de011111-1111-4111-8111-111111111111',
-   'a1111111-1111-4111-8111-111111111111', 'test.parity', 'Vladimir alert', 'Synthetic', 'delivered', 'gpt-parity-v'),
+   'a1111111-1111-4111-8111-111111111111', 'test.parity', 'Vladimir alert', 'Synthetic', 'delivered', 'gpt-parity-v', now() - interval '2 hours'),
+  ('de023333-3333-4333-8333-333333333333', 'de011111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111', 'test.parity', 'Vladimir second alert', 'Synthetic', 'delivered', 'gpt-parity-v2', now() - interval '3 hours'),
   ('de022222-2222-4222-8222-222222222222', 'de011111-1111-4111-8111-111111111111',
-   'a2222222-2222-4222-8222-222222222222', 'test.parity', 'Kristina alert', 'Synthetic', 'delivered', 'gpt-parity-k');
+   'a2222222-2222-4222-8222-222222222222', 'test.parity', 'Kristina alert', 'Synthetic', 'delivered', 'gpt-parity-k', now());
 
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
@@ -85,6 +88,11 @@ select is(
   1,
   'the notification inbox shows only the active Artist alerts'
 );
+select is(
+  public.gpt_list_notifications(null, 1) -> 0 ->> 'title',
+  'Vladimir alert',
+  'the limit applies after the Artist filter, so a newer Kristina alert never empties the Vladimir inbox'
+);
 select throws_ok(
   $$select public.gpt_mark_notification_read('de022222-2222-4222-8222-222222222222')$$,
   '42501', null,
@@ -95,6 +103,18 @@ select is(
   true,
   'a Vladimir notification is marked read'
 );
+select is(
+  (public.gpt_mark_all_notifications_read() ->> 'marked')::int,
+  1,
+  'mark-all marks only the remaining unread Vladimir alert'
+);
+reset role;
+select is(
+  (select status::text from public.notifications where id = 'de022222-2222-4222-8222-222222222222'),
+  'delivered',
+  'mark-all from the Vladimir context leaves the Kristina alert unread'
+);
+set local role authenticated;
 select lives_ok($$select public.gpt_set_notification_preference('telegram', false)$$,
   'the user changes their own notification channel');
 select ok(
