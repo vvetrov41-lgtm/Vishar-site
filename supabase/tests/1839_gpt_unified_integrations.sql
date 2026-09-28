@@ -37,6 +37,11 @@ insert into auth.users (id, email) values
 insert into public.profiles (id, email, display_name, role, is_active) values
   ('df011111-1111-4111-8111-111111111111', 'gpt-integrations-owner@example.test', 'GPT Integrations Owner', 'owner', true);
 
+-- A newer, disabled staging route of the same Artist: the GPT switch must still
+-- act on the production route.
+insert into public.artist_integrations (artist_id, integration_type, provider, integration_key, configuration, is_enabled, updated_at)
+values ('a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api', 'vladimir-staging', '{}'::jsonb, false, now() + interval '1 day');
+
 create function pg_temp.claims(p text) returns void language sql as $$
   select set_config('request.jwt.claims', p, true)::void;
 $$;
@@ -85,9 +90,35 @@ select throws_ok($$select public.gpt_begin_telegram_link('group')$$, '22023', nu
   'Telegram destination kind is a closed choice');
 
 create temporary table source_v as
-select public.gpt_create_booking_source('hosted', 'Parity Vladimir form', null, 'tattoo-enquiry', false) as result;
+select public.gpt_create_booking_source('df0a1111-1111-4111-8111-111111111111', 'hosted', 'Parity Vladimir form', null, 'tattoo-enquiry', false) as result;
 grant select on source_v to authenticated;
 select ok((select result ? 'booking_source_id' from source_v), 'a booking source is created for the active Artist');
+select is(
+  public.gpt_create_booking_source('df0a1111-1111-4111-8111-111111111111', 'hosted', 'Parity Vladimir form', null, 'tattoo-enquiry', false)
+    - 'idempotent_replay',
+  (select result - 'idempotent_replay' from source_v),
+  'a retried create with the same request_id replays the first result instead of adding a duplicate'
+);
+select is(
+  (select count(*)::int from jsonb_array_elements(public.gpt_list_booking_sources()) item
+   where item ->> 'display_label' = 'Parity Vladimir form'),
+  1,
+  'exactly one booking source exists after the retry'
+);
+
+create temporary table source_ext as
+select public.gpt_create_booking_source('df0a2222-2222-4222-8222-222222222222', 'external', 'Parity site', 'https://forms.example.com:8443', 'tattoo-enquiry', true) as result;
+grant select on source_ext to authenticated;
+select lives_ok(
+  $$select public.gpt_update_booking_source((select (result ->> 'booking_source_id')::uuid from source_ext), 'Parity site renamed', null, null)$$,
+  'an active external source is renamed without resending its origin'
+);
+select is(
+  (select item ->> 'allowed_origin' from jsonb_array_elements(public.gpt_list_booking_sources()) item
+   where item ->> 'display_label' = 'Parity site renamed'),
+  'https://forms.example.com:8443',
+  'an omitted origin keeps the stored origin, including an explicit port'
+);
 select lives_ok(
   $$select public.gpt_update_booking_source((select (result ->> 'booking_source_id')::uuid from source_v), 'Renamed form', null, null)$$,
   'the active Artist booking source is renamed'
@@ -104,6 +135,26 @@ select ok(
 
 select lives_ok($$select public.gpt_set_whatsapp_route_enabled(false)$$,
   'the WhatsApp route switch goes through the CRM integration contract');
+select is(
+  (public.gpt_configure_telegram_bot_username('@vishar_parity_bot') ->> 'bot_username'),
+  'vishar_parity_bot',
+  'a Telegram username written as @name is stored as the bare name'
+);
+
+reset role;
+select is(
+  (select is_enabled from public.artist_integrations
+   where artist_id = 'a1111111-1111-4111-8111-111111111111' and integration_key = 'vladimir-production'),
+  false,
+  'the WhatsApp switch acts on the production route derived from the Artist slug'
+);
+select is(
+  (select count(*)::int from public.artist_integrations
+   where artist_id = 'a1111111-1111-4111-8111-111111111111' and integration_type = 'whatsapp'
+     and integration_key = 'vladimir-staging' and not is_enabled),
+  1,
+  'the staging route of the same Artist is left as it was'
+);
 
 select * from finish();
 rollback;

@@ -74,6 +74,9 @@ const requestId = p.req(p.uuid('request_id', 'p_request_id', {
   description: 'Fresh UUID for this intended action. Reuse it only to retry the identical request.',
 }));
 
+// Mirrors crm_private.canonical_booking_origin: one HTTPS origin, optional port.
+const BOOKING_ORIGIN_PATTERN = '^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?$';
+
 export const DOMAIN_OPERATIONS = Object.freeze([
   // ---------------------------------------------------------------- CRM Core
   op({
@@ -729,9 +732,10 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     id: 'createBookingSource', domain: 'Integrations', method: 'POST', path: '/v1/booking-sources',
     rpc: 'gpt_create_booking_source',
     params: [
+      requestId,
       p.req(p.enum('source_kind', 'p_source_kind', ENUMS.booking_source_kind)),
       p.req(p.text('display_label', 'p_display_label', 120)),
-      p.text('allowed_origin', 'p_allowed_origin', 253, { pattern: '^https://[a-z0-9.-]+$', example: 'https://example.com' }),
+      p.text('allowed_origin', 'p_allowed_origin', 253, { pattern: BOOKING_ORIGIN_PATTERN, example: 'https://example.com' }),
       p.text('form_template', 'p_form_template', 60, { default: 'tattoo-enquiry' }),
       p.bool('activate', 'p_activate', { default: false }),
     ],
@@ -743,7 +747,10 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     params: [
       p.path('booking_source_id', 'p_booking_source_id'),
       p.req(p.text('display_label', 'p_display_label', 120)),
-      p.text('allowed_origin', 'p_allowed_origin', 253, { pattern: '^https://[a-z0-9.-]+$', example: 'https://example.com' }),
+      p.text('allowed_origin', 'p_allowed_origin', 253, {
+        pattern: BOOKING_ORIGIN_PATTERN, example: 'https://example.com',
+        description: 'New HTTPS origin of an external source. Omit to keep the current origin.',
+      }),
       p.bool('is_active', 'p_is_active'),
     ],
     summary: 'Rename, re-point or switch a booking source on or off',
