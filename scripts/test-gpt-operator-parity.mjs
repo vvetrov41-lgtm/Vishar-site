@@ -175,6 +175,7 @@ assert.equal(new Set(projected).size, projected.length, 'an operation is project
 // ------------------------------------------ UI-only is only the human step
 const uiOnly = OPERATOR_PARITY.filter((row) => row.gpt.status === 'ui_only').map((row) => row.key).sort();
 assert.deepEqual(uiOnly, [
+  'calendar.connection.disconnect',
   'calendar.google_consent',
   'files.device_upload',
   'gpt.oauth.consent',

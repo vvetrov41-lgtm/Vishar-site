@@ -62,6 +62,8 @@ Every schema uses the same OAuth application (`gpt-actions.vishartattoo.com/oaut
 
 New client ceilings (profile-bound client only, owner-only via `configure_gpt_unified_domain_access`): `can_manage_automations` (templates, lifecycle rules), `can_manage_integrations` (integration status and management, booking sources), `can_administer_workspace` (reserved; no GPT operation uses it yet).
 
+Gmail inbox and client history and Instagram status, start and disconnect are provider-backed: a `gpt_authorize_*` RPC proves client, Artist context, ceiling and CRM capability and returns the Artist, and only then does the Worker call the Gmail Worker (service binding) or the Instagram connector with the same user bearer for that Artist. Calendar disconnect stays UI-only: it is gated by Cloudflare Access on the Calendar connector and revokes a Google token the GPT edge must not hold.
+
 Team, membership, role, workspace-ownership, signup-policy and account-deletion operations are not exposed. Their CRM contracts exist, but exposing them to the GPT is an explicit owner decision that has not been made.
 
 ### Activation order
