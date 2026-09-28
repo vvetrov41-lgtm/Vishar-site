@@ -10,6 +10,15 @@
 - Every CRM user-facing capability must eventually be classified as GPT-exposed, deliberate UI-only or an explicit implementation gap.
 - Imported Action schemas must stay <=30 operations and should target <=25 for headroom.
 
+## Current state (fresh check 2026-09-28)
+
+- Canonical head `1461824a34cf084a7a4bd11c491a6e614cea3768`; production migration head `20260928150000`.
+- Imported schemas: Core 28, Operations 21 (includes `searchWeb`/`scrapeWebPage`), Communications 19, Cloudflare 18 (owner-only). Communications is already its own schema (T030 done by the rc558 rollout).
+- Production clients: `vladimir-gpt-actions` and `kristina-gpt-actions` active and artist-bound; `vishar-unified-gpt` profile-bound, inactive, no OAuth client id, all ceilings false. The Builder GPT running `instructions.v2.md` authenticates through `vladimir-gpt-actions`.
+- Fresh operator-parity inventory (`docs/gpt-actions/operator-parity.current.mjs`, schema v3): 203 CRM operator actions — 68 available, 125 `implement_now`, 10 `ui_only`. Statuses `gap` and `planned` are retired: an action with a safe server contract is owed, not deferred.
+- Target transport: 13 semantic Action domains (CRM Core, Projects, Scheduling, Project Finance, Billing & Reconciliation, Communications, Notifications, Automations, Integrations, Team, Workspace, Research, Cloudflare), each on its own host and at or below 25 operations.
+- Replacement rule: GPT v2 does not replace the legacy GPTs until every `implement_now` row is `available` and production acceptance passes. Web Research persistence/monitoring (Phase 7 beyond the two live reads) is not a current CRM screen and is not part of that gate.
+
 ## Phase 0: Scope-correction preflight
 
 - [x] T001 Fresh-check canonical branch before correction: `agent/platform-telegram-self-service` @ `d83ac621b77d50f56b92ebee81cecef2a05cc9c5`.
@@ -30,17 +39,17 @@
 
 ## Phase 2: Build canonical operator-parity inventory
 
-- [ ] T020 Enumerate the current capability registry and final authorization mappings for Clients, Enquiries, Projects, Sessions, Finance, Communications, Integrations, Booking Sources, Notifications, Automations, Team and Workspace. [AC-009]
-- [ ] T021 Enumerate every current private CRM user-facing read/mutation and map it to capability, server/RPC contract and UI surface. [FR-021]
-- [ ] T022 Enumerate current provider/integration user actions for Gmail, WhatsApp, Instagram, Google Calendar, Monzo and Telegram. [AC-010]
-- [ ] T023 Enumerate current 57 GPT operations and classify them by semantic product domain rather than current file location.
-- [ ] T024 Produce repository-owned parity inventory with fields: domain, operation, UI availability, server contract, capability, consequence class, GPT status, intended Action domain, MCP status, gap/UI-only reason.
-- [ ] T025 Add tests that fail when an operation disappears from the inventory or two import schemas expose the same operation id.
+- [x] T020 Enumerate the current capability registry and final authorization mappings for Clients, Enquiries, Projects, Sessions, Finance, Communications, Integrations, Booking Sources, Notifications, Automations, Team and Workspace. [AC-009]
+- [x] T021 Enumerate every current private CRM user-facing read/mutation and map it to capability, server/RPC contract and UI surface. [FR-021]
+- [x] T022 Enumerate current provider/integration user actions for Gmail, WhatsApp, Instagram, Google Calendar, Monzo and Telegram. [AC-010]
+- [x] T023 Enumerate current GPT operations (68 CRM + 18 owner-only Cloudflare at 2026-09-28) and classify them by semantic product domain rather than current file location.
+- [x] T024 Produce repository-owned parity inventory with fields: domain, operation, UI availability, server contract, capability, consequence class, GPT status, intended Action domain, MCP status, gap/UI-only reason.
+- [x] T025 Add tests that fail when an operation disappears from the inventory or two import schemas expose the same operation id.
 - [ ] T026 Add a feature-development rule/check so new substantial CRM user-facing capabilities require an explicit GPT/MCP parity decision. [FR-022]
 
 ## Phase 3: Repartition existing Custom GPT surface
 
-- [ ] T030 Restore a dedicated Communications import schema and production action domain; move existing WhatsApp/Gmail communication operations out of unrelated Operations without changing their server semantics.
+- [x] T030 Restore a dedicated Communications import schema and production action domain; move existing WhatsApp/Gmail communication operations out of unrelated Operations without changing their server semantics.
 - [ ] T031 Recalculate Core after the Communications extraction and identify whether Core needs immediate split to preserve <=25 target headroom.
 - [ ] T032 Recalculate remaining Operations and repartition Scheduling and Finance when required for sustainable headroom.
 - [ ] T033 Preserve `/v1/context` as the only schema/action location allowed to accept `artist_id`.
@@ -59,8 +68,8 @@
 
 ### Communications
 
-- [ ] T043 Preserve current WhatsApp read/link/send operations in Communications.
-- [ ] T044 Preserve current Gmail history/thread/draft/approval-send operations in Communications.
+- [x] T043 Preserve current WhatsApp read/link/send operations in Communications.
+- [x] T044 Preserve current Gmail history/thread/draft/approval-send operations in Communications.
 - [ ] T045 Add Instagram read/reply operations only after the actual Instagram provider integration is production-accepted; reuse unified communication ownership and Artist context.
 - [ ] T046 Add provider-neutral conversation/inbox operations where the common Communications backend provides a stable contract.
 - [ ] T047 Treat message/email/Instagram content as untrusted data in tool-chaining tests.
