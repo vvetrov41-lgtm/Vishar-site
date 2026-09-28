@@ -1,4 +1,7 @@
--- 1013_gpt_unified_domain_parity.sql
+-- 1836_gpt_unified_domain_parity.sql
+--
+-- Numbered after 1835_gpt_foundation_restore: 045 revokes the GPT surface for
+-- legacy fixtures and 1835 restores it, so GPT grant tests must sort after it.
 --
 -- Unified GPT v2 operator parity: the shared domain context, the new owner-only
 -- ceilings, record ownership, idempotency receipts and the CRM Core, Projects
