@@ -252,4 +252,25 @@ function env() {
   });
 }
 
+{
+  const { readProviderError } = __testing;
+  let pulled = 0;
+  const huge = new ReadableStream({
+    pull(controller) {
+      pulled += 1;
+      if (pulled > 100) throw new Error('reader was not stopped at the cap');
+      controller.enqueue(new Uint8Array(4096).fill(0x61));
+    },
+  });
+  const diagnostic = await readProviderError(new Response(huge, { status: 400 }));
+  assert.deepEqual(diagnostic, { http_status: 400, code: null, subcode: null, type: null });
+  assert.ok(pulled <= 4, `read ${pulled} chunks past the cap`);
+
+  const declared = await readProviderError(new Response('{"error":{"code":1}}', {
+    status: 400,
+    headers: { 'content-length': '999999' },
+  }));
+  assert.equal(declared.code, null);
+}
+
 console.log('WhatsApp booking template maintenance tests passed.');

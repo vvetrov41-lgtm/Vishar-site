@@ -123,10 +123,29 @@ async function readProviderError(response) {
     subcode: null,
     type: null,
   };
+  let reader;
   try {
-    const text = await response.text();
-    if (text.length > MAX_PROVIDER_ERROR_BYTES) return diagnostic;
-    const error = JSON.parse(text)?.error;
+    if (Number(response.headers?.get('content-length')) > MAX_PROVIDER_ERROR_BYTES) return diagnostic;
+    reader = response.body?.getReader();
+    if (!reader) return diagnostic;
+    // The cap is enforced while streaming, so an oversized body is never
+    // buffered whole.
+    const chunks = [];
+    let size = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MAX_PROVIDER_ERROR_BYTES) return diagnostic;
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    const error = JSON.parse(new TextDecoder().decode(bytes))?.error;
     diagnostic.code = providerInteger(error?.code);
     diagnostic.subcode = providerInteger(error?.error_subcode);
     diagnostic.type = typeof error?.type === 'string' && PROVIDER_ERROR_TYPE.test(error.type)
@@ -134,6 +153,12 @@ async function readProviderError(response) {
       : null;
   } catch {
     // An unreadable body keeps the HTTP status only.
+  } finally {
+    try {
+      reader?.cancel()?.catch(() => {});
+    } catch {
+      // Diagnostic only.
+    }
   }
   return diagnostic;
 }
