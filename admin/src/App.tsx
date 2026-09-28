@@ -6,6 +6,7 @@
 
 import { useEffect } from 'react';
 import { AppShell } from './components/AppShell';
+import { LanguageSync } from './components/LanguageSync';
 import './components/AppShell.css';
 import { RequireCapability } from './components/RequireCapability';
 import { RequireControlPlane } from './components/RequireControlPlane';
@@ -102,6 +103,7 @@ export function App() {
     <ArtistScopeProvider>
       <ControlPlaneAccessProvider>
         <AppShell>
+          <LanguageSync />
           <OwnerTwoFactorBanner />
           <Routes />
         </AppShell>

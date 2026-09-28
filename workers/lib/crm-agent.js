@@ -48,6 +48,32 @@ export const visionEnabled = (env) => env?.CRM_AGENT_VISION_ENABLED === 'true';
 
 const clamp = (value, max) => (typeof value === 'string' ? value.slice(0, max) : undefined);
 
+/**
+ * Language of the internal note, chosen by the database from the artist-facing
+ * recipients' CRM language (client_ai_context artist.output_language). It is
+ * read here, never projected into prompt data.
+ */
+export function outputLanguage(input) {
+  return input?.artist?.output_language === 'ru' ? 'ru' : 'en';
+}
+
+/**
+ * Appended to the state system prompt for a Russian reader. The artist-facing
+ * text (summary, brief strings, discussed values, reason) is written in
+ * Russian; the contract's keys and enum values stay exactly as specified, so
+ * validation and every downstream rule are unchanged. Client-facing drafts
+ * keep following the client's language and never receive this.
+ */
+export const RUSSIAN_OUTPUT_INSTRUCTION = `
+
+Output language: the artist reads the CRM in Russian. Write summary, every brief string value,
+every discussed value and next_action.reason in natural Russian. Keep client names, usernames,
+quoted client wording, sizes and places as written. JSON keys and the enumerated values
+(reply_state, action_type, priority, discussed status, missing_information field names)
+stay exactly in English as specified above.`;
+
+const stateSystem = (base, input) => (outputLanguage(input) === 'ru' ? base + RUSSIAN_OUTPUT_INSTRUCTION : base);
+
 function boundJson(value, { maxString = 500, maxArray = 12, maxKeys = 24, maxDepth = 5 } = {}, depth = 0) {
   if (value === null || typeof value === 'number' || typeof value === 'boolean') return value;
   if (typeof value === 'string') return value.slice(0, maxString);
@@ -247,7 +273,7 @@ async function processClientStateJobV2(env, job, supabase, runTask) {
   const model = await runTask(
     env,
     STATE_TASK,
-    { system: CLIENT_STATE_V2_SYSTEM, input },
+    { system: stateSystem(CLIENT_STATE_V2_SYSTEM, job.input), input },
     { validateJson: (json) => diagnoseClientStateV2(normalizeClientStateV2(json), allowed) ?? true },
   );
   if (!model?.ok) {
@@ -314,7 +340,7 @@ async function processClientStateJob(env, job, supabase, runTask) {
   const model = await runTask(
     env,
     STATE_TASK,
-    { system: CLIENT_STATE_SYSTEM, input },
+    { system: stateSystem(CLIENT_STATE_SYSTEM, job.input), input },
     { validateJson: (json) => (validateClientStateAnalysis(json) !== null ? true : diagnoseClientStateAnalysis(json) ?? 'contract') },
   );
   if (!model?.ok) {

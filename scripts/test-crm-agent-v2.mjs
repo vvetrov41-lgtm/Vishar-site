@@ -124,6 +124,23 @@ await test('no draft is requested for a non-draftable action; no mark for unclea
   assert.deepEqual(db.calls.map((c) => c.name), ['service_complete_client_ai_state_job']);
 });
 
+await test('v2: a Russian artist gets the note in Russian; the client draft keeps the client language', async () => {
+  const db = recorder();
+  const requests = [];
+  const base = runTaskWith(answer({ next_action: { ...answer().next_action, action_type: 'artist_review' } }));
+  await processCrmAgentJob(env, job({ artist: { display_name: 'Studio', output_language: 'ru' } }), {
+    supabase: db,
+    runTask: async (...args) => { requests.push({ task: args[1], system: args[2].system, input: args[2].input }); return base(...args); },
+  });
+  const state = requests.find((r) => r.task === 'crm_client_state');
+  assert.ok(state.system.startsWith(CLIENT_STATE_V2_SYSTEM));
+  assert.ok(state.system.includes('natural Russian'));
+  assert.ok(!state.input.includes('output_language'));
+  for (const r of requests.filter((item) => item.task !== 'crm_client_state')) {
+    assert.ok(!r.system.includes('natural Russian'));
+  }
+});
+
 await test('v2 refuses a job without deterministic facts', async () => {
   const db = recorder();
   const outcome = await processCrmAgentJob(env, job({ attention: undefined }), { supabase: db,

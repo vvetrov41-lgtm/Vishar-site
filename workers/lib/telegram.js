@@ -14,14 +14,14 @@ export function buildEnquiryNotification({referenceNumber,fileCount,clientConfli
   return lines.join('\n');
 }
 
-export function buildPersonalNotification({title,body,actionUrl=null}){
+export function buildPersonalNotification({title,body,actionUrl=null,language='en'}){
   const safeTitle=typeof title==='string'?title.trim():'';
   const safeBody=typeof body==='string'?body.trim():'';
   const safeActionUrl=typeof actionUrl==='string'?actionUrl.trim():'';
   if(!safeTitle)return null;
   const sections=[safeTitle];
   if(safeBody)sections.push(safeBody);
-  if(safeActionUrl)sections.push(`Open in CRM: ${safeActionUrl}`);
+  if(safeActionUrl)sections.push(`${language==='ru'?'Открыть в CRM':'Open in CRM'}: ${safeActionUrl}`);
   return sections.join('\n\n');
 }
 

@@ -28,6 +28,16 @@ const ACTION_LABELS = Object.freeze({
   follow_up: 'Follow up',
 });
 
+const ACTION_LABELS_RU = Object.freeze({
+  request_information: 'Запросить у клиента недостающие детали',
+  artist_review: 'Нужна ваша проверка',
+  prepare_quote: 'Подготовить оценку стоимости',
+  offer_dates: 'Предложить даты',
+  request_deposit: 'Запросить депозит',
+  confirm_booking: 'Подтвердить запись',
+  follow_up: 'Напомнить о себе',
+});
+
 const EMPTY_MESSAGE = 'Vishar CRM: nothing is waiting for you right now.';
 const UNAVAILABLE_MESSAGE = 'Vishar CRM: that list is unavailable at the moment. Try again shortly.';
 // The database withholds recommendations the CRM has moved past and queues
@@ -73,7 +83,68 @@ const PULSE_REASONS = Object.freeze({
   fact_conflict_size: 'Brief and enquiry disagree on size',
 });
 
+const PULSE_REASONS_RU = Object.freeze({
+  client_asked_to_reschedule: 'Просит перенести запись',
+  client_message_unanswered: 'Ждёт вашего ответа',
+  client_email_unanswered: 'Написал(а) на почту, ждёт ответа',
+  email_not_delivered: 'Письмо клиенту не доставлено',
+  email_awaiting_approval: 'Черновик письма ждёт одобрения',
+  appointment_not_confirmed: 'Запись ещё не подтверждена',
+  deposit_not_received_for_booking: 'Записан(а), депозит не получен',
+  new_enquiry_untouched: 'Новая заявка без ответа',
+  unknown_sender_unanswered: 'Сообщения от неизвестных отправителей',
+  follow_up_overdue: 'Просрочено напоминание',
+  client_follow_up_due: 'Неделя тишины после вашего сообщения',
+  client_silent: 'Три недели тишины',
+  deposit_paid_without_booking: 'Депозит оплачен, сеанс не назначен',
+  consultation_booked_enquiry_new: 'Консультация назначена, заявка всё ещё новая',
+  past_session_unresolved: 'Прошедший сеанс не отмечен',
+  session_without_project: 'Сеанс без проекта',
+  converted_enquiry_without_project: 'Заявка переведена, проекта нет',
+  fact_conflict_placement: 'Бриф и заявка расходятся в месте нанесения',
+  fact_conflict_size: 'Бриф и заявка расходятся в размере',
+});
+
 const PULSE_EMPTY_MESSAGE = 'Vishar CRM: nothing needs you right now.';
+
+// Fixed Telegram copy per language. Client names, reasons and subjects are
+// data and are never translated here.
+const COPY = Object.freeze({
+  en: Object.freeze({
+    empty: EMPTY_MESSAGE,
+    unavailable: UNAVAILABLE_MESSAGE,
+    refreshing: REFRESHING_NOTE,
+    digestTitle: 'Vishar CRM: waiting for you',
+    digestFooter: 'These are suggestions. Nothing has been sent to any client.',
+    client: 'Client',
+    review: 'Needs your review',
+    actions: ACTION_LABELS,
+    pulseEmpty: PULSE_EMPTY_MESSAGE,
+    pulseTitle: 'Vishar CRM: today',
+    pulseLook: 'Needs a look',
+    pulseMore: (count) => `${count} more in the CRM.`,
+    pulseFooter: 'Open the CRM to act. Nothing has been sent to any client.',
+    reasons: PULSE_REASONS,
+  }),
+  ru: Object.freeze({
+    empty: 'Vishar CRM: сейчас ничего не ждёт вашего решения.',
+    unavailable: 'Vishar CRM: список сейчас недоступен. Попробуйте чуть позже.',
+    refreshing: 'Часть пунктов пересчитывается после недавних изменений и скоро появится.',
+    digestTitle: 'Vishar CRM: ждёт вашего решения',
+    digestFooter: 'Это подсказки. Клиентам ничего не отправлено.',
+    client: 'Клиент',
+    review: 'Нужна ваша проверка',
+    actions: ACTION_LABELS_RU,
+    pulseEmpty: 'Vishar CRM: сейчас ничего не требует вашего внимания.',
+    pulseTitle: 'Vishar CRM: сегодня',
+    pulseLook: 'Стоит посмотреть',
+    pulseMore: (count) => `Ещё ${count} в CRM.`,
+    pulseFooter: 'Откройте CRM, чтобы действовать. Клиентам ничего не отправлено.',
+    reasons: PULSE_REASONS_RU,
+  }),
+});
+
+const copyFor = (language) => (language === 'ru' ? COPY.ru : COPY.en);
 
 function oneLine(value, max) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
@@ -83,21 +154,22 @@ function oneLine(value, max) {
  * Renders the deterministic Today pulse as plain text, in the server's order.
  * Every line is a rule the CRM can explain, not a model opinion.
  */
-export function renderPulse(pulse) {
+export function renderPulse(pulse, language = 'en') {
+  const copy = copyFor(language);
   const items = Array.isArray(pulse?.items) ? pulse.items : [];
-  if (!items.length) return PULSE_EMPTY_MESSAGE;
+  if (!items.length) return copy.pulseEmpty;
   const total = Number.isInteger(pulse?.total) ? pulse.total : items.length;
 
-  const lines = ['Vishar CRM: today', ''];
+  const lines = [copy.pulseTitle, ''];
   for (const item of items.slice(0, 20)) {
-    const reason = PULSE_REASONS[item?.reason] ?? 'Needs a look';
+    const reason = copy.reasons[item?.reason] ?? copy.pulseLook;
     const subject = oneLine(item?.subject, 80);
     const count = item?.kind === 'unmatched_inbound' ? oneLine(item?.detail, 6) : '';
     const head = subject ? `${subject} — ${reason}` : reason;
     lines.push(`${item?.urgent === true ? '! ' : ''}${head}${count ? ` (${count})` : ''}`);
   }
-  if (total > items.length) lines.push('', `${total - items.length} more in the CRM.`);
-  lines.push('', 'Open the CRM to act. Nothing has been sent to any client.');
+  if (total > items.length) lines.push('', copy.pulseMore(total - items.length));
+  lines.push('', copy.pulseFooter);
   return lines.join('\n');
 }
 
@@ -109,25 +181,26 @@ export function renderPulse(pulse) {
  * this keeps every value a literal. Newlines are collapsed so one long reason
  * cannot push the rest of the list off a phone screen.
  */
-export function renderDigest(digest) {
+export function renderDigest(digest, language = 'en') {
+  const copy = copyFor(language);
   const items = Array.isArray(digest?.items) ? digest.items : [];
   const refreshing = Number.isInteger(digest?.refreshing) ? digest.refreshing : 0;
   if (!items.length) {
-    return refreshing > 0 ? `${EMPTY_MESSAGE}\n\n${REFRESHING_NOTE}` : EMPTY_MESSAGE;
+    return refreshing > 0 ? `${copy.empty}\n\n${copy.refreshing}` : copy.empty;
   }
 
-  const lines = ['Vishar CRM: waiting for you', ''];
+  const lines = [copy.digestTitle, ''];
   for (const item of items.slice(0, 20)) {
-    const name = typeof item?.client_name === 'string' ? item.client_name.slice(0, 80) : 'Client';
-    const label = ACTION_LABELS[item?.action_type] ?? 'Needs your review';
+    const name = typeof item?.client_name === 'string' ? item.client_name.slice(0, 80) : copy.client;
+    const label = copy.actions[item?.action_type] ?? copy.review;
     const reason = typeof item?.reason === 'string'
       ? item.reason.replace(/\s+/g, ' ').trim().slice(0, 300)
       : '';
     lines.push(`${item?.priority === 'high' ? '! ' : ''}${name} — ${label}`);
     if (reason) lines.push(`   ${reason}`);
   }
-  if (refreshing > 0) lines.push('', REFRESHING_NOTE);
-  lines.push('', 'These are suggestions. Nothing has been sent to any client.');
+  if (refreshing > 0) lines.push('', copy.refreshing);
+  lines.push('', copy.digestFooter);
   return lines.join('\n');
 }
 
@@ -147,14 +220,17 @@ export async function handleCrmAgentDigestCommand(env, command, deps = {}) {
   if (env?.CRM_AGENT_TELEGRAM_DIGEST_ENABLED !== 'true') return false;
 
   const { fetchImpl = fetch } = deps;
+  let language = 'en';
   let text = UNAVAILABLE_MESSAGE;
   try {
     const supabase = deps.supabase ?? createSupabaseClient(env, fetchImpl);
+    language = await chatLanguage(supabase, command.chatId);
+    text = copyFor(language).unavailable;
     const digest = await supabase.rpc('service_telegram_client_ai_digest', {
       p_chat_id: command.chatId,
       p_limit: 10,
     });
-    text = renderDigest(digest);
+    text = renderDigest(digest, language);
   } catch {
     // Never log the error object: it can carry client names from a row.
     console.error('crm agent digest failed', JSON.stringify({ code: 'crm_agent_digest_unavailable' }));
@@ -168,16 +244,32 @@ export async function handleCrmAgentDigestCommand(env, command, deps = {}) {
   }
 }
 
+/**
+ * The linked profile's CRM language. Fail-open to English: a missing lookup
+ * must never cost the artist their list.
+ */
+async function chatLanguage(supabase, chatId) {
+  try {
+    const language = await supabase.rpc('service_telegram_chat_language', { p_chat_id: chatId });
+    return language === 'ru' ? 'ru' : 'en';
+  } catch {
+    return 'en';
+  }
+}
+
 async function handlePulseCommand(env, command, deps) {
   const { fetchImpl = fetch } = deps;
+  let language = 'en';
   let text = UNAVAILABLE_MESSAGE;
   try {
     const supabase = deps.supabase ?? createSupabaseClient(env, fetchImpl);
+    language = await chatLanguage(supabase, command.chatId);
+    text = copyFor(language).unavailable;
     const pulse = await supabase.rpc('service_telegram_today_pulse', {
       p_chat_id: command.chatId,
       p_limit: 10,
     });
-    text = renderPulse(pulse);
+    text = renderPulse(pulse, language);
   } catch {
     console.error('crm today pulse failed', JSON.stringify({ code: 'crm_today_pulse_unavailable' }));
   }
@@ -193,4 +285,5 @@ async function handlePulseCommand(env, command, deps) {
 export const __testing = Object.freeze({
   PULSE_EMPTY_MESSAGE, PULSE_REASONS,
   ACTION_LABELS, DIGEST_COMMAND, EMPTY_MESSAGE, REFRESHING_NOTE, UNAVAILABLE_MESSAGE,
+  ACTION_LABELS_RU, PULSE_REASONS_RU, COPY,
 });
