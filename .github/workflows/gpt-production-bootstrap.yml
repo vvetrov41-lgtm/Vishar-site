@@ -109,6 +109,11 @@ jobs:
           jq -e --arg base "https://$PROJECT_REF.supabase.co/auth/v1" '.authorization_endpoint == ($base + "/oauth/authorize") and .token_endpoint == ($base + "/oauth/token")' "$RUNNER_TEMP/oauth-discovery.json" >/dev/null
           rm -f "$RUNNER_TEMP/oauth-discovery.json"
 
+      - name: Refuse a GPT domain topology change outside the domain rollout
+        env:
+          GPT_TOPOLOGY_WORKER_NAME: ${{ env.WORKER_NAME }}
+        run: node scripts/assert-gpt-live-domain-topology.mjs
+
       - name: Deploy production GPT edge with OAuth relay only
         shell: bash
         run: |

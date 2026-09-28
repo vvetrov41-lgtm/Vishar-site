@@ -46,8 +46,8 @@ assert.doesNotMatch(communications, /^\s*- url: https:\/\/gpt-(?:actions|operati
 for (const domain of ['gpt-actions', 'gpt-operations', 'gpt-communications', 'gpt-cloudflare']) {
   assert.match(wrangler, new RegExp(`pattern = "${domain}\\.vishartattoo\\.com", custom_domain = true`));
 }
-assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 4,
-  'production GPT Worker must expose exactly four custom domains for Core, Operations, Communications and Cloudflare Action sets');
+assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 12,
+  'production GPT Worker must expose exactly the four legacy Action domains plus the eight Unified GPT v2 domains');
 
 // /v1/context is the single reviewed exception to the artist_id ban. It is a
 // server-authorized selector, never ordinary business routing input.
