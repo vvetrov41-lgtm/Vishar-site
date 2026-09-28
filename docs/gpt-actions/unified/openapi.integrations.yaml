@@ -43,6 +43,41 @@ paths:
               additionalProperties: false
               properties: {}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/integrations/instagram:
+    get:
+      operationId: getInstagramConnectionStatus
+      summary: "Read the Instagram connection of the active artist"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/integrations/instagram/start:
+    post:
+      operationId: startInstagramConnection
+      summary: "Start connecting Instagram and get the Meta authorisation link"
+      x-openai-isConsequential: true
+      description: "Give the returned link to the account holder; the Meta login and consent must be done by them."
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/integrations/instagram/disconnect:
+    post:
+      operationId: disconnectInstagram
+      summary: "Disconnect the active artist Instagram account"
+      x-openai-isConsequential: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/integrations/whatsapp/enabled:
     post:
       operationId: setWhatsAppRouteEnabled

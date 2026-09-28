@@ -48,15 +48,19 @@ const ids = DOMAIN_OPERATIONS.map((entry) => entry.id);
 assert.equal(new Set(ids).size, ids.length, 'operation ids are unique');
 const routes = DOMAIN_OPERATIONS.map((entry) => `${entry.method} ${entry.path}`);
 assert.equal(new Set(routes).size, routes.length, 'method + path pairs are unique');
-const rpcs = DOMAIN_OPERATIONS.map((entry) => entry.rpc);
-assert.equal(new Set(rpcs).size, rpcs.length, 'each operation maps to exactly one RPC');
+const rpcs = DOMAIN_OPERATIONS.filter((entry) => !entry.provider).map((entry) => entry.rpc);
+assert.equal(new Set(rpcs).size, rpcs.length, 'each database operation maps to exactly one RPC');
+for (const entry of DOMAIN_OPERATIONS.filter((candidate) => candidate.provider)) {
+  assert.match(entry.rpc, /^gpt_authorize_/, `${entry.id} is gated by an authorization RPC`);
+  assert.ok(['gmail', 'instagram'].includes(entry.provider.service));
+}
 for (const entry of DOMAIN_OPERATIONS) {
   assert.match(entry.rpc, /^gpt_[a-z0-9_]+$/);
   assert.equal(entry.consequential, entry.method !== 'GET', `${entry.id} consequence follows its method`);
   for (const param of entry.params) {
     assert.ok(!['artist_id', 'workspace_id', 'oauth_client_id', 'integration_key'].includes(param.name),
       `${entry.id} must not accept ${param.name}`);
-    assert.match(param.arg, /^p_[a-z0-9_]+$/);
+    assert.match(param.arg, param.forward ? /^[a-z][a-z0-9_]+$/ : /^p_[a-z0-9_]+$/);
   }
 }
 
@@ -88,8 +92,13 @@ for (const entry of DOMAIN_OPERATIONS) {
   const route = routeForDomainOperation(request, url, body);
   assert.ok(route, `${entry.id} routes`);
   assert.equal(route.rpc, entry.rpc);
-  assert.equal(route.responseKind, 'json');
+  assert.equal(route.responseKind, entry.provider ? 'provider' : 'json');
+  for (const [key, value] of Object.entries(entry.fixedArgs)) assert.equal(route.payload[key], value);
   for (const param of entry.params) {
+    if (param.forward) {
+      assert.ok(!Object.prototype.hasOwnProperty.call(route.payload, param.arg), `${entry.id} keeps ${param.name} out of the authorization RPC`);
+      continue;
+    }
     if (param.in === 'path' || param.required || param.in === 'body') {
       assert.ok(Object.prototype.hasOwnProperty.call(route.payload, param.arg), `${entry.id} forwards ${param.name}`);
     }

@@ -143,6 +143,7 @@ jobs:
         run: |
           node scripts/test-gpt-operator-parity.mjs
           node scripts/test-gpt-domain-operations.mjs
+          node scripts/test-gpt-provider-proxy.mjs
           node scripts/build-gpt-unified-openapi.mjs --check
           node scripts/test-gpt-unified-domain-rollout.mjs
           node scripts/test-gpt-communications-domain-rollout.mjs

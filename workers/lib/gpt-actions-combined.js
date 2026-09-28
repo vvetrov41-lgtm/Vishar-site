@@ -1,6 +1,7 @@
 import { handleGptActionsRequest as handleCoreGptActionsRequest } from './gpt-actions.js';
 import { routeForFullGptAction } from './gpt-full-actions.js';
 import { routeForDomainOperation } from './gpt-domain-operations.js';
+import { callProvider } from './gpt-provider-proxy.js';
 import { handleGptCloudflareControlRequest } from './gpt-cloudflare-control.js';
 import { handleGptWebResearchRequest } from './gpt-web-research.js';
 
@@ -211,6 +212,11 @@ async function handleFullRequest(request, env, fetchImpl) {
     try { parsed = text ? JSON.parse(text) : null; }
     catch { return json(502, { error: 'invalid_upstream_response' }); }
 
+    // Provider-backed operation: the RPC above was only the authorization.
+    if (route.responseKind === 'provider') {
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json(502, { error: 'invalid_upstream_response' });
+      return await callProvider(route, parsed, token, env, fetchImpl);
+    }
     if (route.responseKind === 'single-row') {
       if (!Array.isArray(parsed) || parsed.length === 0) {
         return json(404, { error: route.notFoundError || 'record_not_found' });

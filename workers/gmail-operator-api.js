@@ -98,14 +98,23 @@ async function authorizeOperator(db, token, enquiryId) {
  * supplies an opaque client id and nothing else. A client related to two
  * artists the operator may manage is refused rather than guessed: picking one
  * would silently choose whose mailbox to open.
+ *
+ * A caller that already knows the artist (the GPT edge, which resolved it from
+ * its server-side Artist context) may name it. That only narrows the choice:
+ * the named artist must itself be one the client belongs to and the caller may
+ * manage, so it opens nothing the unqualified route would not.
  */
-async function authorizeOperatorForClient(db, token, clientId) {
+async function authorizeOperatorForClient(db, token, clientId, requestedArtistId = null) {
   const artistIds = await db.userClientArtists(clientId, token);
   const capabilities = await db.userRpc('list_capabilities', {}, token);
   if (!Array.isArray(capabilities)) throw new Error('gmail_operator_scope_invalid');
   const permitted = artistIds.filter((artistId) => capabilities.some(
     (row) => row?.artist_id === artistId && row?.capability === REQUIRED_OPERATOR_CAPABILITY,
   ));
+  if (requestedArtistId) {
+    if (!permitted.includes(requestedArtistId)) throw new Error('gmail_operator_scope_invalid');
+    return { artist_id: requestedArtistId, client_id: clientId };
+  }
   if (permitted.length === 0) throw new Error('gmail_operator_scope_invalid');
   if (permitted.length > 1) throw new Error('gmail_client_scope_ambiguous');
   return { artist_id: permitted[0], client_id: clientId };
@@ -335,8 +344,10 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
     const clientId = uuid(clientHistory[1]);
     if (!clientId) return json(request, 400, { error: 'invalid_client_id' });
     for (const key of url.searchParams.keys()) {
-      if (!['thread_limit', 'message_limit'].includes(key)) return json(request, 400, { error: 'unexpected_field', field: key });
+      if (!['thread_limit', 'message_limit', 'artist_id'].includes(key)) return json(request, 400, { error: 'unexpected_field', field: key });
     }
+    const requestedArtistId = url.searchParams.has('artist_id') ? uuid(url.searchParams.get('artist_id')) : null;
+    if (url.searchParams.has('artist_id') && !requestedArtistId) return json(request, 400, { error: 'invalid_artist_id' });
     const threadLimit = Number(url.searchParams.get('thread_limit') || 4);
     const messageLimit = Number(url.searchParams.get('message_limit') || 20);
     if (!Number.isInteger(threadLimit) || threadLimit < 1 || threadLimit > 8
@@ -346,7 +357,7 @@ export async function handleGmailOperatorRequest(request, env, fetchImpl = fetch
 
     try {
       const db = createGmailSupabase(env, fetchImpl);
-      const auth = await authorizeOperatorForClient(db, token, clientId);
+      const auth = await authorizeOperatorForClient(db, token, clientId, requestedArtistId);
       const target = await resolveClientTarget(db, auth);
       const accessToken = await accessForTarget(env, db, target, fetchImpl);
 
