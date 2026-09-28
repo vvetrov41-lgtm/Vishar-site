@@ -31,6 +31,9 @@ export const ENUMS = Object.freeze({
   schedule_anchor: ['event_occurred', 'session_start', 'session_end'],
   timing_direction: ['before_session_start', 'after_session_end'],
   timing_unit: ['minutes', 'hours', 'days'],
+  telegram_destination_kind: ['profile', 'artist'],
+  booking_source_kind: ['external', 'hosted'],
+  ui_language: ['en', 'ru'],
 });
 
 const MONZO_PAY_URL = '^https://monzo[.]com/pay/r/[A-Za-z0-9_-]{4,255}$';
@@ -638,6 +641,103 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     id: 'applyWorkspaceAutomationDefaults', domain: 'Automations', method: 'POST', path: '/v1/automations/workspace-defaults/apply',
     rpc: 'gpt_apply_workspace_automation_defaults',
     summary: 'Apply the studio default automation rules to the active artist',
+  }),
+
+  // ------------------------------------------------------------ Integrations
+  op({
+    id: 'listIntegrationStatus', domain: 'Integrations', method: 'GET', path: '/v1/integrations/status',
+    rpc: 'gpt_list_integration_status',
+    summary: 'List connection health of the active artist and studio integrations',
+    description: 'Status and safe error categories only. No credential, token or provider account id is returned.',
+  }),
+  op({
+    id: 'listCalendarConnectionStatus', domain: 'Integrations', method: 'GET', path: '/v1/integrations/calendar',
+    rpc: 'gpt_list_calendar_connection_status',
+    summary: 'Read the Google Calendar connection of the active artist',
+  }),
+  op({
+    id: 'resetCalendarExpectedAccount', domain: 'Integrations', method: 'POST', path: '/v1/integrations/calendar/reset-account',
+    rpc: 'gpt_reset_calendar_expected_account',
+    summary: 'Unpin the Google account the calendar expects so a different account can be connected',
+    description: 'The new Google consent itself must be completed by the account holder in Google.',
+  }),
+  op({
+    id: 'setWhatsAppRouteEnabled', domain: 'Integrations', method: 'POST', path: '/v1/integrations/whatsapp/enabled',
+    rpc: 'gpt_set_whatsapp_route_enabled', params: [p.req(p.bool('is_enabled', 'p_is_enabled'))],
+    summary: 'Turn the active artist WhatsApp route on or off',
+  }),
+  op({
+    id: 'getTelegramConnectorInfo', domain: 'Integrations', method: 'GET', path: '/v1/integrations/telegram',
+    rpc: 'gpt_get_telegram_connector_info',
+    summary: 'Read the Telegram bot the CRM uses',
+  }),
+  op({
+    id: 'configureTelegramBotUsername', domain: 'Integrations', method: 'PUT', path: '/v1/integrations/telegram',
+    rpc: 'gpt_configure_telegram_bot_username',
+    params: [p.req(p.text('bot_username', 'p_bot_username', 64, { pattern: '^@?[A-Za-z][A-Za-z0-9_]{4,31}$', example: 'vishar_crm_bot' }))],
+    summary: 'Set the public username of the CRM Telegram bot',
+  }),
+  op({
+    id: 'listTelegramDestinations', domain: 'Integrations', method: 'GET', path: '/v1/integrations/telegram/destinations',
+    rpc: 'gpt_list_telegram_destinations',
+    summary: 'List the signed-in user and active artist Telegram destinations',
+  }),
+  op({
+    id: 'beginTelegramLink', domain: 'Integrations', method: 'POST', path: '/v1/integrations/telegram/link',
+    rpc: 'gpt_begin_telegram_link',
+    params: [p.req(p.enum('destination_kind', 'p_destination_kind', ENUMS.telegram_destination_kind))],
+    summary: 'Start linking a Telegram chat and get the one-time link',
+    description: 'Give the returned link to the user; they must press Start in Telegram themselves.',
+  }),
+  op({
+    id: 'disconnectTelegramDestination', domain: 'Integrations', method: 'POST', path: '/v1/integrations/telegram/disconnect',
+    rpc: 'gpt_disconnect_telegram_destination',
+    params: [p.req(p.enum('destination_kind', 'p_destination_kind', ENUMS.telegram_destination_kind))],
+    summary: 'Disconnect the signed-in user or active artist Telegram destination',
+  }),
+  op({
+    id: 'listBookingSources', domain: 'Integrations', method: 'GET', path: '/v1/booking-sources',
+    rpc: 'gpt_list_booking_sources',
+    summary: 'List booking forms and website sources of the active artist',
+  }),
+  op({
+    id: 'createBookingSource', domain: 'Integrations', method: 'POST', path: '/v1/booking-sources',
+    rpc: 'gpt_create_booking_source',
+    params: [
+      p.req(p.enum('source_kind', 'p_source_kind', ENUMS.booking_source_kind)),
+      p.req(p.text('display_label', 'p_display_label', 120)),
+      p.text('allowed_origin', 'p_allowed_origin', 253, { pattern: '^https://[a-z0-9.-]+$', example: 'https://example.com' }),
+      p.text('form_template', 'p_form_template', 60, { default: 'tattoo-enquiry' }),
+      p.bool('activate', 'p_activate', { default: false }),
+    ],
+    summary: 'Create a booking form or website source for the active artist',
+  }),
+  op({
+    id: 'updateBookingSource', domain: 'Integrations', method: 'PATCH', path: '/v1/booking-sources/{booking_source_id}',
+    rpc: 'gpt_update_booking_source',
+    params: [
+      p.path('booking_source_id', 'p_booking_source_id'),
+      p.req(p.text('display_label', 'p_display_label', 120)),
+      p.text('allowed_origin', 'p_allowed_origin', 253, { pattern: '^https://[a-z0-9.-]+$', example: 'https://example.com' }),
+      p.bool('is_active', 'p_is_active'),
+    ],
+    summary: 'Rename, re-point or switch a booking source on or off',
+  }),
+
+  // ------------------------------------------------------ Workspace: account
+  op({
+    id: 'getAccountOverview', domain: 'Workspace', method: 'GET', path: '/v1/me', rpc: 'gpt_get_account_overview',
+    summary: 'Read the signed-in CRM user account overview',
+  }),
+  op({
+    id: 'setMyDisplayName', domain: 'Workspace', method: 'PUT', path: '/v1/me/display-name', rpc: 'gpt_set_my_display_name',
+    params: [p.req(p.text('display_name', 'p_display_name', 120))],
+    summary: 'Change the signed-in user display name',
+  }),
+  op({
+    id: 'setMyLanguage', domain: 'Workspace', method: 'PUT', path: '/v1/me/language', rpc: 'gpt_set_my_language',
+    params: [p.req(p.enum('language', 'p_language', ENUMS.ui_language))],
+    summary: 'Change the CRM language of the signed-in user',
   }),
 ]);
 
