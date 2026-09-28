@@ -24,7 +24,7 @@ function sample(param) {
     case 'boolean': return true;
     case 'enum': return param.values[0];
     case 'clock-array': return ['10:00'];
-    case 'uuid-array': return [ID];
+    case 'uuid-array': return Array.from({ length: Math.max(1, param.minItems ?? 1) }, (_, i) => `1111111${i}-1111-4111-8111-111111111111`);
     default: throw new Error(`no sample for ${param.type}`);
   }
 }
@@ -162,6 +162,34 @@ for (const entry of DOMAIN_OPERATIONS) {
   }
 }
 
+// Nullable fields forward an explicit null and still require the key.
+{
+  const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'setSessionPricing');
+  const { body } = requestFor(entry);
+  const cleared = { ...body, hourly_rate: null };
+  const r = requestFor(entry, { bodyOverride: cleared });
+  const route = routeForDomainOperation(r.request, r.url, cleared);
+  assert.equal(route.payload.p_hourly_rate, null, 'an explicit null clears the rate');
+  const missing = { ...body };
+  delete missing.hourly_rate;
+  const m = requestFor(entry, { bodyOverride: missing });
+  assert.throws(() => routeForDomainOperation(m.request, m.url, missing), /required_field:hourly_rate/);
+}
+{
+  const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'setInvoiceDetails');
+  assert.equal(entry.method, 'PUT', 'invoice details are a full replacement so omitted fields are never cleared silently');
+  assert.ok(entry.params.filter((param) => param.in === 'body').every((param) => param.required && param.nullable));
+}
+{
+  const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'requestGroupedSessionDeposit');
+  const { body } = requestFor(entry);
+  for (const ids of [[ID], Array.from({ length: 13 }, (_, i) => `2222222${String(i).padStart(1, '0').slice(-1)}-2222-4222-8222-${String(i).padStart(12, '0')}`), [ID, ID]]) {
+    const invalid = { ...body, session_ids: ids };
+    const r = requestFor(entry, { bodyOverride: invalid });
+    assert.throws(() => routeForDomainOperation(r.request, r.url, invalid), /invalid_field:session_ids/);
+  }
+}
+
 // --------------------------------- end to end through the combined handler
 {
   const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'listScheduleOverrides');
@@ -192,6 +220,49 @@ for (const entry of DOMAIN_OPERATIONS) {
   const body = await response.json();
   assert.equal(body.error, '42501');
   assert.doesNotMatch(body.message, /internal policy detail/, 'database policy detail is not echoed to the model');
+}
+
+// File removal keeps the CRM order: prepare, delete Storage object, manifest.
+{
+  const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'removeEnquiryFile');
+  const calls = [];
+  const response = await handleGptActionsRequest(requestFor(entry).request, env, async (url, init) => {
+    calls.push({ url, method: init.method, body: init.body ? JSON.parse(init.body) : null });
+    if (url.endsWith('/rpc/gpt_prepare_enquiry_file_removal')) {
+      return new Response(JSON.stringify({ file_id: ID, bucket: 'crm-files', storage_path: 'enquiries/a/b/ref.jpg' }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/storage/v1/object/')) return new Response('[]', { status: 200 });
+    return new Response(JSON.stringify({ removed: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.map((call) => call.url.replace('https://exampleproject.supabase.co', '')), [
+    '/rest/v1/rpc/gpt_prepare_enquiry_file_removal',
+    '/storage/v1/object/crm-files',
+    '/rest/v1/rpc/gpt_remove_enquiry_file',
+  ]);
+  assert.equal(calls[1].method, 'DELETE');
+  assert.deepEqual(calls[1].body, { prefixes: ['enquiries/a/b/ref.jpg'] });
+}
+{
+  const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'removeEnquiryFile');
+  const calls = [];
+  const response = await handleGptActionsRequest(requestFor(entry).request, env, async (url) => {
+    calls.push(url);
+    if (url.endsWith('/rpc/gpt_prepare_enquiry_file_removal')) {
+      return new Response(JSON.stringify({ bucket: 'crm-files', storage_path: 'x' }), { status: 200 });
+    }
+    return new Response('{}', { status: 403 });
+  });
+  assert.equal(response.status, 403, 'a Storage refusal stops before the manifest is touched');
+  assert.equal(calls.length, 2);
+}
+{
+  const entry = DOMAIN_OPERATIONS.find((candidate) => candidate.id === 'removeEnquiryFile');
+  for (const path of ['../other/secret', '/etc/passwd']) {
+    const response = await handleGptActionsRequest(requestFor(entry).request, env, async () => new Response(
+      JSON.stringify({ bucket: 'crm-files', storage_path: path }), { status: 200 }));
+    assert.equal(response.status, 502, `unsafe storage path ${path} is refused`);
+  }
 }
 
 console.log(`GPT domain operations passed: ${DOMAIN_OPERATIONS.length} registry operations route to named RPCs with exact typed parameters and no Artist selector.`);

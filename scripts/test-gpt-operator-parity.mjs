@@ -123,7 +123,17 @@ const workerEndpoints = [
   ['admin/functions/api/whatsapp/embedded-signup/provision.js', '', 'whatsapp.embedded_signup'],
   ['admin/functions/api/whatsapp/existing-account/provision.js', '', 'whatsapp.existing_account.system_user_token'],
   ['admin/functions/api/whatsapp/meta-review/template.js', '', 'whatsapp.meta_review.template'],
+  // Operator reads that go to PostgREST views/tables rather than an RPC.
+  ['admin/src/lib/statistics-api.ts', "'statistics_enquiries'", 'statistics.summary'],
+  ['admin/src/lib/api.ts', ".from('integration_outbox')", 'deliveries.failed.list'],
 ];
+
+// Any other statistics view the CRM starts reading must be covered too.
+const statisticsViews = new Set([...read('admin/src/lib/statistics-api.ts').matchAll(/'(statistics_[a-z_]+)'/g)].map((m) => m[1]));
+const statisticsRow = OPERATOR_PARITY.find((row) => row.key === 'statistics.summary');
+for (const view of statisticsViews) {
+  assert.ok(statisticsRow.serverContracts.includes(`RLS:public.${view}`), `CRM Statistics reads ${view}; add it to statistics.summary`);
+}
 for (const [path, marker, key] of workerEndpoints) {
   assert.ok(read(path).includes(marker), `${path} no longer carries ${marker}; re-check ${key}`);
   assert.ok(OPERATOR_PARITY.some((row) => row.key === key), `${key} must stay classified`);
@@ -150,6 +160,17 @@ for (const entry of DOMAIN_OPERATIONS) {
   assert.ok(definedFunctions.has(entry.rpc), `${entry.id} routes to public.${entry.rpc}, which no migration defines`);
   const writes = row.consequence !== 'read';
   assert.equal(entry.consequential, writes, `${entry.id} consequential flag must match its parity consequence`);
+}
+
+// Legacy imports keep their confirmation semantics in the inventory.
+for (const name of ['core', 'operations', 'communications']) {
+  const text = read(`docs/gpt-actions/openapi.production.${name}.yaml`);
+  for (const match of text.matchAll(/operationId: ([A-Za-z0-9]+)\n(?:[^\n]*\n){0,6}?\s+x-openai-isConsequential: (true|false)/g)) {
+    const row = OPERATOR_PARITY.find((candidate) => candidate.gpt.operationId === match[1]);
+    if (!row) continue;
+    assert.equal(match[2] === 'true', row.consequence !== 'read',
+      `${match[1]} is consequential=${match[2]} in the imported schema but ${row.consequence} in the inventory`);
+  }
 }
 
 // ------------------------------------- unified OpenAPI projections are exact
