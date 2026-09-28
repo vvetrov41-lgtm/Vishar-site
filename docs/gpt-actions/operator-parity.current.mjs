@@ -131,6 +131,10 @@ export const OPERATOR_PARITY = Object.freeze([
   row('account.delete', 'Workspace', 'view_crm', 'permission', N, 'deleteMyAccount', ['public.delete_my_account'],
     { note: 'Irreversible erasure of the signed-in account; the server requires the exact account email and refuses the installation owner.' }),
   row('today.pulse', 'CRM Core', 'view_crm', 'read', A, 'getTodayPulse', ['public.get_today_pulse']),
+  row('statistics.summary', 'CRM Core', 'view_enquiries', 'read', A, 'getStatistics',
+    ['public.gpt_get_statistics', 'RLS:public.statistics_enquiries', 'RLS:public.statistics_sessions', 'RLS:public.statistics_projects', 'RLS:public.statistics_payment_requests', 'RLS:public.statistics_payment_transactions'],
+    { note: 'The CRM Statistics screen aggregates these views in the browser; the GPT gets the same figures aggregated server-side, money only with view_finance.' }),
+  row('deliveries.failed.list', 'CRM Core', 'view_crm', 'read', A, 'listFailedDeliveries', ['public.gpt_list_failed_deliveries', 'RLS:public.integration_outbox']),
   row('clients.list', 'CRM Core', 'view_clients', 'read', A, 'listClients', ['public.gpt_list_clients']),
   row('clients.search_for_appointment', 'CRM Core', 'view_clients', 'read', A, 'searchAppointmentClients', ['public.gpt_search_clients']),
   row('clients.get', 'CRM Core', 'view_clients', 'read', A, 'getClient', ['public.gpt_get_client']),
@@ -220,10 +224,10 @@ export const OPERATOR_PARITY = Object.freeze([
   row('finance.invoices.payment.record', 'Billing & Reconciliation', 'record_payments', 'money', A, 'recordInvoicePayment', ['public.record_invoice_payment']),
   row('finance.invoices.credit_note.create', 'Billing & Reconciliation', 'manage_finance', 'money', A, 'createCreditNote', ['public.create_credit_note']),
   row('payments.monzo.one_off_destination.attach', 'Billing & Reconciliation', 'manage_finance', 'money', A, 'attachMonzoPaymentLink', ['public.attach_monzo_one_off_payment_destination']),
-  row('monzo.destinations.list', 'Billing & Reconciliation', 'view_finance', 'read', A, 'listMonzoDestinations', ['public.list_monzo_payment_destinations']),
+  row('monzo.destinations.list', 'Billing & Reconciliation', 'manage_finance', 'read', A, 'listMonzoDestinations', ['public.list_monzo_payment_destinations']),
   row('monzo.destinations.upsert', 'Billing & Reconciliation', 'manage_finance', 'money', A, 'upsertMonzoDestination', ['public.upsert_monzo_payment_destination']),
   row('monzo.destinations.archive', 'Billing & Reconciliation', 'manage_finance', 'money', A, 'archiveMonzoDestination', ['public.archive_monzo_payment_destination']),
-  row('monzo.settings.get', 'Billing & Reconciliation', 'view_finance', 'read', A, 'getMonzoTransferSettings', ['public.get_monzo_easy_bank_transfer_settings']),
+  row('monzo.settings.get', 'Billing & Reconciliation', 'manage_finance', 'read', A, 'getMonzoTransferSettings', ['public.get_monzo_easy_bank_transfer_settings']),
   row('monzo.settings.configure', 'Billing & Reconciliation', 'manage_finance', 'money', A, 'configureMonzoTransferSettings', ['public.configure_monzo_easy_bank_transfer']),
   row('monzo.reconciliation.list', 'Billing & Reconciliation', 'view_finance', 'read', A, 'listMonzoReconciliationCandidates', ['public.list_monzo_reconciliation_candidates']),
   row('monzo.reconciliation.match', 'Billing & Reconciliation', 'manage_finance', 'money', A, 'matchMonzoReconciliationCandidate', ['public.match_monzo_reconciliation_candidate']),
@@ -368,7 +372,7 @@ export const OPERATOR_PARITY = Object.freeze([
 
   // ---------------------------------------------------------------- Research
   row('research.deep_web_search', 'Research', 'view_research', 'read', A, 'searchWeb', ['public.gpt_authorize_web_research', 'gpt-operations:/v1/web/search']),
-  row('research.read_web_page', 'Research', 'view_research', 'read', A, 'scrapeWebPage', ['public.gpt_authorize_web_research', 'gpt-operations:/v1/web/scrape']),
+  row('research.read_web_page', 'Research', 'view_research', 'provider_send', A, 'scrapeWebPage', ['public.gpt_authorize_web_research', 'gpt-operations:/v1/web/scrape']),
 ]);
 
 // Owner-only Cloudflare control. It is a GPT-side control-plane extension, not

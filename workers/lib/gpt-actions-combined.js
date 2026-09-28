@@ -130,6 +130,42 @@ function safeRpcError(status, text) {
   return json(mapped, { error: code, message });
 }
 
+const STORAGE_PATH = /^[A-Za-z0-9][A-Za-z0-9/_.-]{0,500}$/;
+
+// Deletes the private Storage object named by a gpt_prepare_* RPC before the
+// manifest RPC runs. Returns an error Response to stop, or null to continue.
+async function removeStorageObjectFirst(route, token, env, fetchImpl) {
+  const headers = {
+    authorization: `Bearer ${token}`,
+    apikey: env.SUPABASE_PUBLISHABLE_KEY,
+    'content-type': 'application/json',
+    accept: 'application/json',
+  };
+  const prepared = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.storageRemoval.prepareRpc}`, {
+    method: 'POST', headers, body: JSON.stringify(route.payload), redirect: 'manual',
+  });
+  const text = await prepared.text();
+  if (!prepared.ok) return safeRpcError(prepared.status, text);
+  let plan;
+  try { plan = JSON.parse(text); } catch { return json(502, { error: 'invalid_upstream_response' }); }
+  if (plan?.bucket !== route.storageRemoval.bucket) return json(502, { error: 'invalid_upstream_response' });
+  const path = plan.storage_path;
+  if (path == null) return null;
+  if (typeof path !== 'string' || !STORAGE_PATH.test(path) || path.includes('..')) {
+    return json(502, { error: 'invalid_upstream_response' });
+  }
+  const deleted = await fetchImpl(`${env.SUPABASE_URL}/storage/v1/object/${route.storageRemoval.bucket}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${token}`, apikey: env.SUPABASE_PUBLISHABLE_KEY, 'content-type': 'application/json' },
+    body: JSON.stringify({ prefixes: [path] }),
+    redirect: 'manual',
+  });
+  if (deleted.status === 401) return json(401, { error: 'oauth_token_required' });
+  if (deleted.status === 403) return json(403, { error: '42501', message: 'This action is not permitted for the current GPT or artist scope.' });
+  if (!deleted.ok && deleted.status !== 404) return json(502, { error: 'storage_unavailable' });
+  return null;
+}
+
 async function handleFullRequest(request, env, fetchImpl) {
   if (!configured(env)) return json(404, { error: 'not_found' });
   const token = bearer(request);
@@ -144,6 +180,11 @@ async function handleFullRequest(request, env, fetchImpl) {
       || routeForFullGptAction(request, url, body)
       || routeForDomainOperation(request, url, body);
     if (!route) return null;
+
+    if (route.storageRemoval) {
+      const removal = await removeStorageObjectFirst(route, token, env, fetchImpl);
+      if (removal) return removal;
+    }
 
     const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
       method: 'POST',
