@@ -400,6 +400,16 @@ a.badge:hover, button.badge:hover {
   border-color: var(--accent);
 }
 
+/* The record header row stretches its children to the Back link's tap
+   height; the artist chip centres its text in that height instead of
+   leaving it at the top of a tall empty pill. */
+.record-artist-chip {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  min-height: 32px;
+}
+
 .badge.ok { color: var(--ok); border-color: rgba(93, 219, 160, 0.4); }
 .badge.warn { color: var(--warn); border-color: rgba(255, 204, 102, 0.4); }
 .badge.danger { color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }

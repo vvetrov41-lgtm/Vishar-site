@@ -8,4 +8,4 @@
 - [x] Phase 3: Money and Settings hubs; phone More sheet 12 → 6 links; sidebar group labels link to hubs
 - [x] Phase 3: tests (navigation-shell.test.tsx)
 - [x] Phase 4 (client): superseded; ClientMobileTabs already in production
-- [ ] Phase 4 (enquiry): re-check on a 390 px phone after phase 3; change only if a real defect shows
+- [x] Phase 4 (enquiry): re-checked at 390 px. Order already next action → project → references → collapsed channels/client/follow-ups/notes → activity (2,433 px on fixture data). One defect fixed: the record header's artist chip was stretched to the Back link's height with its text at the top.
