@@ -23,6 +23,7 @@ begin
           'configure_gpt_full_management',
           'configure_gpt_web_research_access',
           'configure_gpt_cloudflare_control_access',
+          'configure_gpt_unified_domain_access',
           'get_gpt_action_consent_summary'
         )
       )
@@ -70,6 +71,7 @@ select ok(
           'configure_gpt_full_management',
           'configure_gpt_web_research_access',
           'configure_gpt_cloudflare_control_access',
+          'configure_gpt_unified_domain_access',
           'get_gpt_action_consent_summary'
         )
       )
