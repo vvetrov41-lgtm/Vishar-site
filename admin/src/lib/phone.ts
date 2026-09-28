@@ -34,20 +34,30 @@ export function whatsappDigits(phone: string | null | undefined): string | null 
   return normalisedDigits(phone);
 }
 
-// A UK national number in local notation: 0 then a geographic (01/02/03) or
-// mobile (07) number. Mirrors crm_private.normalize_local_phone for GB.
-const UK_LOCAL = /^0[1-37][0-9]{9}$/;
+// A national number in local notation: one trunk-prefix 0, then the national
+// significant number. The database converts such a number only with explicit
+// country evidence (crm_private.normalize_local_phone); for a comparison the
+// other value's country code is that evidence.
+const LOCAL_TRUNK = /^0[1-9][0-9]{6,11}$/;
+
+function sameNationalNumber(international: string | null, localDigits: string): boolean {
+  if (!international || !LOCAL_TRUNK.test(localDigits)) return false;
+  const national = localDigits.slice(1);
+  const countryCodeLength = international.length - national.length;
+  return countryCodeLength >= 1 && countryCodeLength <= 3 && international.endsWith(national);
+}
 
 /**
  * Whether two stored or submitted phones name the same number.
  *
- * Formatting, spaces, invisible characters, `00` vs `+` and the UK `0` vs `+44`
- * forms are not differences. The comparison uses the same normalisation the
- * rest of the CRM uses (normalisedDigits, which mirrors public.normalize_phone
- * plus the UK-mobile local rule). A UK landline in local form is treated as
- * `+44` only when the other side is itself a `+44` number, so the other value
- * supplies the country evidence; a local number is never assigned a country on
- * its own. Two values that cannot be normalised are compared digit for digit.
+ * Formatting, spaces, invisible characters, `00` vs `+` and the local `0`
+ * trunk prefix vs the country code (`07…` / `+447…`, `02…` / `+612…`) are not
+ * differences. The comparison uses the same normalisation the rest of the CRM
+ * uses (normalisedDigits, which mirrors public.normalize_phone plus the
+ * UK-mobile local rule). A local number is never assigned a country on its
+ * own: it matches only an international number whose national part is the
+ * same digits. Two values that cannot be normalised are compared digit for
+ * digit.
  */
 export function samePhone(left: string | null | undefined, right: string | null | undefined): boolean {
   const leftRaw = stripInvisible(left).trim();
@@ -61,12 +71,7 @@ export function samePhone(left: string | null | undefined, right: string | null 
 
   const leftDigits = leftRaw.replace(/[^0-9]/g, '');
   const rightDigits = rightRaw.replace(/[^0-9]/g, '');
-  const ukLocalMatches = (international: string | null, localDigits: string) =>
-    international !== null
-    && international.startsWith('44')
-    && UK_LOCAL.test(localDigits)
-    && international === `44${localDigits.slice(1)}`;
-  if (ukLocalMatches(leftE164, rightDigits) || ukLocalMatches(rightE164, leftDigits)) return true;
+  if (sameNationalNumber(leftE164, rightDigits) || sameNationalNumber(rightE164, leftDigits)) return true;
   if (leftE164 || rightE164) return false;
 
   return leftDigits.length > 0 && leftDigits === rightDigits;

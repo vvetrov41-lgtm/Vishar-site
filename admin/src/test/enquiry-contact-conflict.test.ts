@@ -22,9 +22,11 @@ describe('samePhone', () => {
     expect(samePhone('+447700900123', '‪07700 900123‬')).toBe(true);
   });
 
-  it('accepts a UK landline in local form only against a +44 number', () => {
+  it('matches a local trunk-0 number against the same national number with a country code', () => {
     expect(samePhone('+442079460000', '020 7946 0000')).toBe(true);
-    expect(samePhone('+612079460000', '020 7946 0000')).toBe(false);
+    expect(samePhone('+61293744000', '02 9374 4000')).toBe(true);
+    expect(samePhone('+61293744000', '02 9374 4001')).toBe(false);
+    expect(samePhone('+442079460000', '0207946')).toBe(false);
   });
 
   it('keeps a genuinely different number different', () => {
