@@ -145,7 +145,6 @@ begin
       and e.origin = 'provider_app'::public.communication_origin
       and e.provider_message_id = v_provider_message_id;
 
-  if p_succeeded then
     update public.communication_messages m
     set status = 'sent'::public.communication_status,
         provider_message_id = coalesce(m.provider_message_id, v_provider_message_id),
