@@ -1,238 +1,171 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { OPERATOR_PARITY, PARITY_METADATA } from '../docs/gpt-actions/operator-parity.current.mjs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  OPERATOR_PARITY,
+  OWNER_EXTENSIONS,
+  PARITY_METADATA,
+  paritySummary,
+} from '../docs/gpt-actions/operator-parity.current.mjs';
 
-const core = readFileSync(new URL('../docs/gpt-actions/openapi.production.core.yaml', import.meta.url), 'utf8');
-const operations = readFileSync(new URL('../docs/gpt-actions/openapi.production.operations.yaml', import.meta.url), 'utf8');
-const communications = readFileSync(new URL('../docs/gpt-actions/openapi.production.communications.yaml', import.meta.url), 'utf8');
-const inventorySource = [
-  readFileSync(new URL('../docs/gpt-actions/operator-parity.mjs', import.meta.url), 'utf8'),
-  readFileSync(new URL('../docs/gpt-actions/operator-parity.current.mjs', import.meta.url), 'utf8'),
-].join('\n');
+const root = new URL('..', import.meta.url).pathname;
+const read = (path) => readFileSync(join(root, path), 'utf8');
+
+function walk(dir, predicate, out = []) {
+  for (const name of readdirSync(join(root, dir))) {
+    const path = join(dir, name);
+    if (statSync(join(root, path)).isDirectory()) walk(path, predicate, out);
+    else if (predicate(path)) out.push(path);
+  }
+  return out;
+}
 
 function operationIds(text) {
   return [...text.matchAll(/^\s+operationId: ([A-Za-z0-9]+)$/gm)].map((match) => match[1]);
 }
 
-const importedBySchema = [operationIds(core), operationIds(operations), operationIds(communications)];
-const imported = importedBySchema.flat();
-const available = OPERATOR_PARITY.filter((row) => row.gpt.status === 'available');
-const availableIds = available.map((row) => row.gpt.operationId);
-
-assert.equal(PARITY_METADATA.schemaVersion, 2);
+// ---------------------------------------------------------------- metadata
+assert.equal(PARITY_METADATA.schemaVersion, 3);
 assert.equal(PARITY_METADATA.hardImportedSchemaOperationLimit, 30);
 assert.equal(PARITY_METADATA.targetImportedSchemaOperationLimit, 25);
-assert.equal(PARITY_METADATA.invariants.missingCoverageIsGap, true);
+assert.deepEqual([...PARITY_METADATA.statuses], ['available', 'implement_now', 'ui_only']);
+assert.equal(PARITY_METADATA.invariants.missingCoverageIsImplementNow, true);
 assert.equal(PARITY_METADATA.invariants.arbitrarySqlOrRpcProxyAllowed, false);
 assert.equal(PARITY_METADATA.invariants.providerCredentialsModelSelectable, false);
 assert.equal(PARITY_METADATA.invariants.providerConsentRemainsHuman, true);
 
-assert.equal(
-  imported.length,
-  PARITY_METADATA.baselineImportedOperationCount,
-  'production GPT transport changed: update the parity inventory deliberately',
-);
-assert.equal(new Set(imported).size, imported.length, 'current imported GPT operationIds must be globally unique');
-assert.equal(new Set(OPERATOR_PARITY.map((row) => row.key)).size, OPERATOR_PARITY.length, 'operator parity keys must be unique');
-assert.equal(new Set(availableIds).size, availableIds.length, 'available parity operationIds must be globally unique');
-assert.equal(available.length, imported.length, 'every current production GPT operation must have exactly one available parity row');
-assert.deepEqual([...availableIds].sort(), [...imported].sort(), 'available parity rows must exactly equal the imported production GPT union');
+const domains = Object.keys(PARITY_METADATA.actionDomains);
+const hosts = Object.values(PARITY_METADATA.actionDomains);
+assert.equal(new Set(hosts).size, hosts.length, 'every Action domain needs its own host for the GPT editor');
+for (const host of hosts) assert.match(host, /^gpt-[a-z]+\.vishartattoo\.com$/);
 
-for (const schemaIds of importedBySchema) {
-  assert.ok(
-    schemaIds.length <= PARITY_METADATA.hardImportedSchemaOperationLimit,
-    `an imported schema exceeds the hard ${PARITY_METADATA.hardImportedSchemaOperationLimit}-operation limit`,
-  );
-}
-assert.deepEqual(importedBySchema.map((ids) => ids.length), [28, 21, 19],
-  'current transport projection must be Core 28 + Operations 21 + Communications 19');
-assert.ok(importedBySchema[0].length > PARITY_METADATA.targetImportedSchemaOperationLimit,
-  'Core remains explicit technical debt for the next repartition step');
-assert.ok(importedBySchema[1].length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
-assert.ok(importedBySchema[2].length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
+// ------------------------------------------------------------- row shape
+const keys = OPERATOR_PARITY.map((row) => row.key);
+assert.equal(new Set(keys).size, keys.length, 'parity keys must be unique');
 
-for (const actionDomain of PARITY_METADATA.actionDomains) {
-  const rows = OPERATOR_PARITY.filter((row) => row.actionDomain === actionDomain);
-  assert.ok(rows.length > 0, `${actionDomain} has no parity rows`);
-  assert.ok(
-    rows.length <= PARITY_METADATA.targetImportedSchemaOperationLimit,
-    `${actionDomain} has ${rows.length} operations and exceeds the sustainable <=${PARITY_METADATA.targetImportedSchemaOperationLimit} target`,
-  );
-}
-
-const representedCapabilityDomains = new Set(OPERATOR_PARITY.map((row) => row.capabilityDomain));
-for (const domain of PARITY_METADATA.productionCapabilityDomains) {
-  assert.ok(representedCapabilityDomains.has(domain), `production capability domain ${domain} is missing`);
-}
-
-const allowedConsequences = new Set(['read', 'write', 'provider_send', 'money', 'permission']);
-const allowedStatuses = new Set(['available', 'gap', 'planned', 'ui_only']);
-const allowedMcp = new Set(['candidate', 'planned', 'ui_only']);
+const exposedIds = [
+  ...OPERATOR_PARITY.filter((row) => row.gpt.status !== 'ui_only').map((row) => row.gpt.operationId),
+  ...OWNER_EXTENSIONS.map((entry) => entry.operationId),
+];
+assert.equal(new Set(exposedIds).size, exposedIds.length, 'operationIds must be globally unique');
 
 for (const row of OPERATOR_PARITY) {
-  assert.ok(PARITY_METADATA.actionDomains.includes(row.actionDomain), `${row.key} uses an unknown Action domain`);
-  assert.ok(allowedConsequences.has(row.consequence), `${row.key} has an unknown consequence class`);
-  assert.ok(allowedStatuses.has(row.gpt.status), `${row.key} has an unknown GPT status`);
-  assert.ok(allowedMcp.has(row.mcp), `${row.key} has an unknown MCP status`);
-
-  if (row.gpt.status === 'available') {
-    assert.equal(typeof row.gpt.operationId, 'string', `${row.key} is available but has no operationId`);
-    assert.ok(row.serverContracts.length > 0, `${row.key} is available but has no bounded contract evidence`);
-  } else {
-    assert.equal(row.gpt.operationId, null, `${row.key} is not available and must not advertise an imported operationId`);
-  }
-
-  if (row.gpt.status === 'gap') {
-    assert.ok(row.serverContracts.length > 0, `${row.key} is a gap without an existing bounded contract`);
-  }
-
-  if (row.gpt.status === 'planned') {
-    assert.equal(row.ui, 'not_yet', `${row.key} is planned but not marked not_yet`);
-    assert.ok(row.note, `${row.key} planned boundary must explain what remains`);
-  }
-
+  assert.ok(domains.includes(row.actionDomain), `${row.key} uses an unknown Action domain`);
+  assert.ok(PARITY_METADATA.statuses.includes(row.gpt.status), `${row.key} has an unknown status`);
+  assert.ok(PARITY_METADATA.consequences.includes(row.consequence), `${row.key} has an unknown consequence`);
   if (row.gpt.status === 'ui_only') {
-    assert.ok(['provider_handoff', 'device_local'].includes(row.ui), `${row.key} is UI-only without a concrete interaction boundary`);
-    assert.ok(row.note, `${row.key} UI-only boundary must explain why`);
+    assert.equal(row.gpt.operationId, null);
+    assert.ok(['provider_handoff', 'device_local', 'pre_profile'].includes(row.ui), `${row.key} UI-only needs a concrete kind`);
+    assert.ok(row.note && row.note.length > 40, `${row.key} UI-only must explain the unavoidable human step`);
+  } else {
+    assert.match(row.gpt.operationId, /^[a-z][A-Za-z0-9]+$/, `${row.key} needs an operationId`);
+    assert.ok(row.serverContracts.length > 0, `${row.key} needs bounded server-contract evidence`);
   }
 }
 
-const criticalGaps = [
-  'finance.invoices.list',
-  'finance.invoices.get',
-  'finance.invoices.create',
-  'finance.invoices.line_item.set',
-  'finance.invoices.line_item.remove',
-  'finance.invoices.details.set',
-  'finance.invoices.issue',
-  'finance.invoices.void',
-  'finance.invoices.payment_request.attach',
-  'finance.invoices.payment.record',
-  'finance.invoices.credit_note.create',
-  'finance.project.deposit_policy.configure',
-  'finance.project.deposit.request',
-  'finance.project.deposit.confirm_manual',
-  'payments.session_deposit.request_grouped',
-  'monzo.reconciliation.list',
-  'monzo.reconciliation.match',
-  'monzo.reconciliation.confirm',
-  'monzo.reconciliation.ignore',
-  'booking_sources.create',
-  'templates.upsert',
-  'automation.rules.create',
-  'team.invite',
-  'workspace.create',
+// ------------------------------------------- domain capacity (<= 25 target)
+const domainCounts = Object.fromEntries(domains.map((domain) => [domain, 0]));
+for (const row of OPERATOR_PARITY) if (row.gpt.status !== 'ui_only') domainCounts[row.actionDomain] += 1;
+for (const entry of OWNER_EXTENSIONS) domainCounts[entry.actionDomain] += 1;
+for (const [domain, count] of Object.entries(domainCounts)) {
+  assert.ok(count > 0, `${domain} has no operations`);
+  assert.ok(count <= PARITY_METADATA.targetImportedSchemaOperationLimit,
+    `${domain} has ${count} operations and exceeds the <=${PARITY_METADATA.targetImportedSchemaOperationLimit} target`);
+}
+
+// --------------------------------- server contracts exist at this revision
+const migrations = walk('supabase/migrations', (path) => path.endsWith('.sql')).map(read).join('\n');
+const definedFunctions = new Set(
+  [...migrations.matchAll(/create\s+(?:or\s+replace\s+)?function\s+public\.([a-z0-9_]+)\s*\(/gi)].map((match) => match[1]),
+);
+const contractFunctions = new Set();
+for (const row of OPERATOR_PARITY) {
+  for (const contract of row.serverContracts) {
+    const match = /^public\.([a-z0-9_]+)$/.exec(contract);
+    if (!match) continue;
+    contractFunctions.add(match[1]);
+    assert.ok(definedFunctions.has(match[1]), `${row.key} cites public.${match[1]}, which no migration defines`);
+  }
+}
+
+// ------------------------- drift: every CRM RPC is classified exactly once
+const crmSources = walk('admin/src', (path) => /\.(ts|tsx)$/.test(path) && !/(\.test\.|\/test\/)/.test(path));
+const crmRpcs = new Set();
+for (const path of crmSources) {
+  for (const match of read(path).matchAll(/\.rpc(?:<[^>]*>)?\(\s*['"]([a-z0-9_]+)['"]/g)) crmRpcs.add(match[1]);
+}
+assert.ok(crmRpcs.size > 100, 'CRM RPC scan found too few calls; the scanner is broken');
+
+const nonOperator = PARITY_METADATA.nonOperatorUiRpcs;
+const workerSteps = PARITY_METADATA.workerStepRpcs;
+const unclassified = [...crmRpcs].filter((name) => !contractFunctions.has(name) && !(name in nonOperator) && !(name in workerSteps));
+assert.deepEqual(unclassified, [], `CRM calls RPCs the parity inventory does not classify: ${unclassified.join(', ')}`);
+
+for (const name of PARITY_METADATA.retiredFromCrmUi) {
+  assert.equal(crmRpcs.has(name), false, `${name} is back in the CRM UI: classify it in the parity inventory`);
+  assert.equal(contractFunctions.has(name), false, `${name} is retired from the CRM UI and must not be counted as parity`);
+}
+for (const name of Object.keys(nonOperator)) {
+  assert.ok(crmRpcs.has(name), `${name} is listed as a non-operator CRM RPC but the CRM no longer calls it`);
+}
+
+// ------------------ drift: CRM-called Worker endpoints stay classified too
+const workerEndpoints = [
+  ['workers/team-admin.js', '/v1/staff/invite', 'team.invite'],
+  ['workers/team-admin.js', '/v1/artist/invite', 'team.artist_invite'],
+  ['admin/src/lib/email-api.ts', '/v1/operator/clients/', 'email.client_history.search'],
+  ['admin/src/lib/email-api.ts', '/v1/operator/artists/', 'email.inbox.list'],
+  ['admin/src/lib/instagram-connections-api.ts', '/v1/connections/status', 'instagram.connection.status'],
+  ['admin/src/lib/instagram-connections-api.ts', '/v1/connections/start', 'instagram.connection.start'],
+  ['admin/src/lib/instagram-connections-api.ts', '/v1/connections/disconnect', 'instagram.disconnect'],
+  ['admin/functions/api/whatsapp/embedded-signup/provision.js', '', 'whatsapp.embedded_signup'],
+  ['admin/functions/api/whatsapp/existing-account/provision.js', '', 'whatsapp.existing_account.system_user_token'],
+  ['admin/functions/api/whatsapp/meta-review/template.js', '', 'whatsapp.meta_review.template'],
 ];
-
-for (const key of criticalGaps) {
-  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
-  assert.ok(row, `${key} must remain explicit in the parity inventory`);
-  assert.equal(row.gpt.status, 'gap', `${key} must remain a gap until implemented`);
+for (const [path, marker, key] of workerEndpoints) {
+  assert.ok(read(path).includes(marker), `${path} no longer carries ${marker}; re-check ${key}`);
+  assert.ok(OPERATOR_PARITY.some((row) => row.key === key), `${key} must stay classified`);
 }
+const pagesFunctions = walk('admin/functions', (path) => path.endsWith('.js'));
+assert.equal(pagesFunctions.length, 3, 'a new CRM Pages function appeared: classify it in the parity inventory');
 
-// The unified Communications inbox is closed: every operator action the CRM
-// inbox exposes now has one bounded, artist-pinned GPT operation.
-for (const key of [
-  'communications.conversations.list',
-  'communications.conversation.get',
-  'communications.messages.list',
-  'communications.reply.send',
-  'communications.mark_read',
-  'communications.state.set',
-  'communications.client.link',
-  'communications.client.create',
-  'communications.enquiry.create',
-]) {
-  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
-  assert.ok(row, `${key} must remain explicit in the parity inventory`);
-  assert.equal(row.gpt.status, 'available', `${key} is implemented and must be recorded as available`);
-  assert.ok(
-    row.serverContracts.some((contract) => contract.startsWith('public.gpt_')),
-    `${key} must map to a named GPT RPC rather than a raw CRM contract`,
-  );
-}
+// ---------------- available rows equal the operations already imported
+const legacySchemas = ['core', 'operations', 'communications', 'cloudflare']
+  .map((name) => operationIds(read(`docs/gpt-actions/openapi.production.${name}.yaml`)));
+const imported = legacySchemas.flat();
+assert.equal(new Set(imported).size, imported.length, 'imported operationIds must be globally unique');
+const availableIds = [
+  ...OPERATOR_PARITY.filter((row) => row.gpt.status === 'available').map((row) => row.gpt.operationId),
+  ...OWNER_EXTENSIONS.map((entry) => entry.operationId),
+];
+assert.deepEqual([...availableIds].sort(), [...imported].sort(),
+  'available parity rows must equal exactly the operations the production schemas import');
 
-for (const key of [
-  'projects.create',
-  'projects.sessions.link',
-  'projects.sessions.unlink',
-  'availability.day_overrides.list',
-  'availability.day_overrides.upsert',
-  'availability.day_overrides.delete',
-]) {
-  assert.equal(OPERATOR_PARITY.some((row) => row.key === key), false, `${key} is a stale/false operator-parity entry`);
-}
-
-for (const key of ['availability.list', 'availability.create', 'availability.update', 'availability.cancel']) {
-  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
-  assert.ok(row, `${key} must exist`);
-  assert.equal(row.gpt.status, 'available');
-  assert.ok(
-    row.serverContracts.some((contract) => contract.includes('availability_block')),
-    `${key} must map to the current time-off block contract, not old weekly-rule semantics`,
-  );
-}
-
-for (const [key, operationId] of [
-  ['research.deep_web_search', 'searchWeb'],
-  ['research.read_web_page', 'scrapeWebPage'],
-]) {
-  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
-  assert.ok(row, `${key} must remain explicit`);
-  assert.equal(row.gpt.status, 'available', `${key} is now a production-imported Web Research read`);
-  assert.equal(row.gpt.operationId, operationId);
-  assert.equal(row.capabilityDomain, 'Research');
-  assert.ok(row.serverContracts.includes('public.gpt_authorize_web_research'));
-}
-
-for (const key of [
-  'research.project_reference.add',
-  'research.saved_run.compare',
-  'research.monitor.create',
-]) {
-  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
-  assert.ok(row, `${key} must remain explicit`);
-  assert.equal(row.gpt.status, 'planned');
-}
-
-for (const key of [
-  'files.device_upload',
-  'whatsapp.embedded_signup',
-  'instagram.meta_consent',
+// ------------------------------------------ UI-only is only the human step
+const uiOnly = OPERATOR_PARITY.filter((row) => row.gpt.status === 'ui_only').map((row) => row.key).sort();
+assert.deepEqual(uiOnly, [
   'calendar.google_consent',
-  'monzo.oauth_consent',
-  'telegram.account_confirm',
+  'files.device_upload',
   'gpt.oauth.consent',
-]) {
-  const row = OPERATOR_PARITY.find((candidate) => candidate.key === key);
-  assert.ok(row, `${key} deliberate human boundary must remain explicit`);
-  assert.equal(row.gpt.status, 'ui_only');
-}
+  'instagram.meta_consent',
+  'monzo.oauth_consent',
+  'signup.tenant.bootstrap',
+  'telegram.account_confirm',
+  'whatsapp.embedded_signup',
+  'whatsapp.existing_account.system_user_token',
+  'whatsapp.meta_review.template',
+]);
 
-assert.doesNotMatch(
-  inventorySource,
-  /service[_ -]?role|sb_secret_|oauth_client_secret|access_token\s*[:=]|refresh_token\s*[:=]/i,
-  'operator parity inventory must never carry database or provider credentials',
-);
-assert.doesNotMatch(
-  inventorySource,
-  /executeSql|executeRpc|executeAnything|\/v1\/execute\b/i,
-  'operator parity must remain semantic and bounded, not introduce a generic execution escape hatch',
-);
+const inventorySource = read('docs/gpt-actions/operator-parity.current.mjs');
+assert.doesNotMatch(inventorySource, /service[_ -]?role|sb_secret_|oauth_client_secret|access_token\s*[:=]|refresh_token\s*[:=]/i,
+  'the inventory must never carry credentials');
+assert.doesNotMatch(inventorySource, /executeSql|executeRpc|executeAnything|\/v1\/execute\b/i,
+  'parity must stay semantic, never a generic execution escape hatch');
 
-const statusCounts = Object.fromEntries(
-  [...new Set(OPERATOR_PARITY.map((row) => row.gpt.status))]
-    .sort()
-    .map((status) => [status, OPERATOR_PARITY.filter((row) => row.gpt.status === status).length]),
-);
-const domainCounts = Object.fromEntries(
-  PARITY_METADATA.actionDomains.map((domain) => [domain, OPERATOR_PARITY.filter((row) => row.actionDomain === domain).length]),
-);
-
+const summary = paritySummary();
 console.log(
-  `GPT operator parity passed: ${OPERATOR_PARITY.length} classified actions, `
-  + `${imported.length} exact current production operations across three import schemas, `
-  + `${PARITY_METADATA.actionDomains.length} sustainable semantic target domains.`,
+  `GPT operator parity passed: ${summary.total} CRM operator actions `
+  + `(available ${summary.available}, implement_now ${summary.implement_now}, ui_only ${summary.ui_only}); `
+  + `${crmRpcs.size} CRM RPCs classified; owner extensions ${OWNER_EXTENSIONS.length}.`,
 );
-console.log('Status counts:', statusCounts);
 console.log('Domain counts:', domainCounts);

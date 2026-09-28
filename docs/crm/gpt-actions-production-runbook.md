@@ -23,17 +23,19 @@ The database, not GPT instructions, OpenAPI or the transport, is authoritative.
 
 ## Current deployed transport versus target product surface
 
-At the time this runbook was corrected, repository production artifacts still represented the current GPT Action transport as:
+Fresh state on 2026-09-28 (repository `1461824a`, production migration `20260928150000`):
 
-- Core host: `https://gpt-actions.vishartattoo.com`;
-- Operations host: `https://gpt-operations.vishartattoo.com`;
-- Core schema: `docs/gpt-actions/openapi.production.core.yaml`;
-- Operations schema: `docs/gpt-actions/openapi.production.operations.yaml`;
+- Core host `https://gpt-actions.vishartattoo.com`: `docs/gpt-actions/openapi.production.core.yaml`, 28 operations;
+- Operations host `https://gpt-operations.vishartattoo.com`: `docs/gpt-actions/openapi.production.operations.yaml`, 21 operations including `searchWeb` and `scrapeWebPage`;
+- Communications host `https://gpt-communications.vishartattoo.com`: `docs/gpt-actions/openapi.production.communications.yaml`, 19 operations;
+- Cloudflare host `https://gpt-cloudflare.vishartattoo.com`: `docs/gpt-actions/openapi.production.cloudflare.yaml`, 18 owner-only operations;
 - model instructions: `docs/gpt-actions/instructions.v2.md`.
 
-Those files describe the **current deployed/importable surface**, not the final Unified GPT product boundary. Current repository tests show 28 Core plus 29 Operations operations with a hard per-schema ceiling of 30. That layout has insufficient headroom for full CRM/integration parity.
+Communications is already a separate import schema again. The earlier "28 Core plus 29 Operations" two-schema layout is history.
 
-Before a new Unified GPT Builder rollout, the action surface must be reconciled against `specs/unified-gpt-v2/` and the operator-parity inventory. Communications must return to a separate semantic domain, and additional domains such as Scheduling, Finance, Automation/Notifications, Integrations/Admin and Research may be separate schemas as required by the current inventory.
+Those files describe the current deployed/importable surface, not the final Unified GPT product boundary. The Builder GPT that runs `instructions.v2.md` today authenticates with the legacy `vladimir-gpt-actions` OAuth client; `vishar-unified-gpt` is still dormant (inactive, no OAuth client id, every ceiling false).
+
+The canonical product surface is the fresh operator-parity inventory in `docs/gpt-actions/operator-parity.current.mjs`: 203 CRM operator actions, of which 68 are available, 125 have a safe server contract and are owed as GPT operations (`implement_now`), and 10 are UI-only because a human must act inside an external OAuth, provider or device interface. The inventory also maps every action to one of 13 semantic Action domains, each on its own host and each at or below 25 operations. Communications must return to a separate semantic domain whenever a projection would merge it back; it stays one.
 
 All domains share one OAuth application identity and the same server-owned profile/workspace/Artist authorization model.
 
