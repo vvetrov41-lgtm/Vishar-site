@@ -13,6 +13,18 @@ name = "GMAIL_RATE_LIMIT"
 namespace_id = "1005"
 simple = { limit = 30, period = 60 }
 
+
+# Workers Logs: console output only. Every console line in this Worker is a
+# task name with bounded codes and counts. Invocation logs stay off because
+# they record request URLs and metadata for the OAuth and operator routes.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
 [vars]
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"

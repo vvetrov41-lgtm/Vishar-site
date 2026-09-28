@@ -358,7 +358,20 @@ export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch, now 
     return { skipped: true, artists: 0, refreshed: 0, failed: 0 };
   }
   const budgeted = budgetedFetch(fetchImpl);
-  const mailboxes = await listEnabledMailboxes(env, budgeted);
+  // The mailbox list is a Supabase read like every later step, so a transient
+  // failure here is reported the same way: one failed run, never a thrown RPC.
+  // Thrown, it rejected the Service Binding call and failed the whole shared
+  // scheduler tick, taking every sibling task's outcome with it.
+  let mailboxes;
+  try {
+    mailboxes = await listEnabledMailboxes(env, budgeted);
+  } catch (error) {
+    console.error('gmail metadata snapshot refresh failed', JSON.stringify({
+      stage: 'list_mailboxes',
+      code: safeRefreshCode(error),
+    }));
+    return { skipped: false, artists: 1, refreshed: 0, failed: 1 };
+  }
   if (!mailboxes.length) return { skipped: false, artists: 0, refreshed: 0, failed: 0 };
   // One mailbox per run, in turn, so every run stays inside the budget.
   const mailbox = mailboxes[Math.floor(now / RUN_INTERVAL_MS) % mailboxes.length];
