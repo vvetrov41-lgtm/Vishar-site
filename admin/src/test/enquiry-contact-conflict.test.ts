@@ -35,6 +35,11 @@ describe('samePhone', () => {
     expect(samePhone('0612345678', '0612345679')).toBe(false);
   });
 
+  it('treats identical non-numeric values as the same', () => {
+    expect(samePhone('N/A', 'n/a')).toBe(true);
+    expect(samePhone('unknown', 'N/A')).toBe(false);
+  });
+
   it('compares unnormalisable values by their digits', () => {
     expect(samePhone('06 12 34 56 78', '0612345678')).toBe(true);
   });

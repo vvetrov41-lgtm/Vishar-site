@@ -43,6 +43,18 @@ function row(id: string, status: 'delivered' | 'pending' | 'read' | 'dismissed')
   };
 }
 
+// The page asks for the newest page plus one pending and one delivered row.
+function serve(pages: ReturnType<typeof row>[][]) {
+  let load = 0;
+  mocks.listNotifications.mockImplementation(async (status?: string, limit?: number) => {
+    const page = pages[Math.min(load, pages.length - 1)];
+    if (status === undefined) return page;
+    const matching = page.filter((item) => item.status === status).slice(0, limit ?? 50);
+    if (status === 'pending') load += 1;
+    return matching;
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   language.current = 'en';
@@ -50,9 +62,10 @@ beforeEach(() => {
 
 describe('Notifications: mark all as read', () => {
   it('marks everything read with one server call and reloads', async () => {
-    mocks.listNotifications
-      .mockResolvedValueOnce([row('n1', 'delivered'), row('n2', 'pending'), row('n3', 'read')])
-      .mockResolvedValueOnce([row('n1', 'read'), row('n2', 'read'), row('n3', 'read')]);
+    serve([
+      [row('n1', 'delivered'), row('n2', 'pending'), row('n3', 'read')],
+      [row('n1', 'read'), row('n2', 'read'), row('n3', 'read')],
+    ]);
     mocks.markAllNotificationsRead.mockResolvedValue(2);
 
     render(<NotificationsPage />);
@@ -61,11 +74,21 @@ describe('Notifications: mark all as read', () => {
     await waitFor(() => expect(mocks.markAllNotificationsRead).toHaveBeenCalledTimes(1));
     expect(mocks.markNotificationRead).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Mark all as read' })).not.toBeInTheDocument());
-    expect(mocks.listNotifications).toHaveBeenCalledTimes(2);
+    expect(mocks.listNotifications).toHaveBeenCalledTimes(6);
+  });
+
+  it('is offered when an unread row is older than the loaded page', async () => {
+    mocks.listNotifications.mockImplementation(async (status?: string) => {
+      if (status === 'delivered') return [row('old', 'delivered')];
+      if (status === 'pending') return [];
+      return [row('n3', 'read')];
+    });
+    render(<NotificationsPage />);
+    expect(await screen.findByRole('button', { name: 'Mark all as read' })).toBeInTheDocument();
   });
 
   it('is not offered when nothing is unread', async () => {
-    mocks.listNotifications.mockResolvedValue([row('n3', 'read')]);
+    serve([[row('n3', 'read')]]);
     render(<NotificationsPage />);
     expect(await screen.findByText('Title n3')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Mark all as read' })).not.toBeInTheDocument();
@@ -73,7 +96,7 @@ describe('Notifications: mark all as read', () => {
 
   it('uses Russian copy in Russian mode and never lists dismissed rows', async () => {
     language.current = 'ru';
-    mocks.listNotifications.mockResolvedValue([row('n1', 'delivered'), row('n9', 'dismissed')]);
+    serve([[row('n1', 'delivered'), row('n9', 'dismissed')]]);
     render(<NotificationsPage />);
     expect(await screen.findByRole('button', { name: 'Отметить всё прочитанным' })).toBeInTheDocument();
     expect(screen.getByText('Новые (1)')).toBeInTheDocument();

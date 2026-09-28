@@ -28,7 +28,16 @@ export function NotificationsPage() {
   const [markingAll, setMarkingAll] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const state = useAsync(() => api.listNotifications(), [api]);
+  // The list is the newest page; whether anything is unread is asked
+  // separately, so an unread row older than the page still offers mark-all.
+  const state = useAsync(async () => {
+    const [items, delivered, pending] = await Promise.all([
+      api.listNotifications(),
+      api.listNotifications('delivered', 1),
+      api.listNotifications('pending', 1),
+    ]);
+    return { items, anyUnread: delivered.length + pending.length > 0 };
+  }, [api]);
 
   const act = useCallback(
     async (id: string, run: () => Promise<unknown>) => {
@@ -61,7 +70,7 @@ export function NotificationsPage() {
     }
   }, [api, state, t]);
 
-  const notifications = state.data ?? [];
+  const notifications = state.data?.items ?? [];
   const visible = notifications.filter((item) => item.status !== 'dismissed');
   const unread = visible.filter((item) => item.status !== 'read');
   const read = visible.filter((item) => item.status === 'read');
@@ -78,13 +87,16 @@ export function NotificationsPage() {
         <EmptyState title={t('notifications.emptyTitle')} hint={t('notifications.emptyHint')} />
       ) : null}
 
+      {!state.loading && !state.error && (unread.length > 0 || state.data?.anyUnread) ? (
+        <div className="actions">
+          <button type="button" disabled={markingAll || busyId !== null} onClick={markAllRead}>
+            {t('notifications.markAllRead')}
+          </button>
+        </div>
+      ) : null}
+
       {!state.loading && !state.error && unread.length > 0 ? (
         <Section title={t('notifications.unread', { count: unread.length })}>
-          <div className="actions">
-            <button type="button" disabled={markingAll || busyId !== null} onClick={markAllRead}>
-              {t('notifications.markAllRead')}
-            </button>
-          </div>
           <ul className="card-list">
             {unread.map((item) => (
               <NotificationCard

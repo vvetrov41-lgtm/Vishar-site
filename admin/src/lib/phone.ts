@@ -64,6 +64,8 @@ export function samePhone(left: string | null | undefined, right: string | null 
   const rightRaw = stripInvisible(right).trim();
   if (!leftRaw && !rightRaw) return true;
   if (!leftRaw || !rightRaw) return false;
+  // Identical text is never a conflict, even when it is not a number ("N/A").
+  if (leftRaw.toLocaleLowerCase('en-GB') === rightRaw.toLocaleLowerCase('en-GB')) return true;
 
   const leftE164 = normalisedDigits(leftRaw);
   const rightE164 = normalisedDigits(rightRaw);

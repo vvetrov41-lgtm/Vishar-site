@@ -317,8 +317,8 @@ comment on function public.mark_all_notifications_read() is
 -- Unread artist-scoped rows addressed to a profile whose only standing on that
 -- artist is an owner membership, while the artist has an active artist or
 -- manager member of its own, are dismissed. A follow-up explicitly assigned to
--- the owner is theirs and stays. Only rows whose delivery window has passed are
--- touched, so the Telegram claim never races this update. Nothing is deleted.
+-- the owner is theirs and stays. Only rows whose delivery window has passed and
+-- whose Telegram push is settled are touched. Nothing is deleted.
 -- ---------------------------------------------------------------------------
 
 with misrouted as (
@@ -350,6 +350,21 @@ with misrouted as (
       where n.entity_type = 'follow_up'
         and f.id = n.entity_id
         and f.assigned_to = n.recipient_profile_id
+    )
+    -- The Telegram claim does not read status, so a row is dismissed only
+    -- once its push is settled: it already has a delivery record, or its
+    -- recipient has no active Telegram destination to be claimed for.
+    and (
+      exists (
+        select 1 from crm_private.telegram_notification_deliveries d
+        where d.notification_id = n.id
+      )
+      or not exists (
+        select 1 from crm_private.telegram_destinations td
+        where td.destination_kind = 'profile'
+          and td.profile_id = n.recipient_profile_id
+          and td.is_active
+      )
     )
   returning n.id
 )
