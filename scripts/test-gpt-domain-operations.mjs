@@ -15,7 +15,7 @@ const ID = '11111111-1111-4111-8111-111111111111';
 function sample(param) {
   switch (param.type) {
     case 'uuid': return ID;
-    case 'string': return param.example ?? 'Synthetic value';
+    case 'string': return param.example ?? 'Synthetic value'.slice(0, param.max);
     case 'clock': return '10:00';
     case 'date': return '2026-11-02';
     case 'date-time': return '2026-11-02T10:00:00Z';

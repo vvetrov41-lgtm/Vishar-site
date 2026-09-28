@@ -24,6 +24,13 @@ export const ENUMS = Object.freeze({
   invoice_status: ['draft', 'issued', 'partially_paid', 'paid', 'void'],
   deposit_policy_mode: ['fixed', 'percentage_of_estimate'],
   deposit_delivery_channel: ['copy_link', 'email'],
+  notification_status: ['pending', 'delivered', 'read', 'dismissed'],
+  notification_channel: ['in_app', 'telegram', 'email'],
+  message_template_channel: ['email', 'whatsapp', 'instagram'],
+  template_scope: ['artist', 'workspace'],
+  schedule_anchor: ['event_occurred', 'session_start', 'session_end'],
+  timing_direction: ['before_session_start', 'after_session_end'],
+  timing_unit: ['minutes', 'hours', 'days'],
 });
 
 const MONZO_PAY_URL = '^https://monzo[.]com/pay/r/[A-Za-z0-9_-]{4,255}$';
@@ -446,6 +453,191 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     rpc: 'gpt_confirm_monzo_reconciliation_candidate', params: [p.path('candidate_id', 'p_candidate_id')],
     summary: 'Settle a matched Monzo payment into the payment ledger',
     description: 'Money action. Confirm only after the user has checked the match.',
+  }),
+
+  // ---------------------------------------------------------- Communications
+  op({
+    id: 'editEmailDraft', domain: 'Communications', method: 'PATCH', path: '/v1/emails/{email_message_id}',
+    rpc: 'gpt_edit_email_draft',
+    params: [
+      p.path('email_message_id', 'p_message_id'),
+      p.req(p.text('body', 'p_body', 20000)),
+      p.req(p.dateTime('expected_updated_at', 'p_expected_updated_at', { description: 'updated_at of the draft as last read; a newer edit makes this fail.' })),
+    ],
+    summary: 'Replace the body of an unapproved email draft',
+  }),
+  op({
+    id: 'dismissFailedEmail', domain: 'Communications', method: 'POST', path: '/v1/emails/{email_message_id}/dismiss-failure',
+    rpc: 'gpt_dismiss_failed_email', params: [p.path('email_message_id', 'p_email_message_id')],
+    summary: 'Dismiss the warning of an email that failed to send',
+  }),
+  op({
+    id: 'getConversationLinkSuggestion', domain: 'Communications', method: 'GET', path: '/v1/communications/conversations/{conversation_id}/link-suggestion',
+    rpc: 'gpt_get_conversation_link_suggestion', params: [p.path('conversation_id', 'p_conversation_id')],
+    summary: 'Suggest which existing client an unlinked conversation belongs to',
+  }),
+
+  // ----------------------------------------------------------- Notifications
+  op({
+    id: 'snoozeFollowUp', domain: 'Notifications', method: 'POST', path: '/v1/follow-ups/{follow_up_id}/snooze',
+    rpc: 'gpt_snooze_follow_up',
+    params: [p.path('follow_up_id', 'p_follow_up_id'), p.req(p.dateTime('until', 'p_until'))],
+    summary: 'Move a follow-up to a later time',
+  }),
+  op({
+    id: 'listNotifications', domain: 'Notifications', method: 'GET', path: '/v1/notifications', rpc: 'gpt_list_notifications',
+    params: [
+      p.query(p.enum('status', 'p_status', ENUMS.notification_status)),
+      p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 })),
+    ],
+    summary: 'List the signed-in user notifications for the active artist',
+  }),
+  op({
+    id: 'markNotificationRead', domain: 'Notifications', method: 'POST', path: '/v1/notifications/{notification_id}/read',
+    rpc: 'gpt_mark_notification_read', params: [p.path('notification_id', 'p_notification_id')],
+    summary: 'Mark one notification as read',
+  }),
+  op({
+    id: 'markAllNotificationsRead', domain: 'Notifications', method: 'POST', path: '/v1/notifications/read-all',
+    rpc: 'gpt_mark_all_notifications_read',
+    summary: 'Mark all of the signed-in user notifications as read',
+  }),
+  op({
+    id: 'getNotificationPreferences', domain: 'Notifications', method: 'GET', path: '/v1/notifications/preferences',
+    rpc: 'gpt_get_notification_preferences',
+    summary: 'Read which channels the signed-in user receives notifications on',
+  }),
+  op({
+    id: 'setNotificationPreference', domain: 'Notifications', method: 'PUT', path: '/v1/notifications/preferences',
+    rpc: 'gpt_set_notification_preference',
+    params: [p.req(p.enum('channel', 'p_channel', ENUMS.notification_channel)), p.req(p.bool('is_enabled', 'p_is_enabled'))],
+    summary: 'Turn a notification channel on or off for the signed-in user',
+  }),
+  op({
+    id: 'listAttentionAcknowledgements', domain: 'Notifications', method: 'GET', path: '/v1/attention/acknowledgements',
+    rpc: 'gpt_list_attention_acknowledgements',
+    summary: 'List Today items already acknowledged for the active artist',
+  }),
+  op({
+    id: 'acknowledgeAttentionItem', domain: 'Notifications', method: 'POST', path: '/v1/attention/acknowledgements',
+    rpc: 'gpt_acknowledge_attention_item',
+    params: [
+      p.req(p.text('item_kind', 'p_item_kind', 60)),
+      p.req(p.uuid('entity_id', 'p_entity_id')),
+      p.req(p.dateTime('observed_at', 'p_observed_at')),
+    ],
+    summary: 'Acknowledge a Today item so it stops asking for attention',
+  }),
+  op({
+    id: 'listMessageTemplates', domain: 'Notifications', method: 'GET', path: '/v1/templates', rpc: 'gpt_list_message_templates',
+    summary: 'List client message templates in effect for the active artist',
+  }),
+  op({
+    id: 'listTemplatePurposes', domain: 'Notifications', method: 'GET', path: '/v1/templates/purposes', rpc: 'gpt_list_template_purposes',
+    summary: 'List the message purposes a template can serve',
+  }),
+  op({
+    id: 'listTemplateVariables', domain: 'Notifications', method: 'GET', path: '/v1/templates/variables', rpc: 'gpt_list_template_variables',
+    summary: 'List the placeholders a template may use',
+  }),
+  op({
+    id: 'upsertMessageTemplate', domain: 'Notifications', method: 'POST', path: '/v1/templates', rpc: 'gpt_upsert_message_template',
+    params: [
+      p.req(p.enum('scope', 'p_scope', ENUMS.template_scope, { description: 'artist edits this artist only; workspace edits the studio default.' })),
+      p.req(p.text('purpose', 'p_purpose', 80)),
+      p.req(p.enum('channel', 'p_channel', ENUMS.message_template_channel)),
+      p.req(p.text('body', 'p_body', 8000)),
+      p.text('locale', 'p_locale', 10, { default: 'en' }),
+      p.text('subject', 'p_subject', 300),
+    ],
+    summary: 'Save a new version of a client message template',
+    description: 'Changes what future clients receive. Messages already sent are never rewritten.',
+  }),
+  op({
+    id: 'setMessageTemplateActive', domain: 'Notifications', method: 'POST', path: '/v1/templates/{template_id}/active',
+    rpc: 'gpt_set_message_template_active',
+    params: [p.path('template_id', 'p_template_id'), p.req(p.bool('is_active', 'p_is_active'))],
+    summary: 'Activate or retire a template version',
+  }),
+
+  // ------------------------------------------------------------- Automations
+  op({
+    id: 'listLifecycleRules', domain: 'Automations', method: 'GET', path: '/v1/automations/rules', rpc: 'gpt_list_lifecycle_rules',
+    summary: 'List client lifecycle automation rules of the active artist',
+  }),
+  op({
+    id: 'createLifecycleRule', domain: 'Automations', method: 'POST', path: '/v1/automations/rules', rpc: 'gpt_create_lifecycle_rule',
+    params: [
+      p.req(p.text('name', 'p_name', 120)),
+      p.req(p.enum('appointment_type', 'p_appointment_type', ENUMS.appointment_type)),
+      p.req(p.text('message_purpose', 'p_message_purpose', 80)),
+      p.req(p.enum('schedule_anchor', 'p_schedule_anchor', ENUMS.schedule_anchor)),
+      p.req(p.int('anchor_offset_minutes', 'p_anchor_offset_minutes', -43200, 43200)),
+      p.text('locale', 'p_locale', 10, { default: 'en' }),
+    ],
+    summary: 'Create a client lifecycle message rule (reminder, aftercare, follow-up)',
+  }),
+  op({
+    id: 'updateLifecycleRuleTiming', domain: 'Automations', method: 'POST', path: '/v1/automations/rules/{rule_id}/timing',
+    rpc: 'gpt_update_lifecycle_rule_timing',
+    params: [
+      p.path('rule_id', 'p_rule_id'),
+      p.req(p.enum('timing_direction', 'p_timing_direction', ENUMS.timing_direction)),
+      p.req(p.int('amount', 'p_amount', 1, 43200)),
+      p.req(p.enum('unit', 'p_unit', ENUMS.timing_unit)),
+    ],
+    summary: 'Change when a lifecycle rule sends relative to the session',
+  }),
+  op({
+    id: 'setLifecycleRuleEnabled', domain: 'Automations', method: 'POST', path: '/v1/automations/rules/{rule_id}/enabled',
+    rpc: 'gpt_set_lifecycle_rule_enabled',
+    params: [p.path('rule_id', 'p_rule_id'), p.req(p.bool('is_enabled', 'p_is_enabled'))],
+    summary: 'Turn a lifecycle rule on or off',
+  }),
+  op({
+    id: 'listLifecyclePreviewSessions', domain: 'Automations', method: 'GET', path: '/v1/automations/preview-sessions',
+    rpc: 'gpt_list_lifecycle_preview_sessions', params: [p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 }))],
+    summary: 'List sessions a lifecycle rule can be previewed against',
+  }),
+  op({
+    id: 'previewLifecycleRule', domain: 'Automations', method: 'GET', path: '/v1/automations/rules/{rule_id}/preview',
+    rpc: 'gpt_preview_lifecycle_rule',
+    params: [p.path('rule_id', 'p_rule_id'), p.query(p.req(p.uuid('session_id', 'p_session_id')))],
+    summary: 'Preview the message and send time a rule would produce for a session',
+  }),
+  op({
+    id: 'listLifecycleExecutionHistory', domain: 'Automations', method: 'GET', path: '/v1/automations/history',
+    rpc: 'gpt_list_lifecycle_execution_history', params: [p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 }))],
+    summary: 'List recent lifecycle message jobs and their outcomes',
+  }),
+  op({
+    id: 'listLifecycleConfigurationHistory', domain: 'Automations', method: 'GET', path: '/v1/automations/configuration-history',
+    rpc: 'gpt_list_lifecycle_configuration_history',
+    params: [
+      p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 })),
+      p.query(p.dateTime('before_occurred_at', 'p_before_occurred_at')),
+      p.query(p.uuid('before_id', 'p_before_id')),
+    ],
+    summary: 'List who changed lifecycle rules and templates, and when',
+  }),
+  op({
+    id: 'getLifecycleHealth', domain: 'Automations', method: 'GET', path: '/v1/automations/health', rpc: 'gpt_get_lifecycle_health',
+    summary: 'Read lifecycle automation health for the active artist',
+  }),
+  op({
+    id: 'retryLifecycleJob', domain: 'Automations', method: 'POST', path: '/v1/automations/jobs/{job_id}/retry',
+    rpc: 'gpt_retry_lifecycle_job', params: [p.path('job_id', 'p_job_id')],
+    summary: 'Retry a failed lifecycle message job',
+  }),
+  op({
+    id: 'listWorkspaceAutomationDefaults', domain: 'Automations', method: 'GET', path: '/v1/automations/workspace-defaults',
+    rpc: 'gpt_list_workspace_automation_defaults',
+    summary: 'List the studio default automation rules',
+  }),
+  op({
+    id: 'applyWorkspaceAutomationDefaults', domain: 'Automations', method: 'POST', path: '/v1/automations/workspace-defaults/apply',
+    rpc: 'gpt_apply_workspace_automation_defaults',
+    summary: 'Apply the studio default automation rules to the active artist',
   }),
 ]);
 
