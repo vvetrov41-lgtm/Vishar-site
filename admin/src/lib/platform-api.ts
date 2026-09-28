@@ -217,6 +217,13 @@ export function createPlatformApi(client: CrmClient) {
       return result.data === true;
     },
 
+    /** Every unread notification the caller can see, in one server-side update. */
+    async markAllNotificationsRead(): Promise<number> {
+      const result = await client.rpc('mark_all_notifications_read');
+      if (result.error) throw new ApiError(apiMessage('Could not update notifications.'), result.error);
+      return typeof result.data === 'number' ? result.data : 0;
+    },
+
     async snoozeFollowUp(followUpId: string, until: Date): Promise<void> {
       const result = await client.rpc('snooze_follow_up', {
         p_follow_up_id: followUpId,

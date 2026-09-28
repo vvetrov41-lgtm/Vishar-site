@@ -698,6 +698,7 @@ insert into expected_function_acl values
   ('public.service_sweep_due_follow_ups(integer)', false, false, true),
   ('public.list_notifications(public.notification_status,integer)', false, true, false),
   ('public.mark_notification_read(uuid)', false, true, false),
+  ('public.mark_all_notifications_read()', false, true, false),
   ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
   ('public.service_run_automation_tick(integer)', false, false, true),

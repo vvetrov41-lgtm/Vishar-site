@@ -69,12 +69,26 @@ where profile_id='f2920000-0000-4000-8000-000000000001'
   and destination_kind='profile';
 
 select ok(
+  not crm_private.telegram_notification_recipient_eligible(
+    'f2920000-0000-4000-8000-000000000002',
+    'a1111111-1111-4111-8111-111111111111',
+    (select workspace_id from public.artists where id='a1111111-1111-4111-8111-111111111111')
+  ),
+  'a paused artist-facing Telegram does not move the artist''s notifications to the administrative owner'
+);
+
+update public.artist_memberships
+set is_active=false
+where profile_id='f2920000-0000-4000-8000-000000000001'
+  and artist_id='a1111111-1111-4111-8111-111111111111';
+
+select ok(
   crm_private.telegram_notification_recipient_eligible(
     'f2920000-0000-4000-8000-000000000002',
     'a1111111-1111-4111-8111-111111111111',
     (select workspace_id from public.artists where id='a1111111-1111-4111-8111-111111111111')
   ),
-  'owner becomes the safe fallback when no artist-facing Telegram recipient is available'
+  'owner is the safe fallback only when the artist has no active artist-facing member'
 );
 
 select * from finish();
