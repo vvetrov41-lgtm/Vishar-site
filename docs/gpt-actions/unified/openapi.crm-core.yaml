@@ -59,6 +59,24 @@ paths:
       summary: "Read the Today view: what needs the artist now, ranked by the CRM"
       x-openai-isConsequential: false
       responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/statistics:
+    get:
+      operationId: getStatistics
+      summary: "Read the Statistics figures for the active artist over a date range (at most 400 days)"
+      x-openai-isConsequential: false
+      description: "Enquiries by status and source, projects, sessions, and money totals when the user may view finance."
+      parameters:
+        - {name: "from", in: "query", required: true, schema: {type: "string", format: "date-time"}}
+        - {name: "to", in: "query", required: true, schema: {type: "string", format: "date-time"}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/deliveries/failed:
+    get:
+      operationId: listFailedDeliveries
+      summary: "List failed or dead outgoing deliveries (email, WhatsApp, calendar, Telegram) for the active artist"
+      x-openai-isConsequential: false
+      parameters:
+        - {name: "limit", in: "query", required: false, schema: {type: "integer", minimum: 1, maximum: 100, default: 50}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/clients:
     get:
       operationId: listClients

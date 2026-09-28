@@ -34,23 +34,25 @@ paths:
       parameters:
         - {name: "invoice_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
-    patch:
+    put:
       operationId: setInvoiceDetails
-      summary: "Change the due date, discount or notes of a draft invoice"
+      summary: "Replace the due date, discount and notes of a draft invoice"
       x-openai-isConsequential: true
+      description: "Send all three fields: read the invoice first and resend unchanged values; null clears a field."
       parameters:
         - {name: "invoice_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
               additionalProperties: false
+              required: ["due_date", "discount_amount", "notes"]
               properties:
-                due_date: {type: "string", format: "date"}
-                discount_amount: {type: "number", minimum: 0, maximum: 100000}
-                notes: {type: "string", maxLength: 2000}
+                due_date: {type: ["string", "null"], format: "date"}
+                discount_amount: {type: ["number", "null"], minimum: 0, maximum: 100000}
+                notes: {type: ["string", "null"], maxLength: 2000}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/projects/{project_id}/invoices:
     post:
