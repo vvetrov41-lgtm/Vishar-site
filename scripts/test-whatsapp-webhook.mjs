@@ -64,6 +64,7 @@ function payloadFor({
   phoneNumberId = V_PHONE,
   messages = [],
   statuses = [],
+  messageEchoes = null,
   field = 'messages',
 } = {}) {
   return {
@@ -77,6 +78,7 @@ function payloadFor({
           metadata: { phone_number_id: phoneNumberId, display_phone_number: '+440000000000' },
           messages,
           statuses,
+          ...(messageEchoes ? { message_echoes: messageEchoes } : {}),
         },
       }],
     }],
@@ -449,15 +451,128 @@ await test('non-text messages store only their type, not provider payload conten
   assert.ok(!JSON.stringify(db.calls[0].args).includes('Do not copy this caption yet'));
 });
 
-await test('smb_message_echoes is not interpreted without an official contract', async () => {
+function appEcho({
+  to = '447700900001',
+  id = 'wamid.SYNTHETICAPPECHO0001',
+  body = 'Reply typed in the Business app',
+} = {}) {
+  return { from: '440000000000', to, id, timestamp: TS, type: 'text', text: { body } };
+}
+
+await test('a Business app reply (smb_message_echoes) is recorded as a provider-app outbound echo', async () => {
   const db = fakeSupabase();
   const response = await handleWhatsappWebhook(
-    postRequest(payloadFor({ field: 'smb_message_echoes', messages: [inboundText()] }), V_SECRET),
+    postRequest(payloadFor({ field: 'smb_message_echoes', messageEchoes: [appEcho()] }), V_SECRET),
+    env(),
+    db
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(db.calls, [{
+    name: 'record_communication_outbound_echo',
+    args: {
+      p_artist_id: V_ID,
+      p_channel: 'whatsapp',
+      p_integration_key: 'vladimir-production',
+      p_external_contact_id: '447700900001',
+      p_provider_message_id: 'wamid.SYNTHETICAPPECHO0001',
+      p_provider_timestamp: new Date(Number(TS) * 1000).toISOString(),
+      p_message_type: 'text',
+      p_body: 'Reply typed in the Business app',
+      p_attachments: [],
+    },
+  }]);
+});
+
+await test('a media echo carries no body or caption', async () => {
+  const db = fakeSupabase();
+  const image = {
+    ...appEcho({ id: 'wamid.SYNTHETICAPPECHO0002' }),
+    type: 'image',
+    image: { id: 'media-1', caption: 'Do not copy this echo caption' },
+  };
+  delete image.text;
+  await handleWhatsappWebhook(
+    postRequest(payloadFor({ field: 'smb_message_echoes', messageEchoes: [image] }), V_SECRET),
+    env(),
+    db
+  );
+  assert.equal(db.calls.length, 1);
+  assert.equal(db.calls[0].args.p_message_type, 'image');
+  assert.equal(db.calls[0].args.p_body, null);
+  assert.ok(!JSON.stringify(db.calls[0].args).includes('Do not copy this echo caption'));
+});
+
+await test('malformed echoes are ignored', async () => {
+  const db = fakeSupabase();
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({
+      field: 'smb_message_echoes',
+      messageEchoes: [
+        appEcho({ to: 'not-a-number' }),
+        appEcho({ id: 'x' }),
+        appEcho({ body: '   ' }),
+        { ...appEcho(), timestamp: 'never' },
+      ],
+    }), V_SECRET),
     env(),
     db
   );
   assert.equal(response.status, 200);
   assert.equal(db.calls.length, 0);
+});
+
+await test('an echo change never interprets messages or statuses in it', async () => {
+  const db = fakeSupabase();
+  await handleWhatsappWebhook(
+    postRequest(payloadFor({
+      field: 'smb_message_echoes',
+      messages: [inboundText()],
+      statuses: [statusEvent()],
+    }), V_SECRET),
+    env(),
+    db
+  );
+  assert.equal(db.calls.length, 0);
+});
+
+await test('an echo for another artist phone is not recorded under the signing artist', async () => {
+  const db = fakeSupabase();
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({
+      field: 'smb_message_echoes',
+      wabaId: K_WABA,
+      phoneNumberId: K_PHONE,
+      messageEchoes: [appEcho()],
+    }), V_SECRET),
+    env(),
+    db
+  );
+  assert.equal(response.status, 200);
+  assert.equal(db.calls.length, 0);
+});
+
+await test('an unsigned echo is rejected', async () => {
+  const db = fakeSupabase();
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({ field: 'smb_message_echoes', messageEchoes: [appEcho()] }), 'wrong-secret'),
+    env(),
+    db
+  );
+  assert.notEqual(response.status, 200);
+  assert.equal(db.calls.length, 0);
+});
+
+await test('history and app state sync changes are not interpreted', async () => {
+  for (const field of ['history', 'smb_app_state_sync']) {
+    const db = fakeSupabase();
+    const response = await handleWhatsappWebhook(
+      postRequest(payloadFor({ field, messages: [inboundText()], messageEchoes: [appEcho()] }), V_SECRET),
+      env(),
+      db
+    );
+    assert.equal(response.status, 200);
+    assert.equal(db.calls.length, 0);
+  }
 });
 
 await test('one missing artist binding does not create a cross-artist fallback', async () => {

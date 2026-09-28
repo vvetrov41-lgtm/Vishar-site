@@ -34,6 +34,9 @@ export const ALLOWED_RPCS = new Set([
   'claim_whatsapp_outbox_by_id',
   'record_whatsapp_inbound_message',
   'record_whatsapp_message_status',
+  // A reply typed in the WhatsApp Business app (Coexistence echo). Never opens
+  // a conversation; idempotent on the provider message id.
+  'record_communication_outbound_echo',
   'record_whatsapp_outbox_result',
   'service_begin_communication_send',
   'service_resolve_whatsapp_booking_card_payload',
