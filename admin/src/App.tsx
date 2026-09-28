@@ -39,6 +39,7 @@ import { EnquiriesPage } from './pages/EnquiriesPage';
 import { EnquiryDetailPage } from './pages/EnquiryDetailPage';
 import { FocusedAppointmentPage } from './pages/FocusedAppointmentPage';
 import { FollowUpsPage } from './pages/FollowUpsPage';
+import { HubPage } from './pages/HubPage';
 import { InboxPage } from './pages/InboxPage';
 import { InvoiceDetailPage } from './pages/InvoiceDetailPage';
 import { InvoicesPage } from './pages/InvoicesPage';
@@ -270,6 +271,12 @@ function Routes() {
       return <RequireCapability capability="viewAutomations"><ClientMessagesPage /></RequireCapability>;
     case '/automations/advanced':
       return <RequireCapability capability="viewAutomations"><LifecycleAutomationStudioPage /></RequireCapability>;
+    // Hubs are indexes over screens that keep their own capability gates; the
+    // hub lists only what this person could already open.
+    case '/money':
+      return <HubPage group="money" />;
+    case '/settings':
+      return <HubPage group="setup" />;
     case '/invoices':
       return <RequireCapability capability="viewFinance"><InvoicesPage /></RequireCapability>;
     case '/payments':

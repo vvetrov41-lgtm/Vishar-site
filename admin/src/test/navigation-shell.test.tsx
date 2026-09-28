@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
-import { groupNavItems, navGroupFor } from '../components/AppShell';
+import { compactOverflowGroups, groupNavItems, navGroupFor } from '../components/AppShell';
 import { ARTIST_SCOPE_STORAGE_KEY } from '../lib/artist-scope';
 import { NAV_ITEMS } from '../lib/permissions';
 import {
@@ -66,8 +66,7 @@ describe('responsive navigation shell', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Sections' });
     const work = within(dialog).getByRole('group', { name: 'Work' });
-    const money = within(dialog).getByRole('group', { name: 'Money' });
-    const setup = within(dialog).getByRole('group', { name: 'Setup' });
+    const manage = within(dialog).getByRole('group', { name: 'Manage' });
 
     expect(within(work).getAllByRole('link').map((link) => link.textContent)).toEqual([
       'Enquiries',
@@ -77,20 +76,57 @@ describe('responsive navigation shell', () => {
       // configured once.
       'Statistics',
     ]);
-    expect(within(money).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Invoices',
-      'Payments',
+    // Eight money and setup screens became two hub entries: the sheet lists
+    // six links instead of twelve.
+    expect(within(manage).getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Money',
+      'Settings',
     ]);
-    expect(within(setup).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Time off',
-      'Automatic messages',
+    expect(within(manage).getByRole('link', { name: 'Money' })).toHaveAttribute('href', '#/money');
+    expect(within(manage).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#/settings');
+    expect(within(dialog).queryByRole('group', { name: 'Money' })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('group', { name: 'Settings' })).not.toBeInTheDocument();
+  });
+
+  it('lists every screen a hub stands for on the hub page, and nothing more', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/settings' });
+    const section = (await screen.findByRole('heading', { level: 2, name: 'Settings' })).closest('section') as HTMLElement;
+    expect(within(section).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      '#/availability',
+      '#/automations',
       // Organizations is absent here on purpose: it is appended from
       // public.control_plane_access(), and this session belongs to none.
-      'Integrations',
-      'Notifications',
-      'Users',
-      'Activity',
+      '#/integrations',
+      '#/notifications',
+      '#/users',
+      '#/activity',
     ]);
+  });
+
+  it('shows the money hub with invoices and payments for the owner', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/money' });
+    // An index of screens reads no records, so no artist-filter notice.
+    expect(await screen.findByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.queryByText('Global section')).not.toBeInTheDocument();
+    const section = (await screen.findByRole('heading', { level: 2, name: 'Money' })).closest('section') as HTMLElement;
+    expect(within(section).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
+      '#/invoices',
+      '#/payments',
+    ]);
+  });
+
+  it('refuses a hub with nothing behind it for this role', async () => {
+    renderWithSession(<App />, { role: 'read_only', path: '/money' });
+    expect(await screen.findByText('Page not found')).toBeInTheDocument();
+  });
+
+  it('marks the hub entry current while on one of its screens', async () => {
+    renderWithSession(<App />, { role: 'owner', path: '/payments' });
+    const more = await screen.findByRole('button', { name: 'More' });
+    expect(more).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(more);
+    const dialog = await screen.findByRole('dialog', { name: 'Sections' });
+    expect(within(dialog).getByRole('link', { name: 'Money' })).toHaveAttribute('aria-current', 'page');
   });
 
   it('does not render empty overflow groups for restricted roles', async () => {
@@ -104,14 +140,12 @@ describe('responsive navigation shell', () => {
       'Follow-ups',
       'Projects',
       'Statistics',
-      'Time off',
-      'Automatic messages',
-      'Notifications',
+      // Time off, Automatic messages and Notifications behind one hub.
+      'Settings',
     ]);
-    // A read-only account reaches no money and no administration destination,
-    // so neither group is rendered as an empty shell.
-    expect(within(dialog).queryByRole('group', { name: 'Money' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('group', { name: 'Setup' })).toBeInTheDocument();
+    // A read-only account reaches no money destination, so no Money entry is
+    // offered as an empty hub.
+    expect(within(dialog).queryByRole('link', { name: 'Money' })).not.toBeInTheDocument();
   });
 
   it('shows artist scope only where it affects the page', async () => {
@@ -231,9 +265,22 @@ describe('one navigation grouping', () => {
 
     const sidebar = container.querySelector('.sidebar-nav') as HTMLElement;
     expect(within(sidebar).getAllByRole('group').map((group) => group.getAttribute('aria-label')))
-      .toEqual(['Work', 'Money', 'Setup']);
+      .toEqual(['Work', 'Money', 'Settings']);
     // The group label is a divider, not part of the document outline: three
     // headings above every page's own would bury the page title.
     expect(within(sidebar).queryAllByRole('heading')).toHaveLength(0);
+    // The desktop keeps every screen one click away and also names the hubs.
+    expect(within(sidebar).getByRole('link', { name: 'Money' })).toHaveAttribute('href', '#/money');
+    expect(within(sidebar).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#/settings');
+    expect(within(sidebar).getByRole('link', { name: 'Payments' })).toBeInTheDocument();
+  });
+
+  it('links a hub with a single screen straight to that screen', () => {
+    const only = NAV_ITEMS.filter((item) => ['/enquiries', '/invoices', '/notifications', '/users'].includes(item.path));
+    const groups = compactOverflowGroups(only);
+    expect(groups.map((group) => [group.id, group.items.map((item) => item.path)])).toEqual([
+      ['work', ['/enquiries']],
+      ['manage', ['/invoices', '/settings']],
+    ]);
   });
 });

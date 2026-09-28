@@ -21,7 +21,7 @@ import { ACCOUNT_PATH } from '../lib/account-api';
 // English NavItem.label. Communications and Payments had no entry here and
 // rendered in English inside the Russian interface, because translate()
 // returns the key it was given when the key is not in the dictionary.
-const NAV_KEYS: Record<string, string> = {
+export const NAV_KEYS: Record<string, string> = {
   '/': 'nav.dashboard',
   '/inbox': 'nav.inbox',
   '/enquiries': 'nav.enquiries',
@@ -40,7 +40,18 @@ const NAV_KEYS: Record<string, string> = {
   '/workspaces': 'nav.workspaces',
   '/users': 'nav.users',
   '/activity': 'nav.activity',
+  '/money': 'nav.money',
+  '/settings': 'nav.settings',
 };
+
+/**
+ * The two hubs. On the phone the More sheet lists the daily work and then one
+ * entry per hub, rather than every money and setup screen one under another:
+ * the sheet went from up to thirteen links to at most six. Each hub page lists
+ * the screens it stands for, and no route behind it changed.
+ */
+export const HUB_PATHS = { money: '/money', setup: '/settings' } as const;
+type HubGroupId = keyof typeof HUB_PATHS;
 
 // The four thumb slots go to where a day is actually spent: what needs me, who
 // is waiting, when, and who this is. Enquiries and Projects are reached from
@@ -57,7 +68,9 @@ const FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
-type PageScope = 'artist' | 'shared' | 'global';
+// 'index' is a hub page: it reads no records, so no filter applies and no
+// notice about one is shown.
+type PageScope = 'artist' | 'shared' | 'global' | 'index';
 
 /**
  * One grouping, used by the sidebar and the phone's overflow sheet alike.
@@ -70,10 +83,13 @@ type NavGroupId = 'work' | 'money' | 'setup';
 
 const NAV_GROUP_ORDER: NavGroupId[] = ['work', 'money', 'setup'];
 
-export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, memberships, account, signOut } = useSession();
-  const { path } = useRouter();
-  const { t, label, language } = useLanguage();
+
+/**
+ * Every destination this person may open on this surface, in navigation
+ * order. Shared by the shell and the hub pages so both list the same screens.
+ */
+export function useNavItems(): NavItem[] {
+  const { profile, memberships } = useSession();
   // The control-plane entry is appended from the server's answer rather than
   // derived from the legacy role, which cannot express workspace authority.
   // Placed before Users so Administration keeps its existing reading order.
@@ -84,7 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const surface = useSurface();
   const roleItems = navItemsFor(profile?.role, memberships)
     .filter((item) => isPathAvailableOnSurface(item.path, surface));
-  const items = useMemo<NavItem[]>(() => {
+  return useMemo<NavItem[]>(() => {
     if (!canOpenControlPlane) return roleItems;
     const workspaces: NavItem = {
       path: '/workspaces',
@@ -98,6 +114,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     return [...roleItems.slice(0, usersAt), workspaces, ...roleItems.slice(usersAt)];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canOpenControlPlane, profile?.role, memberships]);
+}
+
+export function AppShell({ children }: { children: ReactNode }) {
+  const { profile, account, signOut } = useSession();
+  const { path } = useRouter();
+  const { t, label, language } = useLanguage();
+  const items = useNavItems();
   const {
     artists,
     selectedArtistId,
@@ -116,10 +139,15 @@ export function AppShell({ children }: { children: ReactNode }) {
     .filter((item): item is NavItem => Boolean(item));
   const primaryPaths = new Set(primaryItems.map((item) => item.path));
   const overflowItems = items.filter((item) => !primaryPaths.has(item.path));
-  const overflowGroups = groupNavItems(overflowItems);
+  const overflowGroups = compactOverflowGroups(overflowItems);
   const sidebarGroups = groupNavItems(items);
-  const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path));
+  const overflowIsActive = overflowItems.some((item) => isActivePath(item.path, path))
+    || path === HUB_PATHS.money
+    || path === HUB_PATHS.setup;
   const activeItem = items.find((item) => isActivePath(item.path, path));
+  const hubTitle = path === HUB_PATHS.money
+    ? t('nav.money')
+    : path === HUB_PATHS.setup ? t('nav.settings') : null;
   const profileName = profile?.display_name || profile?.email || 'CRM';
   // What the person is, not which authorization role carries it. The server
   // works this out from the membership rows authorization itself reads
@@ -215,9 +243,23 @@ export function AppShell({ children }: { children: ReactNode }) {
                 role="group"
                 aria-label={navGroupLabel(group.id, language)}
               >
-                <span className="sidebar-group-heading" aria-hidden="true">
-                  {navGroupLabel(group.id, language)}
-                </span>
+                {/* A money or setup group with more than one screen names its
+                    hub, so the desktop reaches the same overview the phone
+                    does. A plain divider stays hidden from assistive
+                    technology; the group's aria-label already names it. */}
+                {group.id !== 'work' && group.items.length > 1 ? (
+                  <Link
+                    to={HUB_PATHS[group.id]}
+                    className="sidebar-group-heading sidebar-group-hub"
+                    ariaCurrent={path === HUB_PATHS[group.id] ? 'page' : undefined}
+                  >
+                    {navGroupLabel(group.id, language)}
+                  </Link>
+                ) : (
+                  <span className="sidebar-group-heading" aria-hidden="true">
+                    {navGroupLabel(group.id, language)}
+                  </span>
+                )}
                 {group.items.map((item) => (
                   <NavigationLink
                     key={item.path}
@@ -248,11 +290,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               <h1>
                 <span className="topbar-brand">Vishar CRM</span>
                 <span className="topbar-page-title">
-                  {activeItem
+                  {hubTitle ?? (activeItem
                     ? activeItem.path === '/automations'
                       ? (language === 'ru' ? 'Автоматические сообщения' : 'Automatic messages')
                       : t(NAV_KEYS[activeItem.path] ?? activeItem.label)
-                    : 'Vishar CRM'}
+                    : 'Vishar CRM')}
                 </span>
               </h1>
             </div>
@@ -341,7 +383,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     role="group"
                     aria-labelledby={headingId}
                   >
-                    <h3 id={headingId}>{navGroupLabel(group.id, language)}</h3>
+                    <h3 id={headingId}>{sheetGroupLabel(group.id, language)}</h3>
                     <div className="nav-sheet-list">
                       {group.items.map((item) => (
                         <NavigationLink
@@ -387,6 +429,7 @@ function ArtistScopeControl({
   allAssignedLabel: string;
   onChange: (artistId: string | null) => void;
 }) {
+  if (scope === 'index') return null;
   if (scope !== 'artist') {
     const copy = scopeContextCopy(scope, language);
     return (
@@ -574,13 +617,47 @@ export function groupNavItems(items: NavItem[]): { id: NavGroupId; items: NavIte
     .filter((group) => group.items.length > 0);
 }
 
+type SheetGroupId = 'work' | 'manage';
+
+/**
+ * The phone's More sheet: the daily work as it is, then one entry per hub.
+ * A hub that would stand for a single screen links to that screen instead, so
+ * nobody taps through an overview with one row on it.
+ */
+export function compactOverflowGroups(items: NavItem[]): { id: SheetGroupId; items: NavItem[] }[] {
+  const grouped = groupNavItems(items);
+  const work = grouped.find((group) => group.id === 'work')?.items ?? [];
+  const manage: NavItem[] = [];
+  for (const id of ['money', 'setup'] as HubGroupId[]) {
+    const children = grouped.find((group) => group.id === id)?.items ?? [];
+    if (children.length === 1) manage.push(children[0]);
+    if (children.length > 1) {
+      manage.push({
+        path: HUB_PATHS[id],
+        label: id === 'money' ? 'nav.money' : 'nav.settings',
+        // Carried for shape only; the hub page lists what the viewer may open.
+        capability: children[0].capability,
+      });
+    }
+  }
+  return [
+    { id: 'work' as const, items: work },
+    { id: 'manage' as const, items: manage },
+  ].filter((group) => group.items.length > 0);
+}
+
+function sheetGroupLabel(group: SheetGroupId, language: Language): string {
+  if (group === 'work') return navGroupLabel('work', language);
+  return language === 'ru' ? 'Управление' : 'Manage';
+}
+
 /**
  * Frequency, not entity. A destination belongs to `setup` when it is configured
  * and then left alone - which is what "Time off", "Automations" and the whole
  * administration group have in common, whatever table they read.
  */
 export function navGroupFor(path: string): NavGroupId {
-  if (path === '/finance' || path === '/payments') return 'money';
+  if (path === '/finance' || path === '/payments' || path === '/money') return 'money';
   if (path === '/invoices' || path.startsWith('/invoices/')) return 'money';
   // Statistics reads the work rather than the money: its finance block is one
   // section of it and appears only where the database returns finance rows.
@@ -605,7 +682,8 @@ function navGroupLabel(group: NavGroupId, language: Language): string {
     en: {
       work: 'Work',
       money: 'Money',
-      setup: 'Setup',
+      // Named like the hub it opens.
+      setup: 'Settings',
     },
     ru: {
       work: 'Работа',
@@ -617,6 +695,7 @@ function navGroupLabel(group: NavGroupId, language: Language): string {
 }
 
 function pageScopeFor(path: string): PageScope {
+  if (path === HUB_PATHS.money || path === HUB_PATHS.setup) return 'index';
   if (path === '/clients' || path.startsWith('/clients/')) return 'shared';
   if (
     path === '/'
@@ -649,7 +728,7 @@ function pageScopeFor(path: string): PageScope {
   return 'global';
 }
 
-function scopeContextCopy(scope: Exclude<PageScope, 'artist'>, language: Language) {
+function scopeContextCopy(scope: Exclude<PageScope, 'artist' | 'index'>, language: Language) {
   if (scope === 'shared') {
     return language === 'ru'
       ? { title: 'Общие записи', hint: 'Клиенты не фильтруются по выбранному мастеру.' }
@@ -678,6 +757,9 @@ function focusableElements(container: HTMLElement): HTMLElement[] {
 
 function isActivePath(itemPath: string, currentPath: string): boolean {
   if (itemPath === '/') return currentPath === '/';
+  // A hub is where you are whenever you are on one of the screens it lists.
+  if (itemPath === HUB_PATHS.money) return navGroupFor(currentPath) === 'money';
+  if (itemPath === HUB_PATHS.setup) return navGroupFor(currentPath) === 'setup';
   if (itemPath === '/appointments' && currentPath === '/sessions') return true;
   if (itemPath === '/integrations') return currentPath === '/integrations' || currentPath === '/integrations/calendar';
   return currentPath === itemPath || currentPath.startsWith(`${itemPath}/`);
@@ -729,6 +811,10 @@ function NavIcon({ path }: { path: string }) {
       return <svg {...common}><circle cx="12" cy="8" r="3" /><path d="M5.5 20a6.5 6.5 0 0 1 13 0" /><path d="M19 5v4M17 7h4" /></svg>;
     case '/activity':
       return <svg {...common}><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>;
+    case '/money':
+      return <svg {...common}><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><path d="M7 15h3" /></svg>;
+    case '/settings':
+      return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1" /></svg>;
     case '/statistics':
       return <svg {...common}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></svg>;
     default:
