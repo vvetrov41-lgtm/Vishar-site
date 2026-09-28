@@ -136,11 +136,12 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: ["source_kind", "display_label"]
+              required: ["request_id", "source_kind", "display_label"]
               properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
                 source_kind: {type: "string", enum: ["external", "hosted"]}
                 display_label: {type: "string", maxLength: 120}
-                allowed_origin: {type: "string", maxLength: 253, pattern: "^https://[a-z0-9.-]+$"}
+                allowed_origin: {type: "string", maxLength: 253, pattern: "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?$"}
                 form_template: {type: "string", maxLength: 60, default: "tattoo-enquiry"}
                 activate: {type: "boolean", default: false}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
@@ -161,7 +162,7 @@ paths:
               required: ["display_label"]
               properties:
                 display_label: {type: "string", maxLength: 120}
-                allowed_origin: {type: "string", maxLength: 253, pattern: "^https://[a-z0-9.-]+$"}
+                allowed_origin: {type: "string", maxLength: 253, pattern: "^https://[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?(?::[0-9]{1,5})?$", description: "New HTTPS origin of an external source. Omit to keep the current origin."}
                 is_active: {type: "boolean"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
 components:

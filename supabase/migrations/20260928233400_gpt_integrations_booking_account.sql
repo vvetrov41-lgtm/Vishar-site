@@ -48,10 +48,12 @@ begin
 end;
 $$;
 
--- Turns the active Artist's WhatsApp route on or off exactly as the CRM
--- switch does. The route key is the existing one, or the production key the
--- CRM derives from the Artist slug. Configuration stays empty: provider
--- account identity is bound by the Embedded Signup flow, never by the GPT.
+-- Turns the active Artist's production WhatsApp route on or off exactly as
+-- the CRM switch does. The route key is always the production key the CRM
+-- derives from the Artist slug (`<slug>-production`), never "the latest row",
+-- so a staging route of the same Artist is never toggled by mistake.
+-- Configuration stays empty: provider account identity is bound by the
+-- Embedded Signup flow, never by the GPT.
 create or replace function public.gpt_set_whatsapp_route_enabled(p_is_enabled boolean)
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
@@ -60,22 +62,13 @@ declare
   v_ctx record;
   v_slug text;
   v_display text;
-  v_key text;
 begin
   select * into v_ctx from crm_private.require_gpt_domain_context('integrations', 'manage_integrations');
-  select a.slug, a.display_name into v_slug, v_display from public.artists a where a.id = v_ctx.artist_id;
-  select i.integration_key into v_key
-  from public.artist_integrations i
-  where i.artist_id = v_ctx.artist_id and i.integration_type = 'whatsapp'
-  order by i.updated_at desc
-  limit 1;
-  if v_key is null then
-    if v_slug is null or v_slug !~ '^[a-z0-9]+(-[a-z0-9]+)*$' then
-      raise exception 'the artist routing key is not valid for WhatsApp' using errcode = '22023';
-    end if;
-    v_key := v_slug || '-production';
+  select lower(btrim(a.slug)), a.display_name into v_slug, v_display from public.artists a where a.id = v_ctx.artist_id;
+  if v_slug is null or v_slug !~ '^[a-z0-9]+(-[a-z0-9]+)*$' then
+    raise exception 'the artist routing key is not valid for WhatsApp' using errcode = '22023';
   end if;
-  return public.configure_artist_integration(v_ctx.artist_id, 'whatsapp', 'meta_cloud_api', v_key,
+  return public.configure_artist_integration(v_ctx.artist_id, 'whatsapp', 'meta_cloud_api', v_slug || '-production',
     v_display || ' WhatsApp', '{}'::jsonb, coalesce(p_is_enabled, false));
 end;
 $$;
@@ -96,7 +89,9 @@ set search_path = pg_catalog, public, crm_private
 as $$
 begin
   perform crm_private.require_gpt_profile_scope('integrations');
-  return jsonb_build_object('bot_username', public.configure_telegram_connector_identity(p_bot_username));
+  -- Telegram shows usernames as @name; the CRM stores the bare name.
+  return jsonb_build_object('bot_username',
+    public.configure_telegram_connector_identity(regexp_replace(btrim(coalesce(p_bot_username, '')), '^@', '')));
 end;
 $$;
 
@@ -162,6 +157,7 @@ end;
 $$;
 
 create or replace function public.gpt_create_booking_source(
+  p_request_id uuid,
   p_source_kind text,
   p_display_label text,
   p_allowed_origin text default null,
@@ -171,14 +167,21 @@ create or replace function public.gpt_create_booking_source(
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
 as $$
-declare v_ctx record;
+declare v_ctx record; v_request jsonb; v_replay jsonb; v_result jsonb;
 begin
   select * into v_ctx from crm_private.require_gpt_domain_context('integrations', 'manage_booking_sources');
-  return jsonb_build_object('booking_source_id', public.create_booking_source(v_ctx.artist_id, p_source_kind,
+  v_request := jsonb_build_object('kind', p_source_kind, 'label', p_display_label, 'origin', p_allowed_origin,
+    'template', coalesce(p_form_template, 'tattoo-enquiry'), 'activate', coalesce(p_activate, false));
+  v_replay := crm_private.gpt_receipt_begin(v_ctx.gpt_client_id, p_request_id, 'create_booking_source', v_request);
+  if v_replay is not null then return v_replay; end if;
+  v_result := jsonb_build_object('booking_source_id', public.create_booking_source(v_ctx.artist_id, p_source_kind,
     p_display_label, p_allowed_origin, coalesce(p_form_template, 'tattoo-enquiry'), coalesce(p_activate, false)));
+  return crm_private.gpt_receipt_finish(v_ctx.gpt_client_id, p_request_id, 'create_booking_source', v_request, v_result);
 end;
 $$;
 
+-- An omitted origin keeps the stored one: public.update_booking_source treats
+-- NULL as the replacement, which would erase an external source's origin.
 create or replace function public.gpt_update_booking_source(
   p_booking_source_id uuid,
   p_display_label text,
@@ -188,13 +191,14 @@ create or replace function public.gpt_update_booking_source(
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
 as $$
-declare v_ctx record; v_artist uuid;
+declare v_ctx record; v_artist uuid; v_origin text;
 begin
   select * into v_ctx from crm_private.require_gpt_domain_context('integrations', 'manage_booking_sources');
-  select b.artist_id into v_artist from public.booking_sources b where b.id = p_booking_source_id;
+  select b.artist_id, b.allowed_origin into v_artist, v_origin from public.booking_sources b where b.id = p_booking_source_id;
   perform crm_private.require_gpt_record_artist(v_artist, v_ctx.artist_id, 'booking source');
   return jsonb_build_object('booking_source_id', p_booking_source_id,
-    'updated', public.update_booking_source(p_booking_source_id, p_display_label, p_allowed_origin, p_is_active));
+    'updated', public.update_booking_source(p_booking_source_id, p_display_label,
+      coalesce(p_allowed_origin, v_origin), p_is_active));
 end;
 $$;
 
@@ -249,7 +253,7 @@ begin
     'public.gpt_begin_telegram_link(text)',
     'public.gpt_disconnect_telegram_destination(text)',
     'public.gpt_list_booking_sources()',
-    'public.gpt_create_booking_source(text,text,text,text,boolean)',
+    'public.gpt_create_booking_source(uuid,text,text,text,text,boolean)',
     'public.gpt_update_booking_source(uuid,text,text,boolean)',
     'public.gpt_get_account_overview()',
     'public.gpt_set_my_display_name(text)',
