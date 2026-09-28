@@ -349,10 +349,10 @@ paths:
               additionalProperties: false
               required: ["hourly_rate", "full_day_rate", "full_day_hours", "session_deposit_amount"]
               properties:
-                hourly_rate: {type: "number", minimum: 0, maximum: 100000}
-                full_day_rate: {type: "number", minimum: 0, maximum: 100000}
-                full_day_hours: {type: "number", minimum: 0, maximum: 24}
-                session_deposit_amount: {type: "number", minimum: 0, maximum: 100000}
+                hourly_rate: {type: ["number", "null"], minimum: 0, maximum: 100000}
+                full_day_rate: {type: ["number", "null"], minimum: 0, maximum: 100000}
+                full_day_hours: {type: ["number", "null"], minimum: 0, maximum: 24}
+                session_deposit_amount: {type: ["number", "null"], minimum: 0, maximum: 100000}
                 currency: {type: "string", maxLength: 3, pattern: "^[A-Z]{3}$", default: "GBP"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
 components:

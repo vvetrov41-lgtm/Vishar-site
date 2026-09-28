@@ -1,5 +1,8 @@
 -- Unified GPT v2: Project Finance and Billing & Reconciliation operator parity.
 --
+-- The Monzo destination and Easy Bank Transfer reads require manage_finance
+-- because the CRM RPCs behind them do; view_finance alone would always fail.
+--
 -- Money actions keep every CRM rule: the CRM RPC owns amounts, policy,
 -- idempotency keys and provider routing. The wrapper adds the GPT boundary:
 -- registered client, active Artist context, finance ceiling, the human's
@@ -347,7 +350,7 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare v_ctx record;
 begin
-  select * into v_ctx from crm_private.require_gpt_domain_context('finance', 'view_finance');
+  select * into v_ctx from crm_private.require_gpt_domain_context('finance', 'manage_finance');
   return public.list_monzo_payment_destinations(v_ctx.artist_id);
 end;
 $$;
@@ -382,7 +385,7 @@ set search_path = pg_catalog, public, crm_private
 as $$
 declare v_ctx record;
 begin
-  select * into v_ctx from crm_private.require_gpt_domain_context('finance', 'view_finance');
+  select * into v_ctx from crm_private.require_gpt_domain_context('finance', 'manage_finance');
   return public.get_monzo_easy_bank_transfer_settings(v_ctx.artist_id);
 end;
 $$;

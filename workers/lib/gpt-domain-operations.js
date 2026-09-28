@@ -95,11 +95,27 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     summary: 'Queue the AI intake analysis of an enquiry again',
   }),
 
+  op({
+    id: 'getStatistics', domain: 'CRM Core', method: 'GET', path: '/v1/statistics', rpc: 'gpt_get_statistics',
+    params: [p.query(p.req(p.dateTime('from', 'p_from'))), p.query(p.req(p.dateTime('to', 'p_to')))],
+    summary: 'Read the Statistics figures for the active artist over a date range (at most 400 days)',
+    description: 'Enquiries by status and source, projects, sessions, and money totals when the user may view finance.',
+  }),
+  op({
+    id: 'listFailedDeliveries', domain: 'CRM Core', method: 'GET', path: '/v1/deliveries/failed', rpc: 'gpt_list_failed_deliveries',
+    params: [p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 }))],
+    summary: 'List failed or dead outgoing deliveries (email, WhatsApp, calendar, Telegram) for the active artist',
+  }),
+
   // ---------------------------------------------------------------- Projects
   op({
     id: 'removeEnquiryFile', domain: 'Projects', method: 'POST', path: '/v1/files/{file_id}/remove',
     rpc: 'gpt_remove_enquiry_file', params: [p.path('file_id', 'p_file_id')],
+    // Same order as the CRM: delete the private Storage object with the
+    // caller's bearer (Storage policy decides), then remove the manifest.
+    storageRemoval: { prepareRpc: 'gpt_prepare_enquiry_file_removal', bucket: 'crm-files' },
     summary: 'Remove a reference file from an enquiry',
+    description: 'Deletes the stored image and its record. Only the installation owner may do this.',
   }),
 
   // -------------------------------------------------------------- Scheduling
@@ -208,10 +224,10 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     id: 'setSessionPricing', domain: 'Scheduling', method: 'PUT', path: '/v1/scheduling/pricing',
     rpc: 'gpt_set_session_pricing',
     params: [
-      p.req(p.num('hourly_rate', 'p_hourly_rate', 0, 100000)),
-      p.req(p.num('full_day_rate', 'p_full_day_rate', 0, 100000)),
-      p.req(p.num('full_day_hours', 'p_full_day_hours', 0, 24)),
-      p.req(p.num('session_deposit_amount', 'p_session_deposit_amount', 0, 100000)),
+      p.req(p.num('hourly_rate', 'p_hourly_rate', 0, 100000, { nullable: true })),
+      p.req(p.num('full_day_rate', 'p_full_day_rate', 0, 100000, { nullable: true })),
+      p.req(p.num('full_day_hours', 'p_full_day_hours', 0, 24, { nullable: true })),
+      p.req(p.num('session_deposit_amount', 'p_session_deposit_amount', 0, 100000, { nullable: true })),
       p.text('currency', 'p_currency', 3, { default: 'GBP', pattern: '^[A-Z]{3}$', example: 'GBP' }),
     ],
     summary: 'Replace the artist session prices and default session deposit',
@@ -275,7 +291,7 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     id: 'requestGroupedSessionDeposit', domain: 'Project Finance', method: 'POST', path: '/v1/sessions/deposit-request',
     rpc: 'gpt_request_grouped_session_deposit',
     params: [
-      p.req(p.uuidList('session_ids', 'p_session_ids', 20)),
+      p.req(p.uuidList('session_ids', 'p_session_ids', 12, { minItems: 2 })),
       p.req(p.uuid('idempotency_key', 'p_idempotency_key')),
       p.enum('delivery_channel', 'p_delivery_channel', ENUMS.deposit_delivery_channel, { default: 'copy_link' }),
     ],
@@ -329,15 +345,16 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     summary: 'Remove a line from a draft invoice',
   }),
   op({
-    id: 'setInvoiceDetails', domain: 'Billing & Reconciliation', method: 'PATCH', path: '/v1/invoices/{invoice_id}',
+    id: 'setInvoiceDetails', domain: 'Billing & Reconciliation', method: 'PUT', path: '/v1/invoices/{invoice_id}',
     rpc: 'gpt_set_invoice_details',
     params: [
       p.path('invoice_id', 'p_invoice_id'),
-      p.date('due_date', 'p_due_date'),
-      p.num('discount_amount', 'p_discount_amount', 0, 100000),
-      p.text('notes', 'p_notes', 2000),
+      p.req(p.date('due_date', 'p_due_date', { nullable: true })),
+      p.req(p.num('discount_amount', 'p_discount_amount', 0, 100000, { nullable: true })),
+      p.req(p.text('notes', 'p_notes', 2000, { nullable: true })),
     ],
-    summary: 'Change the due date, discount or notes of a draft invoice',
+    summary: 'Replace the due date, discount and notes of a draft invoice',
+    description: 'Send all three fields: read the invoice first and resend unchanged values; null clears a field.',
   }),
   op({
     id: 'issueInvoice', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/issue',
@@ -500,7 +517,8 @@ function parseValue(param, raw, fromQuery) {
     case 'clock-array':
     case 'uuid-array': {
       const pattern = param.type === 'clock-array' ? CLOCK : UUID;
-      if (!Array.isArray(value) || value.length > param.maxItems) fail('invalid_field', param.name);
+      if (!Array.isArray(value) || value.length > param.maxItems || value.length < (param.minItems ?? 0)) fail('invalid_field', param.name);
+      if (param.type === 'uuid-array' && new Set(value.map((item) => String(item).toLowerCase())).size !== value.length) fail('invalid_field', param.name);
       if (value.some((item) => typeof item !== 'string' || !pattern.test(item))) fail('invalid_field', param.name);
       return param.type === 'uuid-array' ? value.map((item) => item.toLowerCase()) : value;
     }
@@ -553,7 +571,14 @@ export function routeForDomainOperation(request, url, body) {
         if (!bodyParams.some((param) => param.name === key)) fail('unexpected_field', key);
       }
       for (const param of bodyParams) {
-        if (!Object.prototype.hasOwnProperty.call(value, param.name) || value[param.name] === null) {
+        const present = Object.prototype.hasOwnProperty.call(value, param.name);
+        // A nullable field forwards an explicit null (for example "clear this
+        // rate"); required still means the key must be sent.
+        if (present && value[param.name] === null && param.nullable) {
+          payload[param.arg] = null;
+          continue;
+        }
+        if (!present || value[param.name] === null) {
           if (param.required) fail('required_field', param.name);
           continue;
         }
@@ -561,6 +586,9 @@ export function routeForDomainOperation(request, url, body) {
       }
     }
 
+    if (entry.storageRemoval) {
+      return { rpc: entry.rpc, payload, responseKind: 'json', operationId: entry.id, storageRemoval: entry.storageRemoval };
+    }
     return { rpc: entry.rpc, payload, responseKind: 'json', operationId: entry.id };
   }
   return null;

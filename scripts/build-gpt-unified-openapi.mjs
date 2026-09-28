@@ -116,13 +116,14 @@ function schemaFor(param) {
     case 'boolean': Object.assign(schema, { type: 'boolean' }); break;
     case 'enum': Object.assign(schema, { type: 'string', enum: [...param.values] }); break;
     case 'clock-array': Object.assign(schema, { type: 'array', maxItems: param.maxItems, items: { type: 'string', pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$' } }); break;
-    case 'uuid-array': Object.assign(schema, { type: 'array', minItems: 1, maxItems: param.maxItems, items: { type: 'string', format: 'uuid' } }); break;
+    case 'uuid-array': Object.assign(schema, { type: 'array', minItems: param.minItems ?? 1, maxItems: param.maxItems, uniqueItems: true, items: { type: 'string', format: 'uuid' } }); break;
     default: throw new Error(`unknown parameter type ${param.type}`);
   }
   if (['integer', 'number'].includes(param.type)) {
     if (param.min != null) schema.minimum = param.min;
     if (param.max != null) schema.maximum = param.max;
   }
+  if (param.nullable) schema.type = [schema.type, 'null'];
   if (param.default !== undefined) schema.default = param.default;
   if (param.description) schema.description = param.description;
   return schema;
