@@ -98,6 +98,30 @@ const productionEnv = {
 }
 
 {
+  // A Russian recipient: the database already localised title and body; the
+  // Worker adds the CRM link line in the same language.
+  const mock = mockFetch(claimed({
+    title: 'Новая заявка: Test Client',
+    body: 'AI-сводка:\nХочет рукав.',
+    entity_type: 'enquiry',
+    entity_id: enquiryId,
+    language: 'ru',
+  }));
+  const result = await drainPersonalTelegramNotifications(productionEnv, {
+    workerId,
+    limit: 1,
+    fetchImpl: mock.fetchImpl,
+  });
+  assert.equal(result.succeeded, 1);
+  assert.match(mock.telegramCalls[0].body.text, /^Новая заявка: Test Client/);
+  assert.match(
+    mock.telegramCalls[0].body.text,
+    new RegExp(`Открыть в CRM: https://crm\\.vishartattoo\\.com/#/enquiries/${enquiryId}`),
+  );
+  assert.doesNotMatch(mock.telegramCalls[0].body.text, /Open in CRM:/);
+}
+
+{
   // Simulate the new Worker running briefly against a pre-0101 DB response.
   // The same RPC lacks entity fields, so delivery must continue without a link.
   const { entity_type, entity_id, ...legacyRow } = claimed();

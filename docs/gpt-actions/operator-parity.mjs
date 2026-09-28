@@ -203,6 +203,7 @@ export const OPERATOR_PARITY = Object.freeze([
   gap("notifications.list", "Notifications", "Notifications", "view_notifications", "read", ["public.list_notifications"]),
   gap("notifications.mark_read", "Notifications", "Notifications", "manage_notifications", "write", ["public.mark_notification_read"]),
   gap("notifications.mark_all_read", "Notifications", "Notifications", "manage_notifications", "write", ["public.mark_all_notifications_read"]),
+  gap("notifications.language.set", "Notifications", "Notifications", "manage_notifications", "write", ["public.set_my_ui_language"]),
   gap("followups.snooze", "Notifications", "Notifications", "manage_notifications", "write", ["public.snooze_follow_up"]),
   gap("notifications.telegram_preference.get", "Notifications", "Notifications", "view_notifications", "read", ["RLS:public.notification_preferences"]),
   gap("notifications.telegram_preference.set", "Notifications", "Notifications", "manage_notifications", "write", ["public.set_notification_preference"]),

@@ -201,7 +201,10 @@ function validatePersonalDelivery(env, row) {
     throw new TelegramDrainError('telegram_notification_invalid');
   }
   const actionUrl = personalNotificationActionUrl(env, entityType, entityId);
-  const text = buildPersonalNotification({ title: row.title, body: row.body, actionUrl });
+  // The claim returns the recipient's CRM language; an older database without
+  // the column leaves it undefined, which renders the English line as before.
+  const language = row?.language === 'ru' ? 'ru' : 'en';
+  const text = buildPersonalNotification({ title: row.title, body: row.body, actionUrl, language });
   if (!text) throw new TelegramDrainError('telegram_notification_invalid');
   return { ...row, chat_id: String(row.chat_id), text };
 }

@@ -217,6 +217,12 @@ export function createPlatformApi(client: CrmClient) {
       return result.data === true;
     },
 
+    /** The interface language, so server-written copy follows it. */
+    async setMyUiLanguage(language: 'en' | 'ru'): Promise<void> {
+      const result = await client.rpc('set_my_ui_language', { p_language: language });
+      if (result.error) throw new ApiError(apiMessage('Could not update notifications.'), result.error);
+    },
+
     /** Every unread notification the caller can see, in one server-side update. */
     async markAllNotificationsRead(): Promise<number> {
       const result = await client.rpc('mark_all_notifications_read');

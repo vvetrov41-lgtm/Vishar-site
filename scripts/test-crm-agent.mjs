@@ -249,6 +249,26 @@ await test('a valid answer is applied through the completion RPC', async () => {
   assert.equal(call.args.p_next_action.action_type, 'request_information');
 });
 
+await test('a Russian artist gets the internal note in Russian; the language is not prompt data', async () => {
+  const seen = [];
+  await processCrmAgentJob(env, job({ input: { artist: { display_name: 'Vishar', timezone: 'Europe/London', output_language: 'ru' } } }), {
+    supabase: rpcRecorder(),
+    runTask: async (_env, _task, request) => { seen.push(request); return { ok: true, json: analysis(), provider: 'qwen', model: 'm' }; },
+  });
+  assert.ok(seen[0].system.startsWith(CLIENT_STATE_SYSTEM));
+  assert.ok(seen[0].system.includes('Output language: the artist reads the CRM in Russian.'));
+  assert.ok(!seen[0].input.includes('output_language'));
+});
+
+await test('an English artist keeps the unchanged system prompt', async () => {
+  const seen = [];
+  await processCrmAgentJob(env, job(), {
+    supabase: rpcRecorder(),
+    runTask: async (_env, _task, request) => { seen.push(request); return { ok: true, json: analysis(), provider: 'qwen', model: 'm' }; },
+  });
+  assert.equal(seen[0].system, CLIENT_STATE_SYSTEM);
+});
+
 await test('identifiers come from the claim, never from model output', async () => {
   const db = rpcRecorder();
   await processCrmAgentJob(env, job(), {
@@ -513,7 +533,7 @@ await test('vision stays off until its own switch is set', async () => {
 // Telegram control surface
 // ---------------------------------------------------------------------------
 
-const { crmAgentDigestCommand, handleCrmAgentDigestCommand, renderDigest, renderPulse } =
+const { crmAgentDigestCommand, handleCrmAgentDigestCommand, renderDigest, renderPulse, __testing } =
   await import('../workers/lib/crm-agent-telegram.js');
 
 const tgEnv = { ...env, CRM_AGENT_TELEGRAM_DIGEST_ENABLED: 'true', TELEGRAM_BOT_TOKEN: 'x'.repeat(40) };
@@ -580,7 +600,10 @@ await test('the digest asks the backend for its own chat and nothing else', asyn
     fetchImpl: async (url, init) => { sent.push({ url: String(url), body: init?.body }); return { ok: true }; },
   });
   assert.equal(ok, true);
-  assert.deepEqual(calls, [{ name: 'service_telegram_client_ai_digest', args: { p_chat_id: '4242', p_limit: 10 } }]);
+  assert.deepEqual(calls, [
+    { name: 'service_telegram_chat_language', args: { p_chat_id: '4242' } },
+    { name: 'service_telegram_client_ai_digest', args: { p_chat_id: '4242', p_limit: 10 } },
+  ]);
   assert.ok(sent[0].body.includes('Donovan Hale'));
 });
 
@@ -625,7 +648,10 @@ await test('/today reads the deterministic pulse once its switch is on', async (
       fetchImpl: async (url, init) => { sent.push({ url: String(url), body: init?.body }); return { ok: true }; },
     });
   assert.equal(ok, true);
-  assert.deepEqual(calls, [{ name: 'service_telegram_today_pulse', args: { p_chat_id: '4242', p_limit: 10 } }]);
+  assert.deepEqual(calls, [
+    { name: 'service_telegram_chat_language', args: { p_chat_id: '4242' } },
+    { name: 'service_telegram_today_pulse', args: { p_chat_id: '4242', p_limit: 10 } },
+  ]);
   assert.ok(sent[0].body.includes('Donovan Hale'));
   assert.ok(sent[0].body.includes('Waiting for your reply'));
   assert.ok(sent[0].body.includes('Messages from unknown senders (2)'));
@@ -638,7 +664,7 @@ await test('/needsme keeps the AI digest while the pulse is on', async () => {
     supabase: { rpc: async (name) => { calls.push(name); return { items: [] }; } },
     fetchImpl: async () => ({ ok: true }),
   });
-  assert.deepEqual(calls, ['service_telegram_client_ai_digest']);
+  assert.deepEqual(calls, ['service_telegram_chat_language', 'service_telegram_client_ai_digest']);
 });
 
 await test('/today stays on the AI digest until the pulse switch is set', async () => {
@@ -647,7 +673,47 @@ await test('/today stays on the AI digest until the pulse switch is set', async 
     supabase: { rpc: async (name) => { calls.push(name); return { items: [] }; } },
     fetchImpl: async () => ({ ok: true }),
   });
-  assert.deepEqual(calls, ['service_telegram_client_ai_digest']);
+  assert.deepEqual(calls, ['service_telegram_chat_language', 'service_telegram_client_ai_digest']);
+});
+
+await test('a Russian profile gets the digest in Russian; names and reasons are left as written', async () => {
+  const sent = [];
+  await handleCrmAgentDigestCommand(tgEnv, { chatId: '4242' }, {
+    supabase: {
+      rpc: async (name) => (name === 'service_telegram_chat_language'
+        ? 'ru'
+        : { status: 'ready', total: 1, items: [{ client_name: 'Donovan Hale', action_type: 'request_deposit', reason: 'Клиент выбрал дату.', priority: 'high' }] }),
+    },
+    fetchImpl: async (_url, init) => { sent.push(String(init?.body ?? '')); return { ok: true }; },
+  });
+  const text = JSON.parse(sent[0]).text;
+  assert.ok(text.startsWith('Vishar CRM: ждёт вашего решения'));
+  assert.ok(text.includes('! Donovan Hale — Запросить депозит'));
+  assert.ok(text.includes('Клиент выбрал дату.'));
+  assert.ok(text.includes('Это подсказки. Клиентам ничего не отправлено.'));
+  assert.ok(!/Needs your review|These are suggestions/.test(text));
+});
+
+await test('a failed language lookup falls back to English and still answers', async () => {
+  const sent = [];
+  await handleCrmAgentDigestCommand(tgEnv, { chatId: '4242' }, {
+    supabase: {
+      rpc: async (name) => {
+        if (name === 'service_telegram_chat_language') throw new Error('down');
+        return { items: [] };
+      },
+    },
+    fetchImpl: async (_url, init) => { sent.push(String(init?.body ?? '')); return { ok: true }; },
+  });
+  assert.ok(sent[0].includes('nothing is waiting for you'));
+});
+
+await test('every pulse reason and action label has a Russian line', () => {
+  for (const key of Object.keys(__testing.PULSE_REASONS)) assert.ok(__testing.PULSE_REASONS_RU[key], key);
+  for (const key of Object.keys(__testing.ACTION_LABELS)) assert.ok(__testing.ACTION_LABELS_RU[key], key);
+  const text = renderPulse({ total: 1, items: [{ kind: 'reply', reason: 'client_message_unanswered', subject: 'Donovan Hale', urgent: true }] }, 'ru');
+  assert.ok(text.includes('! Donovan Hale — Ждёт вашего ответа'));
+  assert.ok(text.includes('Клиентам ничего не отправлено.'));
 });
 
 await test('the pulse renders rule codes as plain language and never a raw code or id', () => {
