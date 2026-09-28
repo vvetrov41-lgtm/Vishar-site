@@ -220,10 +220,11 @@ function env() {
     code: 100,
     subcode: 2388024,
     type: 'OAuthException',
+    message: null,
+    fbtrace_id: 'TRACE123',
   });
   const serialised = JSON.stringify(rpcCalls);
   assert.equal(serialised.includes('Echoed'), false);
-  assert.equal(serialised.includes('TRACE123'), false);
   assert.equal(serialised.includes(TOKEN), false);
 }
 
@@ -249,6 +250,8 @@ function env() {
     code: null,
     subcode: null,
     type: null,
+    message: null,
+    fbtrace_id: null,
   });
 }
 
@@ -263,7 +266,9 @@ function env() {
     },
   });
   const diagnostic = await readProviderError(new Response(huge, { status: 400 }));
-  assert.deepEqual(diagnostic, { http_status: 400, code: null, subcode: null, type: null });
+  assert.deepEqual(diagnostic, {
+    http_status: 400, code: null, subcode: null, type: null, message: null, fbtrace_id: null,
+  });
   assert.ok(pulled <= 4, `read ${pulled} chunks past the cap`);
 
   const declared = await readProviderError(new Response('{"error":{"code":1}}', {
@@ -271,6 +276,107 @@ function env() {
     headers: { 'content-length': '999999' },
   }));
   assert.equal(declared.code, null);
+}
+
+{
+  // The WABA-level template restriction: Meta's message and trace id are
+  // kept for support, and the account's own health is recorded.
+  const rpcCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
+      if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (value === `https://graph.facebook.com/v25.0/${WABA}?fields=health_status`) {
+      assert.equal(init.headers.Authorization, `Bearer ${TOKEN}`);
+      return Response.json({
+        health_status: {
+          can_send_message: 'LIMITED',
+          entities: [{
+            entity_type: 'WABA',
+            id: WABA,
+            can_send_message: 'LIMITED',
+            errors: [{
+              error_code: 141010,
+              error_description: 'Template creation is restricted for this account.',
+              possible_solution: `Contact support. token ${TOKEN}`,
+            }],
+          }],
+        },
+      });
+    }
+    if (value.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      if (String(init.method || 'GET').toUpperCase() === 'GET') return Response.json({ data: [] });
+      return Response.json({
+        error: {
+          message: 'Your WhatsApp Business Account is restricted from creating message templates.',
+          type: 'OAuthException',
+          code: 100,
+          error_subcode: 2494160,
+          fbtrace_id: 'AbC_123-xyz',
+        },
+      }, { status: 400 });
+    }
+    throw new Error(`unexpected request ${value}`);
+  };
+
+  const result = await maintainWhatsappBookingTemplates(env(), { fetchImpl });
+  assert.equal(result.failed, 1);
+  const record = rpcCalls.find((call) => call.name === 'service_record_booking_card_template_status');
+  assert.deepEqual(record.args.p_provider_error, {
+    stage: 'create_tattoo',
+    http_status: 400,
+    code: 100,
+    subcode: 2494160,
+    type: 'OAuthException',
+    message: 'Your WhatsApp Business Account is restricted from creating message templates.',
+    fbtrace_id: 'AbC_123-xyz',
+  });
+  assert.deepEqual(record.args.p_waba_health, {
+    can_send_message: 'LIMITED',
+    entities: [{
+      entity_type: 'WABA',
+      can_send_message: 'LIMITED',
+      errors: [{
+        error_code: 141010,
+        error_description: 'Template creation is restricted for this account.',
+        possible_solution: null,
+      }],
+    }],
+  });
+  assert.equal(JSON.stringify(rpcCalls).includes(TOKEN), false);
+  assert.equal(__testing.providerMessage(`Bad body: ${__testing.TATTOO_BODY.split('\n')[1]}`), null);
+}
+
+{
+  // Oversized health from Meta is shed to fit the stored cap, never dropped
+  // silently to stale state; multibyte messages are bounded in bytes.
+  const long = 'é'.repeat(400);
+  const binding = { wabaId: WABA, accessToken: TOKEN };
+  const fetchImpl = async () => Response.json({
+    health_status: {
+      can_send_message: 'BLOCKED',
+      entities: Array.from({ length: 10 }, () => ({
+        entity_type: 'WABA',
+        can_send_message: 'BLOCKED',
+        errors: Array.from({ length: 10 }, () => ({
+          error_code: 141010,
+          error_description: long,
+          possible_solution: long,
+        })),
+      })),
+    },
+  });
+  const health = await __testing.readWabaHealth(binding, fetchImpl);
+  assert.ok(health, 'health is kept');
+  assert.ok(new TextEncoder().encode(JSON.stringify(health)).byteLength <= 4000);
+  assert.equal(health.entities[0].errors[0].error_code, 141010);
+  assert.equal(__testing.providerMessage('ж'.repeat(151)), null);
+  assert.equal(__testing.providerMessage('ж'.repeat(150)), 'ж'.repeat(150));
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');
