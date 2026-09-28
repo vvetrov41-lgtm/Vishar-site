@@ -9,7 +9,9 @@
 // production.
 
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import instagramEntry, { __testing as corsTesting } from '../workers/instagram-production-entry.js';
@@ -82,6 +84,36 @@ test('no cron trigger is declared in the tracked config', () => {
   assert.ok(!/crons\s*=/.test(config));
 });
 
+test('the release generator never adds a cron trigger, even with every capability on', () => {
+  // rc938 failed with Cloudflare error 10072: the account's five cron triggers
+  // are all in use. Scheduled work rides the shared production cron through
+  // /internal/instagram/maintain instead.
+  const dir = mkdtempSync(join(tmpdir(), 'ig-deploy-config-'));
+  try {
+    const out = join(dir, 'deploy.toml');
+    execFileSync(process.execPath, [join(root, 'scripts/generate-instagram-production-deploy-config.mjs'), out], {
+      env: {
+        PATH: process.env.PATH,
+        INSTAGRAM_OAUTH_STATE_ID: 'a'.repeat(32),
+        INSTAGRAM_OAUTH_TOKENS_ID: 'b'.repeat(32),
+        INSTAGRAM_APP_ID: '1234567890',
+        SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_0123456789abcdefXYZ',
+        ENABLE_INSTAGRAM_OAUTH: 'true',
+        ENABLE_INSTAGRAM_DRAIN: 'true',
+        ENABLE_INSTAGRAM_ENRICHMENT: 'true',
+      },
+      stdio: 'pipe',
+    });
+    const generated = readFileSync(out, 'utf8');
+    assert.match(generated, /^INSTAGRAM_DRAIN_ENABLED = "true"$/m);
+    assert.match(generated, /^INSTAGRAM_ENRICHMENT_ENABLED = "true"$/m);
+    assert.ok(!/^\s*\[triggers\]/m.test(generated), 'no [triggers] table');
+    assert.ok(!/^\s*crons\s*=/m.test(generated), 'no crons');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('every capability ships off', () => {
   for (const flag of [
     'INSTAGRAM_OAUTH_ENABLED',
@@ -115,9 +147,9 @@ test('no secret or KV binding is committed', () => {
 });
 
 test('no Service Binding to another Worker is declared', () => {
-  // The connector runs its own scheduled work. Binding it into the live shared
-  // cron Worker would put this workstream inside another deployment's blast
-  // radius.
+  // The dependency runs the other way: the shared scheduler binds to this
+  // Worker (INSTAGRAM_SERVICE) and calls /internal/instagram/maintain. This
+  // Worker needs no binding to any other Worker.
   assert.ok(!/\[\[services\]\]/.test(config));
 });
 

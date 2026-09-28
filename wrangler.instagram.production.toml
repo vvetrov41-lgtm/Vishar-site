@@ -21,8 +21,8 @@ INSTAGRAM_DRAIN_ENABLED = "false"
 INSTAGRAM_ENRICHMENT_ENABLED = "false"
 
 # The tracked template is deliberately inert. Every capability is off, and the
-# guarded production deploy workflow is what flips a flag, appends the KV
-# bindings and adds the cron trigger.
+# guarded production deploy workflow is what flips a flag and appends the KV
+# bindings.
 #
 # The Meta callback at instagram.vishartattoo.com/webhook must not sit behind
 # Cloudflare Access: authenticity is enforced by Meta's signed webhook contract
@@ -36,11 +36,11 @@ INSTAGRAM_ENRICHMENT_ENABLED = "false"
 # OAuth callback traffic bypass that wrapper behavior and continues through the
 # reviewed provider worker unchanged.
 #
-# No cron trigger is declared here. This Worker is deployed inert first; the
-# five-minute schedule is added by the guarded release only once Meta App
-# Review and the artist connections are actually in place. That also keeps the
-# already-deployed shared cron on vishar-telegram-drain-production untouched by
-# this workstream.
+# No cron trigger is declared here or generated at release. Scheduled work
+# (token and webhook maintenance, the outbound drain, participant enrichment)
+# runs when the shared production cron on vishar-telegram-drain-production calls
+# /internal/instagram/maintain over its INSTAGRAM_SERVICE binding. The account
+# has no cron capacity left for a second schedule (Cloudflare error 10072).
 #
 # Production KV bindings are appended only by the guarded production deploy
 # workflow. Instagram uses dedicated OAuth-state and encrypted-token KV

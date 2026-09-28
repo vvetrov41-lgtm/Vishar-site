@@ -124,9 +124,15 @@ for (const [envName, varName] of [
 text += `\n[[kv_namespaces]]\nbinding = "INSTAGRAM_OAUTH_STATE"\nid = "${stateNamespace}"\n`;
 text += `\n[[kv_namespaces]]\nbinding = "INSTAGRAM_OAUTH_TOKENS"\nid = "${tokensNamespace}"\n`;
 
-// The schedule exists only when there is scheduled work to do.
-if (drainEnabled || String(process.env.ENABLE_INSTAGRAM_ENRICHMENT || '') === 'true') {
-  text += '\n[triggers]\ncrons = ["*/5 * * * *"]\n';
+// No schedule is ever generated. The account's cron triggers are exhausted
+// (Workers Free allows five, all in use), and rc938 failed with Cloudflare
+// error 10072 when this script still appended one. The shared production
+// scheduler on vishar-telegram-drain-production calls
+// /internal/instagram/maintain over its INSTAGRAM_SERVICE binding every tick,
+// and that call runs token and webhook maintenance, the outbound drain and
+// participant enrichment according to the flags above.
+if (/^\s*\[triggers\]\s*$/m.test(text) || /^\s*crons\s*=/m.test(text)) {
+  throw new Error('the Instagram connector must not declare its own cron trigger');
 }
 
 if (drainEnabled && !oauthEnabled) {

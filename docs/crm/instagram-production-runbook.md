@@ -18,7 +18,7 @@ from the database rather than from the webhook body.
 
 | Surface | State in the repository |
 | --- | --- |
-| `workers/instagram-production.js` | Complete: webhook, OAuth, status, disconnect, scheduled drain and enrichment |
+| `workers/instagram-production.js` | Complete: webhook, OAuth, status, disconnect; drain and enrichment ride `/internal/instagram/maintain` |
 | `wrangler.instagram.production.toml` | Inert: no cron, no KV binding, every capability `"false"` |
 | Migrations `0068`–`0072` | Communications core, WhatsApp migration, Instagram binding, inbox |
 | CRM `Communications` and `Instagram` screens | Complete |
@@ -387,7 +387,11 @@ The order matters. Each step is safe to stop at.
    delivered yet.
 
 6. **Outbound.** Re-run the workflow with `enable_oauth=true` and
-   `enable_drain=true`. This adds the five-minute cron. Queued replies are
+   `enable_drain=true`. This sets `INSTAGRAM_DRAIN_ENABLED=true`; no cron is
+   added. The Worker has no schedule of its own (the account's five cron
+   triggers are in use; rc938 failed with Cloudflare error 10072 while the
+   generator still appended one). The drain runs inside the shared `*/5`
+   scheduler's `POST /internal/instagram/maintain` call. Queued replies are
    delivered from that artist's own account.
 
 7. **Enrichment.** Optionally re-run with `enable_enrichment=true` so
