@@ -106,11 +106,34 @@ function templateDefinition(kind, name, language) {
 }
 
 // Meta returns HTTP 400 for most template failures (permission #200, token
-// #190, duplicate content, policy), so the status alone cannot explain one.
-// Only the numeric code, subcode and the error type are kept: Meta's message
-// and user-facing text can echo request content and are never read.
+// #190, duplicate content, policy, a WABA-level template restriction), so the
+// status alone cannot explain one. The numeric code, subcode and type are
+// kept, plus Meta's own error message and fbtrace_id so a restriction can be
+// raised with Meta support. The message is Meta's text, bounded and dropped
+// if it could carry request content (a template placeholder or body line) or
+// anything token-like. error_user_msg / error_user_title are never read.
 const PROVIDER_ERROR_TYPE = /^[A-Za-z_]{1,64}$/;
+const PROVIDER_TRACE_ID = /^[A-Za-z0-9_\-/+=]{6,64}$/;
 const MAX_PROVIDER_ERROR_BYTES = 8192;
+const MAX_PROVIDER_MESSAGE = 300;
+const TOKEN_LIKE = /\bEA[A-Za-z0-9]{20,}|[A-Za-z0-9_-]{40,}/;
+
+// A WABA-level restriction on creating or updating message templates. It is
+// not a missing permission: retrying every cycle cannot clear it, so the
+// claim RPC waits a day between attempts while it is recorded.
+export const TEMPLATE_RESTRICTION = Object.freeze({ code: 100, subcode: 2494160 });
+
+function providerMessage(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text || text.length > MAX_PROVIDER_MESSAGE) return null;
+  if (text.includes('{{') || TOKEN_LIKE.test(text)) return null;
+  const bodyLines = [...TATTOO_BODY.split('\n'), ...CONSULTATION_BODY.split('\n')]
+    .map((line) => line.trim())
+    .filter((line) => line.length > 8);
+  if (bodyLines.some((line) => text.includes(line))) return null;
+  return text;
+}
 
 function providerInteger(value) {
   return Number.isSafeInteger(value) && value >= 0 && value <= 2_000_000_000 ? value : null;
@@ -122,6 +145,8 @@ async function readProviderError(response) {
     code: null,
     subcode: null,
     type: null,
+    message: null,
+    fbtrace_id: null,
   };
   let reader;
   try {
@@ -150,6 +175,11 @@ async function readProviderError(response) {
     diagnostic.subcode = providerInteger(error?.error_subcode);
     diagnostic.type = typeof error?.type === 'string' && PROVIDER_ERROR_TYPE.test(error.type)
       ? error.type
+      : null;
+    diagnostic.message = providerMessage(error?.message);
+    diagnostic.fbtrace_id = typeof error?.fbtrace_id === 'string'
+      && PROVIDER_TRACE_ID.test(error.fbtrace_id)
+      ? error.fbtrace_id
       : null;
   } catch {
     // An unreadable body keeps the HTTP status only.
@@ -256,6 +286,55 @@ async function createTemplate(binding, definition, fetchImpl) {
   }
 }
 
+const HEALTH_STATE = /^[A-Z][A-Z_]{2,31}$/;
+const HEALTH_ENTITY = /^[A-Z][A-Z_]{2,31}$/;
+const MAX_HEALTH_ENTITIES = 6;
+const MAX_HEALTH_ERRORS = 4;
+const MAX_HEALTH_TEXT = 200;
+
+function healthText(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!text || TOKEN_LIKE.test(text)) return null;
+  return text.slice(0, MAX_HEALTH_TEXT);
+}
+
+// Meta's own account health for the WABA: whether it can send, and each
+// blocking entity's error code, description and suggested fix. Read-only;
+// a failure here never affects template maintenance or messaging.
+async function readWabaHealth(binding, fetchImpl) {
+  try {
+    const payload = await graph(
+      binding,
+      `${binding.wabaId}?fields=health_status`,
+      { method: 'GET' },
+      fetchImpl,
+    );
+    const health = payload?.health_status;
+    if (!health || typeof health !== 'object') return null;
+    const state = (value) => (typeof value === 'string' && HEALTH_STATE.test(value) ? value : null);
+    const entities = Array.isArray(health.entities) ? health.entities : [];
+    return {
+      can_send_message: state(health.can_send_message),
+      entities: entities.slice(0, MAX_HEALTH_ENTITIES).map((entity) => ({
+        entity_type: typeof entity?.entity_type === 'string' && HEALTH_ENTITY.test(entity.entity_type)
+          ? entity.entity_type
+          : null,
+        can_send_message: state(entity?.can_send_message),
+        errors: (Array.isArray(entity?.errors) ? entity.errors : [])
+          .slice(0, MAX_HEALTH_ERRORS)
+          .map((error) => ({
+            error_code: providerInteger(error?.error_code),
+            error_description: healthText(error?.error_description),
+            possible_solution: healthText(error?.possible_solution),
+          })),
+      })),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function atStage(stage, run) {
   try {
     return await run();
@@ -335,6 +414,13 @@ export async function maintainWhatsappBookingTemplates(env, {
     let errorCode = null;
     let providerError = null;
 
+    let wabaHealth = null;
+    try {
+      wabaHealth = await readWabaHealth(adminBinding(env, target), fetchImpl);
+    } catch {
+      wabaHealth = null;
+    }
+
     try {
       const result = await ensureTargetTemplates(env, target, fetchImpl);
       tattooStatus = result.tattooStatus;
@@ -358,6 +444,7 @@ export async function maintainWhatsappBookingTemplates(env, {
         p_error_code: errorCode,
         // Sent only when Meta answered, so a success keeps the original call.
         ...(providerError ? { p_provider_error: providerError } : {}),
+        ...(wabaHealth ? { p_waba_health: wabaHealth } : {}),
       });
     } catch {
       summary.failed += errorCode ? 0 : 1;
@@ -375,4 +462,6 @@ export const __testing = Object.freeze({
   templateDefinition,
   safeErrorCode,
   readProviderError,
+  readWabaHealth,
+  providerMessage,
 });
