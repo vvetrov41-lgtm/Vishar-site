@@ -21,7 +21,12 @@ export const ENUMS = Object.freeze({
   appointment_type: ['tattoo_session', 'in_person_consultation', 'video_consultation', 'touch_up'],
   session_status: ['draft', 'proposed', 'confirmed', 'completed', 'cancelled', 'no_show'],
   new_session_status: ['draft', 'proposed', 'confirmed'],
+  invoice_status: ['draft', 'issued', 'partially_paid', 'paid', 'void'],
+  deposit_policy_mode: ['fixed', 'percentage_of_estimate'],
+  deposit_delivery_channel: ['copy_link', 'email'],
 });
+
+const MONZO_PAY_URL = '^https://monzo[.]com/pay/r/[A-Za-z0-9_-]{4,255}$';
 
 // ------------------------------------------------------------ param builders
 const p = {
@@ -90,11 +95,27 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     summary: 'Queue the AI intake analysis of an enquiry again',
   }),
 
+  op({
+    id: 'getStatistics', domain: 'CRM Core', method: 'GET', path: '/v1/statistics', rpc: 'gpt_get_statistics',
+    params: [p.query(p.req(p.dateTime('from', 'p_from'))), p.query(p.req(p.dateTime('to', 'p_to')))],
+    summary: 'Read the Statistics figures for the active artist over a date range (at most 400 days)',
+    description: 'Enquiries by status and source, projects, sessions, and money totals when the user may view finance.',
+  }),
+  op({
+    id: 'listFailedDeliveries', domain: 'CRM Core', method: 'GET', path: '/v1/deliveries/failed', rpc: 'gpt_list_failed_deliveries',
+    params: [p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 }))],
+    summary: 'List failed or dead outgoing deliveries (email, WhatsApp, calendar, Telegram) for the active artist',
+  }),
+
   // ---------------------------------------------------------------- Projects
   op({
     id: 'removeEnquiryFile', domain: 'Projects', method: 'POST', path: '/v1/files/{file_id}/remove',
     rpc: 'gpt_remove_enquiry_file', params: [p.path('file_id', 'p_file_id')],
+    // Same order as the CRM: delete the private Storage object with the
+    // caller's bearer (Storage policy decides), then remove the manifest.
+    storageRemoval: { prepareRpc: 'gpt_prepare_enquiry_file_removal', bucket: 'crm-files' },
     summary: 'Remove a reference file from an enquiry',
+    description: 'Deletes the stored image and its record. Only the installation owner may do this.',
   }),
 
   // -------------------------------------------------------------- Scheduling
@@ -203,14 +224,245 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     id: 'setSessionPricing', domain: 'Scheduling', method: 'PUT', path: '/v1/scheduling/pricing',
     rpc: 'gpt_set_session_pricing',
     params: [
-      p.req(p.num('hourly_rate', 'p_hourly_rate', 0, 100000)),
-      p.req(p.num('full_day_rate', 'p_full_day_rate', 0, 100000)),
-      p.req(p.num('full_day_hours', 'p_full_day_hours', 0, 24)),
-      p.req(p.num('session_deposit_amount', 'p_session_deposit_amount', 0, 100000)),
-      p.text('currency', 'p_currency', 3, { default: 'GBP', pattern: '^[A-Z]{3}$' }),
+      p.req(p.num('hourly_rate', 'p_hourly_rate', 0, 100000, { nullable: true })),
+      p.req(p.num('full_day_rate', 'p_full_day_rate', 0, 100000, { nullable: true })),
+      p.req(p.num('full_day_hours', 'p_full_day_hours', 0, 24, { nullable: true })),
+      p.req(p.num('session_deposit_amount', 'p_session_deposit_amount', 0, 100000, { nullable: true })),
+      p.text('currency', 'p_currency', 3, { default: 'GBP', pattern: '^[A-Z]{3}$', example: 'GBP' }),
     ],
     summary: 'Replace the artist session prices and default session deposit',
     description: 'Money setting. Read the current prices first and send the exact values the user confirmed.',
+  }),
+
+  // --------------------------------------------------------- Project Finance
+  op({
+    id: 'getDepositPolicy', domain: 'Project Finance', method: 'GET', path: '/v1/finance/deposit-policy',
+    rpc: 'gpt_get_deposit_policy',
+    summary: 'Read the artist default project deposit policy',
+  }),
+  op({
+    id: 'configureDepositPolicy', domain: 'Project Finance', method: 'PUT', path: '/v1/finance/deposit-policy',
+    rpc: 'gpt_configure_deposit_policy',
+    params: [
+      p.req(p.enum('mode', 'p_mode', ENUMS.deposit_policy_mode)),
+      p.num('fixed_amount', 'p_fixed_amount', 0.01, 100000),
+      p.num('percentage', 'p_percentage', 0.01, 100),
+      p.num('minimum_amount', 'p_minimum_amount', 0, 100000),
+      p.num('rounding_step', 'p_rounding_step', 0.01, 1000, { default: 1 }),
+    ],
+    summary: 'Replace the artist default project deposit policy',
+    description: 'Money setting. fixed needs fixed_amount; percentage_of_estimate needs percentage. Only send values the user confirmed.',
+  }),
+  op({
+    id: 'previewProjectDeposit', domain: 'Project Finance', method: 'GET', path: '/v1/projects/{project_id}/deposit-preview',
+    rpc: 'gpt_preview_project_deposit', params: [p.path('project_id', 'p_project_id')],
+    summary: 'Preview the deposit the policy gives for a project before requesting it',
+  }),
+  op({
+    id: 'setProjectDepositOverride', domain: 'Project Finance', method: 'POST', path: '/v1/projects/{project_id}/deposit-override',
+    rpc: 'gpt_set_project_deposit_override',
+    params: [p.path('project_id', 'p_project_id'), p.num('amount', 'p_amount', 0.01, 100000)],
+    summary: 'Set or clear a one-project deposit amount that overrides the policy',
+    description: 'Omit amount to clear the override and return to the policy.',
+  }),
+  op({
+    id: 'requestProjectDeposit', domain: 'Project Finance', method: 'POST', path: '/v1/projects/{project_id}/deposit-request',
+    rpc: 'gpt_request_project_deposit',
+    params: [
+      p.path('project_id', 'p_project_id'),
+      p.req(p.uuid('idempotency_key', 'p_idempotency_key', { description: 'Fresh UUID per intended request; reuse only to retry the same request.' })),
+      p.enum('delivery_channel', 'p_delivery_channel', ENUMS.deposit_delivery_channel, { default: 'copy_link' }),
+    ],
+    summary: 'Request the project deposit from the client',
+    description: 'Money action. The server computes the amount from the policy or override; preview first and confirm with the user.',
+  }),
+  op({
+    id: 'confirmProjectDepositManually', domain: 'Project Finance', method: 'POST', path: '/v1/projects/{project_id}/deposit-confirm',
+    rpc: 'gpt_confirm_project_deposit_manually',
+    params: [
+      p.path('project_id', 'p_project_id'),
+      p.req(p.uuid('idempotency_key', 'p_idempotency_key')),
+      p.dateTime('occurred_at', 'p_occurred_at'),
+    ],
+    summary: 'Record that the project deposit was paid outside Vishar payments',
+    description: 'Money action. Only when the user states the deposit was actually received.',
+  }),
+  op({
+    id: 'requestGroupedSessionDeposit', domain: 'Project Finance', method: 'POST', path: '/v1/sessions/deposit-request',
+    rpc: 'gpt_request_grouped_session_deposit',
+    params: [
+      p.req(p.uuidList('session_ids', 'p_session_ids', 12, { minItems: 2 })),
+      p.req(p.uuid('idempotency_key', 'p_idempotency_key')),
+      p.enum('delivery_channel', 'p_delivery_channel', ENUMS.deposit_delivery_channel, { default: 'copy_link' }),
+    ],
+    summary: 'Request one deposit covering several sessions',
+  }),
+
+  // ------------------------------------------------ Billing & Reconciliation
+  op({
+    id: 'listInvoices', domain: 'Billing & Reconciliation', method: 'GET', path: '/v1/invoices', rpc: 'gpt_list_invoices',
+    params: [
+      p.query(p.uuid('project_id', 'p_project_id')),
+      p.query(p.uuid('client_id', 'p_client_id')),
+      p.query(p.enum('status', 'p_status', ENUMS.invoice_status)),
+      p.query(p.int('limit', 'p_limit', 1, 100, { default: 50 })),
+    ],
+    summary: 'List invoices of the active artist',
+  }),
+  op({
+    id: 'getInvoice', domain: 'Billing & Reconciliation', method: 'GET', path: '/v1/invoices/{invoice_id}',
+    rpc: 'gpt_get_invoice', params: [p.path('invoice_id', 'p_invoice_id')],
+    summary: 'Read one invoice with line items, payments, credit notes and totals',
+  }),
+  op({
+    id: 'createInvoice', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/projects/{project_id}/invoices',
+    rpc: 'gpt_create_invoice',
+    params: [
+      p.path('project_id', 'p_project_id'),
+      p.req(p.uuid('idempotency_key', 'p_idempotency_key')),
+      p.date('due_date', 'p_due_date'),
+      p.text('notes', 'p_notes', 2000),
+    ],
+    summary: 'Create a draft invoice for a project',
+  }),
+  op({
+    id: 'setInvoiceLineItem', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/line-items',
+    rpc: 'gpt_set_invoice_line_item',
+    params: [
+      p.path('invoice_id', 'p_invoice_id'),
+      p.req(p.text('description', 'p_description', 500)),
+      p.req(p.num('quantity', 'p_quantity', 0.01, 1000)),
+      p.req(p.num('unit_amount', 'p_unit_amount', 0, 100000)),
+      p.uuid('line_item_id', 'p_line_item_id', { description: 'Existing line to replace; omit to add a line.' }),
+      p.uuid('session_id', 'p_session_id'),
+      p.int('line_position', 'p_line_position', 1, 200),
+    ],
+    summary: 'Add or replace a line on a draft invoice',
+  }),
+  op({
+    id: 'removeInvoiceLineItem', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoice-line-items/{line_item_id}/remove',
+    rpc: 'gpt_remove_invoice_line_item', params: [p.path('line_item_id', 'p_line_item_id')],
+    summary: 'Remove a line from a draft invoice',
+  }),
+  op({
+    id: 'setInvoiceDetails', domain: 'Billing & Reconciliation', method: 'PUT', path: '/v1/invoices/{invoice_id}',
+    rpc: 'gpt_set_invoice_details',
+    params: [
+      p.path('invoice_id', 'p_invoice_id'),
+      p.req(p.date('due_date', 'p_due_date', { nullable: true })),
+      p.req(p.num('discount_amount', 'p_discount_amount', 0, 100000, { nullable: true })),
+      p.req(p.text('notes', 'p_notes', 2000, { nullable: true })),
+    ],
+    summary: 'Replace the due date, discount and notes of a draft invoice',
+    description: 'Send all three fields: read the invoice first and resend unchanged values; null clears a field.',
+  }),
+  op({
+    id: 'issueInvoice', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/issue',
+    rpc: 'gpt_issue_invoice',
+    params: [p.path('invoice_id', 'p_invoice_id'), p.date('issue_date', 'p_issue_date')],
+    summary: 'Issue a draft invoice, fixing its number and totals',
+    description: 'Money action. Issued invoices cannot be edited; only voided or credited.',
+  }),
+  op({
+    id: 'voidInvoice', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/void',
+    rpc: 'gpt_void_invoice',
+    params: [p.path('invoice_id', 'p_invoice_id'), p.req(p.text('reason', 'p_reason', 500))],
+    summary: 'Void an invoice',
+  }),
+  op({
+    id: 'attachPaymentRequestToInvoice', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/payment-requests',
+    rpc: 'gpt_attach_payment_request_to_invoice',
+    params: [p.path('invoice_id', 'p_invoice_id'), p.req(p.uuid('payment_request_id', 'p_payment_request_id'))],
+    summary: 'Attach an existing payment request to an invoice',
+  }),
+  op({
+    id: 'recordInvoicePayment', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/payments',
+    rpc: 'gpt_record_invoice_payment',
+    params: [
+      p.path('invoice_id', 'p_invoice_id'),
+      p.req(p.uuid('idempotency_key', 'p_idempotency_key')),
+      p.req(p.num('amount', 'p_amount', 0.01, 100000)),
+      p.dateTime('occurred_at', 'p_occurred_at'),
+      p.text('method_code', 'p_method_code', 40),
+      p.text('external_reference', 'p_external_reference', 120),
+    ],
+    summary: 'Record a payment received against an issued invoice',
+    description: 'Money action. Only for money the user states was actually received, with the exact amount.',
+  }),
+  op({
+    id: 'createCreditNote', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/invoices/{invoice_id}/credit-notes',
+    rpc: 'gpt_create_credit_note',
+    params: [
+      p.path('invoice_id', 'p_invoice_id'),
+      p.req(p.uuid('idempotency_key', 'p_idempotency_key')),
+      p.req(p.num('amount', 'p_amount', 0.01, 100000)),
+      p.req(p.text('reason', 'p_reason', 500)),
+    ],
+    summary: 'Credit part or all of an issued invoice',
+  }),
+  op({
+    id: 'attachMonzoPaymentLink', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/payments/requests/{payment_request_id}/monzo-link',
+    rpc: 'gpt_attach_monzo_payment_link',
+    params: [
+      p.path('payment_request_id', 'p_payment_request_id'),
+      p.req(p.text('payment_url', 'p_payment_url', 300, { pattern: MONZO_PAY_URL, example: 'https://monzo.com/pay/r/vishar-example' })),
+    ],
+    summary: 'Attach a one-off Monzo payment link to an open deposit request',
+  }),
+  op({
+    id: 'listMonzoDestinations', domain: 'Billing & Reconciliation', method: 'GET', path: '/v1/monzo/destinations',
+    rpc: 'gpt_list_monzo_destinations',
+    summary: 'List reusable Monzo payment links by amount',
+  }),
+  op({
+    id: 'upsertMonzoDestination', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/monzo/destinations',
+    rpc: 'gpt_upsert_monzo_destination',
+    params: [
+      p.req(p.num('amount', 'p_amount', 0.01, 100000)),
+      p.req(p.text('payment_url', 'p_payment_url', 300, { pattern: MONZO_PAY_URL, example: 'https://monzo.com/pay/r/vishar-example' })),
+    ],
+    summary: 'Add or replace the reusable Monzo payment link for an amount',
+  }),
+  op({
+    id: 'archiveMonzoDestination', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/monzo/destinations/{destination_id}/archive',
+    rpc: 'gpt_archive_monzo_destination', params: [p.path('destination_id', 'p_destination_id')],
+    summary: 'Archive a reusable Monzo payment link',
+  }),
+  op({
+    id: 'getMonzoTransferSettings', domain: 'Billing & Reconciliation', method: 'GET', path: '/v1/monzo/settings',
+    rpc: 'gpt_get_monzo_transfer_settings',
+    summary: 'Read the Monzo Easy Bank Transfer settings',
+  }),
+  op({
+    id: 'configureMonzoTransferSettings', domain: 'Billing & Reconciliation', method: 'PUT', path: '/v1/monzo/settings',
+    rpc: 'gpt_configure_monzo_transfer_settings',
+    params: [
+      p.req(p.text('payment_url', 'p_payment_url', 300, { pattern: MONZO_PAY_URL, example: 'https://monzo.com/pay/r/vishar-example' })),
+      p.bool('is_enabled', 'p_is_enabled', { default: false }),
+    ],
+    summary: 'Configure or disable Monzo Easy Bank Transfer',
+  }),
+  op({
+    id: 'listMonzoReconciliationCandidates', domain: 'Billing & Reconciliation', method: 'GET', path: '/v1/monzo/reconciliation',
+    rpc: 'gpt_list_monzo_reconciliation_candidates',
+    summary: 'List incoming Monzo payments waiting to be matched to payment requests',
+  }),
+  op({
+    id: 'matchMonzoReconciliationCandidate', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/monzo/reconciliation/{candidate_id}/match',
+    rpc: 'gpt_match_monzo_reconciliation_candidate',
+    params: [p.path('candidate_id', 'p_candidate_id'), p.req(p.uuid('payment_request_id', 'p_payment_request_id'))],
+    summary: 'Match an incoming Monzo payment to a payment request (not yet settled)',
+  }),
+  op({
+    id: 'ignoreMonzoReconciliationCandidate', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/monzo/reconciliation/{candidate_id}/ignore',
+    rpc: 'gpt_ignore_monzo_reconciliation_candidate', params: [p.path('candidate_id', 'p_candidate_id')],
+    summary: 'Mark an incoming Monzo payment as unrelated to any request',
+  }),
+  op({
+    id: 'confirmMonzoReconciliationCandidate', domain: 'Billing & Reconciliation', method: 'POST', path: '/v1/monzo/reconciliation/{candidate_id}/confirm',
+    rpc: 'gpt_confirm_monzo_reconciliation_candidate', params: [p.path('candidate_id', 'p_candidate_id')],
+    summary: 'Settle a matched Monzo payment into the payment ledger',
+    description: 'Money action. Confirm only after the user has checked the match.',
   }),
 ]);
 
@@ -265,7 +517,8 @@ function parseValue(param, raw, fromQuery) {
     case 'clock-array':
     case 'uuid-array': {
       const pattern = param.type === 'clock-array' ? CLOCK : UUID;
-      if (!Array.isArray(value) || value.length > param.maxItems) fail('invalid_field', param.name);
+      if (!Array.isArray(value) || value.length > param.maxItems || value.length < (param.minItems ?? 0)) fail('invalid_field', param.name);
+      if (param.type === 'uuid-array' && new Set(value.map((item) => String(item).toLowerCase())).size !== value.length) fail('invalid_field', param.name);
       if (value.some((item) => typeof item !== 'string' || !pattern.test(item))) fail('invalid_field', param.name);
       return param.type === 'uuid-array' ? value.map((item) => item.toLowerCase()) : value;
     }
@@ -318,7 +571,14 @@ export function routeForDomainOperation(request, url, body) {
         if (!bodyParams.some((param) => param.name === key)) fail('unexpected_field', key);
       }
       for (const param of bodyParams) {
-        if (!Object.prototype.hasOwnProperty.call(value, param.name) || value[param.name] === null) {
+        const present = Object.prototype.hasOwnProperty.call(value, param.name);
+        // A nullable field forwards an explicit null (for example "clear this
+        // rate"); required still means the key must be sent.
+        if (present && value[param.name] === null && param.nullable) {
+          payload[param.arg] = null;
+          continue;
+        }
+        if (!present || value[param.name] === null) {
           if (param.required) fail('required_field', param.name);
           continue;
         }
@@ -326,6 +586,9 @@ export function routeForDomainOperation(request, url, body) {
       }
     }
 
+    if (entry.storageRemoval) {
+      return { rpc: entry.rpc, payload, responseKind: 'json', operationId: entry.id, storageRemoval: entry.storageRemoval };
+    }
     return { rpc: entry.rpc, payload, responseKind: 'json', operationId: entry.id };
   }
   return null;

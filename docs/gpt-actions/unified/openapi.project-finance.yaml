@@ -65,6 +65,98 @@ paths:
                 status: {$ref: '#/components/schemas/DepositStatus'}
                 currency: {type: string, minLength: 3, maxLength: 3}
       responses: {'200': {description: Deposit update result}}
+  /v1/finance/deposit-policy:
+    get:
+      operationId: getDepositPolicy
+      summary: "Read the artist default project deposit policy"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+    put:
+      operationId: configureDepositPolicy
+      summary: "Replace the artist default project deposit policy"
+      x-openai-isConsequential: true
+      description: "Money setting. fixed needs fixed_amount; percentage_of_estimate needs percentage. Only send values the user confirmed."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["mode"]
+              properties:
+                mode: {type: "string", enum: ["fixed", "percentage_of_estimate"]}
+                fixed_amount: {type: "number", minimum: 0.01, maximum: 100000}
+                percentage: {type: "number", minimum: 0.01, maximum: 100}
+                minimum_amount: {type: "number", minimum: 0, maximum: 100000}
+                rounding_step: {type: "number", minimum: 0.01, maximum: 1000, default: 1}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/projects/{project_id}/deposit-preview:
+    get:
+      operationId: previewProjectDeposit
+      summary: "Preview the deposit the policy gives for a project before requesting it"
+      x-openai-isConsequential: false
+      parameters:
+        - {name: "project_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/projects/{project_id}/deposit-override:
+    post:
+      operationId: setProjectDepositOverride
+      summary: "Set or clear a one-project deposit amount that overrides the policy"
+      x-openai-isConsequential: true
+      description: "Omit amount to clear the override and return to the policy."
+      parameters:
+        - {name: "project_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                amount: {type: "number", minimum: 0.01, maximum: 100000}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/projects/{project_id}/deposit-request:
+    post:
+      operationId: requestProjectDeposit
+      summary: "Request the project deposit from the client"
+      x-openai-isConsequential: true
+      description: "Money action. The server computes the amount from the policy or override; preview first and confirm with the user."
+      parameters:
+        - {name: "project_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["idempotency_key"]
+              properties:
+                idempotency_key: {type: "string", format: "uuid", description: "Fresh UUID per intended request; reuse only to retry the same request."}
+                delivery_channel: {type: "string", enum: ["copy_link", "email"], default: "copy_link"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/projects/{project_id}/deposit-confirm:
+    post:
+      operationId: confirmProjectDepositManually
+      summary: "Record that the project deposit was paid outside Vishar payments"
+      x-openai-isConsequential: true
+      description: "Money action. Only when the user states the deposit was actually received."
+      parameters:
+        - {name: "project_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["idempotency_key"]
+              properties:
+                idempotency_key: {type: "string", format: "uuid"}
+                occurred_at: {type: "string", format: "date-time"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/payments/requests:
     get:
       operationId: listPaymentRequests
@@ -94,6 +186,24 @@ paths:
                 request_id: {type: string, format: uuid}
                 delivery_channel: {type: string, enum: [email, whatsapp]}
       responses: {'200': {description: Deposit request result}}
+  /v1/sessions/deposit-request:
+    post:
+      operationId: requestGroupedSessionDeposit
+      summary: "Request one deposit covering several sessions"
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["session_ids", "idempotency_key"]
+              properties:
+                session_ids: {type: "array", minItems: 2, maxItems: 12, uniqueItems: true, items: {type: "string", format: "uuid"}}
+                idempotency_key: {type: "string", format: "uuid"}
+                delivery_channel: {type: "string", enum: ["copy_link", "email"], default: "copy_link"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/payments/requests/{payment_request_id}/cancel:
     post:
       operationId: cancelPaymentRequest

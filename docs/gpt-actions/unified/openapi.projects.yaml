@@ -121,6 +121,7 @@ paths:
       operationId: removeEnquiryFile
       summary: "Remove a reference file from an enquiry"
       x-openai-isConsequential: true
+      description: "Deletes the stored image and its record. Only the installation owner may do this."
       parameters:
         - {name: "file_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       requestBody:
