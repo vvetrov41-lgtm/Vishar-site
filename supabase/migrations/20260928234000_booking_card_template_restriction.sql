@@ -1,4 +1,4 @@
--- 20260928233500_booking_card_template_restriction.sql
+-- 20260928234000_booking_card_template_restriction.sql
 --
 -- Kristina's automatic template provisioning fails with Meta code 100,
 -- subcode 2494160: a WABA-level restriction on creating or updating message
