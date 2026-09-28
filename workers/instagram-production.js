@@ -695,22 +695,11 @@ async function internalMaintenance(request, url, env) {
   } catch (error) {
     summary = { ok: false, errorCode: safeCode(error, 'instagram_maintenance_failed') };
   }
-  // The Instagram Worker has no cron of its own; the shared production cron
-  // calls this endpoint every tick, so the outbound drain rides the same call
-  // when it is switched on. A drain failure never hides the maintenance result.
-  if (env?.INSTAGRAM_DRAIN_ENABLED === 'true') {
-    try {
-      const drained = await runInstagramDrain(env);
-      console.log('instagram outbox drain', JSON.stringify({
-        claimed: drained.claimed,
-        succeeded: drained.succeeded,
-        failed: drained.failed,
-        unrecorded: drained.unrecorded,
-      }));
-    } catch (error) {
-      console.error('instagram outbox drain failed', JSON.stringify({ code: safeFailureCode(error) }));
-    }
-  }
+  // The Instagram Worker has no cron of its own (the account's cron triggers
+  // are exhausted); the shared production cron calls this endpoint every tick,
+  // so the outbound drain and participant enrichment ride the same call when
+  // they are switched on. Their failures never hide the maintenance result.
+  await runScheduled(env);
   return json(200, summary);
 }
 

@@ -1295,7 +1295,7 @@ await test('an ordinary CRM reply still sends its own body with no quick replies
   assert.deepEqual(bodies[0].message, { text: 'Your consultation is booked.' });
 });
 
-await test('the outbound drain rides the shared maintenance call only when switched on', async () => {
+await test('the outbound drain and enrichment ride the shared maintenance call only when switched on', async () => {
   const maintenanceRequest = () => new Request('https://instagram.internal/internal/instagram/maintain', { method: 'POST' });
   const url = new URL('https://instagram.internal/internal/instagram/maintain');
   const calls = [];
@@ -1311,6 +1311,11 @@ await test('the outbound drain rides the shared maintenance call only when switc
     calls.length = 0;
     await workerTesting.internalMaintenance(maintenanceRequest(), url, env({ INSTAGRAM_DRAIN_ENABLED: 'true' }));
     assert.ok(calls.some((href) => href.includes('claim_communication_outbox')), 'drain on: the outbox is claimed');
+    assert.ok(!calls.some((href) => href.includes('service_list_unenriched_participants')), 'enrichment off: not run');
+    calls.length = 0;
+    // The Worker has no cron trigger, so enrichment has to ride the same call.
+    await workerTesting.internalMaintenance(maintenanceRequest(), url, env({ INSTAGRAM_ENRICHMENT_ENABLED: 'true' }));
+    assert.ok(calls.some((href) => href.includes('service_list_unenriched_participants')), 'enrichment on: participants listed');
   } finally {
     globalThis.fetch = originalFetch;
   }
