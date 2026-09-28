@@ -65,7 +65,9 @@ $$;
 
 -- The notification inbox belongs to the signed-in person. The GPT shows the
 -- active Artist's items plus Artist-less system items, so switching Artist
--- never surfaces the previous Artist's alerts.
+-- never surfaces the previous Artist's alerts. The visibility rules are those
+-- of public.list_notifications; the Artist filter sits in the same query as
+-- the limit, so another Artist's newer rows never crowd this Artist out.
 create or replace function public.gpt_list_notifications(p_status public.notification_status default null, p_limit integer default 50)
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
@@ -74,9 +76,20 @@ declare v_ctx record;
 begin
   select * into v_ctx from crm_private.require_gpt_domain_context('crm_read', 'view_notifications');
   return coalesce((
-    select jsonb_agg(to_jsonb(n))
-    from public.list_notifications(p_status, least(greatest(coalesce(p_limit, 50), 1), 100)) n
-    where n.artist_id is null or n.artist_id = v_ctx.artist_id
+    select jsonb_agg(to_jsonb(r) order by r.scheduled_at desc, r.id)
+    from (
+      select n.id, n.artist_id, a.display_name as artist_label, n.notification_type, n.title, n.body,
+             n.entity_type, n.entity_id, n.priority, n.status, n.scheduled_at, n.read_at
+      from public.notifications n
+      left join public.artists a on a.id = n.artist_id
+      where n.recipient_profile_id = auth.uid()
+        and public.is_active_user()
+        and (n.artist_id is null or (n.artist_id = v_ctx.artist_id and public.can_access_artist(n.artist_id)))
+        and (n.workspace_id is null or public.can_access_workspace(n.workspace_id))
+        and ((p_status is null and n.status <> 'dismissed') or n.status = p_status)
+      order by n.scheduled_at desc, n.id
+      limit least(greatest(coalesce(p_limit, 50), 1), 100)
+    ) r
   ), '[]'::jsonb);
 end;
 $$;
@@ -97,13 +110,28 @@ begin
 end;
 $$;
 
+-- Marks exactly what gpt_list_notifications shows as unread: the active
+-- Artist's rows and Artist-less rows. Another Artist's alerts stay unread.
 create or replace function public.gpt_mark_all_notifications_read()
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
 as $$
+declare v_ctx record; v_updated integer;
 begin
-  perform crm_private.require_gpt_domain_context('crm', 'view_notifications');
-  return jsonb_build_object('marked', public.mark_all_notifications_read());
+  select * into v_ctx from crm_private.require_gpt_domain_context('crm', 'view_notifications');
+  if not public.is_active_user() then
+    raise exception 'sign in to update notifications' using errcode = '42501';
+  end if;
+  update public.notifications n
+  set status = 'read',
+      read_at = coalesce(n.read_at, now()),
+      delivered_at = coalesce(n.delivered_at, now())
+  where n.recipient_profile_id = auth.uid()
+    and n.status in ('pending', 'delivered')
+    and (n.artist_id is null or (n.artist_id = v_ctx.artist_id and public.can_access_artist(n.artist_id)))
+    and (n.workspace_id is null or public.can_access_workspace(n.workspace_id));
+  get diagnostics v_updated = row_count;
+  return jsonb_build_object('marked', v_updated);
 end;
 $$;
 
