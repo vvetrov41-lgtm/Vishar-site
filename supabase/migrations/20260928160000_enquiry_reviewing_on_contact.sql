@@ -18,8 +18,10 @@
 --     client and artist;
 --   * an outbound message (WhatsApp/Instagram) the artist sent to the client
 --     after the enquiry arrived; automated reminders do not count;
---   * Gmail showing the newest message with the client is outbound and later
---     than the enquiry.
+--   * an email the artist sent from the CRM, or Gmail showing the newest
+--     message with the client is outbound and later than the enquiry.
+-- Every piece of evidence only moves enquiries that arrived before it, so a
+-- returning client's later enquiry is never swept up by old history.
 -- Replies sent from the WhatsApp phone app are not visible to the CRM yet and
 -- are therefore not evidence here.
 --
@@ -130,7 +132,10 @@ begin
     end if;
   end if;
 
-  perform crm_private.mark_enquiries_reviewing(new.artist_id, new.client_id, 'consultation_booked');
+  -- Only enquiries that arrived before this consultation was booked: a later
+  -- enquiry from a returning client is new work, not the one being handled.
+  perform crm_private.mark_enquiries_reviewing(
+    new.artist_id, new.client_id, 'consultation_booked', coalesce(new.created_at, clock_timestamp()));
   return new;
 end;
 $$;
@@ -207,19 +212,88 @@ create trigger gmail_client_email_activity_mark_enquiry_reviewing
   after insert or update on crm_private.gmail_client_email_activity
   for each row execute function crm_private.gmail_outbound_marks_enquiry_reviewing();
 
+-- The artist sent an email from the CRM: the send is authoritative as soon
+-- as it is recorded, without waiting for the Gmail history refresh.
+create or replace function crm_private.sent_email_marks_enquiry_reviewing()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+begin
+  if new.status = 'sent'
+     and (tg_op = 'INSERT' or old.status is distinct from 'sent') then
+    perform crm_private.mark_enquiries_reviewing(
+      new.artist_id, new.client_id, 'client_contacted', coalesce(new.sent_at, clock_timestamp()));
+  end if;
+  return null;
+end;
+$$;
+
+revoke all on function crm_private.sent_email_marks_enquiry_reviewing()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists email_messages_mark_enquiry_reviewing on public.email_messages;
+create trigger email_messages_mark_enquiry_reviewing
+  after insert or update of status on public.email_messages
+  for each row execute function crm_private.sent_email_marks_enquiry_reviewing();
+
+-- A reply sent while the conversation was still unmatched counts once the
+-- conversation is linked to the client.
+create or replace function crm_private.linked_conversation_marks_enquiry_reviewing()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_last_out timestamptz;
+begin
+  if new.client_id is null or new.client_id is not distinct from old.client_id then
+    return null;
+  end if;
+  select max(m.created_at) into v_last_out
+  from public.communication_messages m
+  where m.conversation_id = new.id and m.direction = 'outbound' and m.origin <> 'automation';
+  if v_last_out is not null then
+    perform crm_private.mark_enquiries_reviewing(
+      new.artist_id, new.client_id, 'client_contacted', v_last_out);
+  end if;
+  return null;
+end;
+$$;
+
+revoke all on function crm_private.linked_conversation_marks_enquiry_reviewing()
+  from public, anon, authenticated, service_role;
+
+drop trigger if exists communication_conversations_mark_enquiry_reviewing on public.communication_conversations;
+create trigger communication_conversations_mark_enquiry_reviewing
+  after update of client_id on public.communication_conversations
+  for each row execute function crm_private.linked_conversation_marks_enquiry_reviewing();
+
 -- Existing records: apply the same evidence once.
 do $$
 declare
   r record;
 begin
   for r in
-    select distinct s.artist_id, s.client_id
+    select s.artist_id, s.client_id, max(s.created_at) as booked_at
     from public.sessions s
     where s.cancelled_at is null
       and s.appointment_type in ('in_person_consultation', 'video_consultation')
       and s.status in ('proposed', 'confirmed')
+    group by s.artist_id, s.client_id
   loop
-    perform crm_private.mark_enquiries_reviewing(r.artist_id, r.client_id, 'consultation_booked');
+    perform crm_private.mark_enquiries_reviewing(r.artist_id, r.client_id, 'consultation_booked', r.booked_at);
+  end loop;
+
+  for r in
+    select em.artist_id, em.client_id, max(coalesce(em.sent_at, em.updated_at)) as sent_at
+    from public.email_messages em
+    where em.status = 'sent' and em.client_id is not null and em.artist_id is not null
+    group by em.artist_id, em.client_id
+  loop
+    perform crm_private.mark_enquiries_reviewing(r.artist_id, r.client_id, 'client_contacted', r.sent_at);
   end loop;
 
   for r in

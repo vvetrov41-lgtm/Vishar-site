@@ -97,6 +97,59 @@ values ('e3216555-5555-4555-8555-555555555555', 'a1111111-1111-4111-8111-1111111
 select is((select status::text from public.enquiries where id = 'e3215555-5555-4555-8555-555555555555'),
   'waiting_for_client', 'an enquiry in any other status is left alone');
 
+-- A returning client's later enquiry is not swept up by an older booking.
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at, created_at
+) values ('e3211112-1111-4111-8111-111111111111', 'f3211111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-3217', 'e3219112-1111-4111-8111-111111111111',
+  repeat('1', 64), 'new', 'complete', 'Consult Client', 'consult-321@example.test', '2026-08-05', now(), now() + interval '1 minute');
+update public.sessions set status = 'proposed' where id = 'e3216111-1111-4111-8111-111111111111';
+select is((select status::text from public.enquiries where id = 'e3211112-1111-4111-8111-111111111111'),
+  'new', 'a later enquiry stays new when an older consultation is edited');
+
+-- A CRM email counts as soon as it is recorded as sent.
+insert into public.clients (id, full_name, email) values
+  ('f3216666-6666-4666-8666-666666666666', 'Mailed Client', 'mailed-321@example.test'),
+  ('f3217777-7777-4777-8777-777777777777', 'Linked Later', 'linked-321@example.test');
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at, created_at
+) values
+  ('e3216666-6666-4666-8666-666666666666', 'f3216666-6666-4666-8666-666666666666',
+   'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-3218', 'e3219666-6666-4666-8666-666666666666',
+   repeat('2', 64), 'new', 'complete', 'Mailed Client', 'mailed-321@example.test', '2026-08-05', now(), now() - interval '2 days'),
+  ('e3217777-7777-4777-8777-777777777777', 'f3217777-7777-4777-8777-777777777777',
+   'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-3219', 'e3219777-7777-4777-8777-777777777777',
+   repeat('3', 64), 'new', 'complete', 'Linked Later', 'linked-321@example.test', '2026-08-05', now(), now() - interval '2 days');
+
+select is((select status::text from public.enquiries where id = 'e3216666-6666-4666-8666-666666666666'),
+  'new', 'no email yet');
+select ok(exists (
+  select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+  where c.relname = 'email_messages' and t.tgname = 'email_messages_mark_enquiry_reviewing'),
+  'a sent CRM email is watched');
+select ok(exists (
+  select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+  where c.relname = 'communication_conversations' and t.tgname = 'communication_conversations_mark_enquiry_reviewing'),
+  'linking a conversation re-checks earlier replies');
+
+-- A reply sent while the conversation was unmatched counts once it is linked.
+insert into public.communication_conversations (
+  id, artist_id, channel, client_id, link_state, integration_key, external_contact_id
+) values ('e3217778-7777-4777-8777-777777777777', 'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', null, 'unmatched', 'vladimir-production', '447700932177');
+insert into public.communication_messages (conversation_id, artist_id, channel, direction, origin, status, body)
+values ('e3217778-7777-4777-8777-777777777777', 'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'outbound', 'crm', 'queued', 'Replied before linking');
+select is((select status::text from public.enquiries where id = 'e3217777-7777-4777-8777-777777777777'),
+  'new', 'an unmatched reply cannot move an enquiry yet');
+update public.communication_conversations
+set client_id = 'f3217777-7777-4777-8777-777777777777', link_state = 'linked'
+where id = 'e3217778-7777-4777-8777-777777777777';
+select is((select status::text from public.enquiries where id = 'e3217777-7777-4777-8777-777777777777'),
+  'reviewing', 'linking the conversation counts the earlier reply');
+
 -- Today: a new enquiry outranks a record contradiction.
 select ok(crm_private.pulse_rank('new_enquiry') < crm_private.pulse_rank('conflict'),
   'an unanswered new enquiry ranks above a record contradiction');
