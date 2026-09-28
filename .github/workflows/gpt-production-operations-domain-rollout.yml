@@ -78,6 +78,11 @@ jobs:
           npm run check:gpt-production-bundle
           npm run scan:secrets
 
+      - name: Refuse a GPT domain topology change outside the domain rollout
+        env:
+          GPT_TOPOLOGY_WORKER_NAME: ${{ env.WORKER_NAME }}
+        run: node scripts/assert-gpt-live-domain-topology.mjs
+
       - name: Deploy existing production GPT Worker on both custom domains
         shell: bash
         run: |

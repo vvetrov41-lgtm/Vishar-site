@@ -182,6 +182,12 @@ jobs:
           esac
           npx wrangler deploy --config "$GMAIL_DEPLOY_CONFIG" --name "$GMAIL_WORKER_NAME" --dry-run --outdir .wrangler/gmail-production-generated-phase
 
+      - name: Refuse a GPT domain topology change outside the domain rollout
+        if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
+        env:
+          GPT_TOPOLOGY_WORKER_NAME: ${{ env.GPT_WORKER_NAME }}
+        run: node scripts/assert-gpt-live-domain-topology.mjs
+
       - name: Deploy bootstrap Gmail Worker and provision only generated encryption key
         if: ${{ steps.phase.outputs.phase == 'bootstrap' }}
         shell: bash

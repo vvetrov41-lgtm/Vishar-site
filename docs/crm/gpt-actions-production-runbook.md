@@ -58,7 +58,7 @@ The unified projection lives in `docs/gpt-actions/unified/openapi.<domain>.yaml`
 | Research | `gpt-operations.vishartattoo.com` | `openapi.research.yaml` |
 | Cloudflare (owner only) | `gpt-cloudflare.vishartattoo.com` | `openapi.cloudflare.yaml` |
 
-Every schema uses the same OAuth application (`gpt-actions.vishartattoo.com/oauth/*`). Routing is by path, so a host only needs a Worker custom domain; the one-shot `gpt-production-unified-domain-rollout.yml` (ref `release/private-crm-rc960-inventory-gpt-unified-domains`) moves the Worker from four to twelve domains and can roll back to the exact four-domain config. After it, `gpt-production-worker-rollout.yml` expects the twelve-domain topology.
+Every schema uses the same OAuth application (`gpt-actions.vishartattoo.com/oauth/*`). Routing is by path, so a host only needs a Worker custom domain; the one-shot `gpt-production-unified-domain-rollout.yml` (ref `release/private-crm-rc960-inventory-gpt-unified-domains`) moves the Worker from four to twelve domains and can roll back to the exact four-domain config. After it, `gpt-production-worker-rollout.yml` expects the twelve-domain topology. No other workflow may change the domain set: the Gmail bootstrap, the historical GPT bootstrap/activate and the operations-domain rollout run `scripts/assert-gpt-live-domain-topology.mjs` before their first mutation and refuse if the config's domains differ from production.
 
 New client ceilings (profile-bound client only, owner-only via `configure_gpt_unified_domain_access`): `can_manage_automations` (templates, lifecycle rules), `can_manage_integrations` (integration status and management, booking sources), `can_administer_workspace` (reserved; no GPT operation uses it yet).
 
