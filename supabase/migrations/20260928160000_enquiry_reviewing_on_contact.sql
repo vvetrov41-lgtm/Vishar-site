@@ -84,7 +84,7 @@ begin
       and e.client_id = p_client_id
       and e.archived_at is null
       and e.status = 'new'
-      and (p_after is null or e.created_at < p_after)
+      and (p_after is null or e.created_at <= p_after)
     for update
   loop
     update public.enquiries e set status = 'reviewing' where e.id = v_enquiry.id;
