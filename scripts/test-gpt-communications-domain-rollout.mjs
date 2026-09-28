@@ -27,7 +27,9 @@ assert.ok(operationsIds.includes('scrapeWebPage'));
 for (const host of ['gpt-actions', 'gpt-operations', 'gpt-communications', 'gpt-cloudflare']) {
   assert.match(wrangler, new RegExp(`pattern = "${host}\\.vishartattoo\\.com", custom_domain = true`));
 }
-assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 4);
+// The unified-domain rollout later adds eight Unified GPT v2 hosts to the same
+// Worker; the Communications topology inside it is unchanged.
+assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 12);
 assert.match(communications, /^\s*- url: https:\/\/gpt-communications\.vishartattoo\.com$/m);
 for (const schema of [core, operations, communications]) {
   assert.match(schema, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/);
