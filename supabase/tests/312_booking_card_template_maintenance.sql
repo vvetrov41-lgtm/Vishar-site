@@ -193,7 +193,7 @@ select is(
 insert into public.artist_integrations
   (artist_id, integration_type, provider, integration_key, configuration, is_enabled)
 select 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'meta_cloud_api',
-       'template-backoff-312', '{}'::jsonb, true
+       'vladimir-template-backoff-312', '{}'::jsonb, true
 where not exists (
   select 1 from public.artist_integrations
   where artist_id = 'a1111111-1111-4111-8111-111111111111'
