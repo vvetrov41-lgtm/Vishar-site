@@ -304,6 +304,45 @@ async function ingestMessages(value, route, supabase) {
   }
 }
 
+// A reply the artist typed in the WhatsApp Business app on a Coexistence
+// number arrives as an `smb_message_echoes` change (documented by Meta for
+// Business-app onboarding). Recording it keeps the CRM honest about what the
+// client received and lets "the artist answered" be seen. The echo is
+// addressed *to* the client; it never opens a conversation, and the provider
+// message id deduplicates retries and echoes of messages the CRM sent itself.
+export function normaliseEcho(echo) {
+  const contactWaId = typeof echo?.to === 'string' ? echo.to.replace(/^\+/, '').trim() : '';
+  const providerMessageId = typeof echo?.id === 'string' ? echo.id.trim() : '';
+  const providerTimestamp = parseProviderTimestamp(echo?.timestamp);
+  if (!WA_ID.test(contactWaId) || !MESSAGE_ID.test(providerMessageId) || !providerTimestamp) return null;
+  const messageType = normaliseMessageType(echo?.type);
+  let body = null;
+  if (messageType === 'text') {
+    body = typeof echo?.text?.body === 'string' ? echo.text.body : '';
+    if (!body.trim() || body.length > 4096) return null;
+  }
+  return { contactWaId, providerMessageId, providerTimestamp, messageType, body };
+}
+
+async function ingestEchoes(value, route, supabase) {
+  const echoes = Array.isArray(value?.message_echoes) ? value.message_echoes : [];
+  for (const echo of echoes) {
+    const normalised = normaliseEcho(echo);
+    if (!normalised) continue;
+    await supabase.rpc('record_communication_outbound_echo', {
+      p_artist_id: route.artistId,
+      p_channel: 'whatsapp',
+      p_integration_key: route.integrationKey,
+      p_external_contact_id: normalised.contactWaId,
+      p_provider_message_id: normalised.providerMessageId,
+      p_provider_timestamp: normalised.providerTimestamp,
+      p_message_type: normalised.messageType,
+      p_body: normalised.body,
+      p_attachments: [],
+    });
+  }
+}
+
 async function ingestStatuses(value, route, supabase) {
   const statuses = Array.isArray(value?.statuses) ? value.statuses : [];
   for (const status of statuses) {
@@ -332,7 +371,7 @@ async function processPayload(payload, routes, matchedBindings, supabase) {
     if (!PROVIDER_ID.test(wabaId) || !Array.isArray(entry?.changes)) continue;
 
     for (const change of entry.changes) {
-      if (change?.field !== 'messages') continue;
+      if (change?.field !== 'messages' && change?.field !== 'smb_message_echoes') continue;
       const value = change?.value;
       const phoneNumberId = typeof value?.metadata?.phone_number_id === 'string'
         ? value.metadata.phone_number_id.trim()
@@ -347,10 +386,14 @@ async function processPayload(payload, routes, matchedBindings, supabase) {
         continue;
       }
 
+      if (change.field === 'smb_message_echoes') {
+        await ingestEchoes(value, route, supabase);
+        continue;
+      }
       await ingestMessages(value, route, supabase);
       await ingestStatuses(value, route, supabase);
-      // No smb_message_echoes or other undocumented coexistence event is
-      // interpreted here. Unknown change content is ignored without persistence.
+      // history and smb_app_state_sync are not interpreted; unknown change
+      // content is ignored without persistence.
     }
   }
   return summary;

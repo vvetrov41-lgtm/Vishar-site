@@ -87,10 +87,21 @@ other.
 
 Before changing the registration state of an existing WhatsApp Business App
 number, verify the current Meta coexistence/migration contract in Meta's current
-official documentation and the actual account UI. The CRM does not rely on an
-undocumented Business App message-echo event. If coexistence cannot be proven
+official documentation and the actual account UI. If coexistence cannot be proven
 for the actual account state, stop rather than migrating a live number by
 assumption.
+
+On a Coexistence number, replies the artist types in the WhatsApp Business app
+arrive as the `smb_message_echoes` webhook field, documented by Meta for
+Business-app onboarding
+(https://developers.facebook.com/docs/whatsapp/embedded-signup/custom-flows/onboarding-business-app-users/).
+The webhook records each echo through the backend-only
+`record_communication_outbound_echo` RPC as an outbound `provider_app` message
+on an existing conversation. It never opens a conversation, stores no media or
+caption, and deduplicates on the provider message id. Echoes only arrive when
+the Meta app is subscribed to the `smb_message_echoes` field (App Dashboard >
+WhatsApp > Configuration > Webhook fields). `history` and `smb_app_state_sync`
+are still not interpreted.
 
 The current CRM transport implements plain text sends only. It has no approved
 message-template send path. Verify the current Meta messaging-window and
@@ -455,7 +466,7 @@ This runbook does not authorise or implement:
 - automatic template messages outside the currently supported plain-text path;
 - marketing broadcasts;
 - importing historical WhatsApp chats;
-- undocumented WhatsApp Business App message echoes;
+- importing WhatsApp Business App `history` or contact sync (`smb_app_state_sync`);
 - GPT/ChatGPT sending client messages;
 - a global WhatsApp account shared by artists;
 - automatic number migration or registration;

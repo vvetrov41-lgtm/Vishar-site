@@ -324,6 +324,8 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'mark_enquiry_file_uploaded',
     'record_calendar_availability_outbox_result',
     'record_calendar_outbox_result',
+    // WhatsApp Business app replies (Coexistence smb_message_echoes).
+    'record_communication_outbound_echo',
     'record_google_contact_outbox_result',
     'record_outbox_attempt',
     'record_telegram_outbox_result',
