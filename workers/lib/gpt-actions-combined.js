@@ -1,5 +1,6 @@
 import { handleGptActionsRequest as handleCoreGptActionsRequest } from './gpt-actions.js';
 import { routeForFullGptAction } from './gpt-full-actions.js';
+import { routeForDomainOperation } from './gpt-domain-operations.js';
 import { handleGptCloudflareControlRequest } from './gpt-cloudflare-control.js';
 import { handleGptWebResearchRequest } from './gpt-web-research.js';
 
@@ -140,7 +141,8 @@ async function handleFullRequest(request, env, fetchImpl) {
     if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) body = await readJson(request);
     const route = contextRoute(request, url, body)
       || clientListRoute(request, url)
-      || routeForFullGptAction(request, url, body);
+      || routeForFullGptAction(request, url, body)
+      || routeForDomainOperation(request, url, body);
     if (!route) return null;
 
     const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${route.rpc}`, {
@@ -175,6 +177,10 @@ async function handleFullRequest(request, env, fetchImpl) {
       return json(200, parsed[0]);
     }
     if (route.responseKind === 'list') return json(200, Array.isArray(parsed) ? parsed : []);
+    // Unified domain wrappers return jsonb: an object, an array or a scalar.
+    if (route.responseKind === 'json') {
+      return json(200, parsed !== null && typeof parsed === 'object' ? parsed : { result: parsed });
+    }
     return json(200, parsed && typeof parsed === 'object' ? parsed : {});
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'invalid_request';

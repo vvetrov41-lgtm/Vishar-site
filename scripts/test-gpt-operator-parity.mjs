@@ -7,6 +7,8 @@ import {
   PARITY_METADATA,
   paritySummary,
 } from '../docs/gpt-actions/operator-parity.current.mjs';
+import { DOMAIN_OPERATIONS } from '../workers/lib/gpt-domain-operations.js';
+import { buildProjections } from './build-gpt-unified-openapi.mjs';
 
 const root = new URL('..', import.meta.url).pathname;
 const read = (path) => readFileSync(join(root, path), 'utf8');
@@ -129,17 +131,46 @@ for (const [path, marker, key] of workerEndpoints) {
 const pagesFunctions = walk('admin/functions', (path) => path.endsWith('.js'));
 assert.equal(pagesFunctions.length, 3, 'a new CRM Pages function appeared: classify it in the parity inventory');
 
-// ---------------- available rows equal the operations already imported
+// ------ available rows equal legacy imports plus the unified domain registry
 const legacySchemas = ['core', 'operations', 'communications', 'cloudflare']
   .map((name) => operationIds(read(`docs/gpt-actions/openapi.production.${name}.yaml`)));
 const imported = legacySchemas.flat();
 assert.equal(new Set(imported).size, imported.length, 'imported operationIds must be globally unique');
+const registryIds = DOMAIN_OPERATIONS.map((entry) => entry.id);
+for (const id of registryIds) assert.ok(!imported.includes(id), `${id} is both legacy and registry`);
 const availableIds = [
   ...OPERATOR_PARITY.filter((row) => row.gpt.status === 'available').map((row) => row.gpt.operationId),
   ...OWNER_EXTENSIONS.map((entry) => entry.operationId),
 ];
-assert.deepEqual([...availableIds].sort(), [...imported].sort(),
-  'available parity rows must equal exactly the operations the production schemas import');
+assert.deepEqual([...availableIds].sort(), [...imported, ...registryIds].sort(),
+  'available parity rows must equal exactly the legacy imports plus the implemented registry operations');
+for (const entry of DOMAIN_OPERATIONS) {
+  const row = OPERATOR_PARITY.find((candidate) => candidate.gpt.operationId === entry.id);
+  assert.equal(row.actionDomain, entry.domain, `${entry.id} registry domain must match parity`);
+  assert.ok(definedFunctions.has(entry.rpc), `${entry.id} routes to public.${entry.rpc}, which no migration defines`);
+  const writes = row.consequence !== 'read';
+  assert.equal(entry.consequential, writes, `${entry.id} consequential flag must match its parity consequence`);
+}
+
+// ------------------------------------- unified OpenAPI projections are exact
+const projections = buildProjections();
+for (const projection of projections) {
+  const expectedIds = [
+    ...OPERATOR_PARITY.filter((row) => row.actionDomain === projection.domain && row.gpt.status === 'available').map((row) => row.gpt.operationId),
+    ...OWNER_EXTENSIONS.filter((entry) => entry.actionDomain === projection.domain).map((entry) => entry.operationId),
+  ];
+  assert.deepEqual([...projection.operationIds].sort(), [...expectedIds].sort(), `${projection.domain} projection equals its available rows`);
+  assert.ok(projection.operationIds.length <= PARITY_METADATA.targetImportedSchemaOperationLimit);
+  if (projection.operationIds.length === 0) continue;
+  const committed = read(`docs/gpt-actions/unified/openapi.${projection.slug}.yaml`);
+  assert.equal(committed, projection.text, `docs/gpt-actions/unified/openapi.${projection.slug}.yaml is stale; run node scripts/build-gpt-unified-openapi.mjs`);
+  assert.ok(committed.includes(`- url: https://${projection.host}`), `${projection.domain} must serve from ${projection.host}`);
+  assert.match(committed, /authorizationUrl: https:\/\/gpt-actions\.vishartattoo\.com\/oauth\/authorize/, 'one OAuth application for every domain');
+  const withoutContext = committed.replace(/\n  \/v1\/context:[\s\S]*?(?=\n  \/v1\/|\ncomponents:)/, '');
+  assert.doesNotMatch(withoutContext, /\bartist_id: \{type|name: artist_id|required: \[artist_id/, `${projection.domain} accepts artist_id outside /v1/context`);
+}
+const projected = projections.flatMap((projection) => projection.operationIds);
+assert.equal(new Set(projected).size, projected.length, 'an operation is projected into exactly one domain');
 
 // ------------------------------------------ UI-only is only the human step
 const uiOnly = OPERATOR_PARITY.filter((row) => row.gpt.status === 'ui_only').map((row) => row.key).sort();
