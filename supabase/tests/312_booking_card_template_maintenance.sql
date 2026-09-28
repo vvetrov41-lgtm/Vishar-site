@@ -26,12 +26,12 @@ select ok(
 select ok(
   has_function_privilege(
     'service_role',
-    'public.service_record_booking_card_template_status(uuid,text,text,text)',
+    'public.service_record_booking_card_template_status(uuid,text,text,text,jsonb)',
     'EXECUTE'
   )
   and not has_function_privilege(
     'authenticated',
-    'public.service_record_booking_card_template_status(uuid,text,text,text)',
+    'public.service_record_booking_card_template_status(uuid,text,text,text,jsonb)',
     'EXECUTE'
   ),
   'only the trusted backend can record safe Meta template status'
@@ -88,6 +88,65 @@ select ok(
        from crm_private.booking_card_artist_settings
        where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
   'template approval regression disables WhatsApp booking cards immediately'
+);
+
+-- Meta's failure detail is kept in a bounded, content-free shape.
+select lives_ok(
+  $$ select public.service_record_booking_card_template_status(
+    'a1111111-1111-4111-8111-111111111111'::uuid,
+    'UNKNOWN',
+    'UNKNOWN',
+    'whatsapp_template_rejected',
+    '{"stage":"create_tattoo","http_status":400,"code":100,"subcode":2388024,"type":"OAuthException","message":"echoed <b>body</b>","fbtrace_id":"x"}'::jsonb
+  ) $$,
+  'a provider failure is recorded with its diagnostic'
+);
+
+select is(
+  (select whatsapp_template_last_provider_error
+   from crm_private.booking_card_artist_settings
+   where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
+  '{"stage":"create_tattoo","http_status":400,"code":100,"subcode":2388024,"type":"OAuthException"}'::jsonb,
+  'only stage, status, numeric code, subcode and type are stored; Meta text is dropped'
+);
+
+select lives_ok(
+  $$ select public.service_record_booking_card_template_status(
+    'a1111111-1111-4111-8111-111111111111'::uuid,
+    'UNKNOWN',
+    'UNKNOWN',
+    'whatsapp_template_rejected',
+    '{"stage":"drop table","http_status":"400","code":"1; select","type":"<script>"}'::jsonb
+  ) $$,
+  'malformed diagnostic values do not fail the status write'
+);
+
+select is(
+  (select whatsapp_template_last_provider_error
+   from crm_private.booking_card_artist_settings
+   where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
+  null::jsonb,
+  'malformed diagnostic values are dropped rather than stored'
+);
+
+select lives_ok(
+  $$ select public.service_record_booking_card_template_status(
+    'a1111111-1111-4111-8111-111111111111'::uuid,
+    'APPROVED',
+    'APPROVED',
+    null,
+    '{"stage":"list","http_status":400,"code":200}'::jsonb
+  ) $$,
+  'a success call is accepted'
+);
+
+select ok(
+  (select whatsapp_template_last_provider_error is null
+      and whatsapp_template_last_error_code is null
+      and whatsapp_enabled
+   from crm_private.booking_card_artist_settings
+   where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
+  'a successful check clears the previous diagnostic'
 );
 
 select * from finish(true);

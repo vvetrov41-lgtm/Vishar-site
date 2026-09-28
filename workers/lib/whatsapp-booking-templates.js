@@ -105,6 +105,39 @@ function templateDefinition(kind, name, language) {
   };
 }
 
+// Meta returns HTTP 400 for most template failures (permission #200, token
+// #190, duplicate content, policy), so the status alone cannot explain one.
+// Only the numeric code, subcode and the error type are kept: Meta's message
+// and user-facing text can echo request content and are never read.
+const PROVIDER_ERROR_TYPE = /^[A-Za-z_]{1,64}$/;
+const MAX_PROVIDER_ERROR_BYTES = 8192;
+
+function providerInteger(value) {
+  return Number.isSafeInteger(value) && value >= 0 && value <= 2_000_000_000 ? value : null;
+}
+
+async function readProviderError(response) {
+  const diagnostic = {
+    http_status: Number.isInteger(response.status) ? response.status : null,
+    code: null,
+    subcode: null,
+    type: null,
+  };
+  try {
+    const text = await response.text();
+    if (text.length > MAX_PROVIDER_ERROR_BYTES) return diagnostic;
+    const error = JSON.parse(text)?.error;
+    diagnostic.code = providerInteger(error?.code);
+    diagnostic.subcode = providerInteger(error?.error_subcode);
+    diagnostic.type = typeof error?.type === 'string' && PROVIDER_ERROR_TYPE.test(error.type)
+      ? error.type
+      : null;
+  } catch {
+    // An unreadable body keeps the HTTP status only.
+  }
+  return diagnostic;
+}
+
 async function graph(binding, path, init, fetchImpl) {
   let response;
   try {
@@ -123,6 +156,7 @@ async function graph(binding, path, init, fetchImpl) {
     });
   }
   if (!response.ok) {
+    const providerError = await readProviderError(response);
     const code = response.status === 401 || response.status === 403
       ? 'whatsapp_template_credentials_rejected'
       : response.status === 429
@@ -130,7 +164,7 @@ async function graph(binding, path, init, fetchImpl) {
         : response.status >= 500
           ? 'whatsapp_template_provider_unavailable'
           : 'whatsapp_template_rejected';
-    throw Object.assign(new Error('Meta template request failed'), { code });
+    throw Object.assign(new Error('Meta template request failed'), { code, providerError });
   }
   try {
     return await response.json();
@@ -197,9 +231,20 @@ async function createTemplate(binding, definition, fetchImpl) {
   }
 }
 
+async function atStage(stage, run) {
+  try {
+    return await run();
+  } catch (error) {
+    if (error?.providerError && !error.providerError.stage) {
+      error.providerError = { stage, ...error.providerError };
+    }
+    throw error;
+  }
+}
+
 async function ensureTargetTemplates(env, target, fetchImpl) {
   const binding = adminBinding(env, target);
-  let rows = await listTemplates(binding, fetchImpl);
+  let rows = await atStage('list', () => listTemplates(binding, fetchImpl));
   let created = 0;
 
   const tattooName = target.tattoo_template_name;
@@ -208,23 +253,23 @@ async function ensureTargetTemplates(env, target, fetchImpl) {
   let consultationStatus = resolveTemplate(rows, consultationName, target.template_language);
 
   if (!tattooStatus) {
-    await createTemplate(
+    await atStage('create_tattoo', () => createTemplate(
       binding,
       templateDefinition('tattoo', tattooName, target.template_language),
       fetchImpl,
-    );
+    ));
     created += 1;
   }
   if (!consultationStatus) {
-    await createTemplate(
+    await atStage('create_consultation', () => createTemplate(
       binding,
       templateDefinition('consultation', consultationName, target.template_language),
       fetchImpl,
-    );
+    ));
     created += 1;
   }
 
-  if (created > 0) rows = await listTemplates(binding, fetchImpl);
+  if (created > 0) rows = await atStage('readback', () => listTemplates(binding, fetchImpl));
   tattooStatus = resolveTemplate(rows, tattooName, target.template_language) || 'PENDING';
   consultationStatus = resolveTemplate(rows, consultationName, target.template_language) || 'PENDING';
 
@@ -263,6 +308,7 @@ export async function maintainWhatsappBookingTemplates(env, {
       ? target.consultation_template_status
       : 'UNKNOWN';
     let errorCode = null;
+    let providerError = null;
 
     try {
       const result = await ensureTargetTemplates(env, target, fetchImpl);
@@ -275,6 +321,7 @@ export async function maintainWhatsappBookingTemplates(env, {
       }
     } catch (error) {
       errorCode = safeErrorCode(error);
+      providerError = error?.providerError ?? null;
       summary.failed += 1;
     }
 
@@ -284,6 +331,8 @@ export async function maintainWhatsappBookingTemplates(env, {
         p_tattoo_status: tattooStatus,
         p_consultation_status: consultationStatus,
         p_error_code: errorCode,
+        // Sent only when Meta answered, so a success keeps the original call.
+        ...(providerError ? { p_provider_error: providerError } : {}),
       });
     } catch {
       summary.failed += errorCode ? 0 : 1;
@@ -300,4 +349,5 @@ export const __testing = Object.freeze({
   resolveTemplate,
   templateDefinition,
   safeErrorCode,
+  readProviderError,
 });

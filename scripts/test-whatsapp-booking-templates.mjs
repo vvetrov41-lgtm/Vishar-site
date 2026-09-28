@@ -183,4 +183,73 @@ function env() {
   assert.equal(JSON.stringify(result).includes(TOKEN), false);
 }
 
+{
+  const rpcCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
+      if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (value.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      if (String(init.method || 'GET').toUpperCase() === 'GET') return Response.json({ data: [] });
+      return Response.json({
+        error: {
+          message: 'Echoed Hi {{1}}, your tattoo session is booked',
+          error_user_msg: 'Echoed user text',
+          type: 'OAuthException',
+          code: 100,
+          error_subcode: 2388024,
+          fbtrace_id: 'TRACE123',
+        },
+      }, { status: 400 });
+    }
+    throw new Error(`unexpected request ${value}`);
+  };
+
+  const result = await maintainWhatsappBookingTemplates(env(), { fetchImpl });
+  assert.equal(result.failed, 1);
+  const record = rpcCalls.find((call) => call.name === 'service_record_booking_card_template_status');
+  assert.equal(record.args.p_error_code, 'whatsapp_template_rejected');
+  assert.deepEqual(record.args.p_provider_error, {
+    stage: 'create_tattoo',
+    http_status: 400,
+    code: 100,
+    subcode: 2388024,
+    type: 'OAuthException',
+  });
+  const serialised = JSON.stringify(rpcCalls);
+  assert.equal(serialised.includes('Echoed'), false);
+  assert.equal(serialised.includes('TRACE123'), false);
+  assert.equal(serialised.includes(TOKEN), false);
+}
+
+{
+  const rpcCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
+      if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    return new Response('<html>not json</html>', { status: 400 });
+  };
+
+  await maintainWhatsappBookingTemplates(env(), { fetchImpl });
+  const record = rpcCalls.find((call) => call.name === 'service_record_booking_card_template_status');
+  assert.deepEqual(record.args.p_provider_error, {
+    stage: 'list',
+    http_status: 400,
+    code: null,
+    subcode: null,
+    type: null,
+  });
+}
+
 console.log('WhatsApp booking template maintenance tests passed.');
