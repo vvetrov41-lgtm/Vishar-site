@@ -14,6 +14,9 @@
 -- 3. While the restriction is recorded, the target is claimed once a day
 --    instead of every 30 minutes; a successful check clears it and normal
 --    cadence resumes. WhatsApp messaging is untouched.
+-- 4. WABAs with approved templates are re-read once a day (list and health
+--    only, nothing created), and a restriction recorded before this release
+--    is probed once immediately to capture Meta's message and trace id.
 
 alter table crm_private.booking_card_artist_settings
   add column if not exists whatsapp_waba_health jsonb,
@@ -100,6 +103,10 @@ begin
       and (
         s.whatsapp_tattoo_template_status is distinct from 'APPROVED'
         or s.whatsapp_consultation_template_status is distinct from 'APPROVED'
+        -- Approved WABAs are re-read once a day (list + health only; nothing
+        -- is created when both templates exist) so their health is current.
+        or s.whatsapp_waba_health_checked_at is null
+        or s.whatsapp_waba_health_checked_at <= now() - interval '24 hours'
       )
       and (
         s.whatsapp_template_checked_at is null
@@ -153,6 +160,14 @@ begin
   from claimed c;
 end;
 $$;
+
+-- One immediate probe for a WABA whose restriction was recorded before the
+-- message and trace id were kept, so they are captured after this release.
+update crm_private.booking_card_artist_settings s
+set whatsapp_template_checked_at = null
+where (s.whatsapp_template_last_provider_error ->> 'code') = '100'
+  and (s.whatsapp_template_last_provider_error ->> 'subcode') = '2494160'
+  and not (s.whatsapp_template_last_provider_error ? 'fbtrace_id');
 
 revoke all on function public.service_claim_booking_card_template_targets(integer)
   from public, anon, authenticated;
@@ -253,13 +268,9 @@ begin
           then p_waba_health
         else s.whatsapp_waba_health
       end,
-      whatsapp_waba_health_checked_at = case
-        when jsonb_typeof(p_waba_health) = 'object'
-         and p_waba_health - array['can_send_message', 'entities'] = '{}'::jsonb
-         and octet_length(p_waba_health::text) <= 4096
-          then now()
-        else s.whatsapp_waba_health_checked_at
-      end,
+      -- The attempt time, so a failed health read does not re-claim an
+      -- approved WABA every cycle.
+      whatsapp_waba_health_checked_at = now(),
       whatsapp_template_checked_at = now(),
       updated_at = now()
   where s.artist_id = p_artist_id

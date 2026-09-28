@@ -234,5 +234,34 @@ select is(
   'any other failure keeps the normal 30-minute cadence'
 );
 
+-- An approved WABA is re-read daily for health, not every cycle.
+update crm_private.booking_card_artist_settings
+set whatsapp_template_last_provider_error = null,
+    whatsapp_template_last_error_code = null,
+    whatsapp_tattoo_template_status = 'APPROVED',
+    whatsapp_consultation_template_status = 'APPROVED',
+    whatsapp_waba_health_checked_at = now() - interval '2 hours',
+    whatsapp_template_checked_at = now() - interval '2 hours'
+where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid;
+
+select is(
+  (select count(*)::int from public.service_claim_booking_card_template_targets(5)
+   where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
+  0,
+  'an approved WABA with fresh health is not re-read'
+);
+
+update crm_private.booking_card_artist_settings
+set whatsapp_waba_health_checked_at = now() - interval '25 hours',
+    whatsapp_template_checked_at = now() - interval '2 hours'
+where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid;
+
+select is(
+  (select count(*)::int from public.service_claim_booking_card_template_targets(5)
+   where artist_id = 'a1111111-1111-4111-8111-111111111111'::uuid),
+  1,
+  'an approved WABA is re-read once its health is a day old'
+);
+
 select * from finish(true);
 rollback;
