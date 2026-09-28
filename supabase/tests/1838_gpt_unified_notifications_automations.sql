@@ -1,4 +1,4 @@
--- 1015_gpt_unified_notifications_automations.sql
+-- 1838_gpt_unified_notifications_automations.sql
 --
 -- Unified GPT v2 Communications remainder, Notifications/Templates and
 -- Automations wrappers: closed surface, the automations ceiling, Artist-scoped
