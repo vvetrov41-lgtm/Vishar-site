@@ -123,10 +123,15 @@ const TOKEN_LIKE = /\bEA[A-Za-z0-9]{20,}|[A-Za-z0-9_-]{40,}/;
 // claim RPC waits a day between attempts while it is recorded.
 export const TEMPLATE_RESTRICTION = Object.freeze({ code: 100, subcode: 2494160 });
 
+function utf8Length(value) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
 function providerMessage(value) {
   if (typeof value !== 'string') return null;
   const text = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!text || text.length > MAX_PROVIDER_MESSAGE) return null;
+  // Bytes, not characters: the stored diagnostic has a byte cap.
+  if (!text || utf8Length(text) > MAX_PROVIDER_MESSAGE) return null;
   if (text.includes('{{') || TOKEN_LIKE.test(text)) return null;
   const bodyLines = [...TATTOO_BODY.split('\n'), ...CONSULTATION_BODY.split('\n')]
     .map((line) => line.trim())
@@ -288,9 +293,11 @@ async function createTemplate(binding, definition, fetchImpl) {
 
 const HEALTH_STATE = /^[A-Z][A-Z_]{2,31}$/;
 const HEALTH_ENTITY = /^[A-Z][A-Z_]{2,31}$/;
-const MAX_HEALTH_ENTITIES = 6;
-const MAX_HEALTH_ERRORS = 4;
-const MAX_HEALTH_TEXT = 200;
+const MAX_HEALTH_ENTITIES = 4;
+const MAX_HEALTH_ERRORS = 2;
+const MAX_HEALTH_TEXT = 160;
+// Matches the database cap on the stored health object.
+const MAX_HEALTH_BYTES = 4000;
 
 function healthText(value) {
   if (typeof value !== 'string') return null;
@@ -314,7 +321,7 @@ async function readWabaHealth(binding, fetchImpl) {
     if (!health || typeof health !== 'object') return null;
     const state = (value) => (typeof value === 'string' && HEALTH_STATE.test(value) ? value : null);
     const entities = Array.isArray(health.entities) ? health.entities : [];
-    return {
+    const summary = {
       can_send_message: state(health.can_send_message),
       entities: entities.slice(0, MAX_HEALTH_ENTITIES).map((entity) => ({
         entity_type: typeof entity?.entity_type === 'string' && HEALTH_ENTITY.test(entity.entity_type)
@@ -330,6 +337,16 @@ async function readWabaHealth(binding, fetchImpl) {
           })),
       })),
     };
+    // Multibyte text can still exceed the stored cap: shed Meta's suggested
+    // fixes first, then descriptions, keeping every code and state.
+    const fits = () => utf8Length(JSON.stringify(summary)) <= MAX_HEALTH_BYTES;
+    for (const field of ['possible_solution', 'error_description']) {
+      if (fits()) break;
+      for (const entity of summary.entities) {
+        for (const error of entity.errors) error[field] = null;
+      }
+    }
+    return fits() ? summary : null;
   } catch {
     return null;
   }

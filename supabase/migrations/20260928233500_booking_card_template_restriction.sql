@@ -34,6 +34,8 @@ alter table crm_private.booking_card_artist_settings
       and octet_length(whatsapp_waba_health::text) <= 4096
     )
   );
+-- The worker bounds health to 4,000 bytes and the provider message to 300
+-- bytes, so every accepted value fits these caps.
 
 comment on column crm_private.booking_card_artist_settings.whatsapp_waba_health is
   'Meta WABA health_status from the last template maintenance run: can_send_message and per-entity error code, description and suggested fix. No tokens.';
@@ -48,7 +50,7 @@ alter table crm_private.booking_card_artist_settings
       jsonb_typeof(whatsapp_template_last_provider_error) = 'object'
       and whatsapp_template_last_provider_error
         - array['stage', 'http_status', 'code', 'subcode', 'type', 'message', 'fbtrace_id'] = '{}'::jsonb
-      and octet_length(whatsapp_template_last_provider_error::text) <= 768
+      and octet_length(whatsapp_template_last_provider_error::text) <= 1024
     )
   );
 
@@ -237,7 +239,7 @@ begin
       end,
       'message', case
         when jsonb_typeof(p_provider_error -> 'message') = 'string'
-         and char_length(p_provider_error ->> 'message') between 1 and 300
+         and octet_length(p_provider_error ->> 'message') between 1 and 300
          and (p_provider_error ->> 'message') !~ '[[:cntrl:]]'
          and position('{{' in (p_provider_error ->> 'message')) = 0
           then p_provider_error ->> 'message'

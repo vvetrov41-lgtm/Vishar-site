@@ -352,4 +352,31 @@ function env() {
   assert.equal(__testing.providerMessage(`Bad body: ${__testing.TATTOO_BODY.split('\n')[1]}`), null);
 }
 
+{
+  // Oversized health from Meta is shed to fit the stored cap, never dropped
+  // silently to stale state; multibyte messages are bounded in bytes.
+  const long = 'é'.repeat(400);
+  const binding = { wabaId: WABA, accessToken: TOKEN };
+  const fetchImpl = async () => Response.json({
+    health_status: {
+      can_send_message: 'BLOCKED',
+      entities: Array.from({ length: 10 }, () => ({
+        entity_type: 'WABA',
+        can_send_message: 'BLOCKED',
+        errors: Array.from({ length: 10 }, () => ({
+          error_code: 141010,
+          error_description: long,
+          possible_solution: long,
+        })),
+      })),
+    },
+  });
+  const health = await __testing.readWabaHealth(binding, fetchImpl);
+  assert.ok(health, 'health is kept');
+  assert.ok(new TextEncoder().encode(JSON.stringify(health)).byteLength <= 4000);
+  assert.equal(health.entities[0].errors[0].error_code, 141010);
+  assert.equal(__testing.providerMessage('ж'.repeat(151)), null);
+  assert.equal(__testing.providerMessage('ж'.repeat(150)), 'ж'.repeat(150));
+}
+
 console.log('WhatsApp booking template maintenance tests passed.');
