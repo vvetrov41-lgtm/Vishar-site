@@ -321,8 +321,8 @@ select is(
 
 select is(
   (select status::text from public.enquiries where id = (select enquiry_b from fixtures)),
-  'new',
-  'a consultation does not convert the enquiry into tattoo work'
+  'reviewing',
+  'a consultation moves the enquiry to reviewing, not into tattoo work'
 );
 
 -- ---------------------------------------------------------------------------
