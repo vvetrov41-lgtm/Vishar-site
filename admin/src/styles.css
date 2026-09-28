@@ -1224,3 +1224,43 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
 }
 .activity-feed-error button { flex: 0 0 auto; }
 .activity-feed-sentinel { width: 100%; height: 1px; }
+
+/* Compact enquiry toolbar (IA phase 1) ------------------------------------ */
+.enquiry-toolbar-card { padding-block: 10px; }
+.enquiry-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.enquiry-toolbar .enquiry-view-toggle { margin-bottom: 0; }
+.enquiry-toolbar .toolbar-status { flex: 1 1 150px; min-width: 0; }
+.enquiry-toolbar .toolbar-search { flex: 999 1 220px; min-width: 0; }
+.enquiry-toolbar select,
+.enquiry-toolbar input { margin: 0; width: 100%; }
+
+/* In-page section jumps (IA phase 1) ------------------------------------- */
+.section-jump {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 0 0 12px;
+  padding: 6px 0;
+  background: var(--bg);
+  scrollbar-width: none;
+}
+.section-jump::-webkit-scrollbar { display: none; }
+.section-jump-link {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+section.card[id] { scroll-margin-top: 56px; }

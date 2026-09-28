@@ -26,7 +26,7 @@ import { useState } from 'react';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { CollapsedSection } from '../components/CollapsedSection';
-import { DetailBackLink, RecordArtistContext } from '../components/DetailContext';
+import { DetailHeader } from '../components/DetailContext';
 import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel';
 import { EnquiryContactConflict } from '../components/EnquiryContactConflict';
 import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
@@ -189,8 +189,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
 
   return (
     <>
-      <DetailBackLink to="/enquiries" sectionLabel={t('nav.enquiries')} />
-      <RecordArtistContext artistId={enquiry.artist_id} />
+      <DetailHeader to="/enquiries" sectionLabel={t('nav.enquiries')} artistId={enquiry.artist_id} />
 
       {/* The person is the recognisable object. The enquiry number remains
           available underneath as a secondary technical identifier. */}

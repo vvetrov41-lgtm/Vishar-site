@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { useArtistScope } from '../lib/artist-scope';
 import { useLanguage } from '../lib/i18n';
 import { useRouter } from '../lib/router';
@@ -6,7 +7,7 @@ import { useRouter } from '../lib/router';
  * Back to wherever the operator came from (keeping that list's filters and
  * scroll position); on a direct link with no earlier CRM screen, to `to`.
  */
-export function DetailBackLink({ to, sectionLabel }: { to: string; sectionLabel: string }) {
+export function DetailBackLink({ to, sectionLabel, extra }: { to: string; sectionLabel: string; extra?: ReactNode }) {
   const { language } = useLanguage();
   const { canGoBack, goBack } = useRouter();
   const label = canGoBack
@@ -28,6 +29,7 @@ export function DetailBackLink({ to, sectionLabel }: { to: string; sectionLabel:
         >
           ← {label}
         </a>
+        {extra}
       </div>
     </nav>
   );
@@ -92,5 +94,32 @@ export function BackButton({ to, fallbackLabel, className }: { to: string; fallb
     >
       {canGoBack ? (language === 'ru' ? '← Назад' : '← Back') : fallbackLabel}
     </a>
+  );
+}
+
+/**
+ * One header row for a record: Back, and the record's artist as a chip.
+ * Only when the CRM filter points at another artist (or the artist is
+ * unavailable) does the full notice with its switch action appear below.
+ */
+export function DetailHeader({ to, sectionLabel, artistId }: { to: string; sectionLabel: string; artistId: string }) {
+  const { artists, selectedArtistId } = useArtistScope();
+  const { language } = useLanguage();
+  const artist = artists.find((candidate) => candidate.id === artistId) ?? null;
+  const mismatch = Boolean(selectedArtistId && selectedArtistId !== artistId);
+  const inline = artist && !mismatch;
+  return (
+    <>
+      <DetailBackLink
+        to={to}
+        sectionLabel={sectionLabel}
+        extra={inline ? (
+          <span className="badge record-artist-chip" role="status">
+            {language === 'ru' ? 'Мастер' : 'Artist'}: {artist.display_name}
+          </span>
+        ) : null}
+      />
+      {inline ? null : <RecordArtistContext artistId={artistId} />}
+    </>
   );
 }

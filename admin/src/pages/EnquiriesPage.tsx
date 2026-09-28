@@ -345,39 +345,32 @@ export function EnquiriesPage() {
         </details>
       ) : null}
 
-      <div className="card">
-        <div className="enquiry-view-toggle" role="group" aria-label={t('enquiries.viewLabel')}>
-          <button
-            type="button"
-            aria-pressed={view === 'list'}
-            className={view === 'list' ? 'active' : ''}
-            onClick={() => changeView('list')}
-          >
-            {t('enquiries.viewList')}
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === 'board'}
-            className={view === 'board' ? 'active' : ''}
-            onClick={() => changeView('board')}
-          >
-            {t('enquiries.viewBoard')}
-          </button>
-        </div>
-
-        <div className="field-row">
-          <div>
-            <label htmlFor="enquiry-search">{t('enquiries.searchByReference')}</label>
-            <input
-              id="enquiry-search" type="search" inputMode="search"
-              placeholder={t('enquiries.searchPlaceholder')}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
+      {/* One compact toolbar: on a phone the list starts right below it
+          instead of after half a screen of labelled fields. The labels stay
+          for assistive technology. */}
+      <div className="card enquiry-toolbar-card">
+        <div className="enquiry-toolbar">
+          <div className="enquiry-view-toggle" role="group" aria-label={t('enquiries.viewLabel')}>
+            <button
+              type="button"
+              aria-pressed={view === 'list'}
+              className={view === 'list' ? 'active' : ''}
+              onClick={() => changeView('list')}
+            >
+              {t('enquiries.viewList')}
+            </button>
+            <button
+              type="button"
+              aria-pressed={view === 'board'}
+              className={view === 'board' ? 'active' : ''}
+              onClick={() => changeView('board')}
+            >
+              {t('enquiries.viewBoard')}
+            </button>
           </div>
           {view === 'list' ? (
-            <div>
-              <label htmlFor="enquiry-status">{t('enquiries.status')}</label>
+            <div className="toolbar-status">
+              <label htmlFor="enquiry-status" className="visually-hidden">{t('enquiries.status')}</label>
               <select
                 id="enquiry-status" value={status}
                 onChange={(event) => setStatus(event.target.value as '' | EnquiryStatus)}
@@ -389,13 +382,20 @@ export function EnquiriesPage() {
                 ))}
               </select>
             </div>
-          ) : (
-            <div className="enquiry-board-scope">
-              <span>{t('enquiries.status')}</span>
-              <p className="meta">{t('enquiries.boardActiveOnly')}</p>
-            </div>
-          )}
+          ) : null}
+          <div className="toolbar-search">
+            <label htmlFor="enquiry-search" className="visually-hidden">{t('enquiries.searchByReference')}</label>
+            <input
+              id="enquiry-search" type="search" inputMode="search"
+              placeholder={t('enquiries.searchPlaceholder')}
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </div>
         </div>
+        {view === 'board' ? (
+          <p className="meta enquiry-board-scope" style={{ margin: '8px 0 0' }}>{t('enquiries.boardActiveOnly')}</p>
+        ) : null}
       </div>
 
       {loading && !data ? <LoadingState label={t('enquiries.loading')} /> : null}
