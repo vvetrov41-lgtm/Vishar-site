@@ -20,6 +20,8 @@
   if (!section) return;
   var portfolio = document.getElementById('portfolio');
   var portfolioIntro = document.getElementById('portfolio-intro');
+  var leadFeature = portfolioIntro ? portfolioIntro.querySelector('.portfolio-feature--lead') : null;
+  var followFeature = portfolioIntro ? portfolioIntro.querySelector('.portfolio-feature--follow') : null;
   var stage = section.querySelector('.machine-stage');
   var canvasHost = section.querySelector('.machine-canvas');
   var poster = section.querySelector('.machine-poster');
@@ -165,6 +167,23 @@
     var fromSequence = smooth((p - 0.964) / 0.026);
     var pastStage = smooth(pastStageShare() / 0.055);
     return Math.max(fromSequence, pastStage);
+  }
+
+  function updatePortfolioMotion() {
+    if (!portfolioIntro) return;
+    if (prefersReducedMotion()) {
+      portfolioIntro.style.setProperty('--lead-scroll-zoom', '0');
+      portfolioIntro.style.setProperty('--follow-scroll-zoom', '0');
+      return;
+    }
+    var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    function viewProgress(el) {
+      if (!el) return 0;
+      var rect = el.getBoundingClientRect();
+      return smooth(clamp((vh - rect.top) / Math.max(1, vh + rect.height), 0, 1));
+    }
+    portfolioIntro.style.setProperty('--lead-scroll-zoom', (0.04 * viewProgress(leadFeature)).toFixed(4));
+    portfolioIntro.style.setProperty('--follow-scroll-zoom', (0.035 * viewProgress(followFeature)).toFixed(4));
   }
 
   function updateCssState(s) {
@@ -667,6 +686,7 @@
     if (state.raf !== null) { cancelAnimationFrame(state.raf); state.raf = null; }
   }
   function onScroll() {
+    updatePortfolioMotion();
     if (FORCED_S !== null || debugOverride !== null) return;
     state.target = scrollValue();
     updateCssState(state.target);
@@ -722,7 +742,11 @@
   var resizeTimer = null;
   function onResize() {
     if (resizeTimer) clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () { resizeTimer = null; if (renderer) resizeRenderer(false); else measure(); }, 150);
+    resizeTimer = setTimeout(function () {
+      resizeTimer = null;
+      if (renderer) resizeRenderer(false); else measure();
+      updatePortfolioMotion();
+    }, 150);
   }
 
   // ── Debug ───────────────────────────────────────────────────────────────
@@ -1025,6 +1049,7 @@
   window.addEventListener('resize', onResize);
   measure();
   updateCssState(scrollValue());
+  updatePortfolioMotion();
 
   updateDiagnostic();
 
