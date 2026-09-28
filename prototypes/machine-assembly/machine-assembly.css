@@ -109,9 +109,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   filter: saturate(.94) contrast(1.03);
 }
 
-/* Work 1: keep the first tattoo as a viewport-filling close-up, with a tighter crop
-   in a little more and soften the lower edge so the second portrait can melt
-   into it instead of starting after a hard cut. */
+/* Work 1: tighter full-screen close-up with a clearer bottom falloff. */
 .portfolio-feature--lead {
   position: relative;
   height: calc(100vh + 2.5rem);
@@ -124,34 +122,32 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   height: 100%;
   max-width: none;
   object-fit: cover;
-  object-position: 52% 43%;
+  object-position: 52% 40%;
   opacity: calc(var(--handoff, 0) * .98);
-  transform: scale(calc(var(--handoff-scale, 1.004) * 1.12));
+  transform: scale(calc(var(--handoff-scale, 1.004) * 1.18));
   will-change: opacity, transform;
   transition: opacity .18s linear, transform .28s ease-out;
   -webkit-mask-image: linear-gradient(
     to bottom,
     #000 0%,
-    #000 74%,
-    rgba(0, 0, 0, .98) 82%,
-    rgba(0, 0, 0, .78) 90%,
-    rgba(0, 0, 0, .28) 96%,
+    #000 72%,
+    rgba(0, 0, 0, .98) 80%,
+    rgba(0, 0, 0, .72) 88%,
+    rgba(0, 0, 0, .24) 95%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     #000 0%,
-    #000 74%,
-    rgba(0, 0, 0, .98) 82%,
-    rgba(0, 0, 0, .78) 90%,
-    rgba(0, 0, 0, .28) 96%,
+    #000 72%,
+    rgba(0, 0, 0, .98) 80%,
+    rgba(0, 0, 0, .72) 88%,
+    rgba(0, 0, 0, .24) 95%,
     transparent 100%
   );
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
 }
-/* Keep the side/top vignette subtle and let the bottom stay softer for the
-   overlap transition into the Pennywise portrait. */
 .portfolio-feature--lead::after {
   content: '';
   position: absolute;
@@ -159,36 +155,53 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   pointer-events: none;
   opacity: var(--handoff, 0);
   background:
-    linear-gradient(to right,
+    linear-gradient(
+      to right,
       rgba(0,0,0,.80) 0%,
       rgba(0,0,0,.26) 5%,
       transparent 12%,
       transparent 88%,
       rgba(0,0,0,.26) 95%,
-      rgba(0,0,0,.80) 100%),
-    linear-gradient(to bottom,
+      rgba(0,0,0,.80) 100%
+    ),
+    linear-gradient(
+      to bottom,
       rgba(0,0,0,.72) 0%,
       rgba(0,0,0,.18) 6%,
       transparent 14%,
-      transparent 76%,
-      rgba(0,0,0,.10) 84%,
-      rgba(0,0,0,.24) 90%,
-      rgba(0,0,0,.62) 100%);
+      transparent 72%,
+      rgba(0,0,0,.18) 80%,
+      rgba(0,0,0,.42) 89%,
+      rgba(0,0,0,.78) 100%
+    );
 }
 :root.machine-static .portfolio-feature--lead { --handoff: 1; --handoff-scale: 1; }
 
-/* Work 2: make Pennywise larger and let it overlap upward with a soft top
-   fade, so the two cinematic images blend together instead of being separated
-   by a distinct black gap. */
+/* Work 2: reduce the overlap and add a soft dark separator between frames. */
 .portfolio-feature--follow {
   position: relative;
   z-index: 1;
-  margin-top: -18vh;
-  margin-top: -18svh;
+  margin-top: -8vh;
+  margin-top: -8svh;
   height: 98vh;
   height: 98svh;
   overflow: hidden;
   background: transparent;
+}
+.portfolio-feature--follow::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 18svh;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,.92) 0%,
+    rgba(0,0,0,.68) 26%,
+    rgba(0,0,0,.28) 62%,
+    rgba(0,0,0,0) 100%
+  );
 }
 .portfolio-feature--follow img {
   display: block;
@@ -198,27 +211,29 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   object-fit: cover;
   object-position: 50% 50%;
   margin: 0;
-  transform: scale(1.08);
+  transform: scale(1.06);
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    rgba(0, 0, 0, .18) 6%,
-    rgba(0, 0, 0, .72) 12%,
-    #000 19%,
+    rgba(0,0,0,.10) 7%,
+    rgba(0,0,0,.52) 14%,
+    rgba(0,0,0,.88) 22%,
+    #000 30%,
     #000 78%,
-    rgba(0, 0, 0, .92) 88%,
-    rgba(0, 0, 0, .48) 95%,
+    rgba(0,0,0,.92) 88%,
+    rgba(0,0,0,.48) 95%,
     transparent 100%
   );
   mask-image: linear-gradient(
     to bottom,
     transparent 0%,
-    rgba(0, 0, 0, .18) 6%,
-    rgba(0, 0, 0, .72) 12%,
-    #000 19%,
+    rgba(0,0,0,.10) 7%,
+    rgba(0,0,0,.52) 14%,
+    rgba(0,0,0,.88) 22%,
+    #000 30%,
     #000 78%,
-    rgba(0, 0, 0, .92) 88%,
-    rgba(0, 0, 0, .48) 95%,
+    rgba(0,0,0,.92) 88%,
+    rgba(0,0,0,.48) 95%,
     transparent 100%
   );
   -webkit-mask-repeat: no-repeat;
@@ -227,18 +242,21 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 
 @media (min-width: 900px) {
   .portfolio-feature--lead img {
-    object-position: 51% 42%;
-    transform: scale(calc(var(--handoff-scale, 1.004) * 1.08));
+    object-position: 51% 40%;
+    transform: scale(calc(var(--handoff-scale, 1.004) * 1.12));
   }
   .portfolio-feature--follow {
-    margin-top: -14vh;
-    margin-top: -14svh;
+    margin-top: -6vh;
+    margin-top: -6svh;
     height: 94vh;
     height: 94svh;
   }
+  .portfolio-feature--follow::before {
+    height: 14svh;
+  }
   .portfolio-feature--follow img {
     object-position: 50% 48%;
-    transform: scale(1.04);
+    transform: scale(1.03);
   }
 }
 
