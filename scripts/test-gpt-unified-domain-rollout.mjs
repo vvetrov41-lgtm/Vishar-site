@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PARITY_METADATA } from '../docs/gpt-actions/operator-parity.current.mjs';
 import { buildProjections } from './build-gpt-unified-openapi.mjs';
+import { readdirSync } from 'node:fs';
+import {
+  assertSameTopology, configCustomDomains, liveCustomDomains,
+} from './assert-gpt-live-domain-topology.mjs';
 
 const workflow = readFileSync(new URL('../.github/workflows/gpt-production-unified-domain-rollout.yml', import.meta.url), 'utf8');
 const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
@@ -63,4 +67,57 @@ for (const path of ['gpt-billing.vishartattoo.com/v1/invoices', 'gpt-workspace.v
   assert.ok(workflow.includes(`probe 401 "https://${path}"`), `readback must prove ${path} requires OAuth`);
 }
 
-console.log('GPT unified-domain rollout tests passed: exact one-shot admission, four-to-twelve topology, dry-run-proven rollback, no database, secret or OAuth mutation.');
+// No other deployer of the shared GPT config can change the domain topology.
+// Each one either pins an exact domain count for its own one-shot transition,
+// is this rollout, or runs the live-topology guard before its first mutation.
+const configured = configCustomDomains(wrangler);
+assert.equal(configured.length, 12);
+assert.doesNotThrow(() => assertSameTopology(configured, [...configured]));
+assert.throws(() => assertSameTopology(configured, configured.slice(0, 4)), /Would add: .*gpt-projects/);
+assert.throws(() => assertSameTopology(configured.slice(0, 4), configured), /Would drop: .*gpt-projects/);
+assert.throws(() => assertSameTopology([], []), /no custom domains/);
+{
+  const seen = [];
+  const live = await liveCustomDomains({
+    accountId: 'acct', apiToken: 'token', workerName: 'vishar-gpt-actions-production',
+    fetchImpl: async (url, init) => {
+      seen.push({ url, auth: init.headers.authorization });
+      return new Response(JSON.stringify({ success: true, result: [
+        { hostname: 'gpt-actions.vishartattoo.com', service: 'vishar-gpt-actions-production' },
+        { hostname: 'gmail.vishartattoo.com', service: 'vishar-gmail-production' },
+      ] }), { status: 200 });
+    },
+  });
+  assert.deepEqual(live, ['gpt-actions.vishartattoo.com'], 'only the GPT Worker domains are compared');
+  assert.equal(seen[0].url, 'https://api.cloudflare.com/client/v4/accounts/acct/workers/domains?service=vishar-gpt-actions-production');
+  assert.equal(seen[0].auth, 'Bearer token');
+  await assert.rejects(
+    liveCustomDomains({ accountId: 'a', apiToken: 't', workerName: 'w', fetchImpl: async () => new Response('{}', { status: 403 }) }),
+    /refusing to deploy/,
+  );
+}
+const workflowDir = new URL('../.github/workflows/', import.meta.url);
+const pinnedTransitions = new Map([
+  ['gpt-production-communications-domain-rollout.yml', 3],
+  ['gpt-production-cloudflare-domain-rollout.yml', 4],
+  ['gpt-production-worker-rollout.yml', 12],
+  ['gpt-production-unified-domain-rollout.yml', 12],
+]);
+for (const name of readdirSync(workflowDir).filter((file) => file.endsWith('.yml'))) {
+  const text = readFileSync(new URL(name, workflowDir), 'utf8');
+  const lines = text.split('\n');
+  const deploys = lines.findIndex((line) => /wrangler deploy --config wrangler\.gpt-actions\.production\.toml/.test(line) && !/--dry-run/.test(line));
+  if (deploys === -1) continue;
+  if (pinnedTransitions.has(name)) {
+    const count = pinnedTransitions.get(name);
+    assert.ok(text.includes(`[ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq ${count} ]`),
+      `${name} must pin its exact ${count}-domain config`);
+    continue;
+  }
+  const firstMutation = lines.findIndex((line) => (/wrangler deploy/.test(line) && !/--dry-run/.test(line)) || /wrangler secret put/.test(line));
+  const guardLine = lines.findIndex((line) => line.includes('node scripts/assert-gpt-live-domain-topology.mjs'));
+  assert.ok(guardLine !== -1 && guardLine < firstMutation,
+    `${name} deploys the GPT config and must run the live-topology guard before its first mutation`);
+}
+
+console.log('GPT unified-domain rollout tests passed: exact one-shot admission, four-to-twelve topology, dry-run-proven rollback, no database, secret or OAuth mutation, and no other deployer can change the topology.');
