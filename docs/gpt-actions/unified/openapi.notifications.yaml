@@ -65,6 +65,165 @@ paths:
         - {name: follow_up_id, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Follow-up cancellation result}}
+  /v1/follow-ups/{follow_up_id}/snooze:
+    post:
+      operationId: snoozeFollowUp
+      summary: "Move a follow-up to a later time"
+      x-openai-isConsequential: true
+      parameters:
+        - {name: "follow_up_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["until"]
+              properties:
+                until: {type: "string", format: "date-time"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/notifications:
+    get:
+      operationId: listNotifications
+      summary: "List the signed-in user notifications for the active artist"
+      x-openai-isConsequential: false
+      parameters:
+        - {name: "status", in: "query", required: false, schema: {type: "string", enum: ["pending", "delivered", "read", "dismissed"]}}
+        - {name: "limit", in: "query", required: false, schema: {type: "integer", minimum: 1, maximum: 100, default: 50}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/notifications/{notification_id}/read:
+    post:
+      operationId: markNotificationRead
+      summary: "Mark one notification as read"
+      x-openai-isConsequential: true
+      parameters:
+        - {name: "notification_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/notifications/read-all:
+    post:
+      operationId: markAllNotificationsRead
+      summary: "Mark all of the signed-in user notifications as read"
+      x-openai-isConsequential: true
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/notifications/preferences:
+    get:
+      operationId: getNotificationPreferences
+      summary: "Read which channels the signed-in user receives notifications on"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+    put:
+      operationId: setNotificationPreference
+      summary: "Turn a notification channel on or off for the signed-in user"
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["channel", "is_enabled"]
+              properties:
+                channel: {type: "string", enum: ["in_app", "telegram", "email"]}
+                is_enabled: {type: "boolean"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/attention/acknowledgements:
+    get:
+      operationId: listAttentionAcknowledgements
+      summary: "List Today items already acknowledged for the active artist"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+    post:
+      operationId: acknowledgeAttentionItem
+      summary: "Acknowledge a Today item so it stops asking for attention"
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["item_kind", "entity_id", "observed_at"]
+              properties:
+                item_kind: {type: "string", maxLength: 60}
+                entity_id: {type: "string", format: "uuid"}
+                observed_at: {type: "string", format: "date-time"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/templates:
+    get:
+      operationId: listMessageTemplates
+      summary: "List client message templates in effect for the active artist"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+    post:
+      operationId: upsertMessageTemplate
+      summary: "Save a new version of a client message template"
+      x-openai-isConsequential: true
+      description: "Changes what future clients receive. Messages already sent are never rewritten."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["scope", "purpose", "channel", "body"]
+              properties:
+                scope: {type: "string", enum: ["artist", "workspace"], description: "artist edits this artist only; workspace edits the studio default."}
+                purpose: {type: "string", maxLength: 80}
+                channel: {type: "string", enum: ["email", "whatsapp", "instagram"]}
+                body: {type: "string", maxLength: 8000}
+                locale: {type: "string", maxLength: 10, default: "en"}
+                subject: {type: "string", maxLength: 300}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/templates/purposes:
+    get:
+      operationId: listTemplatePurposes
+      summary: "List the message purposes a template can serve"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/templates/variables:
+    get:
+      operationId: listTemplateVariables
+      summary: "List the placeholders a template may use"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/templates/{template_id}/active:
+    post:
+      operationId: setMessageTemplateActive
+      summary: "Activate or retire a template version"
+      x-openai-isConsequential: true
+      parameters:
+        - {name: "template_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["is_active"]
+              properties:
+                is_active: {type: "boolean"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
 components:
   securitySchemes:
     supabaseOAuth:

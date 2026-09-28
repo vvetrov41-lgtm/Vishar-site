@@ -89,6 +89,25 @@ paths:
                 subject: {type: string, maxLength: 300}
                 body: {type: string, maxLength: 8000}
       responses: {'200': {description: Draft result}}
+  /v1/emails/{email_message_id}:
+    patch:
+      operationId: editEmailDraft
+      summary: "Replace the body of an unapproved email draft"
+      x-openai-isConsequential: true
+      parameters:
+        - {name: "email_message_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["body", "expected_updated_at"]
+              properties:
+                body: {type: "string", maxLength: 20000}
+                expected_updated_at: {type: "string", format: "date-time", description: "updated_at of the draft as last read; a newer edit makes this fail."}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/emails/{email_message_id}/approve:
     post:
       operationId: approveEmailDraft
@@ -99,6 +118,22 @@ paths:
         - {name: email_message_id, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Approval result}}
+  /v1/emails/{email_message_id}/dismiss-failure:
+    post:
+      operationId: dismissFailedEmail
+      summary: "Dismiss the warning of an email that failed to send"
+      x-openai-isConsequential: true
+      parameters:
+        - {name: "email_message_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/enquiries/{enquiry_id}/gmail/history:
     get:
       operationId: searchEmailHistory
@@ -237,6 +272,14 @@ paths:
               properties:
                 client_id: {type: string, format: uuid}
       responses: {'200': {description: Link result}}
+  /v1/communications/conversations/{conversation_id}/link-suggestion:
+    get:
+      operationId: getConversationLinkSuggestion
+      summary: "Suggest which existing client an unlinked conversation belongs to"
+      x-openai-isConsequential: false
+      parameters:
+        - {name: "conversation_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/communications/conversations/{conversation_id}/client:
     post:
       operationId: createClientFromCommunication
