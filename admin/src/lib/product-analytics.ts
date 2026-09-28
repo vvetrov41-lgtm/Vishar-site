@@ -30,7 +30,7 @@ export const SCREENS = Object.freeze([
   'dashboard', 'enquiries', 'enquiry_detail', 'clients', 'client_detail',
   'projects', 'project_detail', 'appointments', 'appointment_detail',
   'calendar', 'availability', 'inbox', 'conversation_detail', 'payments',
-  'booking_sources', 'integrations', 'team', 'account', 'settings', 'other',
+  'booking_sources', 'integrations', 'team', 'account', 'settings', 'money', 'other',
 ] as const);
 
 const ENQUIRY_OUTCOMES = Object.freeze(['converted', 'declined', 'archived'] as const);
@@ -215,6 +215,7 @@ export function screenForPath(path: string): Screen {
     case 'team': return 'team';
     case 'account': return 'account';
     case 'settings': return 'settings';
+    case 'money': return 'money';
     default: return 'other';
   }
 }
