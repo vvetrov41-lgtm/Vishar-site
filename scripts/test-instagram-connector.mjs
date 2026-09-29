@@ -271,6 +271,43 @@ await test('session Auth uses the publishable key while backend RPC keeps the se
   assert.equal(calls[1].init.redirect, undefined);
 });
 
+await test('a stray 401 on a backend RPC is retried once, like the shared Supabase client', async () => {
+  const calls = [];
+  const statuses = [401, 200];
+  const db = createInstagramSupabase(env(), async (url, init) => {
+    calls.push({ url, init });
+    const status = statuses.shift();
+    return status === 200
+      ? Response.json([{ ok: true }])
+      : Response.json({ message: 'synthetic invalid key' }, { status });
+  });
+  const result = await db.rpc('service_list_instagram_maintenance_targets', {});
+  assert.deepEqual(result, [{ ok: true }]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].init.headers.apikey, SYNTHETIC_SECRET_KEY);
+});
+
+await test('a repeated 401 and other failures are not retried again', async () => {
+  let count = 0;
+  const unauthorised = createInstagramSupabase(env(), async () => {
+    count += 1;
+    return Response.json({ message: 'synthetic invalid key' }, { status: 401 });
+  });
+  await assert.rejects(
+    () => unauthorised.rpc('service_list_instagram_maintenance_targets', {}),
+    (error) => error.code === 'instagram_rpc_failed' && error.status === 401,
+  );
+  assert.equal(count, 2);
+
+  let rejected = 0;
+  const failing = createInstagramSupabase(env(), async () => {
+    rejected += 1;
+    return Response.json({ code: 'P0001', message: 'synthetic' }, { status: 400 });
+  });
+  await assert.rejects(() => failing.rpc('service_list_instagram_maintenance_targets', {}));
+  assert.equal(rejected, 1);
+});
+
 await test('session verification distinguishes a fetch failure before Supabase responds', async () => {
   await assert.rejects(
     () => supabaseTesting.verifySession(
