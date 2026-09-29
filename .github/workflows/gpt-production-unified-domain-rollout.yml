@@ -217,7 +217,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-unified-domain-rollback.toml"
+          rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-domain-rollback.toml"
           cp wrangler.gpt-actions.production.toml "$rollback_config"
           for host in $UNIFIED_HOSTS; do
             sed -i "/$(printf '%s' "$host" | sed 's/[.]/\\./g')/d" "$rollback_config"
@@ -326,7 +326,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-unified-domain-rollback.toml"
+          rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-domain-rollback.toml"
           [ -f "$rollback_config" ]
           npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
             --message "Automatic rollback: unified Action domain readback failed for $APPROVED_SHA" \
@@ -339,7 +339,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-unified-domain-rollback.toml"
+          rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-domain-rollback.toml"
           [ -f "$rollback_config" ]
           npx wrangler deploy --config "$rollback_config" --name "$WORKER_NAME" --strict \
             --message "Automatic rollback: unified Action domain deploy failed for $APPROVED_SHA" \
