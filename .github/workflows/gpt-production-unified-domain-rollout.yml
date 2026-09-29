@@ -217,7 +217,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rollback_config="$GITHUB_WORKSPACE/.wrangler.gpt-unified-domain-rollback.toml"
+          rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-domain-rollback.toml"
           cp wrangler.gpt-actions.production.toml "$rollback_config"
           for host in $UNIFIED_HOSTS; do
             sed -i "/$(printf '%s' "$host" | sed 's/[.]/\\./g')/d" "$rollback_config"
