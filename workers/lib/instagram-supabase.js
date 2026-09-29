@@ -176,7 +176,19 @@ export function createInstagramSupabase(env, fetchImpl = fetch) {
       if (!BACKEND_RPCS.has(name)) {
         throw new InstagramSupabaseError('instagram_backend_rpc_not_allowed');
       }
-      return callRpc(origin, name, args, { apikey: secret }, fetchImpl);
+      try {
+        return await callRpc(origin, name, args, { apikey: secret }, fetchImpl);
+      } catch (error) {
+        // Supabase occasionally answers a valid secret-key request with 401.
+        // The shared client (workers/lib/supabase.js) retries that once; this
+        // client did not, so one stray 401 failed Instagram maintenance and
+        // marked the whole shared scheduler tick as an exception. The same
+        // single retry is applied here; any other failure is not retried.
+        if (error instanceof InstagramSupabaseError && error.status === 401) {
+          return callRpc(origin, name, args, { apikey: secret }, fetchImpl);
+        }
+        throw error;
+      }
     },
   };
 }
