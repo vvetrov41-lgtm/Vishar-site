@@ -124,9 +124,9 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   object-fit: cover;
   object-position: 52% 40%;
   opacity: calc(var(--handoff, 0) * .98);
-  transform: scale(calc(1.18 + var(--lead-scroll-zoom, 0)));
+  transform: scale(1.18);
   will-change: opacity, transform;
-  transition: opacity .18s linear, transform .28s ease-out;
+  transition: opacity .18s linear, transform .08s linear;
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
@@ -221,7 +221,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   object-fit: cover;
   object-position: 50% 50%;
   margin: 0;
-  transform: scale(calc(1.06 + var(--follow-scroll-zoom, 0)));\n  will-change: transform;
+  transform: scale(1.06);\n  will-change: transform;\n  transition: transform .08s linear;
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
@@ -255,7 +255,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
 @media (min-width: 900px) {
   .portfolio-feature--lead img {
     object-position: 51% 40%;
-    transform: scale(calc(1.12 + var(--lead-scroll-zoom, 0)));
+    transform: scale(1.12);
   }
   .portfolio-feature--follow {
     margin-top: -6vh;
@@ -268,7 +268,7 @@ body { background: #000; color: #f5f5f7; -webkit-font-smoothing: antialiased; }
   }
   .portfolio-feature--follow img {
     object-position: 50% 48%;
-    transform: scale(calc(1.03 + var(--follow-scroll-zoom, 0)));
+    transform: scale(1.03);
   }
 }
 

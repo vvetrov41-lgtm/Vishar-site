@@ -22,6 +22,8 @@
   var portfolioIntro = document.getElementById('portfolio-intro');
   var leadFeature = portfolioIntro ? portfolioIntro.querySelector('.portfolio-feature--lead') : null;
   var followFeature = portfolioIntro ? portfolioIntro.querySelector('.portfolio-feature--follow') : null;
+  var leadFeatureImg = leadFeature ? leadFeature.querySelector('img') : null;
+  var followFeatureImg = followFeature ? followFeature.querySelector('img') : null;
   var stage = section.querySelector('.machine-stage');
   var canvasHost = section.querySelector('.machine-canvas');
   var poster = section.querySelector('.machine-poster');
@@ -170,20 +172,32 @@
   }
 
   function updatePortfolioMotion() {
-    if (!portfolioIntro) return;
+    if (!portfolioIntro || !leadFeatureImg || !followFeatureImg) return;
+
+    var desktop = window.matchMedia && window.matchMedia('(min-width: 900px)').matches;
+    var leadBase = desktop ? 1.12 : 1.18;
+    var followBase = desktop ? 1.03 : 1.06;
+
     if (prefersReducedMotion()) {
-      portfolioIntro.style.setProperty('--lead-scroll-zoom', '0');
-      portfolioIntro.style.setProperty('--follow-scroll-zoom', '0');
+      leadFeatureImg.style.transform = 'scale(' + leadBase.toFixed(3) + ')';
+      followFeatureImg.style.transform = 'scale(' + followBase.toFixed(3) + ')';
       return;
     }
+
     var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
     function viewProgress(el) {
       if (!el) return 0;
       var rect = el.getBoundingClientRect();
       return smooth(clamp((vh - rect.top) / Math.max(1, vh + rect.height), 0, 1));
     }
-    portfolioIntro.style.setProperty('--lead-scroll-zoom', (0.04 * viewProgress(leadFeature)).toFixed(4));
-    portfolioIntro.style.setProperty('--follow-scroll-zoom', (0.035 * viewProgress(followFeature)).toFixed(4));
+
+    // Direct image transforms are more reliable on Safari than inherited
+    // custom properties inside scale(calc()). The change remains restrained
+    // but is intentionally visible during the viewport pass.
+    var leadScale = leadBase + 0.12 * viewProgress(leadFeature);
+    var followScale = followBase + 0.10 * viewProgress(followFeature);
+    leadFeatureImg.style.transform = 'scale(' + leadScale.toFixed(4) + ')';
+    followFeatureImg.style.transform = 'scale(' + followScale.toFixed(4) + ')';
   }
 
   function updateCssState(s) {
