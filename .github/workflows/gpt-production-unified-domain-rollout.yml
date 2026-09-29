@@ -219,6 +219,10 @@ jobs:
           set -euo pipefail
           rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-domain-rollback.toml"
           cp wrangler.gpt-actions.production.toml "$rollback_config"
+          # The copy lives outside the checkout, and Wrangler resolves `main`
+          # relative to the config file, so pin the entry point to the checkout.
+          sed -i "s|^main = \"workers/|main = \"$GITHUB_WORKSPACE/workers/|" "$rollback_config"
+          grep -Fxq "main = \"$GITHUB_WORKSPACE/workers/gpt-actions-production-full.js\"" "$rollback_config"
           for host in $UNIFIED_HOSTS; do
             sed -i "/$(printf '%s' "$host" | sed 's/[.]/\\./g')/d" "$rollback_config"
           done
