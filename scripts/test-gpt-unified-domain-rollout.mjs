@@ -57,6 +57,10 @@ assert.match(workflow, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-act
 assert.match(workflow, /\[ "\$\(grep -c 'custom_domain = true' "\$rollback_config"\)" -eq 4 \]/);
 assert.match(workflow, /for host in \$UNIFIED_HOSTS; do if grep -Fq "\$host" "\$rollback_config"; then exit 1; fi; done/);
 assert.match(workflow, /--config "\$rollback_config" --name "\$WORKER_NAME" --dry-run/);
+assert.match(workflow, /rollback_config="\\$RUNNER_TEMP\\/wrangler\\.gpt-unified-domain-rollback\\.toml"/,
+  'rollback config must stay outside the checkout so the clean-worktree gate can succeed');
+assert.doesNotMatch(workflow, /rollback_config="\\$GITHUB_WORKSPACE\\//,
+  'rollback config must not dirty the checked-out canonical tree');
 assert.match(workflow, /Roll back to four-domain transport if readback fails/);
 assert.match(workflow, /Reassert four-domain transport if deploy command fails/);
 assert.doesNotMatch(workflow, /! grep -Fq/, 'a negated grep never fails under set -e');
