@@ -61,6 +61,10 @@ assert.ok(workflow.includes('rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-
   'rollback config must stay outside the checkout so the clean-worktree gate can succeed');
 assert.ok(!workflow.includes('rollback_config="$GITHUB_WORKSPACE/'),
   'rollback config must not dirty the checked-out canonical tree');
+assert.ok(workflow.includes('sed -i "s|^main = \\"workers/|main = \\"$GITHUB_WORKSPACE/workers/|" "$rollback_config"'),
+  'the out-of-checkout rollback config must pin the Worker entry point to the checkout');
+assert.ok(workflow.indexOf('main = \\"$GITHUB_WORKSPACE/workers/') < workflow.indexOf('--config "$rollback_config" --name "$WORKER_NAME" --dry-run'),
+  'the entry point is pinned before the rollback dry-run');
 assert.match(workflow, /Roll back to four-domain transport if readback fails/);
 assert.match(workflow, /Reassert four-domain transport if deploy command fails/);
 assert.doesNotMatch(workflow, /! grep -Fq/, 'a negated grep never fails under set -e');
