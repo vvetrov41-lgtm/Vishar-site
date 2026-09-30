@@ -33,9 +33,9 @@ select ok(
     'crm_private.guard_client_ai_next_action_truth()'::regprocedure))) > 0,
   'next-action persistence guard respects operator acknowledgement');
 select ok(
-  position('client_request_information_is_actionable' in lower(pg_get_functiondef(
+  position($needle$<> 'client_ai.next_action'$needle$ in lower(pg_get_functiondef(
     'crm_private.client_ai_notification_is_current(public.notifications)'::regprocedure))) > 0,
-  'Telegram live-read guard rechecks operator acknowledgement before delivery');
+  'Telegram live-read guard never delivers a CRM-AI recommendation push (retired 2026-09-30)');
 select ok(
   position($needle$a.action_type = 'request_information'$needle$ in lower(pg_get_functiondef(
     'crm_private.enqueue_enquiry_client_ai()'::regprocedure))) > 0

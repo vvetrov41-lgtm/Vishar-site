@@ -6,6 +6,7 @@ import {
   runAutomationTick,
   runLifecycleFailureAlerts,
   runOperationalFailureAlerts,
+  runUnansweredClientReminders,
   runTransientOutboxRecovery,
 } from './lib/automation-tick.js';
 import { ConfigurationError } from './lib/http.js';
@@ -175,6 +176,19 @@ async function runScheduledOperationalAlerts(env) {
   } catch (error) {
     console.error('operational failure alerts failed', JSON.stringify({
       code: safeFailureCode(error, 'operational_alert_error'),
+    }));
+    throw error;
+  }
+}
+
+async function runScheduledUnansweredReminders(env) {
+  try {
+    const summary = await runUnansweredClientReminders(env);
+    console.log('unanswered client reminders', JSON.stringify(summary));
+    return summary;
+  } catch (error) {
+    console.error('unanswered client reminders failed', JSON.stringify({
+      code: safeFailureCode(error, 'unanswered_reminder_error'),
     }));
     throw error;
   }
@@ -366,6 +380,8 @@ export default {
       tasks.push(runScheduledOutboxRecovery(env));
       // Audit H-5: surface failures to operators through personal Telegram.
       tasks.push(runScheduledOperationalAlerts(env));
+      // A client waiting on a reply (6 h, final 24 h, quiet 22:00-08:00 London).
+      tasks.push(runScheduledUnansweredReminders(env));
     }
     else console.log('automation tick disabled');
 

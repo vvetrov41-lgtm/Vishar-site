@@ -759,6 +759,7 @@ insert into expected_function_acl values
   ('public.service_recover_telegram_enquiry_outbox(uuid)', false, false, true),
   ('public.service_recover_transient_dead_outbox(integer)', false, false, true),
   ('public.service_sweep_operational_failure_alerts(integer)', false, false, true),
+  ('public.service_sweep_unanswered_client_reminders(integer,timestamp with time zone)', false, false, true),
   ('public.service_begin_communication_send(uuid,text)', false, false, true),
   ('public.get_scheduler_heartbeat_status()', true, true, true),
   ('public.service_record_meta_attribution(uuid,text,boolean,text,text,text)', false, false, true),

@@ -117,6 +117,8 @@ export const LIFECYCLE_ALERT_RPCS = new Set([
   'service_recover_transient_dead_outbox',
   // Audit H-5: daily operator alerts for dead outbox and failed AI jobs.
   'service_sweep_operational_failure_alerts',
+  // 2026-09-30: personal reminders for clients waiting on a reply.
+  'service_sweep_unanswered_client_reminders',
 ]);
 
 /** Appointment client-action capability surface, kept separate from booking resolvers. */

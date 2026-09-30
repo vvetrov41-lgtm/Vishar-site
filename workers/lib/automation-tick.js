@@ -93,3 +93,18 @@ export async function runOperationalFailureAlerts(env, fetchImpl = fetch) {
   }
   return { created };
 }
+
+/**
+ * A client waiting on a reply: one reminder at 6 h and a final one at 24 h,
+ * never overnight in London. The database decides what is due.
+ */
+export async function runUnansweredClientReminders(env, fetchImpl = fetch) {
+  const supabase = createSupabaseClient(env, fetchImpl);
+  const created = await supabase.rpc('service_sweep_unanswered_client_reminders', { p_limit: 50 });
+  if (!Number.isSafeInteger(created) || created < 0 || created > 50) {
+    throw Object.assign(new Error('invalid unanswered reminder summary'), {
+      code: 'unanswered_reminder_summary_invalid',
+    });
+  }
+  return { created };
+}
