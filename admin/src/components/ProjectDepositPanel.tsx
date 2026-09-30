@@ -226,8 +226,11 @@ export function ProjectDepositPanel({
           {amountLocked ? (
             <p className="notice warn">{copy.amountLocked}</p>
           ) : (
-            <>
-              <label htmlFor={`deposit-override-${project.id}`}>{copy.changeAmount}</label>
+            // Most projects keep the recommended amount, so changing it is one
+            // closed line rather than a form, two buttons and a paragraph.
+            <details className="booking-disclosure">
+              <summary>{copy.changeAmount}</summary>
+              <label htmlFor={`deposit-override-${project.id}`} className="visually-hidden">{copy.changeAmount}</label>
               <input
                 id={`deposit-override-${project.id}`}
                 type="number"
@@ -272,7 +275,7 @@ export function ProjectDepositPanel({
                   {copy.useRecommended}
                 </button>
               </div>
-            </>
+            </details>
           )}
 
           {!legacyPaid ? (

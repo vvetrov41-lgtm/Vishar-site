@@ -950,6 +950,7 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
    own triangle, which left "Consultation" and "Book a session" reading as plain
    labels. The chevron is drawn here instead, the same for every one of them. */
 .booking-disclosure > summary,
+.booking-card-disclosure > summary,
 .enquiry-admin > summary,
 .enquiry-channel.disclosure > summary {
   min-height: var(--tap);
@@ -961,9 +962,11 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
   font-weight: 600;
 }
 .booking-disclosure > summary::-webkit-details-marker,
+.booking-card-disclosure > summary::-webkit-details-marker,
 .enquiry-admin > summary::-webkit-details-marker,
 .enquiry-channel.disclosure > summary::-webkit-details-marker { display: none; }
 .booking-disclosure > summary::before,
+.booking-card-disclosure > summary::before,
 .enquiry-admin > summary::before,
 .enquiry-channel.disclosure > summary::before {
   content: '▸';
@@ -972,10 +975,12 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
   flex: none;
 }
 .booking-disclosure[open] > summary::before,
+.booking-card-disclosure[open] > summary::before,
 .enquiry-admin[open] > summary::before,
 .enquiry-channel.disclosure[open] > summary::before { content: '▾'; }
 .booking-disclosure,
 .enquiry-admin { border-top: 1px solid var(--border); margin-top: 12px; }
+.booking-card-disclosure > summary h2 { margin: 0; }
 
 /* One row per channel in the enquiry's Conversations card. */
 .enquiry-channels { display: grid; gap: 0; }
