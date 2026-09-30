@@ -101,8 +101,8 @@
             <label><span class="field-label">Full name <span class="required">*</span></span><input class="form-field" type="text" name="name" autocomplete="name" maxlength="120" required></label>
             <label><span class="field-label">Email <span class="required">*</span></span><input class="form-field" type="email" name="email" autocomplete="email" maxlength="320" required></label>
             <label><span class="field-label">Phone / WhatsApp <span id="phone-required-mark" class="required hidden">*</span></span><input id="phone-input" class="form-field" type="tel" name="phone" autocomplete="tel" maxlength="80" placeholder="UK mobile or number with country code"><span id="phone-required-note" class="mt-2 hidden text-xs leading-relaxed text-white/35">Required when WhatsApp is selected.</span></label>
-            <label><span class="field-label">Instagram <span id="instagram-required-mark" class="required hidden">*</span></span><input id="instagram-input" class="form-field" type="text" name="instagram" maxlength="80" placeholder="@username"><span id="instagram-required-note" class="mt-2 hidden text-xs leading-relaxed text-white/35">Required when Instagram is selected.</span></label>
-            <label><span class="field-label">Preferred reply <span class="required">*</span></span><select id="preferred-reply" class="form-field" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option><option>Instagram</option></select></label>
+            <label><span class="field-label">Instagram <span class="text-white/35">(optional)</span></span><input id="instagram-input" class="form-field" type="text" name="instagram" maxlength="80" placeholder="@username"></label>
+            <label><span class="field-label">Preferred reply <span class="required">*</span></span><select id="preferred-reply" class="form-field" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option></select></label>
             <label><span class="field-label">Where are you travelling from?</span><input class="form-field" type="text" name="travellingFrom" maxlength="120" placeholder="City or country"></label>
             <label><span class="field-label">Project type <span class="required">*</span></span><select class="form-field" name="projectType" required><option value="">Choose one</option><option>Colour realism</option><option>Black and grey realism</option><option>Portrait</option><option>Cover-up</option><option>Large-scale project / sleeve</option><option>Not sure yet</option></select></label>
             <label><span class="field-label">Placement <span class="required">*</span></span><input class="form-field" type="text" name="placement" maxlength="160" placeholder="For example: outer forearm" required></label>
@@ -149,9 +149,7 @@
     const instagramInput = document.getElementById('instagram-input');
     const preferredReply = document.getElementById('preferred-reply');
     const phoneRequiredMark = document.getElementById('phone-required-mark');
-    const instagramRequiredMark = document.getElementById('instagram-required-mark');
     const phoneRequiredNote = document.getElementById('phone-required-note');
-    const instagramRequiredNote = document.getElementById('instagram-required-note');
     const discoverySource = document.getElementById('discovery-source');
     const discoveryDetailField = document.getElementById('discovery-detail-field');
     const discoveryDetailLabel = document.getElementById('discovery-detail-label');
@@ -208,15 +206,10 @@
 
     function syncPreferredContactRequirement() {
       const needsWhatsApp = preferredReply.value === 'WhatsApp';
-      const needsInstagram = preferredReply.value === 'Instagram';
       phoneInput.required = needsWhatsApp;
-      instagramInput.required = needsInstagram;
       phoneRequiredMark.classList.toggle('hidden', !needsWhatsApp);
       phoneRequiredNote.classList.toggle('hidden', !needsWhatsApp);
-      instagramRequiredMark.classList.toggle('hidden', !needsInstagram);
-      instagramRequiredNote.classList.toggle('hidden', !needsInstagram);
       if (!needsWhatsApp) phoneInput.setCustomValidity('');
-      if (!needsInstagram) instagramInput.setCustomValidity('');
     }
 
     function syncDiscoveryRequirement() {
@@ -234,9 +227,7 @@
     function validatePreferredContact() {
       syncPreferredContactRequirement();
       const missingWhatsApp = preferredReply.value === 'WhatsApp' && !phoneInput.value.trim();
-      const missingInstagram = preferredReply.value === 'Instagram' && !instagramInput.value.trim();
       phoneInput.setCustomValidity(missingWhatsApp ? 'Please add your WhatsApp number.' : '');
-      instagramInput.setCustomValidity(missingInstagram ? 'Please add your Instagram username.' : '');
     }
 
     preferredReply.addEventListener('change', syncPreferredContactRequirement);

@@ -104,8 +104,8 @@ function renderHostedForm(meta, sourceId, { preflight = false } = {}) {
 <label>Full name <span class="required">*</span><input name="name" autocomplete="name" maxlength="120" required></label>
 <label>Email <span class="required">*</span><input name="email" type="email" autocomplete="email" maxlength="320" required></label>
 <label>Phone / WhatsApp <input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="80" placeholder="Include country code"></label>
-<label>Instagram <input id="instagram" name="instagram" maxlength="80" placeholder="@username"></label>
-<label>Preferred reply <span class="required">*</span><select id="preferredReply" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option><option>Instagram</option></select></label>
+<label>Instagram (optional) <input id="instagram" name="instagram" maxlength="80" placeholder="@username"></label>
+<label>Preferred reply <span class="required">*</span><select id="preferredReply" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option></select></label>
 <label>Travelling from <input name="travellingFrom" maxlength="160" placeholder="City or country"></label>
 <label>Project type <span class="required">*</span><select name="projectType" required><option value="">Choose one</option><option>Colour realism</option><option>Black and grey realism</option><option>Portrait</option><option>Cover-up</option><option>Large-scale project / sleeve</option><option>Not sure yet</option></select></label>
 <label>Placement <span class="required">*</span><input name="placement" maxlength="160" placeholder="For example: outer forearm" required></label>
