@@ -62,7 +62,7 @@ function rpc(method, params = {}, { token = TOKEN, name = null } = {}) {
 }
 
 await test('tracked production config keeps every activation flag fail-closed', async () => {
-  for (const flag of ['MCP_ENABLED', 'MCP_GMAIL_TOOLS_ENABLED', 'MCP_META_TOOLS_ENABLED']) {
+  for (const flag of ['MCP_ENABLED', 'MCP_PLUGIN_TOOLS_ENABLED', 'MCP_GMAIL_TOOLS_ENABLED', 'MCP_META_TOOLS_ENABLED']) {
     assert.match(PRODUCTION, new RegExp(`^${flag} = "false"$`, 'm'), `${flag} must ship disabled`);
     assert.match(DORMANT, new RegExp(`^${flag} = "false"$`, 'm'), `${flag} must stay disabled in the dormant config`);
   }
@@ -76,6 +76,12 @@ await test('production carries exactly one custom domain and a per-actor rate li
   assert.match(PRODUCTION, /name = "MCP_RATE_LIMIT"/);
   assert.match(PRODUCTION, /simple = \{ limit = 60, period = 60 \}/);
   assert.ok(!DORMANT.includes('custom_domain'), 'the dormant config must stay routeless');
+});
+
+await test('full Plugin surface reuses the audited Action worker only through a service binding', async () => {
+  assert.match(PRODUCTION, /\[\[services\]\][\s\S]*binding = "GPT_ACTIONS_SERVICE"[\s\S]*service = "vishar-gpt-actions-production"/);
+  assert.ok(!DORMANT.includes('GPT_ACTIONS_SERVICE'), 'dormant config must not bind the Action worker');
+  assert.match(PRODUCTION, /^MCP_PLUGIN_TOOLS_ENABLED = "false"$/m);
 });
 
 await test('no privileged credential is referenced by either config', async () => {
@@ -183,4 +189,4 @@ await test('Gmail MCP stays off unless separately enabled', async () => {
 
 console.log(`\nMCP production config: ${passes} passed, ${failures} failed.`);
 if (failures) process.exit(1);
-console.log('MCP production config tests passed: fail-closed flags, single custom domain, hashed per-actor rate limit, RFC 9728 boundary and read-only Meta tools.');
+console.log('MCP production config tests passed: fail-closed flags, single custom domain, hashed per-actor rate limit, bounded Action-worker service binding, RFC 9728 boundary and read-only Meta tools.');
