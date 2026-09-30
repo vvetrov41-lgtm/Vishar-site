@@ -42,7 +42,7 @@
     "test:instagram-production": "node scripts/test-instagram-production-config.mjs",
     "check:instagram-production-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/instagram-production-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.instagram.production.toml --dry-run --outdir .wrangler/instagram-production-dry-run",
     "test:communications-migration": "bash scripts/test-communications-migration.sh",
-    "check:mcp-production-bundle": "XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/mcp-production-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.mcp.production.toml --dry-run --outdir .wrangler/mcp-production-dry-run",
+    "check:mcp-production-bundle": "node scripts/build-mcp-plugin-tools.mjs && XDG_CONFIG_HOME=.wrangler/config WRANGLER_LOG_PATH=.wrangler/mcp-production-wrangler.log WRANGLER_SEND_METRICS=false wrangler deploy --config wrangler.mcp.production.toml --dry-run --outdir .wrangler/mcp-production-dry-run",
     "test:crm-agent": "node scripts/test-crm-agent.mjs && node scripts/test-ai-telemetry.mjs && node scripts/test-ai-evals.mjs && node scripts/test-decision-layer.mjs && node scripts/test-crm-agent-v2.mjs"
   },
   "devDependencies": {
