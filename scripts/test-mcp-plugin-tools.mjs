@@ -7,6 +7,7 @@ const PUBLISHABLE = 'sb_publishable_synthetic_value_1234567890';
 const USER = '11111111-1111-4111-8111-111111111111';
 const CLIENT = 'plugin-client-1234567890';
 const SUPABASE = 'https://exampleproject.supabase.co';
+const RESOURCE = 'https://mcp.vishartattoo.com/mcp';
 const FORBIDDEN = [
   'artist_id', 'workspace_id', 'oauth_client_id', 'integration_key', 'sql', 'rpc', 'table',
   'access_token', 'refresh_token', 'client_secret', 'service_role', 'api_token', 'authorization',
@@ -23,7 +24,7 @@ function base64url(value) {
 function token(overrides = {}) {
   const now = Math.floor(Date.now() / 1000);
   return `${base64url({ alg: 'RS256', typ: 'JWT' })}.${base64url({
-    iss: `${SUPABASE}/auth/v1`, aud: 'authenticated', exp: now + 3600,
+    iss: `${SUPABASE}/auth/v1`, aud: 'authenticated', resource: RESOURCE, scope: 'email', exp: now + 3600,
     sub: USER, client_id: CLIENT, ...overrides,
   })}.synthetic-signature`;
 }
@@ -33,6 +34,7 @@ function env(actionService, overrides = {}) {
     MCP_ENABLED: 'true',
     MCP_PLUGIN_TOOLS_ENABLED: 'true',
     MCP_PUBLIC_HOST: 'mcp.vishartattoo.com',
+    MCP_PLUGIN_OAUTH_CLIENT_ID: CLIENT,
     SUPABASE_URL: SUPABASE,
     SUPABASE_PUBLISHABLE_KEY: PUBLISHABLE,
     GPT_ACTIONS_SERVICE: actionService,
@@ -131,6 +133,56 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   );
   assert.equal(response.status, 401);
   assert.equal(authCalled, false, 'obviously invalid OAuth claims fail before network validation');
+}
+
+for (const claims of [
+  { resource: 'https://other.example/mcp' },
+  { resource: undefined },
+  { scope: 'profile' },
+  { scope: undefined },
+  { client_id: 'legacy-gpt-client-12345' },
+  { exp: Math.floor(Date.now() / 1000) - 1 },
+]) {
+  let authCalled = false;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/list', {}, token(claims)),
+    env({ async fetch() { throw new Error('must not call action service'); } }),
+    async () => { authCalled = true; return Response.json({ id: USER }); },
+  );
+  assert.equal(response.status, 401, `invalid OAuth claims were accepted: ${Object.keys(claims)}`);
+  assert.equal(authCalled, false, 'wrong resource, scope, client and expiry fail before network validation');
+}
+
+{
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/list'),
+    env({ async fetch() {} }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
+    async () => { throw new Error('unbound client must fail before Auth lookup'); },
+  );
+  assert.equal(response.status, 401, 'tools stay closed without the dedicated OAuth client binding');
+  const metadata = await handlePluginMcpRequest(
+    new Request('https://mcp.vishartattoo.com/.well-known/oauth-protected-resource'),
+    env({ async fetch() {} }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
+  );
+  assert.equal(metadata.status, 200, 'OAuth discovery can precede client registration');
+}
+
+{
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/list', {}, token({ resource: undefined, aud: ['authenticated', RESOURCE] })),
+    env({ async fetch() { throw new Error('listing must not call Action service'); } }),
+    authFetch(),
+  );
+  assert.equal(response.status, 200, 'resource-bound audience array is accepted');
+}
+
+{
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/list'),
+    env({ async fetch() { throw new Error('revoked token must not call Action service'); } }),
+    async () => new Response(null, { status: 401 }),
+  );
+  assert.equal(response.status, 401, 'Supabase revocation is authoritative');
 }
 
 {
