@@ -38,7 +38,7 @@ function email(overrides: Record<string, unknown> = {}) {
     to_email: 'fixture@example.test',
     subject: 'Your deposit for the raven sleeve',
     body: 'Hi, here is the deposit link.',
-    created_by_kind: 'ai',
+    created_by_kind: 'system',
     created_at: '2026-07-01T09:00:00Z',
     client_id: CLIENT_ID,
     enquiry_id: ENQUIRY_ID,

@@ -70,9 +70,18 @@ describe('what a thread is waiting on', () => {
   });
 
   it('does not turn a paused machine draft into an approval task', () => {
-    const [thread] = groupEmailThreads([message()]);
+    const [thread] = groupEmailThreads([message({ created_by_kind: 'system' })]);
     expect(thread.state).toBe('closed');
     expect(thread.actionable_message_id).toBeNull();
+  });
+
+  it('drops unsent AI reply drafts, which were retired', () => {
+    expect(groupEmailThreads([message(), message({ id: 'm2', status: 'cancelled' })])).toEqual([]);
+  });
+
+  it('keeps an AI-written message that a person approved and sent', () => {
+    const [thread] = groupEmailThreads([message({ status: 'sent', sent_at: '2026-07-01T10:00:00Z' })]);
+    expect(thread.state).toBe('sent');
   });
 
   it('takes the most urgent state in the thread, not the newest message', () => {

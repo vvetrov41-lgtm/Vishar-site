@@ -78,6 +78,15 @@ function stateForMessage(message: Pick<EmailMessage, 'status' | 'created_by_kind
   return stateFor(message.status);
 }
 
+/**
+ * Automatic AI reply drafts were retired at the owner's request: they were
+ * never usable, so an unsent one is not history worth showing either. A
+ * machine draft that a person approved and sent still counts as real email.
+ */
+function isDiscardedMachineDraft(message: Pick<EmailMessage, 'status' | 'created_by_kind'>): boolean {
+  return message.created_by_kind === 'ai' && (message.status === 'draft' || message.status === 'cancelled');
+}
+
 /** True when the thread is waiting on a person, not on a machine. */
 export function threadNeedsOperator(thread: Pick<EmailThread, 'state'>): boolean {
   return thread.state === 'awaiting_approval' || thread.state === 'send_failed';
@@ -93,6 +102,7 @@ export function threadNeedsOperator(thread: Pick<EmailThread, 'state'>): boolean
 export function groupEmailThreads(messages: EmailMessage[]): EmailThread[] {
   const threads = new Map<string, EmailMessage[]>();
   for (const message of messages) {
+    if (isDiscardedMachineDraft(message)) continue;
     const key = threadKeyFor(message);
     const bucket = threads.get(key) ?? [];
     bucket.push(message);
