@@ -141,6 +141,38 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
 
 {
   let authCalled = false;
+  const response = await handlePluginMcpRequest(
+    new Request('https://mcp.vishartattoo.com/mcp', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    }),
+    env({ async fetch() { throw new Error('malformed bootstrap probe must not call action service'); } }),
+    async () => { authCalled = true; throw new Error('missing-token bootstrap probe must not call Auth'); },
+  );
+  assert.equal(response.status, 401, 'malformed unauthenticated bootstrap probe remains fail-closed');
+  assert.equal(authCalled, false);
+  assert.match(response.headers.get('www-authenticate') || '', /resource_metadata="https:\/\/mcp\.vishartattoo\.com\/\.well-known\/oauth-protected-resource"/);
+}
+
+{
+  let authCalled = false;
+  const response = await handlePluginMcpRequest(
+    new Request('https://mcp.vishartattoo.com/mcp', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+      body: '{}',
+    }),
+    env({ async fetch() { throw new Error('bogus-token bootstrap probe must not call action service'); } }),
+    async () => { authCalled = true; throw new Error('obviously invalid token must fail before Auth lookup'); },
+  );
+  assert.equal(response.status, 401, 'malformed bogus-token bootstrap probe remains fail-closed');
+  assert.equal(authCalled, false);
+}
+
+{
+  let authCalled = false;
   let actionCalled = false;
   const response = await handlePluginMcpRequest(
     rpcRequest('tools/list', {}, null),
@@ -285,4 +317,4 @@ for (const claims of [
   assert.equal(actionCalled, false);
 }
 
-console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, pre-auth tool discovery, runtime OAuth linking challenges, strict resource/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
+console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict resource/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
