@@ -16,7 +16,8 @@ routes = [
   { pattern = "gpt-notifications.vishartattoo.com", custom_domain = true },
   { pattern = "gpt-automations.vishartattoo.com", custom_domain = true },
   { pattern = "gpt-integrations.vishartattoo.com", custom_domain = true },
-  { pattern = "gpt-workspace.vishartattoo.com", custom_domain = true }
+  { pattern = "gpt-workspace.vishartattoo.com", custom_domain = true },
+  { pattern = "gpt-team.vishartattoo.com", custom_domain = true }
 ]
 
 [[services]]

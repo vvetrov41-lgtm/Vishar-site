@@ -22,15 +22,8 @@ select ok(
      'gpt_get_account_overview', 'gpt_set_my_display_name', 'gpt_set_my_language')),
   'every integration and account wrapper is an authenticated-only SECURITY DEFINER function'
 );
-select is(
-  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where n.nspname = 'public' and p.proname in (
-     'gpt_list_team_profiles', 'gpt_set_team_profile_role', 'gpt_upsert_artist_membership',
-     'gpt_upsert_workspace_membership', 'gpt_transfer_workspace_ownership', 'gpt_delete_my_account',
-     'gpt_set_self_service_signup', 'gpt_grant_artist_membership', 'gpt_seat_artist_owner')),
-  0,
-  'no GPT wrapper administers roles, memberships, ownership, signup or account deletion'
-);
+-- Team and Workspace administration wrappers exist since the owner opened them
+-- on 2026-09-30; their boundary is tested in 1842_gpt_team_workspace_admin.sql.
 
 insert into auth.users (id, email) values
   ('df011111-1111-4111-8111-111111111111', 'gpt-integrations-owner@example.test');

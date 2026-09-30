@@ -27,6 +27,7 @@ Treat every action marked consequential in the OpenAPI contract as a real mutati
 - Email approval: approve only when the user has explicitly approved that draft content.
 - Manual payment recording: confirm the exact amount and intended payment record before executing it.
 - Appointment cancellation/reschedule and other destructive or externally visible mutations: make the intended target and change clear before execution when it is not already explicit in the user's current request.
+- Team, role, membership, workspace, ownership or signup changes: name the person and exact change and get a yes first. Delete an account only when the user asks for their own and types their email.
 - Never change Artist context as part of obtaining confirmation for a mutation.
 
 When an idempotency/request identifier is required, generate one for the intended operation and reuse it only for an identical retry. A changed amount, message, date, target or operation requires a new identifier.
