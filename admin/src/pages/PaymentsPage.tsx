@@ -135,7 +135,13 @@ export function PaymentsPage() {
   // resolved here instead of asking them to pick from a list of one. The scope
   // context is deliberately not mutated: this inference is local to Payments,
   // and the database still decides what the chosen artist can see.
-  const selectedArtistId = scopedArtistId ?? (artists.length === 1 ? artists[0].id : null);
+  //
+  // With several artists and "All artists" selected, the page no longer stops
+  // at an empty chooser. It opens on the operator's own artist - the one their
+  // membership marks as artist, then owner - and otherwise the first in the
+  // list. A switcher at the top says whose payments these are and changes it.
+  const inferredArtistId = scopedArtistId ? null : inferPaymentsArtist(artists, memberships, profile?.id ?? null);
+  const selectedArtistId = scopedArtistId ?? inferredArtistId;
   const [settings, setSettings] = useState<MonzoDepositSettings>(EMPTY_SETTINGS);
   const [paymentUrl, setPaymentUrl] = useState('');
   const [enabled, setEnabled] = useState(false);
@@ -669,6 +675,24 @@ export function PaymentsPage() {
 
   return (
     <div className="page-stack payments-page">
+      {inferredArtistId && artists.length > 1 ? (
+        <div className="payments-artist-switch">
+          <span className="meta">{copy.paymentsFor}</span>
+          <div className="button-row" role="group" aria-label={copy.paymentsFor}>
+            {artists.map((artist) => (
+              <button
+                key={artist.id}
+                type="button"
+                className="secondary-button"
+                aria-pressed={artist.id === selectedArtistId}
+                onClick={() => setSelectedArtistId(artist.id)}
+              >
+                {artist.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <section className="payments-overview" aria-label={language === 'ru' ? 'Сводка по депозитам' : 'Deposit summary'}>
         <div className={`payments-stat${actionableCandidates.length ? ' is-action' : ''}`}>
           <span className="payments-stat-label">{language === 'ru' ? 'Требуют действия' : 'Need action'}</span>
@@ -1366,4 +1390,30 @@ export function PaymentsPage() {
       {error ? <div className="error-banner" role="alert">{error}</div> : null}
     </div>
   );
+}
+
+/**
+ * Whose payments to open on "All artists": the operator's own artist when a
+ * membership says so (artist first, then owner, and only when unambiguous),
+ * otherwise the first artist the operator can reach. Null only when there is
+ * no artist at all. Pure, so it is tested without rendering the page.
+ */
+export function inferPaymentsArtist(
+  artists: { id: string }[],
+  memberships: { profile_id: string; artist_id: string; access_level: string; is_active: boolean }[],
+  profileId: string | null,
+): string | null {
+  if (artists.length === 0) return null;
+  if (artists.length === 1) return artists[0].id;
+  const reachable = new Set(artists.map((artist) => artist.id));
+  const mine = memberships.filter(
+    (membership) => membership.is_active
+      && membership.profile_id === profileId
+      && reachable.has(membership.artist_id)
+  );
+  for (const level of ['artist', 'owner']) {
+    const matches = mine.filter((membership) => membership.access_level === level);
+    if (matches.length === 1) return matches[0].artist_id;
+  }
+  return artists[0].id;
 }
