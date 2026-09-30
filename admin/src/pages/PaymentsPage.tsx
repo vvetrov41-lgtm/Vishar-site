@@ -135,7 +135,19 @@ export function PaymentsPage() {
   // resolved here instead of asking them to pick from a list of one. The scope
   // context is deliberately not mutated: this inference is local to Payments,
   // and the database still decides what the chosen artist can see.
-  const selectedArtistId = scopedArtistId ?? (artists.length === 1 ? artists[0].id : null);
+  //
+  // With several artists and "All artists" selected, the page opens on an
+  // artist only when a signal names exactly one (see inferPaymentsArtist) -
+  // including the artist chosen here last time in this browser. Otherwise it
+  // asks once. A switcher at the top says whose payments these are.
+  const inferredArtistId = scopedArtistId
+    ? null
+    : inferPaymentsArtist(artists, memberships, profile?.id ?? null, readRememberedPaymentsArtist());
+  const selectedArtistId = scopedArtistId ?? inferredArtistId;
+  const chooseArtist = (artistId: string) => {
+    rememberPaymentsArtist(artistId);
+    setSelectedArtistId(artistId);
+  };
   const [settings, setSettings] = useState<MonzoDepositSettings>(EMPTY_SETTINGS);
   const [paymentUrl, setPaymentUrl] = useState('');
   const [enabled, setEnabled] = useState(false);
@@ -654,7 +666,7 @@ export function PaymentsPage() {
                 key={artist.id}
                 type="button"
                 className="secondary-button"
-                onClick={() => setSelectedArtistId(artist.id)}
+                onClick={() => chooseArtist(artist.id)}
               >
                 {artist.display_name}
               </button>
@@ -669,6 +681,24 @@ export function PaymentsPage() {
 
   return (
     <div className="page-stack payments-page">
+      {inferredArtistId && artists.length > 1 ? (
+        <div className="payments-artist-switch">
+          <span className="meta">{copy.paymentsFor}</span>
+          <div className="button-row" role="group" aria-label={copy.paymentsFor}>
+            {artists.map((artist) => (
+              <button
+                key={artist.id}
+                type="button"
+                className="secondary-button"
+                aria-pressed={artist.id === selectedArtistId}
+                onClick={() => chooseArtist(artist.id)}
+              >
+                {artist.display_name}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
       <section className="payments-overview" aria-label={language === 'ru' ? 'Сводка по депозитам' : 'Deposit summary'}>
         <div className={`payments-stat${actionableCandidates.length ? ' is-action' : ''}`}>
           <span className="payments-stat-label">{language === 'ru' ? 'Требуют действия' : 'Need action'}</span>
@@ -1366,4 +1396,47 @@ export function PaymentsPage() {
       {error ? <div className="error-banner" role="alert">{error}</div> : null}
     </div>
   );
+}
+
+/**
+ * Whose payments to open on "All artists", or null to ask.
+ *
+ * Only signals that name one artist count: the only reachable artist, the
+ * artist this operator last chose on Payments in this browser, or a single
+ * 'artist' or 'owner' membership. A global owner holds an 'owner' membership
+ * for every artist and the artist list is ordered by name, so "the first one"
+ * would be an arbitrary artist for money operations - that case asks instead.
+ * Pure, so it is tested without rendering the page.
+ */
+export function inferPaymentsArtist(
+  artists: { id: string }[],
+  memberships: { profile_id: string; artist_id: string; access_level: string; is_active: boolean }[],
+  profileId: string | null,
+  rememberedArtistId: string | null = null,
+): string | null {
+  if (artists.length === 0) return null;
+  if (artists.length === 1) return artists[0].id;
+  const reachable = new Set(artists.map((artist) => artist.id));
+  if (rememberedArtistId && reachable.has(rememberedArtistId)) return rememberedArtistId;
+  const mine = memberships.filter(
+    (membership) => membership.is_active
+      && membership.profile_id === profileId
+      && reachable.has(membership.artist_id)
+  );
+  for (const level of ['artist', 'owner']) {
+    const matches = mine.filter((membership) => membership.access_level === level);
+    if (matches.length === 1) return matches[0].artist_id;
+  }
+  return null;
+}
+
+/** Per-browser memory of the last artist chosen on Payments. Convenience only. */
+export const PAYMENTS_ARTIST_STORAGE_KEY = 'vishar-crm-payments-artist';
+
+function readRememberedPaymentsArtist(): string | null {
+  try { return window.localStorage.getItem(PAYMENTS_ARTIST_STORAGE_KEY); } catch { return null; }
+}
+
+function rememberPaymentsArtist(artistId: string) {
+  try { window.localStorage.setItem(PAYMENTS_ARTIST_STORAGE_KEY, artistId); } catch { /* storage unavailable */ }
 }

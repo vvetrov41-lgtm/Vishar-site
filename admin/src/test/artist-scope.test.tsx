@@ -12,9 +12,9 @@ import {
 beforeEach(() => window.localStorage.clear());
 
 describe('artist scope', () => {
-  it('uses the controlled All assigned artists wording in EN and RU', () => {
-    expect(translate('en','artistScope.allAssigned')).toBe('All assigned artists');
-    expect(translate('ru','artistScope.allAssigned')).toBe('Все назначенные мастера');
+  it('uses the controlled All artists wording in EN and RU', () => {
+    expect(translate('en','artistScope.allAssigned')).toBe('All artists');
+    expect(translate('ru','artistScope.allAssigned')).toBe('Все мастера');
   });
 
   it('renders only identities returned by list_accessible_artists', async () => {
@@ -24,7 +24,7 @@ describe('artist scope', () => {
     });
     const selector=await screen.findByLabelText('Artist');
     await screen.findByRole('option',{name:'Vladimir Vishar'});
-    expect(selector).toHaveTextContent('All assigned artists');
+    expect(selector).toHaveTextContent('All artists');
     expect(selector).toHaveTextContent('Vladimir Vishar');
     expect(selector).not.toHaveTextContent('Kristina Vishar');
   });

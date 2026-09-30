@@ -22,6 +22,7 @@ import {
 } from '../components/ClientMobileTabs';
 import { useAsync } from '../components/AsyncData';
 import { DetailBackLink } from '../components/DetailContext';
+import { BookingDisclosure } from '../components/BookingDisclosure';
 import { BookingPanel } from '../components/BookingPanel';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useArtistScope } from '../lib/artist-scope';
@@ -153,7 +154,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
             scope selector otherwise - never from a free-text field, because the
             artist decides the whole schedule. */}
         {can(role, 'manageSessions') ? (
-          <Section title={t('booking.title')}>
+          <BookingDisclosure>
             <BookingPanel
               artistId={bookingArtistId}
               clientId={clientId}
@@ -173,7 +174,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               }))}
               onBooked={() => reload()}
             />
-          </Section>
+          </BookingDisclosure>
         ) : null}
 
         {can(role, 'viewFollowUps') ? (
@@ -256,6 +257,14 @@ function ClientStatusHeader({
 }) {
   const { t, label, language } = useLanguage();
   const phone = formatPhoneForDisplay(client.phone);
+  const instagramHandle = (client.instagram ?? '').replace(/^@/, '').trim();
+  const contactLinks = [
+    phone && client.phone ? { href: `tel:${client.phone.replace(/[^\d+]/g, '')}`, label: phone, external: false } : null,
+    client.email ? { href: `mailto:${client.email}`, label: client.email, external: false } : null,
+    instagramHandle
+      ? { href: `https://instagram.com/${encodeURIComponent(instagramHandle)}`, label: `@${instagramHandle}`, external: true }
+      : null,
+  ].filter((link): link is { href: string; label: string; external: boolean } => link !== null);
   const next = snapshot.nextAppointment;
   const deposit = snapshot.depositProject;
   const conversation = snapshot.latestConversation;
@@ -265,8 +274,14 @@ function ClientStatusHeader({
   return (
     <section className="card client-workspace-header" aria-label={t('clientWorkspace.rightNow')}>
       <h2 className="client-workspace-name">{client.full_name}</h2>
+      {/* One tap to call, write or open the profile. */}
       <p className="client-workspace-contact">
-        {[phone, client.email, client.instagram].filter(Boolean).join(' · ') || '—'}
+        {contactLinks.length === 0 ? '—' : contactLinks.map((link, index) => (
+          <span key={link.href}>
+            {index > 0 ? ' · ' : null}
+            <a href={link.href} {...(link.external ? { target: '_blank', rel: 'noreferrer' } : {})}>{link.label}</a>
+          </span>
+        ))}
       </p>
       <div className="client-workspace-artists">
         <ArtistRelationship artistIds={artistIds} showEmpty />
@@ -517,16 +532,21 @@ function BookingsSection({ appointments }: { appointments: Appointment[] }) {
         />
       ) : (
         <>
+          {/* Nothing upcoming is one line, not a sub-heading over an empty
+              state: on a phone the past list lives under History, so the
+              heading would announce an empty box. */}
           <div className="client-bookings-upcoming">
-            <h3>{t('clientWorkspace.upcoming')}</h3>
             {upcoming.length === 0 ? (
-              <EmptyState compact title={t('clientWorkspace.noBooking')} />
+              <p className="meta" style={{ margin: 0 }}>{t('clientWorkspace.noUpcoming')}</p>
             ) : (
-              <div className="list">
-                {upcoming.map((appointment) => (
-                  <ClientAppointmentRow key={appointment.id} appointment={appointment} />
-                ))}
-              </div>
+              <>
+                <h3>{t('clientWorkspace.upcoming')}</h3>
+                <div className="list">
+                  {upcoming.map((appointment) => (
+                    <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+                  ))}
+                </div>
+              </>
             )}
           </div>
 

@@ -257,10 +257,11 @@ export function AppointmentsPage() {
     setAnchor(current.getTime());
   }
 
-  return (
-    <>
-      <Section title={copy.title}>
-        <div className="filters">
+  // One card holds the controls and the grid they control. Two cards, titled
+  // "Calendar" and then "Month", spent a heading saying what the button row
+  // already said.
+  const controls = (
+        <div className="filters" style={{ marginBottom: 14 }}>
           <label><span>{copy.filterType}</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}><option value="all">{copy.allTypes}</option>{TYPES.map((type) => <option key={type} value={type}>{appointmentTypeLabel(type, language)}</option>)}</select></label>
           <div className="calendar-view-switch" role="group" aria-label={copy.viewLabel}>
             {VIEWS.map((option) => (
@@ -275,11 +276,15 @@ export function AppointmentsPage() {
             ))}
           </div>
         </div>
-      </Section>
+  );
+
+  return (
+    <>
       {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
       {view === 'month' ? (
         <>
-          <Section title={copy.monthView}>
+          <Section title={copy.title}>
+            {controls}
             <MonthCalendarView month={month} visibleMonth={visibleMonth} selectedDay={effectiveSelectedDay} language={language} clients={data.clients} onSelectDay={setSelectedDay} onPreviousMonth={() => moveMonth(-1)} onNextMonth={() => moveMonth(1)} onToday={showToday} />
           </Section>
           <Section title={dayHeading(effectiveSelectedDay, language)}>
@@ -293,7 +298,8 @@ export function AppointmentsPage() {
           </Section>
         </>
       ) : (
-        <Section title={view === 'week' ? copy.weekView : copy.dayView}>
+        <Section title={copy.title}>
+          {controls}
           <WeekCalendarView
             calendar={week}
             language={language}
@@ -314,7 +320,6 @@ export function AppointmentsPage() {
         </Section>
       )}
       {mayManage ? <Section title={copy.findTime}>{!bookingArtistId ? <p className="meta">{copy.chooseArtistFirst}</p> : clientId ? <BookingPanel artistId={bookingArtistId} clientId={clientId} clientName={clientName(data.clients, clientId) ?? copy.thisClient} projectOptions={data.projects.filter((project) => project.client_id === clientId).map((project) => ({ id: project.id, label: project.title, enquiryId: project.enquiry_id }))} enquiryOptions={data.enquiries.filter((enquiry) => enquiry.client_id === clientId).map((enquiry) => ({ id: enquiry.id, label: enquiry.reference_number }))} onBooked={() => reload()} /> : <div className="client-picker-field"><span className="client-picker-heading">{copy.whoFor}</span><ClientPicker value={clientId} language={language} inputId="smart-booking-client-search" onChange={setClientId} /></div>}</Section> : null}
-      <p className="notice">{copy.calendarNotice}</p>
     </>
   );
 }
@@ -331,4 +336,4 @@ function conflictMessage(
   return template.replace('{window}', window);
 }
 function appointmentTypeLabel(type: AppointmentType, language: Language): string { const labels: Record<Language, Record<AppointmentType, string>> = { en: { tattoo_session: 'Tattoo session', in_person_consultation: 'In-person consultation', video_consultation: 'Video consultation', touch_up: 'Touch-up' }, ru: { tattoo_session: 'Тату-сеанс', in_person_consultation: 'Очная консультация', video_consultation: 'Видеоконсультация', touch_up: 'Коррекция' } }; return labels[language][type]; }
-const COPY: Record<Language, Record<string, string>> = { en: { title:'Calendar', loading:'Loading appointments…', none:'No appointments yet', filterType:'Filter by type', allTypes:'All appointment types', viewLabel:'Calendar view', view_month:'Month', view_week:'Week', view_day:'Day', monthView:'Month', weekView:'Week', dayView:'Day', dayFree:'Nothing booked', allDay:'All day', findTime:'Find a time', chooseArtistFirst:'Choose an artist above to search for free times.', whoFor:'Who is this for?', thisClient:'this client', statusFailed:'Could not change that appointment.', rescheduleFailed:'Could not reschedule that appointment.', resizeFailed:'Could not change that appointment duration.', conflict:'That time is already taken ({window}). The appointment has not moved.', resizeConflict:'That duration overlaps another appointment ({window}). The duration has not changed.', timeZoneNote:'Times are shown in {zone}.', calendarNotice:'Supabase remains authoritative. Calendar delivery stays queued or disconnected until the artist Google Calendar route is connected.' }, ru: { title:'Календарь', loading:'Загрузка записей…', none:'Записей пока нет', filterType:'Фильтр по типу', allTypes:'Все типы записей', viewLabel:'Вид календаря', view_month:'Месяц', view_week:'Неделя', view_day:'День', monthView:'Месяц', weekView:'Неделя', dayView:'День', dayFree:'Записей нет', allDay:'Весь день', findTime:'Подобрать время', chooseArtistFirst:'Выберите мастера выше, чтобы искать свободное время.', whoFor:'Для кого?', thisClient:'этот клиент', statusFailed:'Не удалось изменить статус записи.', rescheduleFailed:'Не удалось перенести запись.', resizeFailed:'Не удалось изменить длительность записи.', conflict:'Это время уже занято ({window}). Запись осталась на месте.', resizeConflict:'Новая длительность пересекается с другой записью ({window}). Длительность не изменена.', timeZoneNote:'Время показано в зоне {zone}.', calendarNotice:'Supabase остаётся источником данных. Отправка в календарь будет ждать подключения Google Calendar выбранного мастера.' } };
+const COPY: Record<Language, Record<string, string>> = { en: { title:'Calendar', loading:'Loading appointments…', none:'No appointments yet', filterType:'Filter by type', allTypes:'All appointment types', viewLabel:'Calendar view', view_month:'Month', view_week:'Week', view_day:'Day', monthView:'Month', weekView:'Week', dayView:'Day', dayFree:'Nothing booked', allDay:'All day', findTime:'Find a time', chooseArtistFirst:'Choose an artist above to search for free times.', whoFor:'Who is this for?', thisClient:'this client', statusFailed:'Could not change that appointment.', rescheduleFailed:'Could not reschedule that appointment.', resizeFailed:'Could not change that appointment duration.', conflict:'That time is already taken ({window}). The appointment has not moved.', resizeConflict:'That duration overlaps another appointment ({window}). The duration has not changed.', timeZoneNote:'Times are shown in {zone}.' }, ru: { title:'Календарь', loading:'Загрузка записей…', none:'Записей пока нет', filterType:'Фильтр по типу', allTypes:'Все типы записей', viewLabel:'Вид календаря', view_month:'Месяц', view_week:'Неделя', view_day:'День', monthView:'Месяц', weekView:'Неделя', dayView:'День', dayFree:'Записей нет', allDay:'Весь день', findTime:'Подобрать время', chooseArtistFirst:'Выберите мастера выше, чтобы искать свободное время.', whoFor:'Для кого?', thisClient:'этот клиент', statusFailed:'Не удалось изменить статус записи.', rescheduleFailed:'Не удалось перенести запись.', resizeFailed:'Не удалось изменить длительность записи.', conflict:'Это время уже занято ({window}). Запись осталась на месте.', resizeConflict:'Новая длительность пересекается с другой записью ({window}). Длительность не изменена.', timeZoneNote:'Время показано в зоне {zone}.' } };

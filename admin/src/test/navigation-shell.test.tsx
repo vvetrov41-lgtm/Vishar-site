@@ -107,7 +107,7 @@ describe('responsive navigation shell', () => {
     renderWithSession(<App />, { role: 'owner', path: '/money' });
     // An index of screens reads no records, so no artist-filter notice.
     expect(await screen.findByRole('button', { name: 'More' })).toHaveAttribute('aria-current', 'page');
-    expect(screen.queryByText('Global section')).not.toBeInTheDocument();
+    expect(screen.queryByText('This section covers every artist.')).not.toBeInTheDocument();
     const section = (await screen.findByRole('heading', { level: 2, name: 'Money' })).closest('section') as HTMLElement;
     expect(within(section).getAllByRole('link').map((link) => link.getAttribute('href'))).toEqual([
       '#/invoices',
@@ -153,8 +153,8 @@ describe('responsive navigation shell', () => {
     await screen.findByText('Fixture Client');
 
     expect(screen.queryByRole('combobox', { name: 'Artist' })).not.toBeInTheDocument();
-    expect(screen.getByText('Shared records')).toBeInTheDocument();
-    expect(screen.getByText('Clients are not filtered by the selected artist.')).toBeInTheDocument();
+    expect(screen.getByText('All artists')).toBeInTheDocument();
+    expect(screen.getByText('Clients are shared: the list does not depend on the selected artist.')).toBeInTheDocument();
   });
 
   it('marks owner administration as global instead of artist-scoped', async () => {
@@ -162,8 +162,8 @@ describe('responsive navigation shell', () => {
     await screen.findByText('Manager');
 
     expect(screen.queryByRole('combobox', { name: 'Artist' })).not.toBeInTheDocument();
-    expect(screen.getByText('Global section')).toBeInTheDocument();
-    expect(screen.getByText('This section is not filtered by artist.')).toBeInTheDocument();
+    expect(screen.getByText('All artists')).toBeInTheDocument();
+    expect(screen.getByText('This section covers every artist.')).toBeInTheDocument();
   });
 
   it('retains artist selection on artist-owned queues', async () => {
@@ -230,10 +230,11 @@ describe('detail-route continuity', () => {
     const record = screen.getByRole('heading', { level: 2, name: 'The project' });
     expect(actions.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    // The client card is further down still, collapsed to its own heading and
-    // a count, because the summary above already carries the contact details.
-    const contact = screen.getByText('Current client details');
-    expect(record.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Every contact detail sits in the summary above the workflow; there is no
+    // second client block further down.
+    const email = screen.getByText('fixture@example.test');
+    expect(email.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Current client details')).not.toBeInTheDocument();
   });
 
   it('links an overdue dashboard follow-up directly to its enquiry', async () => {

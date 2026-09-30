@@ -731,12 +731,12 @@ function pageScopeFor(path: string): PageScope {
 function scopeContextCopy(scope: Exclude<PageScope, 'artist' | 'index'>, language: Language) {
   if (scope === 'shared') {
     return language === 'ru'
-      ? { title: 'Общие записи', hint: 'Клиенты не фильтруются по выбранному мастеру.' }
-      : { title: 'Shared records', hint: 'Clients are not filtered by the selected artist.' };
+      ? { title: 'Все мастера', hint: 'Клиенты общие: список не зависит от выбранного мастера.' }
+      : { title: 'All artists', hint: 'Clients are shared: the list does not depend on the selected artist.' };
   }
   return language === 'ru'
-    ? { title: 'Общий раздел', hint: 'Этот раздел не фильтруется по мастеру.' }
-    : { title: 'Global section', hint: 'This section is not filtered by artist.' };
+    ? { title: 'Все мастера', hint: 'Раздел общий для всех мастеров.' }
+    : { title: 'All artists', hint: 'This section covers every artist.' };
 }
 
 function artistScopeErrorCopy(language: Language) {

@@ -287,3 +287,8 @@
     padding: 12px 14px;
   }
 }
+
+/* Whose payments are on screen when the CRM is on "All artists". */
+.payments-artist-switch { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.payments-artist-switch .button-row { margin: 0; }
+.payments-artist-switch button[aria-pressed='true'] { border-color: var(--accent); background: rgba(76, 141, 255, 0.16); }
