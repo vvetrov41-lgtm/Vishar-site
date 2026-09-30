@@ -94,9 +94,17 @@ for (const tool of tools) {
     assert.equal(typeof tool.definition.annotations[key], 'boolean', `${tool.name}.${key} must be explicit`);
   }
   for (const forbidden of FORBIDDEN) {
-    assert(!Object.prototype.hasOwnProperty.call(tool.definition.inputSchema.properties || {}, forbidden), `${tool.name} exposes forbidden ${forbidden}`);
+    const allowedContextSelector = tool.operationId === 'selectArtistContext' && forbidden === 'artist_id';
+    if (!allowedContextSelector) {
+      assert(!Object.prototype.hasOwnProperty.call(tool.definition.inputSchema.properties || {}, forbidden), `${tool.name} exposes forbidden ${forbidden}`);
+    }
   }
 }
+
+const selectArtistContext = tools.find((tool) => tool.operationId === 'selectArtistContext');
+assert(selectArtistContext, 'bounded Artist context selector is present');
+assert.equal(selectArtistContext.definition.inputSchema.properties.artist_id.format, 'uuid');
+assert(selectArtistContext.definition.inputSchema.required.includes('artist_id'));
 
 const listClients = tools.find((tool) => tool.operationId === 'listClients');
 const archiveClient = tools.find((tool) => tool.operationId === 'archiveClient');
