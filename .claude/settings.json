@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git push origin *:refs/heads/release/private-crm-rc*)",
+      "Bash(git push --force origin *:refs/heads/release/private-crm-rc960-inventory-gpt-unified-domains)"
+    ]
+  }
+}
