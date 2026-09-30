@@ -71,6 +71,14 @@ assert.doesNotMatch(workflow, /! grep -Fq/, 'a negated grep never fails under se
 
 // Readback reaches every new host and proves OAuth is still required.
 assert.match(workflow, /for host in \$UNIFIED_HOSTS; do\n\s+probe 200 "https:\/\/\$host\/privacy"/);
+// New hosts resolve seconds after the deploy: probes bypass the runner's
+// negative DNS cache and retry only a missing response, never a wrong status.
+assert.ok(workflow.includes('--doh-url https://cloudflare-dns.com/dns-query "$url"'), 'probes resolve through DoH');
+assert.ok(workflow.includes(`[ "$actual" = '000' ] && [ "$(date +%s)" -lt "$probe_deadline" ] || break`),
+  'only a missing response is retried, and only until one shared deadline');
+const deadline = Number(workflow.match(/probe_deadline=\$\(\( \$\(date \+%s\) \+ (\d+) \)\)/)?.[1]);
+const jobTimeout = Number(workflow.match(/timeout-minutes: (\d+)/)?.[1]);
+assert.ok(deadline > 0 && deadline <= 600 && deadline < jobTimeout * 60 / 3, 'probe deadline leaves room for rollback');
 for (const path of ['gpt-billing.vishartattoo.com/v1/invoices', 'gpt-workspace.vishartattoo.com/v1/me']) {
   assert.ok(workflow.includes(`probe 401 "https://${path}"`), `readback must prove ${path} requires OAuth`);
 }
