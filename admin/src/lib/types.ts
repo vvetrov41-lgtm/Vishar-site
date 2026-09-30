@@ -295,6 +295,8 @@ export interface EmailMessage {
   sent_at: string | null;
   failed_at: string | null;
   error_code: string | null;
+  /** Set only on the retired automatic intake reply drafts. */
+  ai_intake_job_id?: string | null;
 }
 
 /** One stored email with its body. Read only when a thread is opened. */

@@ -78,6 +78,19 @@ function stateForMessage(message: Pick<EmailMessage, 'status' | 'created_by_kind
   return stateFor(message.status);
 }
 
+/**
+ * Automatic intake reply drafts were retired at the owner's request: they were
+ * never usable, so an unsent one is not history worth showing either. A draft
+ * the owner explicitly asked GPT to write carries no intake job and stays.
+ */
+function isDiscardedMachineDraft(
+  message: Pick<EmailMessage, 'status' | 'created_by_kind' | 'ai_intake_job_id'>,
+): boolean {
+  return message.created_by_kind === 'ai'
+    && Boolean(message.ai_intake_job_id)
+    && (message.status === 'draft' || message.status === 'cancelled');
+}
+
 /** True when the thread is waiting on a person, not on a machine. */
 export function threadNeedsOperator(thread: Pick<EmailThread, 'state'>): boolean {
   return thread.state === 'awaiting_approval' || thread.state === 'send_failed';
@@ -93,6 +106,7 @@ export function threadNeedsOperator(thread: Pick<EmailThread, 'state'>): boolean
 export function groupEmailThreads(messages: EmailMessage[]): EmailThread[] {
   const threads = new Map<string, EmailMessage[]>();
   for (const message of messages) {
+    if (isDiscardedMachineDraft(message)) continue;
     const key = threadKeyFor(message);
     const bucket = threads.get(key) ?? [];
     bucket.push(message);

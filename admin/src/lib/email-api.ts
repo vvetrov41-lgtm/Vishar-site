@@ -15,7 +15,7 @@ import type { EmailMessage, EmailMessageDetail } from './types';
 
 const LIST_COLUMNS =
   'id, artist_id, status, to_email, subject, created_by_kind, created_at, '
-  + 'client_id, enquiry_id, project_id, approved_at, sent_at, failed_at, error_code';
+  + 'client_id, enquiry_id, project_id, approved_at, sent_at, failed_at, error_code, ai_intake_job_id';
 const GMAIL_OPERATOR_ORIGIN = 'https://gmail.vishartattoo.com';
 
 export interface EmailMessageFilter {

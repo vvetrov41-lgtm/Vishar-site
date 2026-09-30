@@ -306,7 +306,7 @@ leadBox.innerHTML = `
     </label>
     <label class="block">
       <span class="mb-1 block text-xs uppercase tracking-[0.25em] text-white/60">Contact</span>
-      <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email, WhatsApp or Instagram" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
+      <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email or WhatsApp" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
     </label>
   </div>
   <label class="mt-3 block">
@@ -314,7 +314,6 @@ leadBox.innerHTML = `
     <select id="ai-idea-reply" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-white/40">
       <option>Email</option>
       <option>WhatsApp</option>
-      <option>Instagram</option>
       <option>No preference</option>
     </select>
   </label>
@@ -335,6 +334,16 @@ function setStatus(message, isError) {
   status.classList.add(isError ? 'text-red-200' : 'text-white/50');
 }
 
+function ideaContactProblem(contact, preferredReply) {
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+  const isPhone = /^\+?[\d\s().-]+$/.test(contact) && contact.replace(/\D/g, '').length >= 7;
+  if (!contact) return 'Please add an email or WhatsApp number first.';
+  if (preferredReply === 'Email' && !isEmail) return 'Please add a valid email address.';
+  if (preferredReply === 'WhatsApp' && !isPhone) return 'Please add your WhatsApp number with country code.';
+  if (!isEmail && !isPhone) return 'Please add an email or WhatsApp number.';
+  return '';
+}
+
 window.sendIdeaToVladimir = async function () {
   const originalIdea = ideaInput.value.trim();
   const aiSummary = ideaResult.innerText.trim();
@@ -342,8 +351,9 @@ window.sendIdeaToVladimir = async function () {
   const contact = (document.getElementById('ai-idea-contact') || {}).value || '';
   const preferredReply = (document.getElementById('ai-idea-reply') || {}).value || 'No preference';
 
-  if (!contact.trim()) {
-    setStatus('Please add an email, WhatsApp number or Instagram username first.', true);
+  const contactProblem = ideaContactProblem(contact.trim(), preferredReply);
+  if (contactProblem) {
+    setStatus(contactProblem, true);
     return;
   }
 

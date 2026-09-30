@@ -28,7 +28,7 @@ function email(overrides: Record<string, unknown> = {}) {
     to_email: 'diana@example.com',
     subject: 'Your deposit for the raven sleeve',
     body: 'Hi Diana, here is the deposit link for your first session.',
-    created_by_kind: 'ai',
+    created_by_kind: 'system',
     created_at: '2026-07-01T09:00:00Z',
     client_id: CLIENT_ID,
     enquiry_id: ENQUIRY_ID,
@@ -135,7 +135,7 @@ describe('email in the inbox list', () => {
     expect(screen.queryByText('Your appointment is confirmed')).not.toBeInTheDocument();
   });
 
-  it('keeps a paused AI draft out of the Needs reply queue', async () => {
+  it('keeps a paused machine draft out of the Needs reply queue', async () => {
     renderWithSession(<App />, { role: 'owner', path: '/inbox', emailMessages: [email()] });
     await screen.findByText('Your deposit for the raven sleeve');
 
@@ -145,6 +145,19 @@ describe('email in the inbox list', () => {
       expect(screen.queryByText('Your deposit for the raven sleeve')).not.toBeInTheDocument();
     });
     expect(screen.getByText('Can we move Friday?')).toBeInTheDocument();
+  });
+
+  it('leaves a retired AI reply draft out of the inbox entirely', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/inbox',
+      emailMessages: [
+        email({ created_by_kind: 'ai', ai_intake_job_id: 'job-1' }),
+        email({ id: 'ai-cancelled', created_by_kind: 'ai', status: 'cancelled', ai_intake_job_id: 'job-2' }),
+      ],
+    });
+    await screen.findByText('Can we move Friday?');
+    expect(screen.queryByText('Your deposit for the raven sleeve')).not.toBeInTheDocument();
   });
 
   it('filters to email alone without losing the messaging channels from the tabs', async () => {
