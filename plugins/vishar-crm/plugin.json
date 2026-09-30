@@ -5,19 +5,28 @@
   "description": "Operate Vishar CRM through the signed-in user's bounded CRM permissions and Artist context.",
   "homepage": "https://vishartattoo.com",
   "repository": "https://github.com/vvetrov41-lgtm/Vishar-site",
-  "keywords": ["crm", "booking", "tattoo", "communications", "scheduling"],
+  "keywords": [
+    "crm",
+    "booking",
+    "tattoo",
+    "communications",
+    "scheduling"
+  ],
   "extensions": {
     "com.openai": {
       "interface": {
         "displayName": "Vishar CRM",
-        "shortDescription": "Work with Vishar CRM data and approved actions.",
+        "shortDescription": "Your tattoo studio CRM",
         "longDescription": "Read and manage Vishar CRM using the permissions of the signed-in human and the active Artist context. Supports clients, enquiries, projects, scheduling, communications, billing, automations, integrations, notifications, team and workspace operations through a bounded MCP server.",
-        "developerName": "Vishar",
-        "category": "productivity",
+        "developerName": "Vladimir Vishar",
+        "category": "Productivity",
         "websiteURL": "https://vishartattoo.com",
         "privacyPolicyURL": "https://vishartattoo.com/privacy/vishar-crm-meta/",
         "defaultPrompt": "Show me what needs my attention in Vishar CRM today."
       }
     }
+  },
+  "author": {
+    "name": "Vladimir Vishar"
   }
 }

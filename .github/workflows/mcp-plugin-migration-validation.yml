@@ -8,6 +8,9 @@ on:
       - 'workers/vishar-mcp.js'
       - 'scripts/build-mcp-plugin-tools.mjs'
       - 'scripts/test-mcp-plugin-tools.mjs'
+      - 'scripts/build-mcp-plugin-parity.mjs'
+      - 'docs/plugin-mcp/**'
+      - 'plugins/vishar-crm/**'
       - 'wrangler.mcp*.toml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   workflow_dispatch:
@@ -36,6 +39,10 @@ jobs:
           node --check workers/lib/mcp-plugin-server.js
       - name: Plugin MCP contracts
         run: node scripts/test-mcp-plugin-tools.mjs
+      - name: Plugin package and operation parity
+        run: |
+          node scripts/build-mcp-plugin-parity.mjs --check
+          node --input-type=module -e "import {readFileSync} from 'node:fs'; for (const file of ['plugins/vishar-crm/plugin.json', 'plugins/vishar-crm/mcp.json']) JSON.parse(readFileSync(file, 'utf8'));"
       - name: Existing MCP regression tests
         run: |
           node scripts/test-mcp-domain-contracts.mjs
