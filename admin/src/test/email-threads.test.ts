@@ -75,8 +75,15 @@ describe('what a thread is waiting on', () => {
     expect(thread.actionable_message_id).toBeNull();
   });
 
-  it('drops unsent AI reply drafts, which were retired', () => {
-    expect(groupEmailThreads([message(), message({ id: 'm2', status: 'cancelled' })])).toEqual([]);
+  it('drops unsent automatic intake drafts, which were retired', () => {
+    expect(groupEmailThreads([
+      message({ ai_intake_job_id: 'job-1' }),
+      message({ id: 'm2', status: 'cancelled', ai_intake_job_id: 'job-2' }),
+    ])).toEqual([]);
+  });
+
+  it('keeps an AI draft the owner asked GPT to write', () => {
+    expect(groupEmailThreads([message({ ai_intake_job_id: null })])).toHaveLength(1);
   });
 
   it('keeps an AI-written message that a person approved and sent', () => {

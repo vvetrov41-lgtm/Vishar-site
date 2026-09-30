@@ -8,9 +8,11 @@
 -- 1. service_complete_enquiry_ai_job no longer inserts an AI email draft.
 --    Its return shape keeps 'draft_id' (always null) so the current worker,
 --    which only reads 'status', keeps working unchanged.
--- 2. Every existing AI draft that was never approved is cancelled. Nothing is
---    deleted, so history and foreign keys stay intact, and a cancelled row can
---    never be approved, queued or sent.
+-- 2. Every existing automatic intake draft (ai_intake_job_id set) that was
+--    never approved is cancelled. Drafts the owner explicitly asked a GPT
+--    action to write are also created_by_kind='ai' but carry no intake job;
+--    they are left alone. Nothing is deleted, so history and foreign keys stay
+--    intact, and a cancelled row can never be approved, queued or sent.
 
 create or replace function public.service_complete_enquiry_ai_job(p_job_id uuid,p_lease_token uuid,p_result jsonb,p_provider text,p_model text)
 returns jsonb language plpgsql security definer set search_path = pg_catalog, public, crm_private as $$
@@ -55,5 +57,6 @@ grant execute on function public.service_complete_enquiry_ai_job(uuid,uuid,jsonb
 update public.email_messages
 set status = 'cancelled'
 where created_by_kind = 'ai'
+  and ai_intake_job_id is not null
   and status = 'draft'
   and approved_at is null;

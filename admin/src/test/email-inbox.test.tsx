@@ -151,7 +151,10 @@ describe('email in the inbox list', () => {
     renderWithSession(<App />, {
       role: 'owner',
       path: '/inbox',
-      emailMessages: [email({ created_by_kind: 'ai' }), email({ id: 'ai-cancelled', created_by_kind: 'ai', status: 'cancelled' })],
+      emailMessages: [
+        email({ created_by_kind: 'ai', ai_intake_job_id: 'job-1' }),
+        email({ id: 'ai-cancelled', created_by_kind: 'ai', status: 'cancelled', ai_intake_job_id: 'job-2' }),
+      ],
     });
     await screen.findByText('Can we move Friday?');
     expect(screen.queryByText('Your deposit for the raven sleeve')).not.toBeInTheDocument();
