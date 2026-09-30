@@ -57,7 +57,7 @@ for (const row of OPERATOR_PARITY) {
   assert.ok(PARITY_METADATA.consequences.includes(row.consequence), `${row.key} has an unknown consequence`);
   if (row.gpt.status === 'ui_only') {
     assert.equal(row.gpt.operationId, null);
-    assert.ok(['provider_handoff', 'device_local', 'pre_profile'].includes(row.ui), `${row.key} UI-only needs a concrete kind`);
+    assert.ok(['provider_handoff', 'device_local', 'pre_profile', 'owner_excluded'].includes(row.ui), `${row.key} UI-only needs a concrete kind`);
     assert.ok(row.note && row.note.length > 40, `${row.key} UI-only must explain the unavoidable human step`);
   } else {
     assert.match(row.gpt.operationId, /^[a-z][A-Za-z0-9]+$/, `${row.key} needs an operationId`);
@@ -196,18 +196,29 @@ assert.equal(new Set(projected).size, projected.length, 'an operation is project
 // ------------------------------------------ UI-only is only the human step
 const uiOnly = OPERATOR_PARITY.filter((row) => row.gpt.status === 'ui_only').map((row) => row.key).sort();
 assert.deepEqual(uiOnly, [
+  'account.delete',
   'calendar.connection.disconnect',
   'calendar.google_consent',
   'files.device_upload',
   'gpt.oauth.consent',
   'instagram.meta_consent',
   'monzo.oauth_consent',
+  'signup.availability.set',
+  'signup.policy.get',
   'signup.tenant.bootstrap',
   'telegram.account_confirm',
   'whatsapp.embedded_signup',
   'whatsapp.existing_account.system_user_token',
   'whatsapp.meta_review.template',
+  'workspace.control_plane_access',
+  'workspace.ownership.transfer',
 ]);
+// Owner-excluded actions are exactly the five the owner kept in the CRM on
+// 2026-09-30; the kind is not a general escape hatch for owed operations.
+assert.deepEqual(
+  OPERATOR_PARITY.filter((row) => row.ui === 'owner_excluded').map((row) => row.key).sort(),
+  ['account.delete', 'signup.availability.set', 'signup.policy.get', 'workspace.control_plane_access', 'workspace.ownership.transfer'],
+);
 
 const inventorySource = read('docs/gpt-actions/operator-parity.current.mjs');
 assert.doesNotMatch(inventorySource, /service[_ -]?role|sb_secret_|oauth_client_secret|access_token\s*[:=]|refresh_token\s*[:=]/i,

@@ -38,6 +38,10 @@ export const ENUMS = Object.freeze({
   artist_access_level: ['owner', 'artist', 'manager', 'read_only'],
   workspace_role: ['owner', 'admin', 'booking_manager', 'read_only'],
   workspace_type: ['solo', 'studio'],
+  // Owner rows change only through seatArtistOwner / transferWorkspaceOwnership;
+  // the membership upserts always refuse them, so they are not offered.
+  non_owner_artist_access_level: ['artist', 'manager', 'read_only'],
+  non_owner_workspace_role: ['admin', 'booking_manager', 'read_only'],
 });
 
 const MONZO_PAY_URL = '^https://monzo[.]com/pay/r/[A-Za-z0-9_-]{4,255}$';
@@ -775,24 +779,11 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     params: [p.req(p.enum('language', 'p_language', ENUMS.ui_language))],
     summary: 'Change the CRM language of the signed-in user',
   }),
-  op({
-    id: 'deleteMyAccount', domain: 'Workspace', method: 'POST', path: '/v1/me/delete', rpc: 'gpt_delete_my_account',
-    params: [requestId, p.req(p.text('confirmation', 'p_confirmation', 320, {
-      description: 'The signed-in account email, typed exactly by the user in this conversation.',
-    }))],
-    summary: 'Permanently delete the signed-in CRM account',
-    description: 'Irreversible. Call only when the user explicitly asks to delete their own account and has typed their account email. The installation owner cannot delete their own account.',
-  }),
 
   // --------------------------------------------- Workspace: administration
   // Every operation below needs the administration ceiling. The workspace is
   // the one that owns the active artist; the CRM RPC keeps its own owner,
   // manage_team or workspace-administrator check.
-  op({
-    id: 'getControlPlaneAccess', domain: 'Workspace', method: 'GET', path: '/v1/workspace/access',
-    rpc: 'gpt_get_control_plane_access',
-    summary: 'Read what workspace, team and directory administration the signed-in user may do',
-  }),
   op({
     id: 'listWorkspaces', domain: 'Workspace', method: 'GET', path: '/v1/workspaces', rpc: 'gpt_list_workspaces',
     summary: 'List the studios and solo workspaces the signed-in user belongs to',
@@ -820,13 +811,6 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     ],
     summary: 'Rename, re-time-zone, change the currency of, or deactivate the active artist workspace',
     description: 'Omitted fields stay unchanged.',
-  }),
-  op({
-    id: 'transferWorkspaceOwnership', domain: 'Workspace', method: 'POST', path: '/v1/workspace/ownership-transfer',
-    rpc: 'gpt_transfer_workspace_ownership',
-    params: [requestId, p.req(p.uuid('to_profile_id', 'p_to_profile_id'))],
-    summary: 'Hand ownership of the active artist workspace to another member',
-    description: 'Only the current workspace owner can do this, and it cannot be undone by the previous owner.',
   }),
   op({
     id: 'listWorkspaceArtists', domain: 'Workspace', method: 'GET', path: '/v1/workspace/artists',
@@ -866,23 +850,6 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     id: 'getArtistOnboardingState', domain: 'Workspace', method: 'GET', path: '/v1/artist/onboarding',
     rpc: 'gpt_get_artist_onboarding_state',
     summary: 'Read the setup checklist of the active artist',
-  }),
-  op({
-    id: 'getSelfServiceSignupPolicy', domain: 'Workspace', method: 'GET', path: '/v1/signup-policy',
-    rpc: 'gpt_get_self_service_signup_policy',
-    summary: 'Read whether new artists can sign up on their own, and its limits',
-  }),
-  op({
-    id: 'setSelfServiceSignup', domain: 'Workspace', method: 'PUT', path: '/v1/signup-policy',
-    rpc: 'gpt_set_self_service_signup',
-    params: [
-      requestId,
-      p.req(p.bool('is_open', 'p_is_open')),
-      p.int('max_signups_per_hour', 'p_max_signups_per_hour', 1, 1000),
-      p.int('max_workspaces_per_founder', 'p_max_workspaces_per_founder', 1, 100),
-    ],
-    summary: 'Open or close self-service artist signup and set its limits',
-    description: 'Installation owner only.',
   }),
   op({
     id: 'getTenantInvitePolicy', domain: 'Workspace', method: 'GET', path: '/v1/team/invite-policy',
@@ -930,13 +897,14 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     params: [
       p.path('profile_id', 'p_profile_id'),
       requestId,
-      p.req(p.enum('workspace_role', 'p_workspace_role', ENUMS.workspace_role)),
-      p.bool('can_manage_workspace', 'p_can_manage_workspace', { default: false }),
-      p.bool('can_manage_team', 'p_can_manage_team', { default: false }),
-      p.bool('can_manage_integrations', 'p_can_manage_integrations', { default: false }),
-      p.bool('is_active', 'p_is_active', { default: true }),
+      p.req(p.enum('workspace_role', 'p_workspace_role', ENUMS.non_owner_workspace_role)),
+      p.bool('can_manage_workspace', 'p_can_manage_workspace'),
+      p.bool('can_manage_team', 'p_can_manage_team'),
+      p.bool('can_manage_integrations', 'p_can_manage_integrations'),
+      p.bool('is_active', 'p_is_active'),
     ],
     summary: 'Add a person to the active artist workspace or change their workspace role',
+    description: 'Omitted settings keep the member\'s current value; a new member starts with none of them and active.',
   }),
   op({
     id: 'listArtistMemberships', domain: 'Team', method: 'GET', path: '/v1/team/artist-memberships',
@@ -949,15 +917,15 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     params: [
       p.path('profile_id', 'p_profile_id'),
       requestId,
-      p.req(p.enum('access_level', 'p_access_level', ENUMS.artist_access_level)),
-      p.bool('can_view_finance', 'p_can_view_finance', { default: false }),
-      p.bool('can_manage_finance', 'p_can_manage_finance', { default: false }),
-      p.bool('can_manage_sessions', 'p_can_manage_sessions', { default: false }),
-      p.bool('can_manage_integrations', 'p_can_manage_integrations', { default: false }),
-      p.bool('is_active', 'p_is_active', { default: true }),
+      p.req(p.enum('access_level', 'p_access_level', ENUMS.non_owner_artist_access_level)),
+      p.bool('can_view_finance', 'p_can_view_finance'),
+      p.bool('can_manage_finance', 'p_can_manage_finance'),
+      p.bool('can_manage_sessions', 'p_can_manage_sessions'),
+      p.bool('can_manage_integrations', 'p_can_manage_integrations'),
+      p.bool('is_active', 'p_is_active'),
     ],
     summary: 'Set a person\'s access level and capabilities on the active artist',
-    description: 'Installation owner only. Use grantArtistMembership as a workspace team manager.',
+    description: 'Installation owner only. Use grantArtistMembership as a workspace team manager. Omitted settings keep the member\'s current value; a new member starts with none of them and active.',
   }),
   op({
     id: 'previewArtistMembership', domain: 'Team', method: 'GET', path: '/v1/team/artist-memberships/preview',
@@ -978,14 +946,15 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     params: [
       requestId,
       p.req(p.uuid('profile_id', 'p_profile_id')),
-      p.enum('access_level', 'p_access_level', ENUMS.artist_access_level, { default: 'manager' }),
-      p.bool('can_view_finance', 'p_can_view_finance', { default: false }),
-      p.bool('can_manage_finance', 'p_can_manage_finance', { default: false }),
-      p.bool('can_manage_sessions', 'p_can_manage_sessions', { default: false }),
-      p.bool('can_manage_integrations', 'p_can_manage_integrations', { default: false }),
-      p.bool('is_active', 'p_is_active', { default: true }),
+      p.enum('access_level', 'p_access_level', ENUMS.artist_access_level),
+      p.bool('can_view_finance', 'p_can_view_finance'),
+      p.bool('can_manage_finance', 'p_can_manage_finance'),
+      p.bool('can_manage_sessions', 'p_can_manage_sessions'),
+      p.bool('can_manage_integrations', 'p_can_manage_integrations'),
+      p.bool('is_active', 'p_is_active'),
     ],
     summary: 'Give a person access to the active artist as a workspace team manager',
+    description: 'Omitted settings keep the member\'s current value; a new member starts as a manager with none of them, active. Only an installation owner can grant owner access.',
   }),
   op({
     id: 'seatArtistOwner', domain: 'Team', method: 'POST', path: '/v1/team/artist-owner', rpc: 'gpt_seat_artist_owner',

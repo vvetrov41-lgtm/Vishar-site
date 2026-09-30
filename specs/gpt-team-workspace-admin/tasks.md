@@ -2,10 +2,10 @@
 
 ## Stage 1
 
-- [x] Migration `20260930120000_gpt_team_workspace_administration.sql` with 26 wrappers and grants.
+- [x] Migration `20260930120000_gpt_team_workspace_administration.sql` with 21 wrappers and grants.
 - [x] pgTAP `1842_gpt_team_workspace_admin.sql`.
-- [x] 26 registry entries in `workers/lib/gpt-domain-operations.js`.
-- [x] Parity inventory: 26 rows `available`.
+- [x] 21 registry entries in `workers/lib/gpt-domain-operations.js`.
+- [x] Parity inventory: 21 rows `available`, 5 `owner_excluded`.
 - [x] Regenerate unified schemas (`team`, `workspace`).
 - [x] Add `gpt-team.vishartattoo.com` to the production Worker config.
 - [x] One-shot 12 → 13 rollout workflow and its test.

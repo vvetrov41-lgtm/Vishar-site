@@ -53,30 +53,6 @@ paths:
               properties:
                 language: {type: "string", enum: ["en", "ru"]}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
-  /v1/me/delete:
-    post:
-      operationId: deleteMyAccount
-      summary: "Permanently delete the signed-in CRM account"
-      x-openai-isConsequential: true
-      description: "Irreversible. Call only when the user explicitly asks to delete their own account and has typed their account email. The installation owner cannot delete their own account."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: ["request_id", "confirmation"]
-              properties:
-                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
-                confirmation: {type: "string", maxLength: 320, description: "The signed-in account email, typed exactly by the user in this conversation."}
-      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
-  /v1/workspace/access:
-    get:
-      operationId: getControlPlaneAccess
-      summary: "Read what workspace, team and directory administration the signed-in user may do"
-      x-openai-isConsequential: false
-      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/workspaces:
     get:
       operationId: listWorkspaces
@@ -123,24 +99,6 @@ paths:
                 timezone: {type: "string", maxLength: 64}
                 default_currency: {type: "string", maxLength: 3, pattern: "^[A-Z]{3}$"}
                 is_active: {type: "boolean"}
-      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
-  /v1/workspace/ownership-transfer:
-    post:
-      operationId: transferWorkspaceOwnership
-      summary: "Hand ownership of the active artist workspace to another member"
-      x-openai-isConsequential: true
-      description: "Only the current workspace owner can do this, and it cannot be undone by the previous owner."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: ["request_id", "to_profile_id"]
-              properties:
-                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
-                to_profile_id: {type: "string", format: "uuid"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/workspace/artists:
     get:
@@ -201,31 +159,6 @@ paths:
       summary: "Read the setup checklist of the active artist"
       x-openai-isConsequential: false
       responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
-  /v1/signup-policy:
-    get:
-      operationId: getSelfServiceSignupPolicy
-      summary: "Read whether new artists can sign up on their own, and its limits"
-      x-openai-isConsequential: false
-      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
-    put:
-      operationId: setSelfServiceSignup
-      summary: "Open or close self-service artist signup and set its limits"
-      x-openai-isConsequential: true
-      description: "Installation owner only."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: ["request_id", "is_open"]
-              properties:
-                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
-                is_open: {type: "boolean"}
-                max_signups_per_hour: {type: "integer", minimum: 1, maximum: 1000}
-                max_workspaces_per_founder: {type: "integer", minimum: 1, maximum: 100}
-      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/team/invite-policy:
     get:
       operationId: getTenantInvitePolicy

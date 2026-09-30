@@ -72,7 +72,7 @@ paths:
       operationId: upsertArtistMembership
       summary: "Set a person's access level and capabilities on the active artist"
       x-openai-isConsequential: true
-      description: "Installation owner only. Use grantArtistMembership as a workspace team manager."
+      description: "Installation owner only. Use grantArtistMembership as a workspace team manager. Omitted settings keep the member's current value; a new member starts with none of them and active."
       parameters:
         - {name: "profile_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       requestBody:
@@ -85,12 +85,12 @@ paths:
               required: ["request_id", "access_level"]
               properties:
                 request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
-                access_level: {type: "string", enum: ["owner", "artist", "manager", "read_only"]}
-                can_view_finance: {type: "boolean", default: false}
-                can_manage_finance: {type: "boolean", default: false}
-                can_manage_sessions: {type: "boolean", default: false}
-                can_manage_integrations: {type: "boolean", default: false}
-                is_active: {type: "boolean", default: true}
+                access_level: {type: "string", enum: ["artist", "manager", "read_only"]}
+                can_view_finance: {type: "boolean"}
+                can_manage_finance: {type: "boolean"}
+                can_manage_sessions: {type: "boolean"}
+                can_manage_integrations: {type: "boolean"}
+                is_active: {type: "boolean"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/team/directory:
     get:
@@ -109,6 +109,7 @@ paths:
       operationId: upsertWorkspaceMembership
       summary: "Add a person to the active artist workspace or change their workspace role"
       x-openai-isConsequential: true
+      description: "Omitted settings keep the member's current value; a new member starts with none of them and active."
       parameters:
         - {name: "profile_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       requestBody:
@@ -121,11 +122,11 @@ paths:
               required: ["request_id", "workspace_role"]
               properties:
                 request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
-                workspace_role: {type: "string", enum: ["owner", "admin", "booking_manager", "read_only"]}
-                can_manage_workspace: {type: "boolean", default: false}
-                can_manage_team: {type: "boolean", default: false}
-                can_manage_integrations: {type: "boolean", default: false}
-                is_active: {type: "boolean", default: true}
+                workspace_role: {type: "string", enum: ["admin", "booking_manager", "read_only"]}
+                can_manage_workspace: {type: "boolean"}
+                can_manage_team: {type: "boolean"}
+                can_manage_integrations: {type: "boolean"}
+                is_active: {type: "boolean"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/team/artist-memberships:
     get:
@@ -151,6 +152,7 @@ paths:
       operationId: grantArtistMembership
       summary: "Give a person access to the active artist as a workspace team manager"
       x-openai-isConsequential: true
+      description: "Omitted settings keep the member's current value; a new member starts as a manager with none of them, active. Only an installation owner can grant owner access."
       requestBody:
         required: true
         content:
@@ -162,12 +164,12 @@ paths:
               properties:
                 request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
                 profile_id: {type: "string", format: "uuid"}
-                access_level: {type: "string", enum: ["owner", "artist", "manager", "read_only"], default: "manager"}
-                can_view_finance: {type: "boolean", default: false}
-                can_manage_finance: {type: "boolean", default: false}
-                can_manage_sessions: {type: "boolean", default: false}
-                can_manage_integrations: {type: "boolean", default: false}
-                is_active: {type: "boolean", default: true}
+                access_level: {type: "string", enum: ["owner", "artist", "manager", "read_only"]}
+                can_view_finance: {type: "boolean"}
+                can_manage_finance: {type: "boolean"}
+                can_manage_sessions: {type: "boolean"}
+                can_manage_integrations: {type: "boolean"}
+                is_active: {type: "boolean"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/team/artist-owner:
     post:

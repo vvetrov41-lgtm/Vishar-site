@@ -20,19 +20,25 @@ select ok(
      'gpt_list_team_memberships', 'gpt_upsert_artist_membership', 'gpt_list_directory_profiles',
      'gpt_list_workspace_team', 'gpt_upsert_workspace_membership', 'gpt_list_artist_memberships',
      'gpt_preview_artist_membership', 'gpt_grant_artist_membership', 'gpt_seat_artist_owner',
-     'gpt_delete_my_account', 'gpt_get_control_plane_access', 'gpt_list_workspaces', 'gpt_create_workspace',
-     'gpt_update_workspace', 'gpt_transfer_workspace_ownership', 'gpt_list_workspace_artists',
+     'gpt_list_workspaces', 'gpt_create_workspace', 'gpt_update_workspace', 'gpt_list_workspace_artists',
      'gpt_get_artist_control_plane_context', 'gpt_create_artist', 'gpt_update_artist',
-     'gpt_get_artist_onboarding_state', 'gpt_get_self_service_signup_policy', 'gpt_set_self_service_signup',
-     'gpt_get_tenant_invite_policy')),
+     'gpt_get_artist_onboarding_state', 'gpt_get_tenant_invite_policy')),
   'every Team and Workspace wrapper is an authenticated-only SECURITY DEFINER function'
+);
+select is(
+  (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname in (
+     'gpt_delete_my_account', 'gpt_get_control_plane_access', 'gpt_transfer_workspace_ownership',
+     'gpt_get_self_service_signup_policy', 'gpt_set_self_service_signup')),
+  0,
+  'account deletion, ownership transfer, signup policy and the access gate stay CRM screen actions'
 );
 select is(
   (select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname like 'gpt\_%'
      and (pg_get_function_arguments(p.oid) ~ '\mp_artist_id\M' or pg_get_function_arguments(p.oid) ~ '\mp_workspace_id\M')
      and p.proname in ('gpt_list_team_profiles', 'gpt_set_team_profile_role', 'gpt_upsert_artist_membership',
-       'gpt_upsert_workspace_membership', 'gpt_update_workspace', 'gpt_transfer_workspace_ownership',
+       'gpt_upsert_workspace_membership', 'gpt_update_workspace',
        'gpt_create_artist', 'gpt_update_artist', 'gpt_grant_artist_membership', 'gpt_seat_artist_owner')),
   0,
   'no administration wrapper accepts an Artist or workspace id'
@@ -80,8 +86,8 @@ select throws_ok($$select public.gpt_list_team_profiles()$$, '42501', null,
   'team profiles stay closed without the administration ceiling');
 select throws_ok($$select public.gpt_list_workspaces()$$, '42501', null,
   'profile-scoped administration stays closed without the ceiling');
-select throws_ok($$select public.gpt_delete_my_account('df12aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'gpt-team-owner@example.test')$$,
-  '42501', null, 'account deletion stays closed without the administration ceiling');
+select throws_ok($$select public.gpt_update_artist('df12aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Closed', null, null, null)$$,
+  '42501', null, 'Artist changes stay closed without the administration ceiling');
 
 select pg_temp.claims('{"sub":"df121111-1111-4111-8111-111111111111","role":"authenticated"}');
 select public.configure_gpt_unified_domain_access('vishar-unified-gpt', false, false, true);
@@ -113,10 +119,8 @@ select lives_ok($$select public.gpt_list_workspace_team()$$, 'the workspace team
 select lives_ok($$select public.gpt_list_artist_memberships()$$, 'memberships of the active Artist read');
 select lives_ok($$select public.gpt_get_artist_onboarding_state()$$, 'the onboarding checklist of the active Artist reads');
 select lives_ok($$select public.gpt_get_tenant_invite_policy()$$, 'the invite policy of the active Artist reads');
-select lives_ok($$select public.gpt_get_control_plane_access()$$, 'control-plane access reads');
 select lives_ok($$select public.gpt_list_workspaces()$$, 'own workspaces read');
 select lives_ok($$select public.gpt_list_directory_profiles()$$, 'the people directory reads for the owner');
-select lives_ok($$select public.gpt_get_self_service_signup_policy()$$, 'the signup policy reads');
 select lives_ok(
   $$select public.gpt_preview_artist_membership('df122222-2222-4222-8222-222222222222', 'manager', true, false, false, false)$$,
   'a membership on the active Artist is previewed without saving it'
@@ -155,20 +159,47 @@ select lives_ok(
   'the member is switched back on with a fresh request_id'
 );
 
+-- Omitted membership settings keep the member's current values: a role-only
+-- change neither revokes capabilities nor re-enables a switched-off member.
+select lives_ok(
+  $$select public.gpt_upsert_artist_membership('df12a1a1-a1a1-41a1-81a1-a1a1a1a1a1a1', 'df122222-2222-4222-8222-222222222222', 'manager', true, false, true, false, false)$$,
+  'the manager gets finance view and session rights and is switched off on Vladimir'
+);
+select lives_ok(
+  $$select public.gpt_upsert_artist_membership('df12a2a2-a2a2-42a2-82a2-a2a2a2a2a2a2', 'df122222-2222-4222-8222-222222222222', 'artist')$$,
+  'only the access level is changed'
+);
+
 -- Writes act on the context Artist only.
 select lives_ok(
   $$select public.gpt_update_artist('df12ffff-ffff-4fff-8fff-ffffffffffff', 'Vladimir via GPT', null, null, null)$$,
   'the active Artist is renamed'
 );
 
--- The CRM RPCs keep their own checks.
-select throws_like(
-  $$select public.gpt_delete_my_account('df12abab-abab-4bab-8bab-abababababab', 'gpt-team-owner@example.test')$$,
-  '%installation owner%',
-  'the installation owner still cannot delete their own account through the GPT'
-);
-
 reset role;
+select is(
+  (select row(access_level::text, can_view_finance, can_manage_sessions, is_active)::text
+   from public.artist_memberships
+   where profile_id = 'df122222-2222-4222-8222-222222222222' and artist_id = 'a1111111-1111-4111-8111-111111111111'),
+  row('artist', true, true, false)::text,
+  'a role-only change keeps the omitted capabilities and keeps the member switched off'
+);
+set local role authenticated;
+select pg_temp.claims('{"sub":"df121111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-unified-team"}');
+select lives_ok(
+  $$select public.gpt_upsert_artist_membership('df12a3a3-a3a3-43a3-83a3-a3a3a3a3a3a3', 'df122222-2222-4222-8222-222222222222', 'read_only')$$,
+  'moving to read-only drops the omitted capabilities instead of failing'
+);
+reset role;
+select is(
+  (select row(access_level::text, can_view_finance, can_manage_sessions, is_active)::text
+   from public.artist_memberships
+   where profile_id = 'df122222-2222-4222-8222-222222222222' and artist_id = 'a1111111-1111-4111-8111-111111111111'),
+  row('read_only', false, false, false)::text,
+  'read-only carries no capability and still keeps the member switched off'
+);
+update public.artist_memberships set access_level = 'manager', is_active = true
+where profile_id = 'df122222-2222-4222-8222-222222222222' and artist_id = 'a1111111-1111-4111-8111-111111111111';
 select is((select display_name from public.artists where id = 'a1111111-1111-4111-8111-111111111111'), 'Vladimir via GPT',
   'the rename landed on the active Artist');
 select isnt((select display_name from public.artists where id = 'a2222222-2222-4222-8222-222222222222'), 'Vladimir via GPT',
@@ -185,9 +216,9 @@ select throws_ok(
   'a non-owner cannot raise any CRM role through the GPT'
 );
 select throws_ok(
-  $$select public.gpt_set_self_service_signup('df12adad-adad-4dad-8dad-adadadadadad', true, null, null)$$,
+  $$select public.gpt_upsert_artist_membership('df12adad-adad-4dad-8dad-adadadadadad', 'df122222-2222-4222-8222-222222222222', 'artist')$$,
   '42501', null,
-  'a non-owner cannot change signup availability through the GPT'
+  'a non-owner cannot use the owner-only artist membership upsert through the GPT'
 );
 
 select * from finish();

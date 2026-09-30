@@ -12,7 +12,9 @@
 -- CRM RPC's role checks here would drift from them.
 --
 -- Team invitations (team.invite, team.artist_invite) run through the Team API
--- Worker and are not part of this migration.
+-- Worker and are not part of this migration. Account deletion, workspace
+-- ownership transfer, the installation signup policy and the control-plane
+-- access gate stay CRM screen actions by the owner's decision.
 
 -- ---------------------------------------------------------------------------
 -- Narrowing helper: a profile belongs to a workspace when it holds a
@@ -112,29 +114,40 @@ create or replace function public.gpt_upsert_artist_membership(
   p_request_id uuid,
   p_profile_id uuid,
   p_access_level text,
-  p_can_view_finance boolean default false,
-  p_can_manage_finance boolean default false,
-  p_can_manage_sessions boolean default false,
-  p_can_manage_integrations boolean default false,
-  p_is_active boolean default true
+  p_can_view_finance boolean default null,
+  p_can_manage_finance boolean default null,
+  p_can_manage_sessions boolean default null,
+  p_can_manage_integrations boolean default null,
+  p_is_active boolean default null
 )
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
 as $$
-declare v_ctx record; v_request jsonb; v_replay jsonb;
+declare v_ctx record; v_request jsonb; v_replay jsonb; v_current public.artist_memberships%rowtype;
 begin
   select * into v_ctx from crm_private.require_gpt_domain_context('administration', null);
   v_request := jsonb_build_object('profile_id', p_profile_id, 'access_level', p_access_level,
-    'view_finance', coalesce(p_can_view_finance, false), 'manage_finance', coalesce(p_can_manage_finance, false),
-    'manage_sessions', coalesce(p_can_manage_sessions, false),
-    'manage_integrations', coalesce(p_can_manage_integrations, false), 'active', coalesce(p_is_active, true));
+    'view_finance', p_can_view_finance, 'manage_finance', p_can_manage_finance,
+    'manage_sessions', p_can_manage_sessions, 'manage_integrations', p_can_manage_integrations,
+    'active', p_is_active);
   v_replay := crm_private.gpt_receipt_begin(v_ctx.gpt_client_id, p_request_id, 'upsert_artist_membership', v_request);
   if v_replay is not null then return v_replay; end if;
+  -- An omitted setting keeps the member's current value (new members get the
+  -- CRM defaults), so a role change never silently revokes or re-enables.
+  select m.* into v_current from public.artist_memberships m
+  where m.profile_id = p_profile_id and m.artist_id = v_ctx.artist_id;
+  -- Read-only access holds no capability, so nothing is carried over into it.
+  if p_access_level = 'read_only' then
+    v_current := jsonb_populate_record(null::public.artist_memberships,
+      jsonb_build_object('access_level', 'read_only', 'is_active', v_current.is_active));
+  end if;
   return crm_private.gpt_receipt_finish(v_ctx.gpt_client_id, p_request_id, 'upsert_artist_membership', v_request,
     public.upsert_artist_membership(p_profile_id, v_ctx.artist_id, p_access_level::public.artist_access_level,
-      coalesce(p_can_view_finance, false), coalesce(p_can_manage_finance, false),
-      coalesce(p_can_manage_sessions, false), coalesce(p_can_manage_integrations, false),
-      coalesce(p_is_active, true)));
+      coalesce(p_can_view_finance, v_current.can_view_finance, false),
+      coalesce(p_can_manage_finance, v_current.can_manage_finance, false),
+      coalesce(p_can_manage_sessions, v_current.can_manage_sessions, false),
+      coalesce(p_can_manage_integrations, v_current.can_manage_integrations, false),
+      coalesce(p_is_active, v_current.is_active, true)));
 end;
 $$;
 
@@ -163,27 +176,33 @@ create or replace function public.gpt_upsert_workspace_membership(
   p_request_id uuid,
   p_profile_id uuid,
   p_workspace_role text,
-  p_can_manage_workspace boolean default false,
-  p_can_manage_team boolean default false,
-  p_can_manage_integrations boolean default false,
-  p_is_active boolean default true
+  p_can_manage_workspace boolean default null,
+  p_can_manage_team boolean default null,
+  p_can_manage_integrations boolean default null,
+  p_is_active boolean default null
 )
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
 as $$
-declare v_ctx record; v_request jsonb; v_replay jsonb;
+declare v_ctx record; v_request jsonb; v_replay jsonb; v_current public.workspace_memberships%rowtype;
 begin
   select * into v_ctx from crm_private.require_gpt_context_workspace('administration', null);
   v_request := jsonb_build_object('profile_id', p_profile_id, 'workspace_role', p_workspace_role,
-    'manage_workspace', coalesce(p_can_manage_workspace, false), 'manage_team', coalesce(p_can_manage_team, false),
-    'manage_integrations', coalesce(p_can_manage_integrations, false), 'active', coalesce(p_is_active, true));
+    'manage_workspace', p_can_manage_workspace, 'manage_team', p_can_manage_team,
+    'manage_integrations', p_can_manage_integrations, 'active', p_is_active);
   v_replay := crm_private.gpt_receipt_begin(v_ctx.gpt_client_id, p_request_id, 'upsert_workspace_membership', v_request);
   if v_replay is not null then return v_replay; end if;
+  -- An omitted setting keeps the member's current value (new members get the
+  -- CRM defaults), so a role change never silently revokes or re-enables.
+  select wm.* into v_current from public.workspace_memberships wm
+  where wm.profile_id = p_profile_id and wm.workspace_id = v_ctx.workspace_id;
   return crm_private.gpt_receipt_finish(v_ctx.gpt_client_id, p_request_id, 'upsert_workspace_membership', v_request,
     jsonb_build_object('membership_id', public.upsert_workspace_membership(p_profile_id, v_ctx.workspace_id,
-      p_workspace_role::public.workspace_role, coalesce(p_can_manage_workspace, false),
-      coalesce(p_can_manage_team, false), coalesce(p_can_manage_integrations, false),
-      coalesce(p_is_active, true))));
+      p_workspace_role::public.workspace_role,
+      coalesce(p_can_manage_workspace, v_current.can_manage_workspace, false),
+      coalesce(p_can_manage_team, v_current.can_manage_team, false),
+      coalesce(p_can_manage_integrations, v_current.can_manage_integrations, false),
+      coalesce(p_is_active, v_current.is_active, true))));
 end;
 $$;
 
@@ -225,30 +244,42 @@ $$;
 create or replace function public.gpt_grant_artist_membership(
   p_request_id uuid,
   p_profile_id uuid,
-  p_access_level text default 'manager',
-  p_can_view_finance boolean default false,
-  p_can_manage_finance boolean default false,
-  p_can_manage_sessions boolean default false,
-  p_can_manage_integrations boolean default false,
-  p_is_active boolean default true
+  p_access_level text default null,
+  p_can_view_finance boolean default null,
+  p_can_manage_finance boolean default null,
+  p_can_manage_sessions boolean default null,
+  p_can_manage_integrations boolean default null,
+  p_is_active boolean default null
 )
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
 as $$
-declare v_ctx record; v_request jsonb; v_replay jsonb;
+declare v_ctx record; v_request jsonb; v_replay jsonb; v_current public.artist_memberships%rowtype;
 begin
   select * into v_ctx from crm_private.require_gpt_domain_context('administration', null);
-  v_request := jsonb_build_object('profile_id', p_profile_id, 'access_level', coalesce(p_access_level, 'manager'),
-    'view_finance', coalesce(p_can_view_finance, false), 'manage_finance', coalesce(p_can_manage_finance, false),
-    'manage_sessions', coalesce(p_can_manage_sessions, false),
-    'manage_integrations', coalesce(p_can_manage_integrations, false), 'active', coalesce(p_is_active, true));
+  v_request := jsonb_build_object('profile_id', p_profile_id, 'access_level', p_access_level,
+    'view_finance', p_can_view_finance, 'manage_finance', p_can_manage_finance,
+    'manage_sessions', p_can_manage_sessions, 'manage_integrations', p_can_manage_integrations,
+    'active', p_is_active);
   v_replay := crm_private.gpt_receipt_begin(v_ctx.gpt_client_id, p_request_id, 'grant_artist_membership', v_request);
   if v_replay is not null then return v_replay; end if;
+  -- Same rule as gpt_upsert_artist_membership: omitted settings keep the
+  -- member's current values; a new member starts as a manager with nothing extra.
+  select m.* into v_current from public.artist_memberships m
+  where m.profile_id = p_profile_id and m.artist_id = v_ctx.artist_id;
+  -- Read-only access holds no capability, so nothing is carried over into it.
+  if coalesce(p_access_level, v_current.access_level::text) = 'read_only' then
+    v_current := jsonb_populate_record(null::public.artist_memberships,
+      jsonb_build_object('access_level', 'read_only', 'is_active', v_current.is_active));
+  end if;
   return crm_private.gpt_receipt_finish(v_ctx.gpt_client_id, p_request_id, 'grant_artist_membership', v_request,
     jsonb_build_object('membership_id', public.grant_workspace_artist_membership(p_profile_id, v_ctx.artist_id,
-      coalesce(p_access_level, 'manager')::public.artist_access_level, coalesce(p_can_view_finance, false),
-      coalesce(p_can_manage_finance, false), coalesce(p_can_manage_sessions, false),
-      coalesce(p_can_manage_integrations, false), coalesce(p_is_active, true))));
+      coalesce(p_access_level::public.artist_access_level, v_current.access_level, 'manager'),
+      coalesce(p_can_view_finance, v_current.can_view_finance, false),
+      coalesce(p_can_manage_finance, v_current.can_manage_finance, false),
+      coalesce(p_can_manage_sessions, v_current.can_manage_sessions, false),
+      coalesce(p_can_manage_integrations, v_current.can_manage_integrations, false),
+      coalesce(p_is_active, v_current.is_active, true))));
 end;
 $$;
 
@@ -268,34 +299,6 @@ end;
 $$;
 
 -- ================================================================== Workspace
-
--- Irreversible. The CRM RPC requires the exact account email and refuses the
--- installation owner. The profile row is anonymised, not deleted, so the
--- receipt written afterwards still has its actor.
-create or replace function public.gpt_delete_my_account(p_request_id uuid, p_confirmation text)
-returns jsonb language plpgsql security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-declare v_client_id uuid; v_request jsonb; v_replay jsonb;
-begin
-  v_client_id := crm_private.require_gpt_profile_scope('administration');
-  v_request := jsonb_build_object('confirmation_sha256', encode(extensions.digest(coalesce(p_confirmation, ''), 'sha256'), 'hex'));
-  v_replay := crm_private.gpt_receipt_begin(v_client_id, p_request_id, 'delete_my_account', v_request);
-  if v_replay is not null then return v_replay; end if;
-  return crm_private.gpt_receipt_finish(v_client_id, p_request_id, 'delete_my_account', v_request,
-    public.delete_my_account(p_confirmation));
-end;
-$$;
-
-create or replace function public.gpt_get_control_plane_access()
-returns jsonb language plpgsql security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-begin
-  perform crm_private.require_gpt_profile_scope('administration');
-  return coalesce((select to_jsonb(a) from public.control_plane_access() a limit 1), '{}'::jsonb);
-end;
-$$;
 
 create or replace function public.gpt_list_workspaces()
 returns jsonb language plpgsql security definer
@@ -352,21 +355,6 @@ begin
   return crm_private.gpt_receipt_finish(v_ctx.gpt_client_id, p_request_id, 'update_workspace', v_request,
     jsonb_build_object('updated', public.update_workspace(v_ctx.workspace_id, p_display_name, p_timezone,
       p_default_currency, p_is_active)));
-end;
-$$;
-
-create or replace function public.gpt_transfer_workspace_ownership(p_request_id uuid, p_to_profile_id uuid)
-returns jsonb language plpgsql security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-declare v_ctx record; v_request jsonb; v_replay jsonb;
-begin
-  select * into v_ctx from crm_private.require_gpt_context_workspace('administration', null);
-  v_request := jsonb_build_object('to_profile_id', p_to_profile_id);
-  v_replay := crm_private.gpt_receipt_begin(v_ctx.gpt_client_id, p_request_id, 'transfer_workspace_ownership', v_request);
-  if v_replay is not null then return v_replay; end if;
-  return crm_private.gpt_receipt_finish(v_ctx.gpt_client_id, p_request_id, 'transfer_workspace_ownership', v_request,
-    jsonb_build_object('transferred', public.transfer_workspace_ownership(v_ctx.workspace_id, p_to_profile_id)));
 end;
 $$;
 
@@ -452,37 +440,6 @@ begin
 end;
 $$;
 
-create or replace function public.gpt_get_self_service_signup_policy()
-returns jsonb language plpgsql security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-begin
-  perform crm_private.require_gpt_profile_scope('administration');
-  return public.self_service_signup_policy();
-end;
-$$;
-
-create or replace function public.gpt_set_self_service_signup(
-  p_request_id uuid,
-  p_is_open boolean,
-  p_max_signups_per_hour integer default null,
-  p_max_workspaces_per_founder integer default null
-)
-returns jsonb language plpgsql security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-declare v_client_id uuid; v_request jsonb; v_replay jsonb;
-begin
-  v_client_id := crm_private.require_gpt_profile_scope('administration');
-  v_request := jsonb_build_object('open', p_is_open, 'per_hour', p_max_signups_per_hour,
-    'per_founder', p_max_workspaces_per_founder);
-  v_replay := crm_private.gpt_receipt_begin(v_client_id, p_request_id, 'set_self_service_signup', v_request);
-  if v_replay is not null then return v_replay; end if;
-  return crm_private.gpt_receipt_finish(v_client_id, p_request_id, 'set_self_service_signup', v_request,
-    public.set_self_service_signup(p_is_open, p_max_signups_per_hour, p_max_workspaces_per_founder));
-end;
-$$;
-
 create or replace function public.gpt_get_tenant_invite_policy()
 returns jsonb language plpgsql security definer
 set search_path = pg_catalog, public, crm_private
@@ -512,19 +469,14 @@ begin
     'public.gpt_preview_artist_membership(uuid,text,boolean,boolean,boolean,boolean)',
     'public.gpt_grant_artist_membership(uuid,uuid,text,boolean,boolean,boolean,boolean,boolean)',
     'public.gpt_seat_artist_owner(uuid,uuid)',
-    'public.gpt_delete_my_account(uuid,text)',
-    'public.gpt_get_control_plane_access()',
     'public.gpt_list_workspaces()',
     'public.gpt_create_workspace(uuid,text,text,text,text,text)',
     'public.gpt_update_workspace(uuid,text,text,text,boolean)',
-    'public.gpt_transfer_workspace_ownership(uuid,uuid)',
     'public.gpt_list_workspace_artists()',
     'public.gpt_get_artist_control_plane_context()',
     'public.gpt_create_artist(uuid,text,text,text,text,text)',
     'public.gpt_update_artist(uuid,text,text,text,boolean)',
     'public.gpt_get_artist_onboarding_state()',
-    'public.gpt_get_self_service_signup_policy()',
-    'public.gpt_set_self_service_signup(uuid,boolean,integer,integer)',
     'public.gpt_get_tenant_invite_policy()'
   ] loop
     execute format('revoke all on function %s from public, anon, authenticated, service_role', v_signature);

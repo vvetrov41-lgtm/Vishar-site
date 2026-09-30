@@ -1,6 +1,6 @@
 # Plan: Unified GPT Team and Workspace administration
 
-## Stage 1: 26 database-backed operations (one PR)
+## Stage 1: 21 database-backed operations (one PR)
 
 ### Database: `supabase/migrations/20260930120000_gpt_team_workspace_administration.sql`
 
@@ -9,8 +9,8 @@ One `public.gpt_*` wrapper per action, `security definer`, fixed `search_path`, 
 | Guard | Used for |
 | --- | --- |
 | `require_gpt_domain_context('administration', null)` | actions on the active Artist (memberships, owner seat, Artist settings, onboarding, invite policy) |
-| `require_gpt_context_workspace('administration', null)` | actions on the workspace that owns the active Artist (workspace team, workspace membership, workspace settings, ownership transfer, add Artist, list Artists, installation-wide reads narrowed to that workspace) |
-| `require_gpt_profile_scope('administration')` | actions about the signed-in person or the installation (own account deletion, control-plane access, own workspaces, create workspace, directory, signup policy) |
+| `require_gpt_context_workspace('administration', null)` | actions on the workspace that owns the active Artist (workspace team, workspace membership, workspace settings, add Artist, list Artists, installation-wide reads narrowed to that workspace) |
+| `require_gpt_profile_scope('administration')` | actions about the signed-in person (own workspaces, create workspace, directory) |
 
 The capability argument is `null` on purpose: the called CRM RPC performs the owner, `manage_team`, workspace-administrator or founder check with `auth.uid()`, and duplicating it in the wrapper would drift.
 
@@ -20,16 +20,16 @@ Narrowing (FR-3):
 - `gpt_list_team_memberships` returns only memberships on Artists of the context workspace.
 - `gpt_set_team_profile_role` / `gpt_set_team_profile_active` refuse a target profile with no membership in the context workspace, so an owner cannot use an Artist-scoped GPT to change people outside the studio it is working in.
 
-Writes use `crm_private.gpt_receipt_begin/finish` with a `request_id`.
+Writes use `crm_private.gpt_receipt_begin/finish` with a `request_id`. Membership writes keep omitted settings at the member's current values; read-only drops capabilities.
 
 ### Worker registry: `workers/lib/gpt-domain-operations.js`
 
-26 `op()` entries, domain `Team` or `Workspace`. No path or body parameter named `artist_id` or `workspace_id` (the registry's forbidden list already rejects them). `previewArtistMembership` is a GET with query parameters, so it stays non-consequential like its `read` inventory row.
+21 `op()` entries, domain `Team` or `Workspace`. No path or body parameter named `artist_id` or `workspace_id` (the registry's forbidden list already rejects them). `previewArtistMembership` is a GET with query parameters, so it stays non-consequential like its `read` inventory row.
 
 ### Inventory and schemas
 
-- `docs/gpt-actions/operator-parity.current.mjs`: 26 rows `N` → `A`.
-- `node scripts/build-gpt-unified-openapi.mjs` writes `openapi.team.yaml` (12) and updates `openapi.workspace.yaml` (17).
+- `docs/gpt-actions/operator-parity.current.mjs`: 21 rows `N` → `A`; five rows `N` → `ui_only` kind `owner_excluded`.
+- `node scripts/build-gpt-unified-openapi.mjs` writes `openapi.team.yaml` (12) and updates `openapi.workspace.yaml` (12).
 
 ### Topology: 12 → 13 Action domains
 

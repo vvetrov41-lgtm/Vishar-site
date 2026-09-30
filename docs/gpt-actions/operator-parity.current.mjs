@@ -95,7 +95,9 @@ export const PARITY_METADATA = Object.freeze({
   }),
 });
 
-const UI_ONLY_KINDS = new Set(['provider_handoff', 'device_local', 'pre_profile']);
+// owner_excluded: the owner decided the action stays a CRM screen action
+// (irreversible, installation-wide or a UI gate), not a GPT operation.
+const UI_ONLY_KINDS = new Set(['provider_handoff', 'device_local', 'pre_profile', 'owner_excluded']);
 
 function row(key, actionDomain, capability, consequence, status, operationId, serverContracts, extra = {}) {
   return Object.freeze({
@@ -128,8 +130,8 @@ export const OPERATOR_PARITY = Object.freeze([
   row('account.overview', 'Workspace', 'view_crm', 'read', A, 'getAccountOverview', ['public.account_overview']),
   row('account.display_name.set', 'Workspace', 'view_crm', 'write', A, 'setMyDisplayName', ['public.set_my_display_name']),
   row('account.language.set', 'Workspace', 'view_crm', 'write', A, 'setMyLanguage', ['public.set_my_ui_language']),
-  row('account.delete', 'Workspace', 'view_crm', 'permission', A, 'deleteMyAccount', ['public.delete_my_account'],
-    { note: 'Irreversible erasure of the signed-in account; the server requires the exact account email and refuses the installation owner.' }),
+  uiOnly('account.delete', 'Workspace', 'view_crm', 'permission', 'owner_excluded',
+    'Irreversible erasure of the signed-in account; the owner decided on 2026-09-30 that it stays a CRM screen action with typed confirmation, not a GPT operation.', ['public.delete_my_account']),
   row('today.pulse', 'CRM Core', 'view_crm', 'read', A, 'getTodayPulse', ['public.get_today_pulse']),
   row('statistics.summary', 'CRM Core', 'view_enquiries', 'read', A, 'getStatistics',
     ['public.gpt_get_statistics', 'RLS:public.statistics_enquiries', 'RLS:public.statistics_sessions', 'RLS:public.statistics_projects', 'RLS:public.statistics_payment_requests', 'RLS:public.statistics_payment_transactions'],
@@ -355,18 +357,22 @@ export const OPERATOR_PARITY = Object.freeze([
   row('team.artist_owner.seat', 'Team', 'manage_team', 'permission', A, 'seatArtistOwner', ['public.seat_artist_owner']),
 
   // --------------------------------------------------------------- Workspace
-  row('workspace.control_plane_access', 'Workspace', 'view_crm', 'read', A, 'getControlPlaneAccess', ['public.control_plane_access']),
+  uiOnly('workspace.control_plane_access', 'Workspace', 'view_crm', 'read', 'owner_excluded',
+    'Tells the CRM which administration screens to show; a GPT operation needs no gate because each administration call is authorised on its own (owner decision 2026-09-30).', ['public.control_plane_access']),
   row('workspace.list', 'Workspace', 'view_crm', 'read', A, 'listWorkspaces', ['public.list_workspaces']),
   row('workspace.create', 'Workspace', 'manage_workspace', 'permission', A, 'createWorkspace', ['public.create_workspace']),
   row('workspace.update', 'Workspace', 'manage_workspace', 'permission', A, 'updateWorkspace', ['public.update_workspace']),
-  row('workspace.ownership.transfer', 'Workspace', 'manage_workspace', 'permission', A, 'transferWorkspaceOwnership', ['public.transfer_workspace_ownership']),
+  uiOnly('workspace.ownership.transfer', 'Workspace', 'manage_workspace', 'permission', 'owner_excluded',
+    'Irreversible hand-over of a studio, needed once in its life; the owner decided on 2026-09-30 that it stays a CRM screen action.', ['public.transfer_workspace_ownership']),
   row('workspace.artists.list', 'Workspace', 'view_crm', 'read', A, 'listWorkspaceArtists', ['public.list_workspace_artists']),
   row('artist.control_plane_context', 'Workspace', 'view_crm', 'read', A, 'getArtistControlPlaneContext', ['public.artist_control_plane_context']),
   row('artist.create', 'Workspace', 'manage_workspace', 'permission', A, 'createArtist', ['public.create_artist']),
   row('artist.update', 'Workspace', 'manage_workspace', 'permission', A, 'updateArtist', ['public.update_artist']),
   row('artist.onboarding_state', 'Workspace', 'view_crm', 'read', A, 'getArtistOnboardingState', ['public.artist_onboarding_state']),
-  row('signup.policy.get', 'Workspace', 'view_crm', 'read', A, 'getSelfServiceSignupPolicy', ['public.self_service_signup_policy']),
-  row('signup.availability.set', 'Workspace', 'manage_workspace', 'permission', A, 'setSelfServiceSignup', ['public.set_self_service_signup']),
+  uiOnly('signup.policy.get', 'Workspace', 'view_crm', 'read', 'owner_excluded',
+    'Installation-wide signup setting, not studio work; the owner decided on 2026-09-30 to keep it with its setter in the CRM.', ['public.self_service_signup_policy']),
+  uiOnly('signup.availability.set', 'Workspace', 'manage_workspace', 'permission', 'owner_excluded',
+    'Installation-wide switch for self-service artist signup, changed rarely; the owner decided on 2026-09-30 that it stays a CRM screen action.', ['public.set_self_service_signup']),
   row('team.invite_policy.get', 'Workspace', 'view_crm', 'read', A, 'getTenantInvitePolicy', ['public.tenant_invite_policy']),
   uiOnly('signup.tenant.bootstrap', 'Workspace', 'view_crm', 'permission', 'pre_profile',
     'Self-service signup runs before a CRM profile exists; the GPT OAuth boundary requires an active CRM profile, so no GPT token can exist yet.',
