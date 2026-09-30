@@ -6,10 +6,15 @@ on:
       - 'workers/lib/mcp-domain.js'
       - 'workers/lib/mcp-meta-domain.js'
       - 'workers/lib/mcp-server.js'
+      - 'workers/lib/mcp-plugin-actions.js'
+      - 'workers/lib/mcp-plugin-server.js'
       - 'workers/lib/gmail-tool-contract.js'
       - 'workers/vishar-mcp.js'
+      - 'scripts/build-mcp-plugin-tools.mjs'
+      - 'scripts/test-mcp-plugin-tools.mjs'
       - 'scripts/test-mcp-domain-contracts.mjs'
       - 'scripts/test-mcp-meta-domain.mjs'
+      - 'docs/gpt-actions/**'
       - 'wrangler.mcp.toml'
       - 'wrangler.mcp.production.toml'
       - 'scripts/test-mcp-production-config.mjs'
@@ -43,6 +48,9 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
+
+      - name: Generate Plugin MCP tool registry
+        run: node scripts/build-mcp-plugin-tools.mjs
 
       - name: Test MCP domain contracts
         run: node scripts/test-mcp-domain-contracts.mjs
