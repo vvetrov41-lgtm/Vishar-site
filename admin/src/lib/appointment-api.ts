@@ -209,7 +209,11 @@ export function createAppointmentApi(client: CrmClient) {
         p_appointment_type: input.appointmentType,
         p_start_at: input.startAt,
         p_end_at: input.endAt,
-        p_status: input.status ?? 'confirmed',
+        p_status: input.status ?? (
+          input.appointmentType === 'in_person_consultation' || input.appointmentType === 'video_consultation'
+            ? 'confirmed'
+            : 'proposed'
+        ),
         p_enquiry_id: input.enquiryId ?? null,
         p_project_id: input.projectId ?? null,
         p_notes: input.notes ?? null,
