@@ -4,6 +4,7 @@ import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { DetailHeader } from '../components/DetailContext';
+import { BookingDisclosure } from '../components/BookingDisclosure';
 import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { BookingCardStatusLine } from '../components/BookingCardStatusLine';
@@ -221,18 +222,6 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         showActivity={can(role, 'viewActivity')}
       />
 
-      {mayManageAppointments ? (
-        <Section title={t('booking.title')} id="project-book">
-          <BookingPanel
-            artistId={project.artist_id}
-            clientId={project.client_id}
-            clientName={clientName ?? project.title}
-            projectId={project.id}
-            onBooked={() => reload()}
-          />
-        </Section>
-      ) : null}
-
       <Section title={copy.appointments} id="project-sessions">
         {mayManageFinance ? (
           <SessionPricesPanel
@@ -318,6 +307,20 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           <p className="notice" style={{ marginTop: 8 }}>{copy.calendarNotice}</p>
         </details>
       </Section>
+
+      {/* What is already booked comes first. The form opens by itself only
+          when there is nothing booked yet, because then it is the next step. */}
+      {mayManageAppointments ? (
+        <BookingDisclosure id="project-book" defaultOpen={appointments.length === 0}>
+          <BookingPanel
+            artistId={project.artist_id}
+            clientId={project.client_id}
+            clientName={clientName ?? project.title}
+            projectId={project.id}
+            onBooked={() => reload()}
+          />
+        </BookingDisclosure>
+      ) : null}
 
       <Section title={t('project.estimate')} id="project-money">
         <ProjectEstimatePanel

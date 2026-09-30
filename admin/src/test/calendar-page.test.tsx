@@ -34,8 +34,11 @@ describe('the schedule as a month calendar', () => {
   it('renders a conventional six-week month grid and marks today', async () => {
     renderWithSession(<App />, { role: 'booking_manager', path: '/appointments' });
 
-    const monthSection = (await screen.findByRole('heading', { level: 2, name: 'Month' }))
+    // Controls and grid share one "Calendar" card; there is no separate
+    // "Month" heading repeating the pressed view button.
+    const monthSection = (await screen.findByRole('heading', { level: 2, name: 'Calendar' }))
       .closest('section') as HTMLElement;
+    expect(screen.queryByRole('heading', { level: 2, name: 'Month' })).not.toBeInTheDocument();
     const grid = within(monthSection).getByRole('grid', { name: 'September 2026' });
 
     expect(within(grid).getAllByRole('columnheader')).toHaveLength(7);
