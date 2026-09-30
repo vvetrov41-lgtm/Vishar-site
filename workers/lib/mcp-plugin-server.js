@@ -345,6 +345,14 @@ export async function handlePluginMcpRequest(request, env, fetchImpl = fetch) {
     validateEnvelope(request, body);
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'invalid_request';
+    // Keep the bootstrap transport boundary fail-closed for malformed requests,
+    // while valid tools/call requests use the MCP runtime OAuth challenge below.
+    if (reason === 'invalid_request') {
+      const token = bearer(request);
+      if (!token) return response(401, { error: 'oauth_token_required' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
+      const actor = await validateActorToken(token, env, fetchImpl);
+      if (!actor) return response(401, { error: 'oauth_token_invalid' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
+    }
     if (reason === 'body_too_large') return response(413, { error: reason });
     if (reason === 'unsupported_media_type') return response(415, { error: reason });
     if (reason === 'parse_error') return rpcError(null, -32700, 'Parse error.', undefined, 400);
