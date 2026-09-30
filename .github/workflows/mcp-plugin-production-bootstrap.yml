@@ -1,0 +1,332 @@
+name: MCP Plugin production bootstrap
+
+# Exposes only the OAuth discovery boundary for the Vishar CRM Plugin MCP.
+# The Plugin tool surface is selected, but every bearer token remains rejected
+# until a dedicated ChatGPT/Supabase OAuth client is discovered and pinned in a
+# separate reviewed activation step. Legacy GPT Actions remain untouched.
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-mcp-plugin-bootstrap'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: mcp-plugin-production-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      SOURCE_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-mcp-production
+      MCP_HOST: mcp.vishartattoo.com
+      MCP_RESOURCE: https://mcp.vishartattoo.com/mcp
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify exact release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-mcp-plugin-bootstrap) ;;
+            *) echo 'Plugin MCP bootstrap must use the reserved release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [ "$GITHUB_SHA" != "$APPROVED_SHA" ]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) echo 'Production publishable key is missing or invalid.' >&2; exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout exact approved canonical source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved SHA is no longer the canonical Vishar CRM head.' >&2
+            exit 1
+          }
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'MCP Plugin migration validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Fail-closed Plugin validation at the approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          node scripts/build-mcp-plugin-tools.mjs
+          node scripts/test-mcp-plugin-tools.mjs
+          node scripts/build-mcp-plugin-parity.mjs --check
+          node scripts/test-mcp-domain-contracts.mjs
+          node scripts/test-mcp-production-config.mjs
+          npm run check:mcp-production-bundle
+          npm run scan:secrets
+
+          grep -Fq 'MCP_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_PLUGIN_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_META_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_GMAIL_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          [ "$(grep -c 'custom_domain = true' wrangler.mcp.production.toml)" -eq 1 ]
+          grep -Fq "pattern = \"$MCP_HOST\", custom_domain = true" wrangler.mcp.production.toml
+          grep -Fq 'binding = "GPT_ACTIONS_SERVICE"' wrangler.mcp.production.toml
+          grep -Fq 'service = "vishar-gpt-actions-production"' wrangler.mcp.production.toml
+          ! grep -Eq 'SERVICE_ROLE|SECRET_KEY|service_role|CLIENT_SECRET' wrangler.mcp.production.toml
+          ! grep -Eq '^MCP_PLUGIN_OAUTH_CLIENT_ID[[:space:]]*=' wrangler.mcp.production.toml
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3
+        with:
+          version: 2.110.0
+
+      - name: Verify production database has no pending migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-dry-run.log"; then
+            echo 'Pending production database migration detected. Refusing edge mutation.' >&2
+            exit 1
+          fi
+
+      - name: Fresh read-only Cloudflare preflight
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-before.json" \
+            --summary "$RUNNER_TEMP/cloudflare-before.md"
+          cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const clash = (data.worker_custom_domains || [])
+            .find((row) => row.hostname === process.env.MCP_HOST && row.service !== process.env.WORKER_NAME);
+          if (clash) throw new Error(`${process.env.MCP_HOST} is already bound to ${clash.service}`);
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (worker && (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true)) {
+            throw new Error('The MCP Worker is exposed on workers.dev or preview URLs');
+          }
+          const bindings = new Map((worker?.bindings || []).map((row) => [row.name, row]));
+          if (bindings.get('MCP_PLUGIN_TOOLS_ENABLED')?.value === 'true') {
+            throw new Error('Plugin tools are already active; bootstrap refuses to overwrite an active Plugin deployment.');
+          }
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `before_version=${worker?.active_deployment?.versions?.[0]?.version_id || ''}\n`);
+          NODE
+
+      - name: Re-check canonical immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing stale mutation.' >&2; exit 1; }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing mutation.' >&2; exit 1; }
+
+      - name: Stage the Plugin route with MCP fully disabled
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Stage disabled Plugin MCP resource server for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:false \
+            --var MCP_PLUGIN_TOOLS_ENABLED:false \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:false \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Prove the staged route is fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            expected="$1"; shift
+            actual="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$@" || true)"
+            [ "$actual" = "$expected" ] || { echo "Fail-closed probe mismatch: got $actual, expected $expected" >&2; return 1; }
+          }
+          for attempt in $(seq 1 20); do
+            if probe 404 "https://$MCP_HOST/.well-known/oauth-protected-resource"; then break; fi
+            [ "$attempt" -lt 20 ] || { echo 'Staged MCP route never became reachable.' >&2; exit 1; }
+            sleep 6
+          done
+          probe 404 "https://$MCP_HOST/.well-known/oauth-protected-resource"
+          probe 404 -X POST -H 'content-type: application/json' -d '{}' "https://$MCP_HOST/mcp"
+
+      - name: Expose Plugin OAuth discovery with all bearer access still closed
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Bootstrap Plugin MCP OAuth discovery for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:true \
+            --var MCP_PLUGIN_TOOLS_ENABLED:true \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:false \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Production readback
+        id: readback
+        shell: bash
+        env:
+          BEFORE_VERSION: ${{ steps.preflight.outputs.before_version }}
+        run: |
+          set -euo pipefail
+          success=false
+          for attempt in $(seq 1 20); do
+            if node scripts/cloudflare-production-inventory.mjs --output "$RUNNER_TEMP/cloudflare-after.json" --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+              if node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          const problems = [];
+          const check = (ok, message) => { if (!ok) problems.push(message); };
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) process.exit(1);
+          check(worker.workers_dev_enabled !== true, `workers_dev_enabled=${worker.workers_dev_enabled}`);
+          check(worker.preview_urls_enabled !== true, `preview_urls_enabled=${worker.preview_urls_enabled}`);
+          const hosts = (data.worker_custom_domains || []).filter((row) => row.service === process.env.WORKER_NAME).map((row) => row.hostname);
+          check(JSON.stringify(hosts) === JSON.stringify([process.env.MCP_HOST]), `custom domains=${hosts.join(',') || 'none'}`);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          check(bindings.get('MCP_ENABLED')?.value === 'true', `MCP_ENABLED=${bindings.get('MCP_ENABLED')?.value}`);
+          check(bindings.get('MCP_PLUGIN_TOOLS_ENABLED')?.value === 'true', `MCP_PLUGIN_TOOLS_ENABLED=${bindings.get('MCP_PLUGIN_TOOLS_ENABLED')?.value}`);
+          check(bindings.get('MCP_META_TOOLS_ENABLED')?.value === 'false', `MCP_META_TOOLS_ENABLED=${bindings.get('MCP_META_TOOLS_ENABLED')?.value}`);
+          check(bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value === 'false', `MCP_GMAIL_TOOLS_ENABLED=${bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value}`);
+          check(!bindings.has('MCP_PLUGIN_OAUTH_CLIENT_ID'), 'bootstrap must not bind a Plugin OAuth client before registration');
+          const actionService = bindings.get('GPT_ACTIONS_SERVICE');
+          check(actionService?.type === 'service' && actionService?.service === 'vishar-gpt-actions-production', `GPT_ACTIONS_SERVICE=${JSON.stringify(actionService)}`);
+          const publishable = bindings.get('SUPABASE_PUBLISHABLE_KEY');
+          check(publishable?.type === 'plain_text' && publishable?.value === '[redacted]', 'publishable key binding/readback is invalid');
+          for (const name of ['SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ACCESS_TOKEN', 'CLOUDFLARE_API_TOKEN', 'CLIENT_SECRET']) {
+            check(!bindings.has(name) && !(worker.secret_names || []).includes(name), `privileged credential bound: ${name}`);
+          }
+          const limiter = bindings.get('MCP_RATE_LIMIT');
+          check(limiter?.type === 'ratelimit' && Number(limiter?.simple?.limit) === 60 && Number(limiter?.simple?.period) === 60,
+            `MCP_RATE_LIMIT=${JSON.stringify(limiter)}`);
+          const after = worker.active_deployment?.versions?.[0]?.version_id;
+          check(Boolean(after), 'no active deployment version');
+          check(!process.env.BEFORE_VERSION || after !== process.env.BEFORE_VERSION, 'active version did not change');
+          if (problems.length) {
+            for (const problem of problems) console.error(`readback: ${problem}`);
+            process.exit(1);
+          }
+          NODE
+              then success=true; break; fi
+            fi
+            sleep 6
+          done
+          [ "$success" = true ] || { echo 'Cloudflare readback did not converge.' >&2; exit 1; }
+          cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Live OAuth discovery acceptance
+        id: acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$RUNNER_TEMP/protected-resource.json"
+          headers="$RUNNER_TEMP/mcp-headers.txt"
+          for attempt in $(seq 1 20); do
+            code="$(curl -sS --max-time 15 -o "$metadata" -w '%{http_code}' "https://$MCP_HOST/.well-known/oauth-protected-resource" || true)"
+            [ "$code" = 200 ] && break
+            [ "$attempt" -lt 20 ] || { echo "OAuth metadata returned $code" >&2; exit 1; }
+            sleep 6
+          done
+          jq -e --arg resource "$MCP_RESOURCE" --arg issuer "$SUPABASE_URL/auth/v1" '
+            .resource == $resource
+            and .authorization_servers == [$issuer]
+            and .bearer_methods_supported == ["header"]
+            and (.scopes_supported | index("email") != null)
+          ' "$metadata" >/dev/null
+
+          code="$(curl -sS --max-time 15 -D "$headers" -o "$RUNNER_TEMP/no-token.json" -w '%{http_code}' \
+            -X POST -H 'content-type: application/json' "https://$MCP_HOST/mcp" -d '{}')"
+          [ "$code" = 401 ]
+          grep -Eiq '^www-authenticate: Bearer .*resource_metadata="https://mcp\.vishartattoo\.com/\.well-known/oauth-protected-resource"' "$headers"
+
+          code="$(curl -sS --max-time 15 -o "$RUNNER_TEMP/bogus-token.json" -w '%{http_code}' \
+            -X POST -H 'content-type: application/json' -H 'authorization: Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' \
+            "https://$MCP_HOST/mcp" -d '{}')"
+          [ "$code" = 401 ]
+
+          echo 'Plugin MCP discovery is live. No OAuth client is pinned, so every bearer token remains denied.' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Automatic rollback to disabled MCP on failed bootstrap
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.readback.outcome == 'failure' || steps.acceptance.outcome == 'failure')
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Automatic rollback: Plugin MCP bootstrap failed for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:false \
+            --var MCP_PLUGIN_TOOLS_ENABLED:false \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:false \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
