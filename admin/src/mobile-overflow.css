@@ -39,7 +39,7 @@
     padding-bottom: 8px;
   }
   .topbar h1 { font-size: 1.05rem; }
-  /* The selected value ("All assigned artists", "Vladimir") names itself;
+  /* The selected value ("All artists", "Vladimir") names itself;
      the uppercase caption stays for screen readers only. */
   .artist-scope-control label {
     position: absolute;
