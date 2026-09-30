@@ -8,7 +8,7 @@ name: MCP Plugin production bootstrap
 on:
   push:
     branches:
-      - 'release/mcp-plugin-rc*-bootstrap'
+      - 'release/private-crm-rc*-inventory-mcp-plugin-bootstrap'
 
 permissions:
   actions: read
@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
-            release/mcp-plugin-rc*-bootstrap) ;;
+            release/private-crm-rc*-inventory-mcp-plugin-bootstrap) ;;
             *) echo 'Plugin MCP bootstrap must use the reserved release namespace.' >&2; exit 1 ;;
           esac
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
