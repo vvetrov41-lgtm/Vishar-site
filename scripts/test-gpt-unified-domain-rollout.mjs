@@ -79,6 +79,13 @@ assert.ok(workflow.includes(`[ "$actual" = '000' ] && [ "$(date +%s)" -lt "$prob
 const deadline = Number(workflow.match(/probe_deadline=\$\(\( \$\(date \+%s\) \+ (\d+) \)\)/)?.[1]);
 const jobTimeout = Number(workflow.match(/timeout-minutes: (\d+)/)?.[1]);
 assert.ok(deadline > 0 && deadline <= 600 && deadline < jobTimeout * 60 / 3, 'probe deadline leaves room for rollback');
+// The deadline is also capped by the job's own start, so slow earlier steps
+// cannot push the probes into the job timeout, which would skip the rollback.
+assert.ok(workflow.includes('echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"'), 'job start is recorded in the first step');
+assert.ok(workflow.indexOf('JOB_STARTED_AT=$(date +%s)') < workflow.indexOf('Checkout exact approved canonical source'));
+const reserve = workflow.match(/job_budget_end=\$\(\( JOB_STARTED_AT \+ (\d+) \* 60 - (\d+) \)\)/);
+assert.ok(reserve && Number(reserve[1]) === jobTimeout && Number(reserve[2]) >= 300, 'job budget uses the job timeout and reserves rollback time');
+assert.ok(workflow.includes('[ "$probe_deadline" -le "$job_budget_end" ] || probe_deadline="$job_budget_end"'));
 for (const path of ['gpt-billing.vishartattoo.com/v1/invoices', 'gpt-workspace.vishartattoo.com/v1/me']) {
   assert.ok(workflow.includes(`probe 401 "https://${path}"`), `readback must prove ${path} requires OAuth`);
 }

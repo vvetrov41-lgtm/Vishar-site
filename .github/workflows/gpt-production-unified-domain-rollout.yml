@@ -56,6 +56,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "JOB_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
           [ "$GITHUB_REF_NAME" = 'release/private-crm-rc960-inventory-gpt-unified-domains' ]
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -308,9 +309,12 @@ jobs:
           # seconds after the deploy. Resolve through DoH so an NXDOMAIN the
           # runner resolver cached before the record existed cannot stick, and
           # retry only when no HTTP response arrived (000); a wrong status fails
-          # at once. One shared deadline keeps the step well inside the job
-          # timeout, so a failure still reaches the rollback step.
+          # at once. One shared deadline, capped by the job's remaining time
+          # minus a rollback reserve, so a failure always reaches the rollback
+          # step before the job timeout could cancel it.
           probe_deadline=$(( $(date +%s) + 420 ))
+          job_budget_end=$(( JOB_STARTED_AT + 35 * 60 - 480 ))
+          [ "$probe_deadline" -le "$job_budget_end" ] || probe_deadline="$job_budget_end"
           probe() {
             expected="$1"; url="$2"
             while :; do
