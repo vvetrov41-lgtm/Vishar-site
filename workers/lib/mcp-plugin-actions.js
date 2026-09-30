@@ -5,6 +5,9 @@ const FORBIDDEN_ARGUMENTS = new Set([
   'artist_id', 'workspace_id', 'oauth_client_id', 'integration_key', 'sql', 'rpc', 'table',
   'access_token', 'refresh_token', 'client_secret', 'service_role', 'api_token', 'authorization',
 ]);
+const OPERATION_SPECIFIC_ARGUMENTS = new Map([
+  ['selectArtistContext', new Set(['artist_id'])],
+]);
 
 export class McpPluginActionError extends Error {
   constructor(code, message, status = 400) {
@@ -30,6 +33,11 @@ function safeBearer(request) {
   return /^Bearer [A-Za-z0-9._~-]{20,8192}$/.test(value) ? value : null;
 }
 
+function argumentIsForbidden(entry, name) {
+  if (!FORBIDDEN_ARGUMENTS.has(name)) return false;
+  return !OPERATION_SPECIFIC_ARGUMENTS.get(entry.operationId)?.has(name);
+}
+
 function buildActionRequest(entry, args, request) {
   const authorization = safeBearer(request);
   if (!authorization) throw new McpPluginActionError('authentication_required', 'CRM authentication is required.', 401);
@@ -39,7 +47,7 @@ function buildActionRequest(entry, args, request) {
     ...entry.bodyParams,
   ]);
   for (const name of Object.keys(args)) {
-    if (FORBIDDEN_ARGUMENTS.has(name)) throw new McpPluginActionError('forbidden_argument', `Argument ${name} is not accepted.`);
+    if (argumentIsForbidden(entry, name)) throw new McpPluginActionError('forbidden_argument', `Argument ${name} is not accepted.`);
     if (!accepted.has(name)) throw new McpPluginActionError('unexpected_argument', `Argument ${name} is not accepted.`);
   }
 
@@ -117,4 +125,4 @@ export async function callPluginMcpTool(entry, args, request, env) {
   return payload;
 }
 
-export const __testing = Object.freeze({ buildActionRequest, safeError, FORBIDDEN_ARGUMENTS });
+export const __testing = Object.freeze({ buildActionRequest, safeError, argumentIsForbidden, FORBIDDEN_ARGUMENTS });
