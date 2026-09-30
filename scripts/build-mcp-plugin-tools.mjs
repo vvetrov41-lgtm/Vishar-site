@@ -260,6 +260,11 @@ function annotationsFor(operationId, method, domain, consequence) {
   };
 }
 
+function isForbiddenToolInput(operationId, name) {
+  if (operationId === 'selectArtistContext' && name === 'artist_id') return false;
+  return FORBIDDEN_TOOL_INPUTS.has(name);
+}
+
 function compileInput(operation, components, operationId) {
   const properties = {};
   const required = new Set();
@@ -269,7 +274,7 @@ function compileInput(operation, components, operationId) {
 
   for (const parameter of operation.parameters || []) {
     if (!parameter || typeof parameter !== 'object' || typeof parameter.name !== 'string') continue;
-    if (FORBIDDEN_TOOL_INPUTS.has(parameter.name)) throw new Error(`${operationId}: forbidden parameter ${parameter.name}`);
+    if (isForbiddenToolInput(operationId, parameter.name)) throw new Error(`${operationId}: forbidden parameter ${parameter.name}`);
     if (!['path', 'query'].includes(parameter.in)) throw new Error(`${operationId}: unsupported parameter location ${parameter.in}`);
     properties[parameter.name] = resolveSchema(parameter.schema || {}, components);
     if (parameter.required) required.add(parameter.name);
@@ -281,7 +286,7 @@ function compileInput(operation, components, operationId) {
     const body = resolveSchema(requestSchema, components);
     if (body.type !== 'object') throw new Error(`${operationId}: MCP adapter supports object JSON request bodies only`);
     for (const [name, schema] of Object.entries(body.properties || {})) {
-      if (FORBIDDEN_TOOL_INPUTS.has(name)) throw new Error(`${operationId}: forbidden body parameter ${name}`);
+      if (isForbiddenToolInput(operationId, name)) throw new Error(`${operationId}: forbidden body parameter ${name}`);
       if (Object.prototype.hasOwnProperty.call(properties, name)) throw new Error(`${operationId}: duplicate flattened parameter ${name}`);
       properties[name] = schema;
       bodyParams.push(name);
