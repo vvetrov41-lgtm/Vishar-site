@@ -231,14 +231,13 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
                         </div>
                         <div>
                             <label for="ai-idea-contact" class="block text-xs font-medium text-white/60 mb-2">Contact · required</label>
-                            <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email, WhatsApp or Instagram" class="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none transition-all placeholder:text-white/30 focus:border-white">
+                            <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email or WhatsApp" class="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none transition-all placeholder:text-white/30 focus:border-white">
                         </div>
                         <div>
                             <label for="ai-idea-reply" class="block text-xs font-medium text-white/60 mb-2">Preferred reply</label>
                             <select id="ai-idea-reply" class="w-full rounded-2xl border border-white/10 bg-black/40 p-4 text-sm text-white outline-none transition-all focus:border-white">
                                 <option value="Email">Email</option>
                                 <option value="WhatsApp">WhatsApp</option>
-                                <option value="Instagram">Instagram</option>
                             </select>
                         </div>
                         <p class="text-xs text-white/60">I'll use this only to reply about your tattoo idea.</p>
@@ -415,7 +414,7 @@ async function sendIdeaToVladimir() {
     const status = document.getElementById("ai-idea-send-status");
 
     if (!contact) {
-        status.innerText = "Please add an email, WhatsApp number or Instagram username first.";
+        status.innerText = "Please add an email or WhatsApp number first.";
         status.classList.remove("text-white/60");
         status.classList.add("text-red-400");
         return;

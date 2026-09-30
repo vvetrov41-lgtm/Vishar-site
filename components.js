@@ -179,7 +179,7 @@ leadBox.innerHTML = `
     </label>
     <label class="block">
       <span class="mb-1 block text-xs uppercase tracking-[0.25em] text-white/60">Contact</span>
-      <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email, WhatsApp or Instagram" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
+      <input id="ai-idea-contact" type="text" autocomplete="email" placeholder="Email or WhatsApp" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white placeholder:text-white/25 outline-none transition-colors focus:border-white/40">
     </label>
   </div>
   <label class="mt-3 block">
@@ -187,7 +187,6 @@ leadBox.innerHTML = `
     <select id="ai-idea-reply" class="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-white outline-none transition-colors focus:border-white/40">
       <option>Email</option>
       <option>WhatsApp</option>
-      <option>Instagram</option>
       <option>No preference</option>
     </select>
   </label>
@@ -216,7 +215,7 @@ window.sendIdeaToVladimir = async function () {
   const preferredReply = (document.getElementById('ai-idea-reply') || {}).value || 'No preference';
 
   if (!contact.trim()) {
-    setStatus('Please add an email, WhatsApp number or Instagram username first.', true);
+    setStatus('Please add an email or WhatsApp number first.', true);
     return;
   }
 
