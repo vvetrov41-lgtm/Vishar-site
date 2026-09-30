@@ -1,0 +1,45 @@
+name: MCP Plugin migration validation
+
+on:
+  pull_request:
+    paths:
+      - 'docs/gpt-actions/**'
+      - 'workers/lib/mcp-*.js'
+      - 'workers/vishar-mcp.js'
+      - 'scripts/build-mcp-plugin-tools.mjs'
+      - 'scripts/test-mcp-plugin-tools.mjs'
+      - 'wrangler.mcp*.toml'
+      - '.github/workflows/mcp-plugin-migration-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate Plugin MCP tool registry
+        run: node scripts/build-mcp-plugin-tools.mjs
+      - name: Syntax check
+        run: |
+          node --check scripts/build-mcp-plugin-tools.mjs
+          node --check workers/lib/generated/mcp-plugin-tools.js
+          node --check workers/lib/mcp-plugin-actions.js
+          node --check workers/lib/mcp-plugin-server.js
+      - name: Plugin MCP contracts
+        run: node scripts/test-mcp-plugin-tools.mjs
+      - name: Existing MCP regression tests
+        run: |
+          node scripts/test-mcp-domain-contracts.mjs
+          node scripts/test-mcp-meta-domain.mjs
+          node scripts/test-mcp-production-config.mjs
+      - name: MCP production bundle dry-run
+        run: npm run check:mcp-production-bundle
