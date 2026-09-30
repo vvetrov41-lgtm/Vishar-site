@@ -108,12 +108,15 @@ export function DetailHeader({ to, sectionLabel, artistId }: { to: string; secti
   const artist = artists.find((candidate) => candidate.id === artistId) ?? null;
   const mismatch = Boolean(selectedArtistId && selectedArtistId !== artistId);
   const inline = artist && !mismatch;
+  // With the CRM already filtered to this record's artist, the picker at the
+  // top says who it is; the chip only earns its place in the all-artists view.
+  const showChip = inline && !selectedArtistId;
   return (
     <>
       <DetailBackLink
         to={to}
         sectionLabel={sectionLabel}
-        extra={inline ? (
+        extra={showChip && artist ? (
           <span className="badge record-artist-chip" role="status">
             {language === 'ru' ? 'Мастер' : 'Artist'}: {artist.display_name}
           </span>
