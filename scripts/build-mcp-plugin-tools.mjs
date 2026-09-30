@@ -17,6 +17,12 @@ const FORBIDDEN_TOOL_INPUTS = new Set([
   'artist_id', 'workspace_id', 'oauth_client_id', 'integration_key', 'sql', 'rpc', 'table',
   'access_token', 'refresh_token', 'client_secret', 'service_role', 'api_token', 'authorization',
 ]);
+// artist_id is authority-bearing everywhere except the one explicit context
+// switch operation. That operation is server-authorized against the signed-in
+// user's memberships and is the only supported way to change Artist context.
+const OPERATION_SPECIFIC_INPUTS = new Map([
+  ['selectArtistContext', new Set(['artist_id'])],
+]);
 const INITIAL_EXCLUSIONS = new Set([
   'deleteMyAccount',
   'transferWorkspaceOwnership',
@@ -26,6 +32,11 @@ const INITIAL_EXCLUSIONS = new Set([
   'inviteStaffMember',
   'inviteArtist',
 ]);
+
+function isForbiddenToolInput(operationId, name) {
+  if (!FORBIDDEN_TOOL_INPUTS.has(name)) return false;
+  return !OPERATION_SPECIFIC_INPUTS.get(operationId)?.has(name);
+}
 
 function indentOf(line) {
   return line.match(/^ */)[0].length;
@@ -157,7 +168,7 @@ export function parseGeneratedYaml(text) {
       if (line.indent > indent) throw new Error(`Unexpected YAML indentation near: ${line.raw}`);
       if (sequence !== line.text.startsWith('- ')) break;
 
-      let textValue = sequence ? line.text.slice(2).trim() : line.text;
+      const textValue = sequence ? line.text.slice(2).trim() : line.text;
       if (sequence && (textValue.startsWith('{') || textValue.startsWith('['))) {
         result.push(scalar(textValue));
         index += 1;
@@ -269,7 +280,7 @@ function compileInput(operation, components, operationId) {
 
   for (const parameter of operation.parameters || []) {
     if (!parameter || typeof parameter !== 'object' || typeof parameter.name !== 'string') continue;
-    if (FORBIDDEN_TOOL_INPUTS.has(parameter.name)) throw new Error(`${operationId}: forbidden parameter ${parameter.name}`);
+    if (isForbiddenToolInput(operationId, parameter.name)) throw new Error(`${operationId}: forbidden parameter ${parameter.name}`);
     if (!['path', 'query'].includes(parameter.in)) throw new Error(`${operationId}: unsupported parameter location ${parameter.in}`);
     properties[parameter.name] = resolveSchema(parameter.schema || {}, components);
     if (parameter.required) required.add(parameter.name);
@@ -281,7 +292,7 @@ function compileInput(operation, components, operationId) {
     const body = resolveSchema(requestSchema, components);
     if (body.type !== 'object') throw new Error(`${operationId}: MCP adapter supports object JSON request bodies only`);
     for (const [name, schema] of Object.entries(body.properties || {})) {
-      if (FORBIDDEN_TOOL_INPUTS.has(name)) throw new Error(`${operationId}: forbidden body parameter ${name}`);
+      if (isForbiddenToolInput(operationId, name)) throw new Error(`${operationId}: forbidden body parameter ${name}`);
       if (Object.prototype.hasOwnProperty.call(properties, name)) throw new Error(`${operationId}: duplicate flattened parameter ${name}`);
       properties[name] = schema;
       bodyParams.push(name);
