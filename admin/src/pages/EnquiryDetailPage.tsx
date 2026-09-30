@@ -29,7 +29,7 @@ import { CollapsedSection } from '../components/CollapsedSection';
 import { DetailHeader } from '../components/DetailContext';
 import { EnquiryConsultationPanel } from '../components/EnquiryConsultationPanel';
 import { EnquiryContactConflict } from '../components/EnquiryContactConflict';
-import { EnquiryEditPanel } from '../components/EnquiryEditPanel';
+import { EnquiryArchiveAction, EnquiryEditPanel } from '../components/EnquiryEditPanel';
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { BookingPanel } from '../components/BookingPanel';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
@@ -175,7 +175,13 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
     hasUpcomingAppointment: nextAppointment !== null,
   });
 
-  const hasAdminActions = transitionOptions.length > 0 || canAssign || canConvert;
+  const whatsappCount = conversations.filter((row) => row.channel === 'whatsapp').length;
+  const instagramConversations = conversations.filter((row) => row.channel === 'instagram');
+  const canDelete = can(role, 'editEnquiry');
+  const hasAdminActions = transitionOptions.length > 0 || canAssign || canConvert || canDelete;
+  const phone = client?.phone ?? enquiry.submitted_phone ?? null;
+  const email = client?.email ?? enquiry.submitted_email ?? null;
+  const instagramHandle = (client?.instagram ?? enquiry.submitted_instagram ?? '').replace(/^@/, '').trim();
   const clientDisplayName = client?.full_name
     ?? enquiry.submitted_full_name
     ?? t('enquiry.clientUnavailable');
@@ -223,12 +229,17 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </div>
 
         <dl className="definition">
+          {/* One tap to call, write or open the profile. */}
           <dt>{t('enquiry.phone')}</dt>
-          <dd>{formatPhoneForDisplay(client?.phone ?? enquiry.submitted_phone ?? null) ?? '—'}</dd>
+          <dd>{phone ? <a href={`tel:${phone.replace(/[^\d+]/g, '')}`}>{formatPhoneForDisplay(phone)}</a> : '—'}</dd>
           <dt>{t('enquiry.instagram')}</dt>
-          <dd>{client?.instagram ?? enquiry.submitted_instagram ?? '—'}</dd>
+          <dd>
+            {instagramHandle
+              ? <a href={`https://instagram.com/${encodeURIComponent(instagramHandle)}`} target="_blank" rel="noreferrer">@{instagramHandle}</a>
+              : '—'}
+          </dd>
           <dt>{t('enquiry.email')}</dt>
-          <dd>{client?.email ?? enquiry.submitted_email ?? '—'}</dd>
+          <dd>{email ? <a href={`mailto:${email}`}>{email}</a> : '—'}</dd>
           <dt>{t('enquiry.travellingFrom')}</dt>
           <dd>{client?.travelling_from ?? enquiry.submitted_travelling_from ?? '—'}</dd>
           <dt>{t('enquiry.prefers')}</dt>
@@ -402,6 +413,8 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                 </button>
               </div>
             ) : null}
+
+            <EnquiryArchiveAction enquiry={enquiry} role={role} api={api} language={language} />
           </details>
         ) : null}
       </Section>
@@ -417,7 +430,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </dl>
         <div style={{ marginTop: 12 }}>
           <div className="meta" style={{ fontWeight: 600 }}>{clientBriefLabel}</div>
-          <p style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{enquiry.idea ?? '—'}</p>
+          <ClientBrief text={enquiry.idea} language={language} />
         </div>
         <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
       </Section>
@@ -440,47 +453,80 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
               ))}
             </div>
           )}
+          {/* No standing notice about expiring links: a thumbnail that fails
+              to load or open says so itself, with the same advice. */}
           <EnquiryReferenceActions enquiryId={enquiry.id} files={files} role={role} api={api} language={language} onChanged={reload} />
-          <p className="notice" style={{ marginTop: 12 }}>{t('enquiry.imageNotice')}</p>
         </Section>
       ) : null}
 
-      {/* Cross-link, not a second copy. The Inbox is where email is worked;
-          the enquiry only says that email exists and points at it. */}
-      {emailThread ? (
-        <Section title={t('enquiry.email')}>
-          <p className="meta">{emailThread.subject}</p>
-          <div className="actions">
-            <Link to={`/inbox/email/${emailThread.key}`} className="badge">
-              {t('enquiry.openEmailConversation')}
-            </Link>
-            {threadNeedsOperator(emailThread) ? (
-              <span className="badge warn">
-                {emailThread.state === 'send_failed'
-                  ? t('enquiry.emailSendFailed')
-                  : t('enquiry.emailDraftToApprove')}
-              </span>
+      {/* Every channel in one place: one row each, pointing at where the
+          conversation is worked. The Inbox owns the threads; WhatsApp setup
+          belongs in Integrations. */}
+      {emailThread || client || instagramConversations.length > 0 ? (
+        <Section title={t('enquiry.conversations')}>
+          <div className="enquiry-channels">
+            {emailThread ? (
+              <div className="enquiry-channel">
+                <div className="enquiry-channel-head">
+                  <span className="enquiry-channel-name">{t('enquiry.email')}</span>
+                  <Link to={`/inbox/email/${emailThread.key}`} className="badge">
+                    {t('enquiry.openEmailConversation')}
+                  </Link>
+                </div>
+                <p className="meta" style={{ margin: '4px 0 0' }}>{emailThread.subject}</p>
+                {threadNeedsOperator(emailThread) ? (
+                  <span className="badge warn" style={{ marginTop: 6 }}>
+                    {emailThread.state === 'send_failed'
+                      ? t('enquiry.emailSendFailed')
+                      : t('enquiry.emailDraftToApprove')}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
+
+            {instagramConversations.map((row) => (
+              <div key={row.id} className="enquiry-channel">
+                <div className="enquiry-channel-head">
+                  <span className="enquiry-channel-name">Instagram</span>
+                  <Link to={`/inbox/${row.id}`} className="badge">{t('enquiry.openConversation')}</Link>
+                </div>
+              </div>
+            ))}
+
+            {client ? (
+              <details id="enquiry-whatsapp" className="enquiry-channel disclosure">
+                <summary>
+                  <span className="enquiry-channel-name">WhatsApp</span>
+                  <span className="collapsed-section-count">{whatsappCount}</span>
+                </summary>
+                <div style={{ marginTop: 10 }}>
+                  <EnquiryWhatsAppPanel
+                    api={api}
+                    enquiryId={enquiry.id}
+                    clientId={client.id}
+                    artistId={enquiry.artist_id}
+                    phone={client.phone}
+                    role={role}
+                    language={language}
+                  />
+                </div>
+              </details>
             ) : null}
           </div>
         </Section>
       ) : null}
 
-      {/* WhatsApp setup belongs in Integrations. What belongs here is the
-          thread, and one line saying whether there is one. */}
-      {client ? (
-        <CollapsedSection id="enquiry-whatsapp" title="WhatsApp" count={conversations.filter((row) => row.channel === 'whatsapp').length}>
-          <EnquiryWhatsAppPanel
-            api={api}
-            enquiryId={enquiry.id}
-            clientId={client.id}
-            artistId={enquiry.artist_id}
-            phone={client.phone}
-            role={role}
-            language={language}
+      {can(role, 'viewActivity') ? (
+        <Section title={t('enquiry.activity')}>
+          <ActivityFeed
+            filter={{ enquiryId: enquiry.id }}
+            emptyTitle={t('enquiry.noActivity')}
+            initiallyCollapsed
           />
-        </CollapsedSection>
+        </Section>
       ) : null}
 
+      {/* Usually empty, so each is one line with a count at the very end. */}
       {can(role, 'viewFollowUps') ? (
         <CollapsedSection title={t('enquiry.followUps')} count={followUps.length}>
           {followUps.length === 0 ? (
@@ -568,15 +614,36 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           )}
         </CollapsedSection>
       ) : null}
+    </>
+  );
+}
 
-      {can(role, 'viewActivity') ? (
-        <Section title={t('enquiry.activity')}>
-          <ActivityFeed
-            filter={{ enquiryId: enquiry.id }}
-            emptyTitle={t('enquiry.noActivity')}
-            initiallyCollapsed
-          />
-        </Section>
+/**
+ * A long client message costs a whole phone screen, and the AI summary above
+ * already carries the gist. Show the opening and let the reader ask for more.
+ */
+const BRIEF_PREVIEW_CHARS = 420;
+const BRIEF_PREVIEW_LINES = 8;
+
+function ClientBrief({ text, language }: { text: string | null; language: 'en' | 'ru' }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!text) return <p style={{ margin: '4px 0 0' }}>—</p>;
+
+  const long = text.length > BRIEF_PREVIEW_CHARS || text.split('\n').length > BRIEF_PREVIEW_LINES;
+  return (
+    <>
+      <p
+        className={long && !expanded ? 'client-brief clamped' : 'client-brief'}
+        style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}
+      >
+        {text}
+      </p>
+      {long ? (
+        <button type="button" className="link-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {expanded
+            ? (language === 'ru' ? 'Свернуть' : 'Show less')
+            : (language === 'ru' ? 'Показать полностью' : 'Show full message')}
+        </button>
       ) : null}
     </>
   );

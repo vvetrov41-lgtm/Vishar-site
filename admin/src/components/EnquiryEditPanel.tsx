@@ -17,13 +17,11 @@ export function EnquiryEditPanel({
 }: {
   enquiry: Enquiry;
   role: CrmRole | null | undefined;
-  api: Pick<RecordEditApi, 'updateEnquiryDetails' | 'archiveEnquiry'>;
+  api: Pick<RecordEditApi, 'updateEnquiryDetails'>;
   language: 'en' | 'ru';
   onSaved: () => void;
 }) {
-  const { navigate } = useRouter();
   const [editing, setEditing] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [projectType, setProjectType] = useState(value(enquiry.project_type));
@@ -37,9 +35,6 @@ export function EnquiryEditPanel({
 
   const copy = language === 'ru' ? {
     edit: 'Редактировать заявку',
-    delete: 'Удалить заявку',
-    deleteConfirm: 'Удалить эту заявку из рабочих списков? История сохранится для аудита. Если у заявки есть активный проект или запись, удаление будет заблокировано.',
-    deleteConfirmAction: 'Да, удалить заявку',
     save: 'Сохранить',
     cancel: 'Отмена',
     type: 'Тип',
@@ -49,12 +44,8 @@ export function EnquiryEditPanel({
     timing: 'Сроки',
     idea: 'Описание проекта',
     failed: 'Не удалось сохранить изменения заявки.',
-    deleteFailed: 'Не удалось удалить заявку.',
   } : {
     edit: 'Edit enquiry',
-    delete: 'Delete enquiry',
-    deleteConfirm: 'Delete this enquiry from working lists? Its history is retained for audit. If it has an active project or appointment, deletion will be blocked.',
-    deleteConfirmAction: 'Yes, delete enquiry',
     save: 'Save',
     cancel: 'Cancel',
     type: 'Type',
@@ -64,46 +55,13 @@ export function EnquiryEditPanel({
     timing: 'Timing',
     idea: 'Project description',
     failed: 'Could not save the enquiry changes.',
-    deleteFailed: 'Could not delete the enquiry.',
   };
-
-  async function archive() {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await api.archiveEnquiry(enquiry.id);
-      if (result) navigate('/enquiries');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : copy.deleteFailed);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   if (!editing) {
     return (
-      <>
-        {error ? <div className="notice warn" role="alert" style={{ marginTop: 12 }}>{error}</div> : null}
-        {confirmDelete ? (
-          <div className="notice warn" role="alert" style={{ marginTop: 12 }}>
-            <p style={{ marginTop: 0 }}>{copy.deleteConfirm}</p>
-            <div className="actions">
-              <button type="button" className="danger" disabled={busy} onClick={() => { void archive(); }}>
-                {copy.deleteConfirmAction}
-              </button>
-              <button type="button" disabled={busy} onClick={() => setConfirmDelete(false)}>{copy.cancel}</button>
-            </div>
-          </div>
-        ) : null}
-        <div className="actions" style={{ marginTop: 12 }}>
-          <button type="button" disabled={busy} onClick={() => { setConfirmDelete(false); setEditing(true); }}>{copy.edit}</button>
-          {!confirmDelete ? (
-            <button type="button" className="danger" disabled={busy} onClick={() => { setError(null); setConfirmDelete(true); }}>
-              {copy.delete}
-            </button>
-          ) : null}
-        </div>
-      </>
+      <div className="actions" style={{ marginTop: 12 }}>
+        <button type="button" onClick={() => setEditing(true)}>{copy.edit}</button>
+      </div>
     );
   }
 
@@ -146,6 +104,83 @@ export function EnquiryEditPanel({
         <button type="button" className="primary" disabled={busy} onClick={() => { void save(); }}>{copy.save}</button>
         <button type="button" disabled={busy} onClick={() => { setError(null); setEditing(false); }}>{copy.cancel}</button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Deleting an enquiry is administration, not editing. It sits with status,
+ * assignment and conversion behind the admin disclosure, so a thumb aiming at
+ * "Edit enquiry" in the middle of the page cannot land on it.
+ */
+export function EnquiryArchiveAction({
+  enquiry,
+  role,
+  api,
+  language,
+}: {
+  enquiry: Enquiry;
+  role: CrmRole | null | undefined;
+  api: Pick<RecordEditApi, 'archiveEnquiry'>;
+  language: 'en' | 'ru';
+}) {
+  const { navigate } = useRouter();
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!can(role, 'editEnquiry')) return null;
+
+  const copy = language === 'ru' ? {
+    title: 'Удаление',
+    delete: 'Удалить заявку',
+    deleteConfirm: 'Удалить эту заявку из рабочих списков? История сохранится для аудита. Если у заявки есть активный проект или запись, удаление будет заблокировано.',
+    deleteConfirmAction: 'Да, удалить заявку',
+    cancel: 'Отмена',
+    deleteFailed: 'Не удалось удалить заявку.',
+  } : {
+    title: 'Delete',
+    delete: 'Delete enquiry',
+    deleteConfirm: 'Delete this enquiry from working lists? Its history is retained for audit. If it has an active project or appointment, deletion will be blocked.',
+    deleteConfirmAction: 'Yes, delete enquiry',
+    cancel: 'Cancel',
+    deleteFailed: 'Could not delete the enquiry.',
+  };
+
+  async function archive() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.archiveEnquiry(enquiry.id);
+      if (result) navigate('/enquiries');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.deleteFailed);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <h3 style={{ margin: '0 0 8px', fontSize: '0.9rem' }}>{copy.title}</h3>
+      {error ? <div className="notice warn" role="alert">{error}</div> : null}
+      {confirming ? (
+        <div className="notice warn" role="alert">
+          <p style={{ marginTop: 0 }}>{copy.deleteConfirm}</p>
+          <div className="actions">
+            <button type="button" className="danger" disabled={busy} onClick={() => { void archive(); }}>
+              {copy.deleteConfirmAction}
+            </button>
+            <button type="button" disabled={busy} onClick={() => setConfirming(false)}>{copy.cancel}</button>
+          </div>
+        </div>
+      ) : (
+        <div className="actions" style={{ marginTop: 0 }}>
+          <button type="button" className="danger" onClick={() => { setError(null); setConfirming(true); }}>
+            {copy.delete}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

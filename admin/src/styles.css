@@ -946,7 +946,68 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
-.booking-disclosure > summary { min-height: var(--tap); display: flex; align-items: center; }
+/* Disclosures inside a card. `display: flex` on a summary drops the browser's
+   own triangle, which left "Consultation" and "Book a session" reading as plain
+   labels. The chevron is drawn here instead, the same for every one of them. */
+.booking-disclosure > summary,
+.enquiry-admin > summary,
+.enquiry-channel.disclosure > summary {
+  min-height: var(--tap);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+}
+.booking-disclosure > summary::-webkit-details-marker,
+.enquiry-admin > summary::-webkit-details-marker,
+.enquiry-channel.disclosure > summary::-webkit-details-marker { display: none; }
+.booking-disclosure > summary::before,
+.enquiry-admin > summary::before,
+.enquiry-channel.disclosure > summary::before {
+  content: '▸';
+  color: var(--muted);
+  width: 1em;
+  flex: none;
+}
+.booking-disclosure[open] > summary::before,
+.enquiry-admin[open] > summary::before,
+.enquiry-channel.disclosure[open] > summary::before { content: '▾'; }
+.booking-disclosure,
+.enquiry-admin { border-top: 1px solid var(--border); margin-top: 12px; }
+
+/* One row per channel in the enquiry's Conversations card. */
+.enquiry-channels { display: grid; gap: 0; }
+.enquiry-channel { padding: 10px 0; border-top: 1px solid var(--border); }
+.enquiry-channel:first-child { border-top: 0; padding-top: 0; }
+.enquiry-channel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.enquiry-channel-name { font-weight: 600; }
+.enquiry-channel.disclosure > summary .collapsed-section-count { margin-left: auto; }
+
+/* The client's own message, clamped until asked for in full. */
+.client-brief.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  overflow: hidden;
+}
+.link-button {
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  min-height: var(--tap);
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
 
 /* Fields stack by default, which is what a phone needs - a date input with the
    keyboard open wants the full row. Pairs only appear where there is room. */
