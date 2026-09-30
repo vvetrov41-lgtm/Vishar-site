@@ -71,7 +71,7 @@ Team, membership, role, workspace, ownership-transfer, signup-policy and account
 
 1. Database release of the `20260928233*` migrations through the guarded production database path.
 2. Unified-domain rollout (four to twelve Worker domains), then fresh Cloudflare readback. Done 2026-09-30.
-   Database release of `20260930070000`, then the Team-domain rollout (twelve to thirteen), then fresh readback of all thirteen hosts.
+   Database release of `20260930120000`, then the Team-domain rollout (twelve to thirteen), then fresh readback of all thirteen hosts.
    Gmail Worker redeploy (`release/private-crm-rc*-backend-auth-gmail-redeploy-*`) so client history accepts the Artist the GPT edge resolved; until then a client shared by two manageable Artists is refused as ambiguous, as in the CRM UI.
 3. Create the confidential Supabase OAuth client for `vishar-unified-gpt` with only the fixed Worker callback. The secret goes straight into the GPT editor.
 4. Owner binds the client id, enables the intended ceilings (`configure_gpt_action_client`, `configure_gpt_enquiry_read_access`, `configure_gpt_full_management`, `configure_gpt_web_research_access`, `configure_gpt_unified_domain_access`, `configure_gpt_cloudflare_control_access`). Legacy clients stay unchanged.

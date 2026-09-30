@@ -2,7 +2,7 @@
 
 ## Stage 1: 26 database-backed operations (one PR)
 
-### Database: `supabase/migrations/20260930070000_gpt_team_workspace_administration.sql`
+### Database: `supabase/migrations/20260930120000_gpt_team_workspace_administration.sql`
 
 One `public.gpt_*` wrapper per action, `security definer`, fixed `search_path`, granted to `authenticated` only. Every wrapper first calls one of the existing foundation guards with the `administration` ceiling:
 
@@ -45,7 +45,7 @@ Writes use `crm_private.gpt_receipt_begin/finish` with a `request_id`.
 ### Production order
 
 1. Merge with exact-head CI green.
-2. Database release of `20260930070000` through `deploy-private-production-database.yml` from an exact `release/private-crm-rc*` SHA.
+2. Database release of `20260930120000` through `deploy-private-production-database.yml` from an exact `release/private-crm-rc*` SHA.
 3. Team domain rollout (ships the Worker code and the thirteenth host), then readback of all 13 hosts and Cloudflare.
 4. Owner enables the `administration` ceiling with `configure_gpt_unified_domain_access` once the unified OAuth client is bound.
 
