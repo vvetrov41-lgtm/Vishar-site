@@ -334,6 +334,16 @@ function setStatus(message, isError) {
   status.classList.add(isError ? 'text-red-200' : 'text-white/50');
 }
 
+function ideaContactProblem(contact, preferredReply) {
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+  const isPhone = /^\+?[\d\s().-]+$/.test(contact) && contact.replace(/\D/g, '').length >= 7;
+  if (!contact) return 'Please add an email or WhatsApp number first.';
+  if (preferredReply === 'Email' && !isEmail) return 'Please add a valid email address.';
+  if (preferredReply === 'WhatsApp' && !isPhone) return 'Please add your WhatsApp number with country code.';
+  if (!isEmail && !isPhone) return 'Please add an email or WhatsApp number.';
+  return '';
+}
+
 window.sendIdeaToVladimir = async function () {
   const originalIdea = ideaInput.value.trim();
   const aiSummary = ideaResult.innerText.trim();
@@ -341,8 +351,9 @@ window.sendIdeaToVladimir = async function () {
   const contact = (document.getElementById('ai-idea-contact') || {}).value || '';
   const preferredReply = (document.getElementById('ai-idea-reply') || {}).value || 'No preference';
 
-  if (!contact.trim()) {
-    setStatus('Please add an email or WhatsApp number first.', true);
+  const contactProblem = ideaContactProblem(contact.trim(), preferredReply);
+  if (contactProblem) {
+    setStatus(contactProblem, true);
     return;
   }
 
