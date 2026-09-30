@@ -162,14 +162,19 @@ select public.service_complete_enquiry_ai_job(
 grant select on pg_temp.complete_a to authenticated,service_role;
 
 select is((select r->>'status' from pg_temp.complete_a),'succeeded','schema-valid Qwen result is accepted');
-select is(
-  (select status::text from public.email_messages where id=(select (r->>'draft_id')::uuid from pg_temp.complete_a)),
-  'draft',
-  'AI creates only an editable draft'
-);
 select ok(
-  (select approved_at is null and queued_at is null and sent_at is null from public.email_messages where id=(select (r->>'draft_id')::uuid from pg_temp.complete_a)),
-  'draft is neither approved, queued nor sent automatically'
+  (select r->'draft_id' = 'null'::jsonb from pg_temp.complete_a),
+  'AI analysis no longer creates a reply draft'
+);
+select is(
+  (select count(*)::int from public.email_messages where ai_intake_job_id=(select (j->>'job_id')::uuid from pg_temp.claim_a2)),
+  0,
+  'a successful analysis writes no email message'
+);
+select is(
+  (select result->>'summary' is not null from public.enquiry_ai_jobs where id=(select (j->>'job_id')::uuid from pg_temp.claim_a2)),
+  true,
+  'the structured analysis itself is still stored'
 );
 select is(
   public.service_complete_enquiry_ai_job(
@@ -178,12 +183,7 @@ select is(
     pg_temp.valid_result(),'qwen','@cf/qwen/qwen3.8-27b'
   )->>'status',
   'not_claimed',
-  'a repeated completion cannot create another draft'
-);
-select is(
-  (select count(*)::int from public.email_messages where ai_intake_job_id=(select (j->>'job_id')::uuid from pg_temp.claim_a2)),
-  1,
-  'one inbound event has at most one reply draft'
+  'a repeated completion is refused'
 );
 select is(
   (select status::text from public.enquiries where id=(select (r->>'enquiry_id')::uuid from pg_temp.enquiry_a)),
@@ -268,15 +268,6 @@ select throws_ok(
   format($$select public.get_enquiry_ai_result(%L::uuid)$$,(select r->>'enquiry_id' from pg_temp.enquiry_a)),
   '42501',null,
   'another workspace cannot read the AI result'
-);
-select throws_ok(
-  format(
-    $$select public.edit_email_draft(%L::uuid,'Forged body',%L::timestamptz)$$,
-    (select r->>'draft_id' from pg_temp.complete_a),
-    (select updated_at::text from public.email_messages where id=(select (r->>'draft_id')::uuid from pg_temp.complete_a))
-  ),
-  '42501',null,
-  'another workspace cannot edit the reply draft'
 );
 select throws_ok(
   'select count(*) from public.enquiry_ai_jobs',
