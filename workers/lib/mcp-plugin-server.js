@@ -73,9 +73,10 @@ function protectedResourceMetadata(env) {
   };
 }
 
-function authenticateHeader(env, error = null) {
+function authenticateHeader(env, error = null, errorDescription = null) {
   const parts = [`resource_metadata="${metadataUrl(env)}"`];
   if (error) parts.push(`error="${error}"`);
+  if (errorDescription) parts.push(`error_description="${errorDescription}"`);
   return `Bearer ${parts.join(', ')}`;
 }
 
@@ -255,14 +256,23 @@ function validateSchema(schema, value, path = 'arguments') {
   if (schema.maximum != null && value > schema.maximum) throw new McpPluginActionError('invalid_argument', `${path} exceeds the allowed range.`);
 }
 
-function toolResult(value, isError = false) {
+function toolResult(value, isError = false, extraMeta = {}) {
   const text = JSON.stringify(value == null ? {} : value);
   return {
     resultType: 'complete',
     content: [{ type: 'text', text }],
     isError,
-    _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_META },
+    _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_META, ...extraMeta },
   };
+}
+
+function authenticationToolResult(env, message = 'CRM authentication is required.') {
+  const challenge = authenticateHeader(env, 'invalid_token', message);
+  return toolResult(
+    { error: 'authentication_required', message },
+    true,
+    { 'mcp/www_authenticate': [challenge] },
+  );
 }
 
 function safeToolError(error) {
@@ -329,19 +339,20 @@ export async function handlePluginMcpRequest(request, env, fetchImpl = fetch) {
   if (path !== MCP_PATH || request.method !== 'POST') return response(404, { error: 'not_found' });
   if (!configured(env)) return response(404, { error: 'not_found' });
 
-  const token = bearer(request);
-  if (!token) return response(401, { error: 'oauth_token_required' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
-  const actor = await validateActorToken(token, env, fetchImpl);
-  if (!actor) return response(401, { error: 'oauth_token_invalid' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
-  const limited = await enforceRateLimit(env, token);
-  if (limited) return limited;
-
   let body;
   try {
     body = await readJson(request.clone());
     validateEnvelope(request, body);
   } catch (error) {
     const reason = error instanceof Error ? error.message : 'invalid_request';
+    // Keep the bootstrap transport boundary fail-closed for malformed requests,
+    // while valid tools/call requests use the MCP runtime OAuth challenge below.
+    if (reason === 'invalid_request') {
+      const token = bearer(request);
+      if (!token) return response(401, { error: 'oauth_token_required' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
+      const actor = await validateActorToken(token, env, fetchImpl);
+      if (!actor) return response(401, { error: 'oauth_token_invalid' }, { 'www-authenticate': authenticateHeader(env, 'invalid_token') });
+    }
     if (reason === 'body_too_large') return response(413, { error: reason });
     if (reason === 'unsupported_media_type') return response(415, { error: reason });
     if (reason === 'parse_error') return rpcError(null, -32700, 'Parse error.', undefined, 400);
@@ -350,6 +361,22 @@ export async function handlePluginMcpRequest(request, env, fetchImpl = fetch) {
     if (reason === 'invalid_meta' || reason === 'invalid_params') return rpcError(body?.id ?? null, -32602, 'Invalid MCP metadata.', undefined, 400);
     return rpcError(body?.id ?? null, -32600, 'Invalid Request.', undefined, 400);
   }
+
+  // Discovery and tool schemas contain no CRM data and must be available before
+  // authentication so ChatGPT can inspect per-tool securitySchemes and start OAuth.
+  if (body.method === 'server/discover' || body.method === 'tools/list') {
+    return dispatch(request, env, body);
+  }
+
+  if (body.method === 'tools/call') {
+    const token = bearer(request);
+    if (!token) return rpcResult(body.id, authenticationToolResult(env));
+    const actor = await validateActorToken(token, env, fetchImpl);
+    if (!actor) return rpcResult(body.id, authenticationToolResult(env, 'CRM authentication is invalid or expired.'));
+    const limited = await enforceRateLimit(env, token);
+    if (limited) return limited;
+  }
+
   return dispatch(request, env, body);
 }
 
@@ -358,11 +385,13 @@ export const __testing = Object.freeze({
   resourceIdentifier,
   authorizationIssuer,
   protectedResourceMetadata,
+  authenticateHeader,
   decodeJwtPayload,
   claimsLookValid,
   validateActorToken,
   validateEnvelope,
   validateSchema,
+  authenticationToolResult,
   discoverResult,
   MCP_SCOPES,
 });

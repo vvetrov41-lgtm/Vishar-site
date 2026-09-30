@@ -54,11 +54,11 @@ function rpcRequest(method, params = {}, accessToken = token()) {
     },
   };
   const headers = new Headers({
-    authorization: `Bearer ${accessToken}`,
     'content-type': 'application/json',
     'mcp-protocol-version': MCP_PROTOCOL_VERSION,
     'mcp-method': method,
   });
+  if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
   if (method === 'tools/call') headers.set('mcp-name', params.name || '');
   return new Request('https://mcp.vishartattoo.com/mcp', { method: 'POST', headers, body: JSON.stringify(body) });
 }
@@ -70,6 +70,22 @@ function authFetch(expectedToken = null) {
     if (expectedToken) assert.equal(init.headers.authorization, `Bearer ${expectedToken}`);
     return Response.json({ id: USER });
   };
+}
+
+async function assertAuthChallenge(response, expectedMessage = null) {
+  assert.equal(response.status, 200, 'tool auth failures use an MCP result so ChatGPT can surface linking UI');
+  const payload = await response.json();
+  assert.equal(payload.result.isError, true);
+  const error = JSON.parse(payload.result.content[0].text);
+  assert.equal(error.error, 'authentication_required');
+  if (expectedMessage) assert.equal(error.message, expectedMessage);
+  const challenges = payload.result._meta?.['mcp/www_authenticate'];
+  assert(Array.isArray(challenges) && challenges.length === 1, 'runtime OAuth challenge is present');
+  assert.match(challenges[0], /^Bearer /);
+  assert.match(challenges[0], /resource_metadata="https:\/\/mcp\.vishartattoo\.com\/\.well-known\/oauth-protected-resource"/);
+  assert.match(challenges[0], /error="invalid_token"/);
+  assert.match(challenges[0], /error_description="/);
+  assert(!challenges[0].includes(CLIENT), 'runtime challenge never exposes the bound client id');
 }
 
 {
@@ -120,22 +136,87 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   const metadata = pluginServerTesting.protectedResourceMetadata(env({ fetch() {} }));
   assert.deepEqual(metadata.authorization_servers, [`${SUPABASE}/auth/v1`]);
   assert.deepEqual(metadata.scopes_supported, ['email']);
-  assert.equal(metadata.resource, 'https://mcp.vishartattoo.com/mcp');
+  assert.equal(metadata.resource, RESOURCE);
 }
 
 {
-  const invalid = token({ client_id: undefined });
   let authCalled = false;
   const response = await handlePluginMcpRequest(
-    rpcRequest('tools/list', {}, invalid),
-    env({ async fetch() { throw new Error('must not call action service'); } }),
-    async () => { authCalled = true; return Response.json({ id: USER }); },
+    new Request('https://mcp.vishartattoo.com/mcp', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+    }),
+    env({ async fetch() { throw new Error('malformed bootstrap probe must not call action service'); } }),
+    async () => { authCalled = true; throw new Error('missing-token bootstrap probe must not call Auth'); },
   );
-  assert.equal(response.status, 401);
-  assert.equal(authCalled, false, 'obviously invalid OAuth claims fail before network validation');
+  assert.equal(response.status, 401, 'malformed unauthenticated bootstrap probe remains fail-closed');
+  assert.equal(authCalled, false);
+  assert.match(response.headers.get('www-authenticate') || '', /resource_metadata="https:\/\/mcp\.vishartattoo\.com\/\.well-known\/oauth-protected-resource"/);
+}
+
+{
+  let authCalled = false;
+  const response = await handlePluginMcpRequest(
+    new Request('https://mcp.vishartattoo.com/mcp', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      },
+      body: '{}',
+    }),
+    env({ async fetch() { throw new Error('bogus-token bootstrap probe must not call action service'); } }),
+    async () => { authCalled = true; throw new Error('obviously invalid token must fail before Auth lookup'); },
+  );
+  assert.equal(response.status, 401, 'malformed bogus-token bootstrap probe remains fail-closed');
+  assert.equal(authCalled, false);
+}
+
+{
+  let authCalled = false;
+  let actionCalled = false;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/list', {}, null),
+    env({ async fetch() { actionCalled = true; throw new Error('must not call action service'); } }),
+    async () => { authCalled = true; throw new Error('must not call Auth during discovery'); },
+  );
+  assert.equal(response.status, 200, 'tool schemas are discoverable before OAuth');
+  assert.equal(authCalled, false);
+  assert.equal(actionCalled, false);
+  const payload = await response.json();
+  assert.equal(payload.result.tools.length, tools.length);
+  assert(payload.result.tools.some((tool) => tool.name === 'crm_list_clients'));
+  assert(payload.result.tools.every((tool) => tool.securitySchemes?.[0]?.type === 'oauth2'));
+}
+
+{
+  let authCalled = false;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/list', {}, null),
+    env({ async fetch() { throw new Error('listing must not call action service'); } }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
+    async () => { authCalled = true; throw new Error('unbound discovery must not call Auth'); },
+  );
+  assert.equal(response.status, 200, 'OAuth discovery and tool metadata can precede dedicated client registration');
+  assert.equal(authCalled, false);
+  const metadata = await handlePluginMcpRequest(
+    new Request('https://mcp.vishartattoo.com/.well-known/oauth-protected-resource'),
+    env({ async fetch() {} }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
+  );
+  assert.equal(metadata.status, 200, 'protected-resource metadata can precede client registration');
+}
+
+{
+  let actionCalled = false;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }, null),
+    env({ async fetch() { actionCalled = true; throw new Error('must not call action service'); } }),
+    async () => { throw new Error('missing token must fail before Auth lookup'); },
+  );
+  await assertAuthChallenge(response, 'CRM authentication is required.');
+  assert.equal(actionCalled, false);
 }
 
 for (const claims of [
+  { client_id: undefined },
   { resource: 'https://other.example/mcp' },
   { resource: undefined },
   { scope: 'profile' },
@@ -144,45 +225,49 @@ for (const claims of [
   { exp: Math.floor(Date.now() / 1000) - 1 },
 ]) {
   let authCalled = false;
+  let actionCalled = false;
   const response = await handlePluginMcpRequest(
-    rpcRequest('tools/list', {}, token(claims)),
-    env({ async fetch() { throw new Error('must not call action service'); } }),
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }, token(claims)),
+    env({ async fetch() { actionCalled = true; throw new Error('must not call action service'); } }),
     async () => { authCalled = true; return Response.json({ id: USER }); },
   );
-  assert.equal(response.status, 401, `invalid OAuth claims were accepted: ${Object.keys(claims)}`);
+  await assertAuthChallenge(response, 'CRM authentication is invalid or expired.');
   assert.equal(authCalled, false, 'wrong resource, scope, client and expiry fail before network validation');
+  assert.equal(actionCalled, false);
 }
 
 {
+  let actionCalled = false;
   const response = await handlePluginMcpRequest(
-    rpcRequest('tools/list'),
-    env({ async fetch() {} }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }),
+    env({ async fetch() { actionCalled = true; throw new Error('must not call action service'); } }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
     async () => { throw new Error('unbound client must fail before Auth lookup'); },
   );
-  assert.equal(response.status, 401, 'tools stay closed without the dedicated OAuth client binding');
-  const metadata = await handlePluginMcpRequest(
-    new Request('https://mcp.vishartattoo.com/.well-known/oauth-protected-resource'),
-    env({ async fetch() {} }, { MCP_PLUGIN_OAUTH_CLIENT_ID: undefined }),
-  );
-  assert.equal(metadata.status, 200, 'OAuth discovery can precede client registration');
+  await assertAuthChallenge(response, 'CRM authentication is invalid or expired.');
+  assert.equal(actionCalled, false);
 }
 
 {
+  const accessToken = token({ resource: undefined, aud: ['authenticated', RESOURCE] });
+  let actionRequest;
   const response = await handlePluginMcpRequest(
-    rpcRequest('tools/list', {}, token({ resource: undefined, aud: ['authenticated', RESOURCE] })),
-    env({ async fetch() { throw new Error('listing must not call Action service'); } }),
-    authFetch(),
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }, accessToken),
+    env({ async fetch(request) { actionRequest = request; return Response.json({ items: [] }); } }),
+    authFetch(accessToken),
   );
   assert.equal(response.status, 200, 'resource-bound audience array is accepted');
+  assert(actionRequest, 'valid resource-bound token reaches action service');
 }
 
 {
+  let actionCalled = false;
   const response = await handlePluginMcpRequest(
-    rpcRequest('tools/list'),
-    env({ async fetch() { throw new Error('revoked token must not call Action service'); } }),
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }),
+    env({ async fetch() { actionCalled = true; throw new Error('revoked token must not call action service'); } }),
     async () => new Response(null, { status: 401 }),
   );
-  assert.equal(response.status, 401, 'Supabase revocation is authoritative');
+  await assertAuthChallenge(response, 'CRM authentication is invalid or expired.');
+  assert.equal(actionCalled, false, 'Supabase revocation is authoritative');
 }
 
 {
@@ -232,4 +317,4 @@ for (const claims of [
   assert.equal(actionCalled, false);
 }
 
-console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, OAuth actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
+console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict resource/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
