@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { App } from '../App';
 import { CLIENT_ID, ENQUIRY_ID, renderWithSession } from './fixtures';
@@ -98,17 +98,16 @@ describe('CRM record editing UI', () => {
     expect(screen.queryByRole('button', { name: 'Delete client' })).not.toBeInTheDocument();
   });
 
-  it('keeps the immutable submitted snapshot collapsed inside current client details', async () => {
+  it('shows email and travel origin in the summary and links to the client card', async () => {
     renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}` });
 
-    expect(await screen.findByText('Current client details')).toBeInTheDocument();
-    const summary = screen.getByText('Submitted enquiry data');
-    const details = summary.closest('details');
-    expect(details).not.toBeNull();
-    expect(details).not.toHaveAttribute('open');
-    fireEvent.click(summary);
-    expect(details).toHaveAttribute('open');
-    expect(screen.getAllByText('+44 7700 900 099').length).toBeGreaterThan(0);
+    const summary = (await screen.findByText('fixture@example.test')).closest('.enquiry-summary');
+    expect(summary).not.toBeNull();
+    expect(summary).toHaveTextContent('Travelling from');
+    expect(summary).toHaveTextContent('Manchester');
+    expect(within(summary as HTMLElement).getByRole('link', { name: 'Open client' }))
+      .toHaveAttribute('href', `#/clients/${CLIENT_ID}`);
+    expect(screen.queryByText('Submitted enquiry data')).not.toBeInTheDocument();
   });
 
   it('mints a fresh signed reference before opening the original', async () => {

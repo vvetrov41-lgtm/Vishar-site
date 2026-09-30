@@ -230,10 +230,11 @@ describe('detail-route continuity', () => {
     const record = screen.getByRole('heading', { level: 2, name: 'The project' });
     expect(actions.compareDocumentPosition(record) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-    // The client card is further down still, collapsed to its own heading and
-    // a count, because the summary above already carries the contact details.
-    const contact = screen.getByText('Current client details');
-    expect(record.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Every contact detail sits in the summary above the workflow; there is no
+    // second client block further down.
+    const email = screen.getByText('fixture@example.test');
+    expect(email.compareDocumentPosition(actions) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByText('Current client details')).not.toBeInTheDocument();
   });
 
   it('links an overdue dashboard follow-up directly to its enquiry', async () => {

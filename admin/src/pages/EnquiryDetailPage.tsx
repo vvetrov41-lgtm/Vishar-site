@@ -199,7 +199,15 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             <h2 className="enquiry-summary-reference" style={{ fontSize: '1.18rem' }}>
               {clientDisplayName}
             </h2>
-            <div className="meta" style={{ marginTop: 2 }}>{enquiry.reference_number}</div>
+            <div className="meta" style={{ marginTop: 2 }}>
+              <span>{enquiry.reference_number}</span>
+              {client ? (
+                <>
+                  {' · '}
+                  <Link to={`/clients/${client.id}`}>{t('enquiry.openClient')}</Link>
+                </>
+              ) : null}
+            </div>
           </div>
           <span className="badge">{label('enquiryStatus', enquiry.status)}</span>
           {enquiry.intake_state !== 'complete' ? (
@@ -219,6 +227,10 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dd>{formatPhoneForDisplay(client?.phone ?? enquiry.submitted_phone ?? null) ?? '—'}</dd>
           <dt>{t('enquiry.instagram')}</dt>
           <dd>{client?.instagram ?? enquiry.submitted_instagram ?? '—'}</dd>
+          <dt>{t('enquiry.email')}</dt>
+          <dd>{client?.email ?? enquiry.submitted_email ?? '—'}</dd>
+          <dt>{t('enquiry.travellingFrom')}</dt>
+          <dd>{client?.travelling_from ?? enquiry.submitted_travelling_from ?? '—'}</dd>
           <dt>{t('enquiry.prefers')}</dt>
           <dd>{localiseKnownValue(client?.preferred_contact ?? enquiry.submitted_preferred_contact ?? null, language)}</dd>
           <dt>{t('enquiry.type')}</dt>
@@ -262,6 +274,9 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         <div className="notice warn" role="alert">{t('enquiry.identifierConflict')}</div>
       ) : null}
 
+      {/* The contact rows above read the client card, falling back to the
+          form. Where the form and the card disagree, this is the one place
+          both values appear; there is no separate copy of the submission. */}
       {client ? (
         <EnquiryContactConflict enquiry={enquiry} client={client} api={api} onSaved={reload} />
       ) : null}
@@ -465,34 +480,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           />
         </CollapsedSection>
       ) : null}
-
-      <CollapsedSection title={t('enquiry.currentClient')} count={client ? 1 : 0}>
-        {client ? (
-          <>
-            <dl className="definition">
-              <dt>{t('enquiry.email')}</dt><dd>{client.email ?? '—'}</dd>
-              <dt>{t('enquiry.travellingFrom')}</dt><dd>{client.travelling_from ?? '—'}</dd>
-            </dl>
-            <div className="actions">
-              <Link to={`/clients/${client.id}`} className="badge">{t('enquiry.openClient')}</Link>
-            </div>
-          </>
-        ) : (
-          <EmptyState title={t('enquiry.clientUnavailable')} />
-        )}
-
-        <details className="submitted-snapshot">
-          <summary>{t('enquiry.contactSubmitted')}</summary>
-          <dl className="definition">
-            <dt>{t('enquiry.name')}</dt><dd>{enquiry.submitted_full_name ?? '—'}</dd>
-            <dt>{t('enquiry.email')}</dt><dd>{enquiry.submitted_email ?? '—'}</dd>
-            <dt>{t('enquiry.phone')}</dt><dd>{formatPhoneForDisplay(enquiry.submitted_phone) ?? '—'}</dd>
-            <dt>{t('enquiry.instagram')}</dt><dd>{enquiry.submitted_instagram ?? '—'}</dd>
-            <dt>{t('enquiry.prefers')}</dt><dd>{localiseKnownValue(enquiry.submitted_preferred_contact, language)}</dd>
-            <dt>{t('enquiry.travellingFrom')}</dt><dd>{enquiry.submitted_travelling_from ?? '—'}</dd>
-          </dl>
-        </details>
-      </CollapsedSection>
 
       {can(role, 'viewFollowUps') ? (
         <CollapsedSection title={t('enquiry.followUps')} count={followUps.length}>
