@@ -375,21 +375,6 @@ revoke all on function crm_private.enqueue_client_ai_notification(uuid)
 comment on function crm_private.enqueue_client_ai_notification(uuid) is
   'Retired 2026-09-30: CRM-AI recommendations are shown in the CRM only and are not pushed. Unanswered clients are surfaced by service_sweep_unanswered_client_reminders.';
 
--- Rows queued before this migration are never leased for Telegram.
-create or replace function crm_private.client_ai_notification_is_current(
-  n public.notifications
-) returns boolean
-language sql
-stable
-security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-  select n.notification_type <> 'client_ai.next_action';
-$$;
-
-revoke execute on function crm_private.client_ai_notification_is_current(public.notifications)
-  from public, anon, authenticated, service_role;
-
 -- ---------------------------------------------------------------------------
 -- 3. Unanswered-client reminders
 -- ---------------------------------------------------------------------------
@@ -405,6 +390,133 @@ as $$
 $$;
 
 revoke all on function crm_private.unanswered_reminder_quiet(timestamptz)
+  from public, anon, authenticated, service_role;
+
+-- The single definition of "this client is still waiting on a reply", shared
+-- by the sweep that creates a reminder and the Telegram claim that sends it.
+-- Returns the instant the client started waiting, or null when nothing is
+-- waiting (answered, acknowledged in Today, archived, engaged with).
+--
+-- Conversations are judged by the conversation's own event timestamps
+-- (maintained with greatest() by every ingest path, echoes included), not by
+-- message insertion order, so a late webhook for an older inbound message
+-- cannot resurrect a conversation the artist already answered.
+create or replace function crm_private.unanswered_waiting_since(
+  p_entity_type text,
+  p_artist_id uuid,
+  p_entity_id uuid
+)
+returns timestamptz
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+  select case p_entity_type
+    when 'conversation' then (
+      select c.last_inbound_at
+      from public.communication_conversations c
+      where c.id = p_entity_id
+        and c.artist_id = p_artist_id
+        and c.state = 'open'
+        and c.last_inbound_at is not null
+        and c.last_inbound_at > coalesce(c.last_outbound_at, '-infinity'::timestamptz)
+        and not exists (
+          select 1 from public.attention_acknowledgements k
+          where k.artist_id = c.artist_id and k.item_kind = 'conversation_reply'
+            and k.entity_id = c.id and k.observed_at >= c.last_inbound_at))
+    when 'client' then (
+      select g.last_message_at
+      from public.gmail_client_metadata_snapshots g
+      where g.artist_id = p_artist_id
+        and g.client_id = p_entity_id
+        and g.direction = 'inbound'
+        and g.last_message_at is not null
+        and not exists (
+          select 1 from public.attention_acknowledgements k
+          where k.artist_id = g.artist_id and k.item_kind = 'gmail_reply'
+            and k.entity_id = g.client_id and k.observed_at >= g.last_message_at))
+    when 'enquiry' then (
+      -- A website enquiry nobody has engaged with (same rule as Today).
+      select e.created_at
+      from public.enquiries e
+      where e.id = p_entity_id
+        and e.artist_id = p_artist_id
+        and e.archived_at is null and e.status = 'new' and e.intake_state = 'complete'
+        and not exists (select 1 from public.projects p where p.enquiry_id = e.id)
+        and not exists (select 1 from public.sessions s where s.enquiry_id = e.id)
+        and not exists (
+          select 1 from public.communication_conversations c
+          where c.artist_id = e.artist_id
+            and (c.enquiry_id = e.id or c.client_id = e.client_id)
+            and c.last_message_at >= e.created_at)
+        and not exists (
+          select 1 from public.gmail_client_metadata_snapshots g
+          where g.artist_id = e.artist_id and g.client_id = e.client_id
+            and g.last_message_at >= e.created_at)
+        and not exists (
+          select 1 from public.email_messages m
+          where m.artist_id = e.artist_id
+            and (m.enquiry_id = e.id or m.client_id = e.client_id)
+            and m.created_at >= e.created_at
+            and (m.created_by_kind = 'human' or m.status in ('approved', 'queued', 'sent', 'failed')))
+        and not exists (
+          select 1 from public.attention_acknowledgements k
+          where k.artist_id = e.artist_id and k.item_kind = 'new_enquiry'
+            and k.entity_id = e.id and k.observed_at >= e.created_at))
+  end;
+$$;
+
+revoke all on function crm_private.unanswered_waiting_since(text, uuid, uuid)
+  from public, anon, authenticated, service_role;
+
+-- Claim-time truth for a queued reminder. A reminder created earlier may only
+-- be pushed while the same wait is still open, outside quiet hours, within
+-- 72 hours, and (for the 6 h reminder) before the final one exists: a Telegram
+-- outage must not release a stale reminder or both stages together.
+create or replace function crm_private.unanswered_reminder_is_current(
+  n public.notifications,
+  p_now timestamptz
+) returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+  select case
+    when n.notification_type <> 'client.reply_overdue' then true
+    else coalesce((
+      select not crm_private.unanswered_reminder_quiet(p_now)
+         and w.since > p_now - interval '72 hours'
+         and floor(extract(epoch from w.since))::bigint::text = split_part(n.dedupe_key, ':', 4)
+         and not (
+           split_part(n.dedupe_key, ':', 5) = '6h'
+           and exists (select 1 from public.notifications x
+                       where x.dedupe_key = replace(n.dedupe_key, ':6h:', ':24h:')))
+      from (select crm_private.unanswered_waiting_since(n.entity_type, n.artist_id, n.entity_id) as since) w
+    ), false)
+  end;
+$$;
+
+revoke all on function crm_private.unanswered_reminder_is_current(public.notifications, timestamptz)
+  from public, anon, authenticated, service_role;
+
+-- The claim already calls this guard for every row. CRM-AI recommendation
+-- pushes (including rows queued before this migration) are never current;
+-- unanswered-client reminders are rechecked against the live CRM.
+create or replace function crm_private.client_ai_notification_is_current(
+  n public.notifications
+) returns boolean
+language sql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+  select n.notification_type <> 'client_ai.next_action'
+     and crm_private.unanswered_reminder_is_current(n, now());
+$$;
+
+revoke execute on function crm_private.client_ai_notification_is_current(public.notifications)
   from public, anon, authenticated, service_role;
 
 create or replace function public.service_sweep_unanswered_client_reminders(
@@ -430,30 +542,29 @@ begin
     return 0;
   end if;
 
-  with conv as (
-    -- WhatsApp / Instagram conversation whose newest message is the client's.
+  with candidates as (
+    -- Cheap time-window prefilter; unanswered_waiting_since() decides.
     select c.artist_id, 'conversation'::text as entity_type, c.id as entity_id,
-           'conversation_reply'::text as ack_kind, c.last_inbound_at as waiting_since,
+           c.last_inbound_at as observed_at,
            coalesce(left(cl.full_name, 80), c.external_display_label, c.external_username) as who,
            case c.channel when 'whatsapp' then 'WhatsApp' else 'Instagram' end as channel_label,
            latest.body as excerpt,
-           latest.has_media
+           coalesce(latest.has_media, false) as has_media
     from public.communication_conversations c
     left join public.clients cl on cl.id = c.client_id
-    join lateral (
-      select m.direction, m.body,
-             jsonb_array_length(m.attachments) > 0 as has_media
+    left join lateral (
+      -- The newest inbound message by event time, for the excerpt only.
+      select m.body, jsonb_array_length(m.attachments) > 0 as has_media
       from public.communication_messages m
-      where m.conversation_id = c.id
-      order by m.created_at desc, m.id desc
+      where m.conversation_id = c.id and m.direction = 'inbound'
+      order by coalesce(m.provider_timestamp, m.created_at) desc, m.id desc
       limit 1
-    ) latest on latest.direction = 'inbound'
+    ) latest on true
     where c.state = 'open'
       and c.last_inbound_at > v_now - interval '72 hours'
       and c.last_inbound_at <= v_now - interval '6 hours'
-  ), gmail as (
-    select g.artist_id, 'client'::text, g.client_id,
-           'gmail_reply'::text, g.last_message_at,
+    union all
+    select g.artist_id, 'client'::text, g.client_id, g.last_message_at,
            left(cl.full_name, 80), 'Email'::text,
            nullif(btrim(g.subject), ''), false
     from public.gmail_client_metadata_snapshots g
@@ -461,53 +572,27 @@ begin
     where g.direction = 'inbound'
       and g.last_message_at > v_now - interval '72 hours'
       and g.last_message_at <= v_now - interval '6 hours'
-  ), fresh_enquiry as (
-    -- A website enquiry nobody has engaged with (same rule as Today).
-    select e.artist_id, 'enquiry'::text, e.id,
-           'new_enquiry'::text, e.created_at,
+    union all
+    select e.artist_id, 'enquiry'::text, e.id, e.created_at,
            left(cl.full_name, 80), 'enquiry'::text,
            concat_ws(' · ', crm_private.telegram_card_value(e.project_type, 60),
                             crm_private.telegram_card_value(e.placement, 60)),
            false
     from public.enquiries e
     join public.clients cl on cl.id = e.client_id
-    where e.archived_at is null and e.status = 'new' and e.intake_state = 'complete'
-      and e.created_at >= v_now - interval '72 hours'
-      and not exists (select 1 from public.projects p where p.enquiry_id = e.id)
-      and not exists (select 1 from public.sessions s where s.enquiry_id = e.id)
-      and not exists (
-        select 1 from public.communication_conversations c
-        where c.artist_id = e.artist_id
-          and (c.enquiry_id = e.id or c.client_id = e.client_id)
-          and c.last_message_at >= e.created_at)
-      and not exists (
-        select 1 from public.gmail_client_metadata_snapshots g
-        where g.artist_id = e.artist_id and g.client_id = e.client_id
-          and g.last_message_at >= e.created_at)
-      and not exists (
-        select 1 from public.email_messages m
-        where m.artist_id = e.artist_id
-          and (m.enquiry_id = e.id or m.client_id = e.client_id)
-          and m.created_at >= e.created_at
-          and (m.created_by_kind = 'human' or m.status in ('approved', 'queued', 'sent', 'failed')))
+    where e.status = 'new'
+      and e.created_at > v_now - interval '72 hours'
+      and e.created_at <= v_now - interval '6 hours'
   ), waiting as (
-    select * from conv
-    union all select * from gmail
-    union all select * from fresh_enquiry
+    select c.*, crm_private.unanswered_waiting_since(c.entity_type, c.artist_id, c.entity_id) as waiting_since
+    from candidates c
+    join crm_private.artist_state st on st.artist_id = c.artist_id and st.is_active
   ), staged as (
     select w.*,
            case when w.waiting_since <= v_now - interval '24 hours' then '24h' else '6h' end as stage,
            floor(extract(epoch from (v_now - w.waiting_since)) / 3600)::integer as hours
     from waiting w
-    join crm_private.artist_state st on st.artist_id = w.artist_id and st.is_active
-    where w.waiting_since <= v_now - interval '6 hours'
-      and w.waiting_since > v_now - interval '72 hours'
-      and not exists (
-        select 1 from public.attention_acknowledgements k
-        where k.artist_id = w.artist_id
-          and k.item_kind = w.ack_kind
-          and k.entity_id = w.entity_id
-          and k.observed_at >= w.waiting_since)
+    where w.waiting_since = w.observed_at
   ), targeted as (
     select s.*, am.profile_id, a.workspace_id,
            crm_private.profile_language(am.profile_id) as lang,
@@ -521,7 +606,8 @@ begin
   ), due as (
     select t.* from targeted t
     where not exists (select 1 from public.notifications n where n.dedupe_key = t.dedupe_key)
-      -- The final reminder replaces, never follows, an unsent first one.
+      -- The final reminder replaces, never follows, an unsent first one; the
+      -- claim applies the same rule to a first reminder still queued.
       and not (t.stage = '6h' and exists (
         select 1 from public.notifications n
         where n.dedupe_key = replace(t.dedupe_key, ':6h:', ':24h:')))
@@ -567,4 +653,4 @@ grant execute on function public.service_sweep_unanswered_client_reminders(integ
   to service_role;
 
 comment on function public.service_sweep_unanswered_client_reminders(integer, timestamptz) is
-  'Backend-only. Personal Telegram reminders for clients waiting on a reply: one at 6 h, one final at 24 h per inbound message, none older than 72 h, none 22:00-08:00 Europe/London.';
+  'Backend-only. Personal Telegram reminders for clients waiting on a reply: one at 6 h, one final at 24 h per inbound message, none older than 72 h, none 22:00-08:00 Europe/London. The Telegram claim rechecks each reminder against the live CRM before sending.';

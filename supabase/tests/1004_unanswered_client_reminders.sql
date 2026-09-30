@@ -134,6 +134,9 @@ insert into public.communication_messages(
   'f1004300-0000-4000-8000-000000000001', 'a1111111-1111-4111-8111-111111111111',
   'whatsapp', 'outbound', 'provider_app', 'sent', 'Yes, see you then', '2026-10-02 16:00:00+01'
 );
+update public.communication_conversations
+set last_outbound_at = '2026-10-02 16:00:00+01', last_message_at = '2026-10-02 16:00:00+01'
+where id = 'f1004300-0000-4000-8000-000000000001';
 select is(public.service_sweep_unanswered_client_reminders(50, '2026-10-03 10:00:00+01'::timestamptz), 0,
   'a conversation the artist answered is not reminded');
 
@@ -207,19 +210,97 @@ select is(
   E'Ждёт ответа 7 ч: Form Client\nНовая заявка без ответа\n«Portrait · Upper arm»',
   'the enquiry reminder links to the enquiry and names what was asked');
 
--- The Telegram claim picks the reminders up like any other notification. The
--- sweeps above ran at fixed future instants; bring them due at the real clock.
+-- A final reminder supersedes a first one still queued (e.g. Telegram was down).
+select is(public.service_sweep_unanswered_client_reminders(50, '2026-10-05 10:00:00+01'::timestamptz), 2,
+  'the final reminders fall due for the waiting conversation and enquiry');
+create function pg_temp.reminder(p_entity uuid, p_stage text) returns public.notifications language sql as $$
+  select n.* from public.notifications n
+  where n.notification_type = 'client.reply_overdue' and n.entity_id = p_entity
+    and n.dedupe_key like '%:' || p_stage || ':%'
+  order by n.created_at desc, n.scheduled_at desc limit 1
+$$;
+select ok(
+  not crm_private.unanswered_reminder_is_current(
+    pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '6h'), '2026-10-05 10:05:00+01'),
+  'a queued first reminder is not sent once the final one exists');
+select ok(
+  crm_private.unanswered_reminder_is_current(
+    pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '24h'), '2026-10-05 10:05:00+01'),
+  'the final reminder is current while the client is still waiting');
+select ok(
+  not crm_private.unanswered_reminder_is_current(
+    pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '24h'), '2026-10-05 23:00:00+01'),
+  'a queued reminder is not sent during quiet hours');
+select ok(
+  not crm_private.unanswered_reminder_is_current(
+    pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '24h'), '2026-10-08 10:00:00+01'),
+  'a reminder older than 72 hours is not sent after an outage');
+
+-- Answered after the reminder was queued: the claim drops it.
+update public.communication_conversations
+set last_outbound_at = '2026-10-05 10:02:00+01'
+where id = 'f1004300-0000-4000-8000-000000000001';
+select ok(
+  not crm_private.unanswered_reminder_is_current(
+    pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '24h'), '2026-10-05 10:05:00+01'),
+  'a reminder queued before the artist replied is not sent');
+update public.communication_conversations
+set last_outbound_at = '2026-10-02 16:00:00+01'
+where id = 'f1004300-0000-4000-8000-000000000001';
+
+-- Acknowledged in Today after it was queued: the claim drops it.
+insert into public.attention_acknowledgements(artist_id, item_kind, entity_id, observed_at, acknowledged_at)
+values ('a1111111-1111-4111-8111-111111111111', 'new_enquiry',
+        'f1004400-0000-4000-8000-000000000001', '2026-10-04 08:30:00+01', '2026-10-05 10:03:00+01');
+select ok(
+  not crm_private.unanswered_reminder_is_current(
+    pg_temp.reminder('f1004400-0000-4000-8000-000000000001', '24h'), '2026-10-05 10:05:00+01'),
+  'a reminder for an enquiry marked handled is not sent');
+delete from public.attention_acknowledgements
+where entity_id = 'f1004400-0000-4000-8000-000000000001';
+
+-- A late webhook for an older client message cannot reopen an answered chat:
+-- event timestamps decide, not insertion order.
+insert into public.communication_conversations(
+  id, artist_id, channel, integration_key, external_contact_id, client_id, link_state, state,
+  last_message_at, last_inbound_at, last_outbound_at
+) values (
+  'f1004300-0000-4000-8000-000000000002', 'a1111111-1111-4111-8111-111111111111',
+  'instagram', 'instagram_main', '1784000001', 'f1004200-0000-4000-8000-000000000002',
+  'linked', 'open', '2026-10-05 09:00:00+01', '2026-10-05 08:00:00+01', '2026-10-05 09:00:00+01'
+);
+insert into public.communication_messages(
+  conversation_id, artist_id, channel, direction, origin, status, body, provider_timestamp, created_at
+) values
+  ('f1004300-0000-4000-8000-000000000002', 'a1111111-1111-4111-8111-111111111111',
+   'instagram', 'outbound', 'provider_app', 'sent', 'Sure, Friday works', '2026-10-05 09:00:00+01', '2026-10-05 09:00:00+01'),
+  ('f1004300-0000-4000-8000-000000000002', 'a1111111-1111-4111-8111-111111111111',
+   'instagram', 'inbound', 'contact', 'received', 'Is Friday ok?', '2026-10-05 08:00:00+01', '2026-10-05 09:30:00+01');
+select is(public.service_sweep_unanswered_client_reminders(50, '2026-10-05 16:00:00+01'::timestamptz), 0,
+  'an out-of-order inbound webhook does not create a reminder for an answered chat');
+
+-- The Telegram claim applies the same live check. The sweeps above ran at
+-- fixed future instants; bring the reminders due at the real clock.
 update public.notifications set scheduled_at = now()
 where notification_type = 'client.reply_overdue';
 set local role service_role;
 create temporary table reminder_claim as
 select * from public.service_claim_telegram_notifications('reminder-test-worker', 50, 120);
 reset role;
-select ok(
+select is(
   (select count(*)::int from reminder_claim c
    join public.notifications n on n.id = c.notification_id
-   where n.notification_type = 'client.reply_overdue') >= 1,
-  'reminders are claimable for personal Telegram');
+   where n.notification_type = 'client.reply_overdue'),
+  -- The enquiry's reminder is no longer current: the Instagram chat above
+  -- with the same client counts as engagement with that enquiry.
+  case when crm_private.unanswered_reminder_quiet(now()) then 0 else 1 end,
+  'only the still-current final reminder is claimed, and none during London quiet hours');
+select is(
+  (select count(*)::int from reminder_claim c
+   join public.notifications n on n.id = c.notification_id
+   where n.notification_type = 'client.reply_overdue' and n.dedupe_key like '%:6h:%'),
+  0,
+  'no superseded or stale first reminder is claimed');
 
 select * from finish();
 rollback;
