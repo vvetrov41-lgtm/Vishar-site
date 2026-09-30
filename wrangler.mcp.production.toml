@@ -20,10 +20,18 @@ name = "MCP_RATE_LIMIT"
 namespace_id = "1003"
 simple = { limit = 60, period = 60 }
 
+# The full Plugin MCP surface reuses the already-audited GPT Action worker via
+# a Cloudflare service binding. No provider secret or Supabase service role is
+# copied into the MCP worker. The binding is inert while the Plugin flag is off.
+[[services]]
+binding = "GPT_ACTIONS_SERVICE"
+service = "vishar-gpt-actions-production"
+
 [vars]
 VISHAR_ENVIRONMENT = "production"
 MCP_PUBLIC_HOST = "mcp.vishartattoo.com"
 MCP_ENABLED = "false"
+MCP_PLUGIN_TOOLS_ENABLED = "false"
 MCP_GMAIL_TOOLS_ENABLED = "false"
 MCP_META_TOOLS_ENABLED = "false"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
