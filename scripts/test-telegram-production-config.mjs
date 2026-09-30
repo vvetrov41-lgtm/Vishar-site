@@ -15,12 +15,19 @@ const expectExcludes = (text, needle, label) => { if (text.includes(needle)) thr
 const telegramRpcSurface = [...TELEGRAM_SELF_SERVICE_RPCS].sort();
 const expectedTelegramRpcSurface = ['service_claim_telegram_notifications','service_complete_telegram_link','service_record_telegram_notification_result','service_resolve_telegram_destination','service_route_telegram_enquiry_notification'].sort();
 if (JSON.stringify(telegramRpcSurface) !== JSON.stringify(expectedTelegramRpcSurface)) throw new Error('Telegram self-service Worker RPC surface changed');
-if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts', 'service_recover_transient_dead_outbox', 'service_sweep_operational_failure_alerts'])) throw new Error('Lifecycle alert backend Worker RPC surface changed');
+if (JSON.stringify([...LIFECYCLE_ALERT_RPCS]) !== JSON.stringify(['service_sweep_lifecycle_failure_alerts', 'service_recover_transient_dead_outbox', 'service_sweep_operational_failure_alerts', 'service_sweep_unanswered_client_reminders'])) throw new Error('Lifecycle alert backend Worker RPC surface changed');
 if (JSON.stringify([...AUTOMATION_BACKEND_RPCS].sort()) !== JSON.stringify(['service_run_automation_tick'])) throw new Error('Automation backend Worker RPC surface changed');
 
 const sessionId = '55555555-5555-4555-8555-555555555555';
 const productionTarget = telegramDrainTesting.personalNotificationActionUrl({ VISHAR_ENVIRONMENT: 'production', CRM_ORIGIN: 'https://crm.vishartattoo.com' }, 'session', sessionId);
 if (productionTarget !== `https://crm.vishartattoo.com/#/appointments/${sessionId}`) throw new Error('production session target is incorrect');
+for (const [entityType, route] of [['conversation', 'inbox'], ['client', 'clients'], ['enquiry', 'enquiries']]) {
+  const target = telegramDrainTesting.personalNotificationActionUrl({ VISHAR_ENVIRONMENT: 'production', CRM_ORIGIN: 'https://crm.vishartattoo.com' }, entityType, sessionId);
+  if (target !== `https://crm.vishartattoo.com/#/${route}/${sessionId}`) throw new Error(`production ${entityType} target is incorrect`);
+}
+for (const entityType of ['project', 'integration', 'constructor', '__proto__']) {
+  if (telegramDrainTesting.personalNotificationActionUrl({ VISHAR_ENVIRONMENT: 'production', CRM_ORIGIN: 'https://crm.vishartattoo.com' }, entityType, sessionId) !== null) throw new Error(`${entityType} must not render a CRM link`);
+}
 const renderedPersonal = buildPersonalNotification({ title: 'Client requested reschedule', body: 'Open the appointment to review the request.', actionUrl: productionTarget });
 expectIncludes(renderedPersonal, `Open in CRM: https://crm.vishartattoo.com/#/appointments/${sessionId}`, 'personal notification renderer');
 

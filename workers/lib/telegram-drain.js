@@ -169,12 +169,17 @@ function trustedCrmOrigin(env) {
   }
 }
 
+const PERSONAL_NOTIFICATION_ROUTES = Object.freeze({
+  session: 'appointments',
+  enquiry: 'enquiries',
+  conversation: 'inbox',
+  client: 'clients',
+});
+
 function personalNotificationActionUrl(env, entityType, entityId) {
-  const route = entityType === 'session'
-    ? 'appointments'
-    : entityType === 'enquiry'
-      ? 'enquiries'
-      : null;
+  const route = Object.hasOwn(PERSONAL_NOTIFICATION_ROUTES, entityType ?? '')
+    ? PERSONAL_NOTIFICATION_ROUTES[entityType]
+    : null;
   if (!route) return null;
   if (!UUID.test(entityId ?? '')) throw new TelegramDrainError('telegram_notification_invalid');
   const origin = trustedCrmOrigin(env);

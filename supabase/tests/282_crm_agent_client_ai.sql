@@ -1145,11 +1145,11 @@ select is(
   'a shared artist-kind destination resolves to nobody');
 
 -- ---------------------------------------------------------------------------
--- The push path
+-- The push path (retired 2026-09-30)
 --
--- A notification is queued when a recommendation is written and delivered by a
--- later cron tick. If the CRM moves in between, the push must be withdrawn
--- rather than delivered as if it were still current.
+-- Recommendations stay in the CRM. They are never turned into Telegram
+-- pushes: every client message produced a fresh recommendation and the artist
+-- received the same "Needs you" alert over and over.
 -- ---------------------------------------------------------------------------
 
 create temporary table pg_temp.push_action as
@@ -1157,56 +1157,33 @@ select a.id from public.client_ai_next_actions a
 where a.artist_id = pg_temp.artist_a() and a.client_id = pg_temp.client_a() and a.status = 'open';
 grant select on pg_temp.push_action to authenticated, service_role;
 
--- The completion path already queued this one, now that the artist's profile
--- has a linked Telegram destination.
-select is(
-  (select count(*)::int from public.notifications
-   where notification_type = 'client_ai.next_action' and status = 'pending'
-     and dedupe_key like 'client_ai_next_action:' || (select id from pg_temp.push_action)::text || ':%'),
-  1,
-  'an approval-gated recommendation leaves exactly one push waiting');
-select is(
-  crm_private.enqueue_client_ai_notification((select id from pg_temp.push_action)),
-  0,
-  'queueing it again announces nothing new');
-
--- The CRM moves on and the recommendation is superseded.
-update public.client_ai_next_actions set status = 'superseded'
-where id = (select id from pg_temp.push_action);
-
 select is(
   (select count(*)::int from public.notifications
    where notification_type = 'client_ai.next_action'
      and dedupe_key like 'client_ai_next_action:' || (select id from pg_temp.push_action)::text || ':%'),
   0,
-  'and its undelivered push is withdrawn rather than sent as current work');
+  'an approval-gated recommendation queues no push even with a linked Telegram destination');
+select is(
+  crm_private.enqueue_client_ai_notification((select id from pg_temp.push_action)),
+  0,
+  'queueing it explicitly announces nothing');
 
--- A push the connector has already claimed is delivery history and must stand.
+update public.client_ai_next_actions set status = 'superseded'
+where id = (select id from pg_temp.push_action);
 update public.client_ai_next_actions set status = 'open'
 where id = (select id from pg_temp.push_action);
 select is(
   crm_private.enqueue_client_ai_notification((select id from pg_temp.push_action)),
-  1,
-  'a re-opened recommendation can be announced again');
+  0,
+  'a re-opened recommendation is not announced either');
 
-insert into crm_private.telegram_notification_deliveries (notification_id, profile_id, destination_id)
-select n.id, n.recipient_profile_id, d.id
-from public.notifications n
-join crm_private.telegram_destinations d
-  on d.destination_kind = 'profile' and d.profile_id = n.recipient_profile_id
-where n.notification_type = 'client_ai.next_action'
-  and n.dedupe_key like 'client_ai_next_action:' || (select id from pg_temp.push_action)::text || ':%'
-limit 1;
-
-update public.client_ai_next_actions set status = 'superseded'
-where id = (select id from pg_temp.push_action);
-
-select is(
-  (select count(*)::int from public.notifications
-   where notification_type = 'client_ai.next_action'
-     and dedupe_key like 'client_ai_next_action:' || (select id from pg_temp.push_action)::text || ':%'),
-  1,
-  'a push the connector already claimed is left alone: delivery history is never rewritten');
+-- A row queued before the retirement is never leased for Telegram.
+select ok(
+  not crm_private.client_ai_notification_is_current(
+    row(gen_random_uuid(), null, pg_temp.artist_a(), null, 'client_ai.next_action',
+        'Needs you: legacy', null, 'client', pg_temp.client_a(), 'normal', 'pending',
+        null, now(), null, null, now(), now())::public.notifications),
+  'a legacy queued recommendation push is not current');
 
 update public.client_ai_next_actions set status = 'open'
 where id = (select id from pg_temp.push_action);

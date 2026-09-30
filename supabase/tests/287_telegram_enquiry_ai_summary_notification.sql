@@ -112,8 +112,8 @@ select is(
    where entity_type='enquiry'
      and entity_id='f7873000-0000-4000-8000-000000000001'
      and notification_type='enquiry.created'),
-  'New enquiry received. AI summary is being prepared.',
-  'the notification stays useful while the existing AI refresh is still running'
+  E'Type: Tattoo\nPlacement: Left forearm\nSize: 20 cm\nReferences: 1\n\nIdea: Black and grey realism half sleeve with a compass',
+  'before the AI brief lands the card already carries every form fact'
 );
 select ok(
   (select scheduled_at >= now() + interval '4 minutes'
@@ -185,8 +185,8 @@ select is(
    where entity_type='enquiry'
      and entity_id='f7873000-0000-4000-8000-000000000001'
      and notification_type='enquiry.created'),
-  E'AI summary:\nClient wants a black and grey realism half sleeve on the left forearm, around 20 cm, using a compass as the main subject.',
-  'the held alert is replaced with the bounded AI enquiry summary'
+  E'Type: Tattoo\nStyle: Black and grey realism\nPlacement: Left forearm\nSize: 20 cm\nColour: black_and_grey\nReferences: 1\n\nIdea: Black and grey realism half sleeve with a compass',
+  'the AI brief adds style and colour to the same card; the short idea stays in the client''s words'
 );
 select ok(
   (select scheduled_at <= now()
@@ -241,6 +241,30 @@ select is(
   0,
   'the recipient sees one enriched new-enquiry alert, not a duplicate AI alert'
 );
+
+-- The card follows the recipient's CRM language.
+select is(
+  crm_private.enquiry_telegram_card(
+    'f7873000-0000-4000-8000-000000000001', 'ru', null,
+    '{"style":"Black and grey realism","colour":"ч/б"}'::jsonb),
+  E'Тип: Tattoo\nСтиль: Black and grey realism\nМесто: Left forearm\nРазмер: 20 cm\nЦвет: ч/б\nРеференсы: 1\n\nИдея: Black and grey realism half sleeve with a compass',
+  'a Russian-speaking recipient gets Russian labels');
+
+-- Known form options are translated and a style equal to the type is not repeated.
+update public.enquiries
+set project_type = 'Black and grey realism', cover_up = 'No', preferred_timing = 'November',
+    idea = repeat('I love your realism work and want a large piece. ', 12)
+where id = 'f7873000-0000-4000-8000-000000000001';
+select is(
+  crm_private.enquiry_telegram_card(
+    'f7873000-0000-4000-8000-000000000001', 'ru', 'Long summary',
+    '{"style":"Black and grey realism","project_summary":"Large black and grey realism piece."}'::jsonb),
+  E'Тип: Ч/б реализм\nМесто: Left forearm\nРазмер: 20 cm\nКавер: нет\nСроки: November\nРеференсы: 1\n\nИдея: Large black and grey realism piece.',
+  'a wall of text is replaced by the AI project summary');
+select ok(
+  char_length(split_part(crm_private.enquiry_telegram_card(
+    'f7873000-0000-4000-8000-000000000001', 'en', null, null), 'Idea: ', 2)) <= 280,
+  'without a brief a long idea is truncated, never dumped');
 
 select * from finish();
 rollback;
