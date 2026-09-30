@@ -71,22 +71,23 @@ assert.match(rollout, /\[ "\$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' \]/,
 
 // Topology is a precondition here, never an outcome. The one-shot
 // Cloudflare-domain migration completed on 2026-09-03 (run 33788051078); the
-// one-shot unified-domain rollout moves the Worker to twelve Action domains,
-// after which this reusable Worker-only rollout ships onto that exact baseline.
+// one-shot unified-domain rollout moved the Worker to twelve Action domains and
+// the one-shot Team-domain rollout to thirteen, after which this reusable
+// Worker-only rollout ships onto that exact baseline.
 const topologyAssertions = rollout.match(/JSON\.stringify\(hosts\) !== JSON\.stringify\(expected\)/g) || [];
 assert.ok(topologyAssertions.length >= 4,
-  'preflight, readback and both rollback paths must each assert the exact twelve-domain topology');
+  'preflight, readback and both rollback paths must each assert the exact thirteen-domain topology');
 assert.equal((rollout.match(/process\.env\.CLOUDFLARE_HOST, \.\.\.process\.env\.UNIFIED_HOSTS\.trim\(\)\.split\(\/\\s\+\/\)\]/g) || []).length, 4,
-  'every topology assertion must include Cloudflare and the eight unified Action domains');
+  'every topology assertion must include Cloudflare, the eight unified Action domains and Team');
 assert.doesNotMatch(rollout, /needs_deploy/,
   'this path is not conditional on domain count; it always ships the approved code');
-assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 12,
-  'tracked GPT source carries the twelve Action domains');
-assert.match(rollout, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-actions\.production\.toml\)" -eq 12 \]/,
-  'the reusable Worker rollout must match the twelve custom domains the tracked config deploys');
+assert.equal((wrangler.match(/custom_domain = true/g) || []).length, 13,
+  'tracked GPT source carries the thirteen Action domains');
+assert.match(rollout, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-actions\.production\.toml\)" -eq 13 \]/,
+  'the reusable Worker rollout must match the thirteen custom domains the tracked config deploys');
 assert.match(rollout, /CLOUDFLARE_HOST: gpt-cloudflare\.vishartattoo\.com/,
   'the Cloudflare Action host must be pinned exactly');
-for (const host of ['projects', 'scheduling', 'finance', 'billing', 'notifications', 'automations', 'integrations', 'workspace']) {
+for (const host of ['projects', 'scheduling', 'finance', 'billing', 'notifications', 'automations', 'integrations', 'workspace', 'team']) {
   assert.ok(rollout.includes(`gpt-${host}.vishartattoo.com`), `the ${host} Action host must be pinned exactly`);
   assert.match(wrangler, new RegExp(`pattern = "gpt-${host}\\.vishartattoo\\.com", custom_domain = true`));
 }

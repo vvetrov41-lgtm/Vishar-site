@@ -146,6 +146,7 @@ jobs:
           node scripts/test-gpt-provider-proxy.mjs
           node scripts/build-gpt-unified-openapi.mjs --check
           node scripts/test-gpt-unified-domain-rollout.mjs
+          node scripts/test-gpt-team-domain-rollout.mjs
           node scripts/test-gpt-communications-domain-rollout.mjs
           node scripts/test-gpt-worker-rollout.mjs
 

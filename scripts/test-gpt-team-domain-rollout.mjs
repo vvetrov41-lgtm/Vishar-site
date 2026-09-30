@@ -2,16 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PARITY_METADATA } from '../docs/gpt-actions/operator-parity.current.mjs';
 import { buildProjections } from './build-gpt-unified-openapi.mjs';
-import { readdirSync } from 'node:fs';
-import {
-  assertSameTopology, configCustomDomains, liveCustomDomains,
-} from './assert-gpt-live-domain-topology.mjs';
+import { configCustomDomains } from './assert-gpt-live-domain-topology.mjs';
 
-const workflow = readFileSync(new URL('../.github/workflows/gpt-production-unified-domain-rollout.yml', import.meta.url), 'utf8');
+const workflow = readFileSync(new URL('../.github/workflows/gpt-production-team-domain-rollout.yml', import.meta.url), 'utf8');
 const wrangler = readFileSync(new URL('../wrangler.gpt-actions.production.toml', import.meta.url), 'utf8');
 const release = readFileSync(new URL('../.github/workflows/private-production-release.yml', import.meta.url), 'utf8');
 
-const BRANCH = 'release/private-crm-rc960-inventory-gpt-unified-domains';
+const BRANCH = 'release/private-crm-rc967-inventory-gpt-team-domain';
 const unifiedHosts = [
   'gpt-projects.vishartattoo.com', 'gpt-scheduling.vishartattoo.com', 'gpt-finance.vishartattoo.com',
   'gpt-billing.vishartattoo.com', 'gpt-notifications.vishartattoo.com', 'gpt-automations.vishartattoo.com',
@@ -45,19 +42,20 @@ assert.match(workflow, /supabase db push --dry-run/);
 assert.doesNotMatch(workflow, /supabase db push\s*(?:\n|$)/);
 assert.doesNotMatch(workflow, /wrangler secret|configure_gpt_|gpt_action_clients/i);
 
-// Four -> twelve only; twelve is an idempotent no-op; anything else refuses.
-assert.match(workflow, /const isFour = JSON\.stringify\(hosts\) === JSON\.stringify\(four\);/);
+// Twelve -> thirteen only; thirteen is an idempotent no-op; anything else refuses.
 assert.match(workflow, /const isTwelve = JSON\.stringify\(hosts\) === JSON\.stringify\(twelve\);/);
-assert.match(workflow, /if \(!isFour && !isTwelve\) throw new Error/);
-assert.match(workflow, /needs_deploy=\$\{isFour \? 'true' : 'false'\}/);
+assert.match(workflow, /const isThirteen = JSON\.stringify\(hosts\) === JSON\.stringify\(thirteen\);/);
+assert.match(workflow, /if \(!isTwelve && !isThirteen\) throw new Error/);
+assert.match(workflow, /needs_deploy=\$\{isTwelve \? 'true' : 'false'\}/);
 for (const host of unifiedHosts) assert.ok(workflow.includes(host), `${host} must be pinned`);
-assert.match(workflow, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-actions\.production\.toml\)" -eq 12 \]/);
+assert.match(workflow, /TEAM_HOST: gpt-team\.vishartattoo\.com/);
+assert.match(workflow, /\[ "\$\(grep -c 'custom_domain = true' wrangler\.gpt-actions\.production\.toml\)" -eq 13 \]/);
 
-// Rollback returns to the exact four-domain config, proven before mutation.
-assert.match(workflow, /\[ "\$\(grep -c 'custom_domain = true' "\$rollback_config"\)" -eq 4 \]/);
-assert.match(workflow, /for host in \$UNIFIED_HOSTS; do if grep -Fq "\$host" "\$rollback_config"; then exit 1; fi; done/);
+// Rollback returns to the exact twelve-domain config, proven before mutation.
+assert.match(workflow, /\[ "\$\(grep -c 'custom_domain = true' "\$rollback_config"\)" -eq 12 \]/);
+assert.match(workflow, /if grep -Fq "\$TEAM_HOST" "\$rollback_config"; then exit 1; fi/);
 assert.match(workflow, /--config "\$rollback_config" --name "\$WORKER_NAME" --dry-run/);
-assert.ok(workflow.includes('rollback_config="$RUNNER_TEMP/wrangler.gpt-unified-domain-rollback.toml"'),
+assert.ok(workflow.includes('rollback_config="$RUNNER_TEMP/wrangler.gpt-team-domain-rollback.toml"'),
   'rollback config must stay outside the checkout so the clean-worktree gate can succeed');
 assert.ok(!workflow.includes('rollback_config="$GITHUB_WORKSPACE/'),
   'rollback config must not dirty the checked-out canonical tree');
@@ -65,8 +63,8 @@ assert.ok(workflow.includes('sed -i "s|^main = \\"workers/|main = \\"$GITHUB_WOR
   'the out-of-checkout rollback config must pin the Worker entry point to the checkout');
 assert.ok(workflow.indexOf('main = \\"$GITHUB_WORKSPACE/workers/') < workflow.indexOf('--config "$rollback_config" --name "$WORKER_NAME" --dry-run'),
   'the entry point is pinned before the rollback dry-run');
-assert.match(workflow, /Roll back to four-domain transport if readback fails/);
-assert.match(workflow, /Reassert four-domain transport if deploy command fails/);
+assert.match(workflow, /Roll back to twelve-domain transport if readback fails/);
+assert.match(workflow, /Reassert twelve-domain transport if deploy command fails/);
 assert.doesNotMatch(workflow, /! grep -Fq/, 'a negated grep never fails under set -e');
 
 // Readback reaches every new host and proves OAuth is still required.
@@ -86,64 +84,14 @@ assert.ok(workflow.indexOf('JOB_STARTED_AT=$(date +%s)') < workflow.indexOf('Che
 const reserve = workflow.match(/job_budget_end=\$\(\( JOB_STARTED_AT \+ (\d+) \* 60 - (\d+) \)\)/);
 assert.ok(reserve && Number(reserve[1]) === jobTimeout && Number(reserve[2]) >= 300, 'job budget uses the job timeout and reserves rollback time');
 assert.ok(workflow.includes('[ "$probe_deadline" -le "$job_budget_end" ] || probe_deadline="$job_budget_end"'));
+assert.ok(workflow.includes('probe 200 "https://$TEAM_HOST/privacy"'));
+assert.ok(workflow.includes('probe 401 "https://$TEAM_HOST/v1/team/profiles"'));
 for (const path of ['gpt-billing.vishartattoo.com/v1/invoices', 'gpt-workspace.vishartattoo.com/v1/me']) {
   assert.ok(workflow.includes(`probe 401 "https://${path}"`), `readback must prove ${path} requires OAuth`);
 }
 
-// No other deployer of the shared GPT config can change the domain topology.
-// Each one either pins an exact domain count for its own one-shot transition,
-// is this rollout, or runs the live-topology guard before its first mutation.
 const configured = configCustomDomains(wrangler);
 assert.equal(configured.length, 13);
-assert.doesNotThrow(() => assertSameTopology(configured, [...configured]));
-assert.throws(() => assertSameTopology(configured, configured.slice(0, 4)), /Would add: .*gpt-projects/);
-assert.throws(() => assertSameTopology(configured.slice(0, 4), configured), /Would drop: .*gpt-projects/);
-assert.throws(() => assertSameTopology([], []), /no custom domains/);
-{
-  const seen = [];
-  const live = await liveCustomDomains({
-    accountId: 'acct', apiToken: 'token', workerName: 'vishar-gpt-actions-production',
-    fetchImpl: async (url, init) => {
-      seen.push({ url, auth: init.headers.authorization });
-      return new Response(JSON.stringify({ success: true, result: [
-        { hostname: 'gpt-actions.vishartattoo.com', service: 'vishar-gpt-actions-production' },
-        { hostname: 'gmail.vishartattoo.com', service: 'vishar-gmail-production' },
-      ] }), { status: 200 });
-    },
-  });
-  assert.deepEqual(live, ['gpt-actions.vishartattoo.com'], 'only the GPT Worker domains are compared');
-  assert.equal(seen[0].url, 'https://api.cloudflare.com/client/v4/accounts/acct/workers/domains?service=vishar-gpt-actions-production');
-  assert.equal(seen[0].auth, 'Bearer token');
-  await assert.rejects(
-    liveCustomDomains({ accountId: 'a', apiToken: 't', workerName: 'w', fetchImpl: async () => new Response('{}', { status: 403 }) }),
-    /refusing to deploy/,
-  );
-}
-const workflowDir = new URL('../.github/workflows/', import.meta.url);
-const pinnedTransitions = new Map([
-  ['gpt-production-communications-domain-rollout.yml', 3],
-  ['gpt-production-cloudflare-domain-rollout.yml', 4],
-  ['gpt-production-worker-rollout.yml', 13],
-  // Historical one-shot transitions keep their own pin, so a stray trigger
-  // refuses before any mutation once the tracked config has moved on.
-  ['gpt-production-unified-domain-rollout.yml', 12],
-  ['gpt-production-team-domain-rollout.yml', 13],
-]);
-for (const name of readdirSync(workflowDir).filter((file) => file.endsWith('.yml'))) {
-  const text = readFileSync(new URL(name, workflowDir), 'utf8');
-  const lines = text.split('\n');
-  const deploys = lines.findIndex((line) => /wrangler deploy --config wrangler\.gpt-actions\.production\.toml/.test(line) && !/--dry-run/.test(line));
-  if (deploys === -1) continue;
-  if (pinnedTransitions.has(name)) {
-    const count = pinnedTransitions.get(name);
-    assert.ok(text.includes(`[ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq ${count} ]`),
-      `${name} must pin its exact ${count}-domain config`);
-    continue;
-  }
-  const firstMutation = lines.findIndex((line) => (/wrangler deploy/.test(line) && !/--dry-run/.test(line)) || /wrangler secret put/.test(line));
-  const guardLine = lines.findIndex((line) => line.includes('node scripts/assert-gpt-live-domain-topology.mjs'));
-  assert.ok(guardLine !== -1 && guardLine < firstMutation,
-    `${name} deploys the GPT config and must run the live-topology guard before its first mutation`);
-}
+assert.ok(configured.includes('gpt-team.vishartattoo.com'));
 
-console.log('GPT unified-domain rollout tests passed: exact one-shot admission, four-to-twelve topology, dry-run-proven rollback, no database, secret or OAuth mutation, and no other deployer can change the topology.');
+console.log('GPT Team-domain rollout tests passed: exact one-shot admission, twelve-to-thirteen topology, dry-run-proven rollback, DoH probes within the job budget, and no database, secret or OAuth mutation.');

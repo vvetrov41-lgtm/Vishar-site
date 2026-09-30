@@ -53,6 +53,118 @@ paths:
               properties:
                 language: {type: "string", enum: ["en", "ru"]}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: "List the studios and solo workspaces the signed-in user belongs to"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+    post:
+      operationId: createWorkspace
+      summary: "Create a new studio or solo workspace owned by the signed-in user"
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["request_id", "display_name"]
+              properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
+                display_name: {type: "string", maxLength: 120}
+                workspace_type: {type: "string", enum: ["solo", "studio"], default: "studio"}
+                slug: {type: "string", maxLength: 63, pattern: "^[a-z][a-z0-9-]{1,62}$"}
+                timezone: {type: "string", maxLength: 64, default: "Europe/London"}
+                default_currency: {type: "string", maxLength: 3, pattern: "^[A-Z]{3}$", default: "GBP"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/workspace:
+    patch:
+      operationId: updateWorkspace
+      summary: "Rename, re-time-zone, change the currency of, or deactivate the active artist workspace"
+      x-openai-isConsequential: true
+      description: "Omitted fields stay unchanged."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["request_id"]
+              properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
+                display_name: {type: "string", maxLength: 120}
+                timezone: {type: "string", maxLength: 64}
+                default_currency: {type: "string", maxLength: 3, pattern: "^[A-Z]{3}$"}
+                is_active: {type: "boolean"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/workspace/artists:
+    get:
+      operationId: listWorkspaceArtists
+      summary: "List the artists of the active artist workspace"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+    post:
+      operationId: createArtist
+      summary: "Add a new artist to the active artist workspace"
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["request_id", "display_name"]
+              properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
+                display_name: {type: "string", maxLength: 120}
+                slug: {type: "string", maxLength: 63, pattern: "^[a-z][a-z0-9-]{1,62}$"}
+                timezone: {type: "string", maxLength: 64}
+                default_currency: {type: "string", maxLength: 3, pattern: "^[A-Z]{3}$"}
+                booking_reference_prefix: {type: "string", maxLength: 8, pattern: "^[A-Z0-9]{2,8}$"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/artist/control-plane:
+    get:
+      operationId: getArtistControlPlaneContext
+      summary: "Read the active artist settings, workspace and what the signed-in user may administer"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/artist:
+    patch:
+      operationId: updateArtist
+      summary: "Rename, re-time-zone, change the currency of, or deactivate the active artist"
+      x-openai-isConsequential: true
+      description: "Omitted fields stay unchanged."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["request_id"]
+              properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
+                display_name: {type: "string", maxLength: 120}
+                timezone: {type: "string", maxLength: 64}
+                default_currency: {type: "string", maxLength: 3, pattern: "^[A-Z]{3}$"}
+                is_active: {type: "boolean"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/artist/onboarding:
+    get:
+      operationId: getArtistOnboardingState
+      summary: "Read the setup checklist of the active artist"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/team/invite-policy:
+    get:
+      operationId: getTenantInvitePolicy
+      summary: "Read who the signed-in user may invite to the active artist"
+      x-openai-isConsequential: false
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
 components:
   securitySchemes:
     supabaseOAuth:

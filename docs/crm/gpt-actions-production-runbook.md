@@ -54,26 +54,28 @@ The unified projection lives in `docs/gpt-actions/unified/openapi.<domain>.yaml`
 | Notifications | `gpt-notifications.vishartattoo.com` | `openapi.notifications.yaml` |
 | Automations | `gpt-automations.vishartattoo.com` | `openapi.automations.yaml` |
 | Integrations | `gpt-integrations.vishartattoo.com` | `openapi.integrations.yaml` |
-| Workspace (own account) | `gpt-workspace.vishartattoo.com` | `openapi.workspace.yaml` |
+| Team | `gpt-team.vishartattoo.com` | `openapi.team.yaml` |
+| Workspace (own account and administration) | `gpt-workspace.vishartattoo.com` | `openapi.workspace.yaml` |
 | Research | `gpt-operations.vishartattoo.com` | `openapi.research.yaml` |
 | Cloudflare (owner only) | `gpt-cloudflare.vishartattoo.com` | `openapi.cloudflare.yaml` |
 
-Every schema uses the same OAuth application (`gpt-actions.vishartattoo.com/oauth/*`). Routing is by path, so a host only needs a Worker custom domain; the one-shot `gpt-production-unified-domain-rollout.yml` (ref `release/private-crm-rc960-inventory-gpt-unified-domains`) moves the Worker from four to twelve domains and can roll back to the exact four-domain config. After it, `gpt-production-worker-rollout.yml` expects the twelve-domain topology. No other workflow may change the domain set: the Gmail bootstrap, the historical GPT bootstrap/activate and the operations-domain rollout run `scripts/assert-gpt-live-domain-topology.mjs` before their first mutation and refuse if the config's domains differ from production.
+Every schema uses the same OAuth application (`gpt-actions.vishartattoo.com/oauth/*`). Routing is by path, so a host only needs a Worker custom domain; the one-shot `gpt-production-unified-domain-rollout.yml` (ref `release/private-crm-rc960-inventory-gpt-unified-domains`) moved the Worker from four to twelve domains on 2026-09-30 (run #8). The one-shot `gpt-production-team-domain-rollout.yml` (ref `release/private-crm-rc967-inventory-gpt-team-domain`) adds the Team host, twelve to thirteen, and can roll back to the exact twelve-domain config. After it, `gpt-production-worker-rollout.yml` expects the thirteen-domain topology; until it, that workflow refuses. No other workflow may change the domain set: the Gmail bootstrap, the historical GPT bootstrap/activate and the operations-domain rollout run `scripts/assert-gpt-live-domain-topology.mjs` before their first mutation and refuse if the config's domains differ from production.
 
 New client ceilings (profile-bound client only, owner-only via `configure_gpt_unified_domain_access`): `can_manage_automations` (templates, lifecycle rules), `can_manage_integrations` (integration status and management, booking sources), `can_administer_workspace` (reserved; no GPT operation uses it yet).
 
 Gmail inbox and client history and Instagram status, start and disconnect are provider-backed: a `gpt_authorize_*` RPC proves client, Artist context, ceiling and CRM capability and returns the Artist, and only then does the Worker call the Gmail Worker (service binding) or the Instagram connector with the same user bearer for that Artist. The authorizers require the capabilities those providers enforce: `manage_communications` for Gmail reads and `manage_integrations` for every Instagram connection action. Calendar disconnect stays UI-only: it is gated by Cloudflare Access on the Calendar connector and revokes a Google token the GPT edge must not hold.
 
-Team, membership, role, workspace-ownership, signup-policy and account-deletion operations are not exposed. Their CRM contracts exist, but exposing them to the GPT is an explicit owner decision that has not been made.
+Team, membership, role, workspace and Artist administration operations are exposed since the owner decided so on 2026-09-30 (`specs/gpt-team-workspace-admin/`). Account deletion, workspace ownership transfer, the installation signup policy and the control-plane access gate stay CRM screen actions by the same decision (`ui_only`, kind `owner_excluded`). All of them need the `administration` ceiling (`can_administer_workspace`), act on the active Artist or the workspace that owns it, and delegate the owner / `manage_team` / workspace-administrator check to the CRM RPC. `inviteStaffMember` and `inviteArtist` follow in a separate stage because they run through the Team API Worker.
 
 ### Activation order
 
 1. Database release of the `20260928233*` migrations through the guarded production database path.
-2. Unified-domain rollout (four to twelve Worker domains), then fresh Cloudflare readback.
+2. Unified-domain rollout (four to twelve Worker domains), then fresh Cloudflare readback. Done 2026-09-30.
+   Database release of `20260930120000`, then the Team-domain rollout (twelve to thirteen), then fresh readback of all thirteen hosts.
    Gmail Worker redeploy (`release/private-crm-rc*-backend-auth-gmail-redeploy-*`) so client history accepts the Artist the GPT edge resolved; until then a client shared by two manageable Artists is refused as ambiguous, as in the CRM UI.
 3. Create the confidential Supabase OAuth client for `vishar-unified-gpt` with only the fixed Worker callback. The secret goes straight into the GPT editor.
 4. Owner binds the client id, enables the intended ceilings (`configure_gpt_action_client`, `configure_gpt_enquiry_read_access`, `configure_gpt_full_management`, `configure_gpt_web_research_access`, `configure_gpt_unified_domain_access`, `configure_gpt_cloudflare_control_access`). Legacy clients stay unchanged.
-5. In the GPT editor: import the twelve unified schemas from one exact SHA, one Action per schema, the same OAuth settings on each, and `instructions.v2.md`.
+5. In the GPT editor: import the thirteen unified schemas from one exact SHA, one Action per schema, the same OAuth settings on each, and `instructions.v2.md`.
 6. Read-only cross-Artist acceptance, then consequential acceptance on real work.
 
 ## Operator-parity rule

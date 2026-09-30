@@ -51,11 +51,11 @@ jobs:
       CLOUDFLARE_HOST: gpt-cloudflare.vishartattoo.com
       # The eight Unified GPT v2 semantic Action domains added by the one-shot
       # unified-domain rollout. Together with the four above they are the
-      # exact twelve-domain topology this workflow ships code onto.
+      # exact thirteen-domain topology this workflow ships code onto.
       UNIFIED_HOSTS: >-
         gpt-projects.vishartattoo.com gpt-scheduling.vishartattoo.com gpt-finance.vishartattoo.com
         gpt-billing.vishartattoo.com gpt-notifications.vishartattoo.com gpt-automations.vishartattoo.com
-        gpt-integrations.vishartattoo.com gpt-workspace.vishartattoo.com
+        gpt-integrations.vishartattoo.com gpt-workspace.vishartattoo.com gpt-team.vishartattoo.com
       SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
@@ -147,7 +147,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Revalidate exact twelve-domain GPT source
+      - name: Revalidate exact thirteen-domain GPT source
         shell: bash
         run: |
           set -euo pipefail
@@ -159,7 +159,7 @@ jobs:
           npm run validate:gpt-actions
           npm run check:gpt-production-bundle
           npm run scan:secrets
-          [ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq 12 ]
+          [ "$(grep -c 'custom_domain = true' wrangler.gpt-actions.production.toml)" -eq 13 ]
           grep -Fq "pattern = \"$CORE_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
           grep -Fq "pattern = \"$OPERATIONS_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
           grep -Fq "pattern = \"$COMMUNICATIONS_HOST\", custom_domain = true" wrangler.gpt-actions.production.toml
@@ -387,6 +387,7 @@ jobs:
           probe 401 "https://gpt-automations.vishartattoo.com/v1/automations/rules"
           probe 401 "https://gpt-integrations.vishartattoo.com/v1/integrations/status"
           probe 401 "https://gpt-workspace.vishartattoo.com/v1/me"
+          probe 401 "https://gpt-team.vishartattoo.com/v1/team/profiles"
           cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Roll back to the previous Worker version if readback fails
@@ -414,7 +415,7 @@ jobs:
             .map((row) => row.hostname)
             .sort();
           if (JSON.stringify(hosts) !== JSON.stringify(expected)) {
-            throw new Error(`Rollback topology is not the exact twelve-domain baseline: ${hosts.join(', ')}`);
+            throw new Error(`Rollback topology is not the exact thirteen-domain baseline: ${hosts.join(', ')}`);
           }
           const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
           if (bindings.get('SUPABASE_URL')?.value !== process.env.SUPABASE_URL) throw new Error('Rollback did not preserve the production Supabase URL');
@@ -460,7 +461,7 @@ jobs:
             .map((row) => row.hostname)
             .sort();
           if (JSON.stringify(hosts) !== JSON.stringify(expected)) {
-            throw new Error(`Deploy-failure rollback topology is not the exact twelve-domain baseline: ${hosts.join(', ')}`);
+            throw new Error(`Deploy-failure rollback topology is not the exact thirteen-domain baseline: ${hosts.join(', ')}`);
           }
           const active = worker.active_deployment?.versions?.[0]?.version_id;
           if (active !== process.env.BEFORE_VERSION) {
@@ -479,7 +480,7 @@ jobs:
             echo "- Trigger SHA: \`$GITHUB_SHA\` (same-tree no-op child)"
             echo "- Previous Worker version: \`${{ steps.preflight.outputs.before_version || 'unknown' }}\`"
             echo "- Deployed Worker version: \`${{ steps.readback.outputs.after_version || 'unknown' }}\`"
-            echo '- Cloudflare domain topology: unchanged (twelve GPT Action domains)'
+            echo '- Cloudflare domain topology: unchanged (thirteen GPT Action domains)'
             echo '- Production Supabase URL, rate-limit and Gmail service binding: read back explicitly'
             echo '- Web Research kill switches: search and scrape enabled only after exact readback'
             echo '- Firecrawl credential: required as a pre-existing Worker secret and checked by name only'
