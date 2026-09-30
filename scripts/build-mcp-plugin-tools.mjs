@@ -17,12 +17,6 @@ const FORBIDDEN_TOOL_INPUTS = new Set([
   'artist_id', 'workspace_id', 'oauth_client_id', 'integration_key', 'sql', 'rpc', 'table',
   'access_token', 'refresh_token', 'client_secret', 'service_role', 'api_token', 'authorization',
 ]);
-// artist_id is authority-bearing everywhere except the one explicit context
-// switch operation. That operation is server-authorized against the signed-in
-// user's memberships and is the only supported way to change Artist context.
-const OPERATION_SPECIFIC_INPUTS = new Map([
-  ['selectArtistContext', new Set(['artist_id'])],
-]);
 const INITIAL_EXCLUSIONS = new Set([
   'deleteMyAccount',
   'transferWorkspaceOwnership',
@@ -32,11 +26,6 @@ const INITIAL_EXCLUSIONS = new Set([
   'inviteStaffMember',
   'inviteArtist',
 ]);
-
-function isForbiddenToolInput(operationId, name) {
-  if (!FORBIDDEN_TOOL_INPUTS.has(name)) return false;
-  return !OPERATION_SPECIFIC_INPUTS.get(operationId)?.has(name);
-}
 
 function indentOf(line) {
   return line.match(/^ */)[0].length;
@@ -168,7 +157,7 @@ export function parseGeneratedYaml(text) {
       if (line.indent > indent) throw new Error(`Unexpected YAML indentation near: ${line.raw}`);
       if (sequence !== line.text.startsWith('- ')) break;
 
-      const textValue = sequence ? line.text.slice(2).trim() : line.text;
+      let textValue = sequence ? line.text.slice(2).trim() : line.text;
       if (sequence && (textValue.startsWith('{') || textValue.startsWith('['))) {
         result.push(scalar(textValue));
         index += 1;
@@ -269,6 +258,11 @@ function annotationsFor(operationId, method, domain, consequence) {
     destructiveHint: readOnlyHint ? false : destructive(operationId, consequence),
     openWorldHint: domain === 'Research' || domain === 'Cloudflare' || consequence === 'provider_send',
   };
+}
+
+function isForbiddenToolInput(operationId, name) {
+  if (operationId === 'selectArtistContext' && name === 'artist_id') return false;
+  return FORBIDDEN_TOOL_INPUTS.has(name);
 }
 
 function compileInput(operation, components, operationId) {
