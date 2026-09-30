@@ -404,6 +404,16 @@ async function aiIdea() {
     if (lead && result && result !== AI_ERROR_MESSAGE) lead.classList.remove("hidden");
 }
 
+function ideaContactProblem(contact, preferredReply) {
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact);
+    const isPhone = /^\+?[\d\s().-]+$/.test(contact) && contact.replace(/\D/g, "").length >= 7;
+    if (!contact) return "Please add an email or WhatsApp number first.";
+    if (preferredReply === "Email" && !isEmail) return "Please add a valid email address.";
+    if (preferredReply === "WhatsApp" && !isPhone) return "Please add your WhatsApp number with country code.";
+    if (!isEmail && !isPhone) return "Please add an email or WhatsApp number.";
+    return "";
+}
+
 async function sendIdeaToVladimir() {
     const name = document.getElementById("ai-idea-name").value.trim();
     const contact = document.getElementById("ai-idea-contact").value.trim();
@@ -413,8 +423,9 @@ async function sendIdeaToVladimir() {
     const sendBtn = document.getElementById("ai-idea-send-btn");
     const status = document.getElementById("ai-idea-send-status");
 
-    if (!contact) {
-        status.innerText = "Please add an email or WhatsApp number first.";
+    const contactProblem = ideaContactProblem(contact, preferredReply);
+    if (contactProblem) {
+        status.innerText = contactProblem;
         status.classList.remove("text-white/60");
         status.classList.add("text-red-400");
         return;
