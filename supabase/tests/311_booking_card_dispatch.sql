@@ -206,12 +206,15 @@ select is(
 );
 
 select ok(
-  (select bool_and(o.next_attempt_at >= now() + interval '110 seconds')
+  (select bool_and(
+            o.next_attempt_at >= now() + interval '8 seconds'
+            and o.next_attempt_at < now() + interval '30 seconds'
+          )
    from public.integration_outbox o
    join crm_private.booking_cards b
      on o.dedupe_key in ('email:booking_card:' || b.id::text, 'whatsapp:booking_card:' || b.id::text)
    where b.session_id = 'fc611111-1111-4111-8111-111111111111'),
-  'card messages are held briefly so a follow-up edit supersedes them before sending'
+  'consultation card messages use the short dispatch delay'
 );
 
 -- Moving the appointment creates a new calendar version and supersedes the
