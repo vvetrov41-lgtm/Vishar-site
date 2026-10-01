@@ -11,6 +11,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import type { GptConsentLoadResult, PendingGptConsent } from '../lib/oauth-consent-api';
+import { LanguageProvider } from '../lib/i18n';
 
 const mocks = vi.hoisted(() => {
   const loadGptOAuthConsent = vi.fn();
@@ -65,10 +66,49 @@ function consent(overrides: Partial<PendingGptConsent> = {}): PendingGptConsent 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.removeItem('vishar-crm-language');
   window.history.replaceState({}, '', '/oauth/consent?authorization_id=authorization-123');
 });
 
 describe('GPT OAuth consent screen', () => {
+  it('discloses the Plugin financial and message write access in Russian', async () => {
+    window.localStorage.setItem('vishar-crm-language', 'ru');
+    const value = consent();
+    value.details = { ...value.details!, binding_mode: 'profile', integration_key: 'vishar-crm-plugin', artist_display_name: null };
+    loadGptOAuthConsent.mockResolvedValue({ kind: 'consent', consent: value });
+    render(<LanguageProvider><OAuthConsentPage /></LanguageProvider>);
+    await screen.findByRole('heading', { name: 'Авторизация Vishar CRM Plugin' });
+    expect(screen.getByText(/финансами и платежами, сообщениями клиентам/)).toBeTruthy();
+    expect(screen.getByText(/Отправка сообщений и изменение данных являются действиями записи/)).toBeTruthy();
+    expect(screen.getByText(/Каждый запрос проверяет профиль, участие в workspace/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Разрешить доступ' })).toBeTruthy();
+    expect(screen.queryByText(/GPT не может.*видеть финансы/)).toBeNull();
+  });
+
+  it('discloses the dedicated Plugin write domains without misleading legacy restrictions', async () => {
+    const value = consent();
+    value.details = { ...value.details!, binding_mode: 'profile', integration_key: 'vishar-crm-plugin', artist_display_name: null };
+    loadGptOAuthConsent.mockResolvedValue({ kind: 'consent', consent: value });
+    render(<OAuthConsentPage />);
+    await screen.findByRole('heading', { name: 'Authorize Vishar CRM Plugin' });
+    expect(screen.getByText('CRM access within your permissions')).toBeTruthy();
+    expect(screen.getByText(/finance and payments, client communications/)).toBeTruthy();
+    expect(screen.getByText(/Sending messages and changing records are write actions/)).toBeTruthy();
+    expect(screen.getByText(/Every request checks your profile, workspace membership/)).toBeTruthy();
+    expect(screen.getByText(/Cloudflare control is read-only/)).toBeTruthy();
+    expect(screen.queryByText(/cannot run arbitrary database queries, access finance/)).toBeNull();
+  });
+
+  it('does not infer Plugin permissions from an application display name', async () => {
+    const value = consent();
+    value.summary.client_display_name = 'Vishar CRM Plugin';
+    loadGptOAuthConsent.mockResolvedValue({ kind: 'consent', consent: value });
+    render(<OAuthConsentPage />);
+    await screen.findByText('Fixed artist scope');
+    expect(screen.queryByText('CRM access within your permissions')).toBeNull();
+    expect(screen.getByText(/cannot switch artist/)).toBeTruthy();
+  });
+
   it('names the one artist a legacy GPT is fixed to', async () => {
     loadGptOAuthConsent.mockResolvedValue({ kind: 'consent', consent: consent() });
     render(<OAuthConsentPage />);

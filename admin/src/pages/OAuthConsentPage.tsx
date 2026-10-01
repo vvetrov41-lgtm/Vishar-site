@@ -7,6 +7,10 @@ import { useSession } from '../lib/session';
 const COPY = {
   en: {
     title: 'Authorize private GPT',
+    pluginTitle: 'Authorize Vishar CRM Plugin',
+    pluginPermission: 'CRM access within your permissions',
+    pluginAccess: 'The Plugin can use appointments, enquiries, CRM records, finance and payments, client communications, research and read-only Cloudflare tools only where your CRM permissions allow. Sending messages and changing records are write actions, not read-only access.',
+    pluginBoundary: 'Every request checks your profile, workspace membership, artist access and the required CRM permission. This Plugin cannot run arbitrary database queries, access another workspace without membership, administer automations, integrations or workspaces, delete your account, transfer workspace ownership or change signup policy. Cloudflare control is read-only.',
     loading: 'Checking this authorization request…',
     invalid: 'This authorization request is invalid, expired, or not available for your CRM access.',
     requestedBy: 'Requesting application',
@@ -33,6 +37,10 @@ const COPY = {
   },
   ru: {
     title: 'Авторизация приватного GPT',
+    pluginTitle: 'Авторизация Vishar CRM Plugin',
+    pluginPermission: 'Доступ к CRM в рамках ваших прав',
+    pluginAccess: 'Plugin может работать с записями, заявками, данными CRM, финансами и платежами, сообщениями клиентам, исследованием и read-only инструментами Cloudflare только там, где это разрешают ваши права в CRM. Отправка сообщений и изменение данных являются действиями записи, а не доступом только для чтения.',
+    pluginBoundary: 'Каждый запрос проверяет профиль, участие в workspace, доступ к артисту и нужное право CRM. Plugin не может выполнять произвольные запросы к базе, получать доступ к чужому workspace без участия, администрировать автоматизации, интеграции или workspace, удалять ваш аккаунт, передавать владение workspace или изменять политику регистрации. Управление Cloudflare доступно только для чтения.',
     loading: 'Проверяем запрос на авторизацию…',
     invalid: 'Запрос недействителен, истёк или недоступен для ваших прав в CRM.',
     requestedBy: 'Запрашивающее приложение',
@@ -129,11 +137,12 @@ export function OAuthConsentPage() {
   // narrower one: a fixed artist. It never claims membership-wide reach it has
   // not been told about.
   const profileBound = consent?.details?.binding_mode === 'profile';
+  const pluginBound = profileBound && consent?.details?.integration_key === 'vishar-crm-plugin';
 
   return (
     <div className="container" style={{ maxWidth: 640, paddingTop: 24 }}>
       <div className="login-language"><LanguageSwitcher /></div>
-      <h1 style={{ fontSize: '1.4rem', marginBottom: 4 }}>{copy.title}</h1>
+      <h1 style={{ fontSize: '1.4rem', marginBottom: 4 }}>{pluginBound ? copy.pluginTitle : copy.title}</h1>
 
       {error || !consent ? (
         <div className="card">
@@ -171,6 +180,13 @@ export function OAuthConsentPage() {
               {consent.summary.can_manage_appointments ? copy.write : copy.read}
             </dd>
 
+            {pluginBound && (
+              <>
+                <dt style={{ color: 'var(--muted)' }}>{copy.pluginPermission}</dt>
+                <dd style={{ margin: 0 }}>{copy.pluginAccess}</dd>
+              </>
+            )}
+
             <dt style={{ color: 'var(--muted)' }}>{copy.scope}</dt>
             <dd style={{ margin: 0 }}>{consent.scopes.join(', ')}</dd>
           </dl>
@@ -178,7 +194,7 @@ export function OAuthConsentPage() {
           <div className="notice" style={{ marginTop: 18 }}>
             <strong>{copy.boundaryTitle}</strong>
             <p style={{ marginBottom: 0 }}>
-              {profileBound ? copy.unifiedBoundary : copy.boundary}
+              {pluginBound ? copy.pluginBoundary : profileBound ? copy.unifiedBoundary : copy.boundary}
             </p>
           </div>
 
