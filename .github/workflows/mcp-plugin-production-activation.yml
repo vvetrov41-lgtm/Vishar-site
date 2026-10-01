@@ -170,7 +170,15 @@ jobs:
           cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
+          import { execFileSync } from 'node:child_process';
           const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const crm = data.pages.find(row => row.name === 'vishar-crm-production');
+          const crmSha = crm?.latest_production_deployment?.commit_hash;
+          if (!/^[a-f0-9]{40}$/.test(crmSha || '')) throw new Error('CRM production deployment SHA is missing');
+          console.log(`CRM production consent source SHA: ${crmSha}`);
+          const consentPath = 'admin/src/lib/oauth-consent-api.ts';
+          const deployedConsent = execFileSync('git', ['show', `${crmSha}:${consentPath}`], { encoding: 'utf8' });
+          if (deployedConsent !== fs.readFileSync(consentPath, 'utf8')) throw new Error('CRM OAuth consent frontend has not been rolled out; deploy CRM-only before client activation');
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
           if (!worker) throw new Error('Production MCP Worker is missing');
           if (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true) throw new Error('MCP Worker has an unexpected public preview surface');
