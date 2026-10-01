@@ -3,7 +3,8 @@ name: MCP Plugin production activation
 # Pins the reviewed ChatGPT/Supabase public OAuth client to the already
 # bootstrapped Plugin MCP Worker. This is deliberately separate from bootstrap:
 # bootstrap exposes discovery while keeping all bearer access closed; activation
-# changes only the non-secret OAuth client binding after exact-head validation.
+# pins the non-secret edge client and activates the dedicated CRM profile
+# configuration after exact-head validation. No schema/customer mutation.
 
 on:
   push:
@@ -129,6 +130,7 @@ jobs:
           node scripts/build-mcp-plugin-parity.mjs --check
           node scripts/test-mcp-domain-contracts.mjs
           node scripts/test-mcp-production-config.mjs
+          node scripts/test-mcp-plugin-client-activation.mjs
           npm run check:mcp-production-bundle
           npm run scan:secrets
 
@@ -168,7 +170,15 @@ jobs:
           cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
+          import { execFileSync } from 'node:child_process';
           const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const crm = data.pages.find(row => row.name === 'vishar-crm-production');
+          const crmSha = crm?.latest_production_deployment?.commit_hash;
+          if (!/^[a-f0-9]{40}$/.test(crmSha || '')) throw new Error('CRM production deployment SHA is missing');
+          console.log(`CRM production consent source SHA: ${crmSha}`);
+          const consentPath = 'admin/src/lib/oauth-consent-api.ts';
+          const deployedConsent = execFileSync('git', ['show', `${crmSha}:${consentPath}`], { encoding: 'utf8' });
+          if (deployedConsent !== fs.readFileSync(consentPath, 'utf8')) throw new Error('CRM OAuth consent frontend has not been rolled out; deploy CRM-only before client activation');
           const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
           if (!worker) throw new Error('Production MCP Worker is missing');
           if (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true) throw new Error('MCP Worker has an unexpected public preview surface');
@@ -183,6 +193,9 @@ jobs:
           const existing = bindings.get('MCP_PLUGIN_OAUTH_CLIENT_ID')?.value;
           if (existing && existing !== process.env.PLUGIN_CLIENT_ID) throw new Error(`A different Plugin OAuth client is already pinned: ${existing}`);
           NODE
+
+      - name: Read-only dedicated CRM client configuration preflight
+        run: node scripts/activate-mcp-plugin-client.mjs plan "$RUNNER_TEMP/plugin-client-plan.json"
 
       - name: Re-check canonical immediately before mutation
         shell: bash
@@ -241,6 +254,17 @@ jobs:
           cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
           node scripts/probe-mcp-plugin-production.mjs
 
+      - name: Re-check immutable lineage and activate only dedicated CRM client configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing config mutation.' >&2; exit 1; }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing config mutation.' >&2; exit 1; }
+          node scripts/activate-mcp-plugin-client.mjs apply "$RUNNER_TEMP/plugin-client-plan.json"
+          node scripts/activate-mcp-plugin-client.mjs verify
+
       - name: Activation summary
         shell: bash
         run: |
@@ -253,6 +277,8 @@ jobs:
             echo '- MCP Plugin tools: enabled'
             echo '- Meta/Gmail MCP tools: disabled'
             echo '- Legacy GPT Actions: unchanged'
-            echo '- Database mutations: none'
+            echo '- Database config: dedicated profile binding; legacy rows unchanged'
+            echo '- Database schema/customer mutations: none'
+            echo '- Automations, integration administration and workspace administration: remain disabled'
             echo '- Production readback: passed'
           } >> "$GITHUB_STEP_SUMMARY"
