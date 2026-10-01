@@ -27,6 +27,7 @@ jobs:
     env:
       CANONICAL_BRANCH: agent/platform-telegram-self-service
       APPROVED_SHA: ${{ github.event.before }}
+      SOURCE_SHA: ${{ github.event.before }}
       WORKER_NAME: vishar-mcp-production
       MCP_HOST: mcp.vishartattoo.com
       MCP_RESOURCE: https://mcp.vishartattoo.com/mcp
