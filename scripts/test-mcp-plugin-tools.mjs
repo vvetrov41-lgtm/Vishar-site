@@ -202,6 +202,32 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   assert.match(triageSection, /do not enumerate enquiries, projects, clients, follow-ups or conversations by status to check completeness/);
   assert.match(triageSection, /`crm_get_client_ai_state` is the per-client drill-down/);
   assert.match(triageSection, /full list, inventory, audit, status slice, count, export or historical report/);
+  assert.match(triageSection, /`integration_jobs_failed`\) and messages from unknown senders \(`unmatched_inbound`\) as grouped counts/);
+  assert.match(triageSection, /Call `crm_list_failed_deliveries` or `crm_list_communication_conversations` only when the user explicitly asks/);
+  for (const name of triageSection.match(/crm_[a-z_]+/g)) {
+    assert(tools.some((tool) => tool.name === name), `skill names a real tool: ${name}`);
+  }
+}
+
+// The Plugin package is the ChatGPT app wrapper: its manifest name and app
+// mapping must match the installed app, or "Upload new version" is refused.
+{
+  const pluginRoot = new URL('../plugins/vishar-crm/', import.meta.url);
+  const manifest = JSON.parse(readFileSync(new URL('.codex-plugin/plugin.json', pluginRoot), 'utf8'));
+  const apps = JSON.parse(readFileSync(new URL('.app.json', pluginRoot), 'utf8'));
+  assert.equal(manifest.name, 'dev-6abe429f5e388191ac24e96159a1dbc0');
+  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(manifest.apps, './.app.json');
+  assert.equal(manifest.skills, './skills/');
+  assert.deepEqual(apps, { apps: { [manifest.name]: { id: 'asdk_app_6abe429f5e388191ac24e96159a1dbc0' } } });
+  for (const field of ['composerIcon', 'logo']) {
+    const path = manifest.interface[field];
+    assert.match(path, /^\.\/assets\/[a-z]+\.png$/);
+    assert.equal(readFileSync(new URL(path, pluginRoot)).subarray(1, 4).toString(), 'PNG', `${field} is a PNG`);
+  }
+  readFileSync(new URL('skills/vishar-crm/SKILL.md', pluginRoot));
+  const rootEntries = readdirSync(pluginRoot).sort();
+  assert.deepEqual(rootEntries, ['.app.json', '.codex-plugin', 'assets', 'skills'], 'no portable root manifest or bundled MCP server competes with the app mapping');
 }
 
 {
