@@ -16,6 +16,7 @@ on:
       - 'plugins/vishar-crm/**'
       - 'wrangler.mcp*.toml'
       - '.github/workflows/mcp-plugin-production-bootstrap.yml'
+      - '.github/workflows/mcp-plugin-production-activation.yml'
       - '.github/workflows/mcp-plugin-production-acceptance.yml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   push:
@@ -33,6 +34,7 @@ on:
       - 'plugins/vishar-crm/**'
       - 'wrangler.mcp*.toml'
       - '.github/workflows/mcp-plugin-production-bootstrap.yml'
+      - '.github/workflows/mcp-plugin-production-activation.yml'
       - '.github/workflows/mcp-plugin-production-acceptance.yml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   workflow_dispatch:
