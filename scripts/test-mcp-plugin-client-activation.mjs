@@ -36,6 +36,10 @@ const fetcher = async (url, options) => {
   return Response.json([{ state }]);
 };
 await query(inspectSql(), env, fetcher); checks++;
+await query(inspectSql(), env, async () => Response.json([{ state }], { status: 201 })); checks++;
+for (const status of [401, 403, 429, 500]) {
+  await assert.rejects(query(inspectSql(), env, async () => new Response('private provider response', { status })), error => !error.message.includes('private')); checks++;
+}
 for (const patch of [{ SUPABASE_PROJECT_REF: 'staging' }, { SUPABASE_URL: 'https://other.example' }, { SUPABASE_ACCESS_TOKEN: '' }]) {
   await assert.rejects(query(inspectSql(), { ...env, ...patch }, fetcher)); checks++;
 }

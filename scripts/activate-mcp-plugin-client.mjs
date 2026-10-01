@@ -102,7 +102,8 @@ export async function query(sql, env, fetcher = fetch) {
     body: JSON.stringify({ query: sql }),
   });
   // Do not echo provider errors, headers, SQL or credential-bearing responses.
-  assert.equal(response.status, 200, `Supabase config operation failed (HTTP ${response.status})`);
+  // Management API documents 201 for this POST; tolerate 200 for compatibility.
+  assert.ok([200, 201].includes(response.status), `Supabase config operation failed (HTTP ${response.status})`);
   const result = await response.json();
   assert.equal(result.length, 1, 'exactly one safe state row required');
   return validateState(result[0].state);
