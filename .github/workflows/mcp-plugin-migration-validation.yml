@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'docs/gpt-actions/**'
+      - 'admin/src/lib/oauth-consent-api.ts'
+      - 'admin/src/test/oauth-consent-api.test.ts'
       - 'workers/lib/mcp-*.js'
       - 'workers/vishar-mcp.js'
       - 'scripts/build-mcp-plugin-tools.mjs'

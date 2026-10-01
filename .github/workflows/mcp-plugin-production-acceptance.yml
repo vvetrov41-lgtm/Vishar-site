@@ -114,6 +114,22 @@ jobs:
           # an agent without artifact download can actually read it back.
           tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/cloudflare-production-inventory.md"
 
+      - name: Print bounded deployment readback
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-production-inventory.json', 'utf8'));
+          const worker = data.workers.find(row => row.name === 'vishar-mcp-production');
+          if (!worker) throw new Error('Production MCP Worker is missing');
+          const names = ['MCP_ENABLED', 'MCP_PLUGIN_TOOLS_ENABLED', 'MCP_META_TOOLS_ENABLED', 'MCP_GMAIL_TOOLS_ENABLED'];
+          console.log(JSON.stringify({
+            mcpVersion: worker.active_deployment?.versions?.[0]?.version_id,
+            flags: Object.fromEntries((worker.bindings || []).filter(row => names.includes(row.name)).map(row => [row.name, row.value])),
+            pluginClientPinned: (worker.bindings || []).some(row => row.name === 'MCP_PLUGIN_OAUTH_CLIENT_ID'),
+            crmDeployment: (data.pages || []).find(row => row.name === 'vishar-crm-production')?.latest_production_deployment,
+          }));
+          NODE
+
       - name: Generate expected Plugin registry
         run: |
           npm ci --ignore-scripts

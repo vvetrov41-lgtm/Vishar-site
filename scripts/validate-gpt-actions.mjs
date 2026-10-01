@@ -120,8 +120,18 @@ assert.match(
 );
 assert.match(
   consentApi,
-  /scopes\.length !== 1 \|\| scopes\[0\] !== 'email'/,
-  'consent must reject every scope except the single approved email scope',
+  /scopes\.length === 1 && scopes\[0\] === 'email'/,
+  'legacy consent must accept only the single approved email scope',
+);
+assert.match(
+  consentApi,
+  /details\?\.binding_mode === 'profile'[\s\S]*details\.integration_key === 'vishar-crm-plugin'/,
+  'Plugin scope adaptation requires the database-approved dedicated profile binding',
+);
+assert.match(
+  consentApi,
+  /scopes\.includes\('email'\)[\s\S]*new Set\(scopes\)\.size === scopes\.length[\s\S]*scopes\.every\(\(scope\) => allowed\.has\(scope\)\)/,
+  'Plugin consent must require email and reject duplicate or unapproved scopes',
 );
 assert.match(
   consentApi,

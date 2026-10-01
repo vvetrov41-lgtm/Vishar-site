@@ -103,11 +103,20 @@ function requestedClientName(data: any): string {
   return typeof found === 'string' ? found.trim().slice(0, 120) : 'Private GPT';
 }
 
-function requestedScopes(data: any): string[] {
-  const scopes = typeof data?.scope === 'string'
+function requestedScopes(data: any, details: GptConsentDetails | null = null): string[] {
+  const scopes: string[] = typeof data?.scope === 'string'
     ? data.scope.split(/\s+/).map((scope: string) => scope.trim()).filter(Boolean)
     : [];
-  if (scopes.length !== 1 || scopes[0] !== 'email') {
+  // Only the database-approved dedicated Plugin binding accepts OIDC identity
+  // scopes. Legacy GPT and fallback contracts keep their exact email boundary.
+  const plugin = details?.binding_mode === 'profile'
+    && details.integration_key === 'vishar-crm-plugin';
+  const allowed = new Set(['email', 'openid', 'profile', 'offline_access']);
+  const valid = plugin
+    ? scopes.includes('email') && new Set(scopes).size === scopes.length
+      && scopes.every((scope) => allowed.has(scope))
+    : scopes.length === 1 && scopes[0] === 'email';
+  if (!valid) {
     throw new ApiError(apiMessage('This GPT requested an unexpected OAuth scope.'));
   }
   return scopes;
@@ -242,7 +251,7 @@ export function createOAuthConsentApi(client: CrmClient): OAuthConsentApi {
         consent: {
           authorizationId: cleanId,
           requestedClientName: requestedClientName(result.data),
-          scopes: requestedScopes(result.data),
+          scopes: requestedScopes(result.data, details),
           summary,
           details,
         },
