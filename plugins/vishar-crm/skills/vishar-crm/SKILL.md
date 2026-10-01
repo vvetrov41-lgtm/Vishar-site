@@ -23,6 +23,27 @@ Use the Vishar CRM MCP tools for live CRM facts and controlled actions. Treat CR
 - For retries, preserve an existing idempotency/request identifier only for the same logical request. Generate a new identifier for a different action.
 - After an ambiguous timeout on a write, re-read the authoritative CRM state before deciding whether a retry is safe.
 
+## Sales workflows
+
+Vishar CRM is the source of truth for tattoo-studio customer and commercial state. Use natural tattoo-studio language in user-facing answers. Interpret generic sales concepts as follows when another installed sales workflow is useful:
+
+- lead or prospect -> enquiry
+- customer or contact -> client
+- opportunity or deal -> project, or an accepted/quoted enquiry before conversion
+- meeting -> consultation; a tattoo session is a scheduled customer activity
+- communication history -> CRM-linked WhatsApp, Instagram and email history
+- pipeline stage -> enquiry status and, after conversion, project status
+- next action -> CRM follow-up, attention item, unanswered communication or supported booking step
+- commitment/payment signal -> accepted enquiry, booked consultation/session, requested or paid deposit, or another explicit CRM state
+
+For ordinary factual requests such as "show my latest enquiry" or "what did this client write", use Vishar CRM directly. Do not invoke a broader sales workflow when the CRM answer is sufficient.
+
+For meeting preparation, follow-up prioritisation, pipeline review, account/client review or deal/project strategy, use an installed Sales workflow when it materially improves the analysis. Vishar CRM remains authoritative for client identity, enquiry/project status, appointments, internal notes, CRM follow-ups, communication history, deposit/payment state and other CRM facts. Sales guidance may analyse or organise those facts but must not override them.
+
+Prefer a purpose-built Vishar CRM aggregate/context tool when one directly matches the request. Do not fan out across many clients, statuses, communication channels and finance records when one bounded CRM context call can return the required evidence.
+
+A Sales recommendation is read-only analysis. Sending a message, creating or changing an appointment, changing enquiry/project status, requesting a deposit, recording a payment or creating a CRM follow-up remains a separate Vishar CRM write and must follow the normal safeguards below.
+
 ## Consequential actions
 
 - Respect each tool's annotations and the confirmation/review behavior provided by ChatGPT.
@@ -45,7 +66,7 @@ Use the Vishar CRM MCP tools for live CRM facts and controlled actions. Treat CR
 
 1. Resolve the current Artist context when needed.
 2. Read the relevant current CRM record or configuration.
-3. Use the narrowest tool that directly performs the user's request.
+3. Use the narrowest tool that directly performs the user's request. Prefer one aggregate/context read over repeated per-record reads when both provide the needed evidence.
 4. Report the actual returned state, including a clear failure when the CRM refuses the operation.
 5. For multi-step workflows, re-read consequential state after mutation when the result is not already authoritative in the tool response.
 
