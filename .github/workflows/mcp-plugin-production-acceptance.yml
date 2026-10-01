@@ -1,0 +1,136 @@
+name: MCP Plugin production acceptance
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-mcp-plugin-acceptance'
+
+permissions:
+  actions: read
+  contents: read
+  
+
+concurrency:
+  group: mcp-plugin-production-acceptance
+  cancel-in-progress: false
+
+jobs:
+  inventory:
+    name: Read-only Plugin acceptance
+    if: github.actor == github.repository_owner && (github.event_name != 'push' || github.event.before != '0000000000000000000000000000000000000000')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE: vishartattoo.com
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+
+    steps:
+      - name: Checkout exact approved source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.APPROVED_SHA }}
+          fetch-depth: 0
+
+      - name: Verify owner, immutable SHA, canonical lineage and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            case "$GITHUB_REF_NAME" in
+              release/private-crm-rc*-inventory-*) ;;
+              *) echo 'Inventory push must use the reserved read-only branch namespace.' >&2; exit 1 ;;
+            esac
+            [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+            [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          fi
+          [ "$CLOUDFLARE_ZONE" = 'vishartattoo.com' ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ -n "$canonical_sha" ]
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Inventory must inspect the current immutable canonical SHA.' >&2
+            exit 1
+          }
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'Gmail production validation'
+            'Booking host validation'
+            'MCP Plugin migration validation'
+          )
+          for attempt in $(seq 1 60); do
+            gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+              --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+              | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+            all_green=true
+            for workflow in "${required_workflows[@]}"; do
+              if ! jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+                any(.[]; .name == $name and .head_sha == $sha
+                         and .status == "completed" and .conclusion == "success")
+              ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null; then
+                all_green=false
+              fi
+            done
+            if [ "$all_green" = true ]; then
+              break
+            fi
+            if [ "$attempt" -eq 60 ]; then
+              echo 'Required exact-head CI did not become green within 15 minutes.' >&2
+              jq . "$RUNNER_TEMP/exact-head-runs.json" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prove inventory workflow is read-only
+        run: node scripts/test-cloudflare-production-inventory.mjs
+
+      - name: Read and sanitize live Cloudflare topology
+        env:
+          SOURCE_SHA: ${{ env.APPROVED_SHA }}
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-production-inventory.json" \
+            --summary "$RUNNER_TEMP/cloudflare-production-inventory.md"
+          # Also to stdout: the sanitized topology is the evidence this workflow
+          # exists to produce, and the run log is the only place an operator or
+          # an agent without artifact download can actually read it back.
+          tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/cloudflare-production-inventory.md"
+
+      - name: Generate expected Plugin registry
+        run: |
+          npm ci --ignore-scripts
+          node scripts/build-mcp-plugin-tools.mjs
+
+      - name: Verify live discovery and closed CRM access
+        run: node scripts/probe-mcp-plugin-production.mjs
+
+      - name: Read only OAuth registration configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --max-time 30 \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            'https://api.supabase.com/v1/projects/vfjexhfdbrjmuxfdvbdx/config/auth' \
+            > "$RUNNER_TEMP/auth-config.json"
+          jq '{oauth_server_enabled,oauth_server_allow_dynamic_registration,oauth_server_authorization_path,site_url}' \
+            "$RUNNER_TEMP/auth-config.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -e '.oauth_server_enabled == true' "$RUNNER_TEMP/auth-config.json" >/dev/null
+          rm -f "$RUNNER_TEMP/auth-config.json"
