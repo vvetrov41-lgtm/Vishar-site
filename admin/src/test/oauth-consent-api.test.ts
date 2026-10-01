@@ -225,6 +225,27 @@ describe('GPT OAuth consent API', () => {
     ).rejects.toThrow('not enabled for your CRM access');
   });
 
+  it('accepts OIDC identity scopes only for the database-approved Plugin profile binding', async () => {
+    const details = { ...UNIFIED_DETAILS, integration_key: 'vishar-crm-plugin' };
+    const make = (scope: string, consentDetails: Record<string, unknown> = details) => client({
+      details: { data: { authorization_id: 'authorization-123', client: { id: 'plugin-client' }, scope }, error: null },
+      consentDetails: { data: consentDetails, error: null },
+    });
+    const mock = make('openid profile email offline_access');
+    const result = await createOAuthConsentApi(mock.value).loadGptOAuthConsent('authorization-123');
+    if (result.kind !== 'consent') throw new Error('expected consent');
+    expect(result.consent.scopes).toEqual(['openid', 'profile', 'email', 'offline_access']);
+    for (const scope of ['openid', 'email phone', 'email email', 'email crm:admin']) {
+      await expect(createOAuthConsentApi(make(scope).value).loadGptOAuthConsent('authorization-123'))
+        .rejects.toThrow('unexpected OAuth scope');
+    }
+    await expect(createOAuthConsentApi(make('openid email', { ...details, binding_mode: 'artist', artist_display_name: 'Artist' }).value)
+      .loadGptOAuthConsent('authorization-123')).rejects.toThrow('unexpected OAuth scope');
+    await expect(createOAuthConsentApi(make('openid email', UNIFIED_DETAILS).value)
+      .loadGptOAuthConsent('authorization-123')).rejects.toThrow('unexpected OAuth scope');
+    expect(mock.approveAuthorization).not.toHaveBeenCalled();
+  });
+
   it('rejects malformed authorization IDs before any network call', async () => {
     const mock = client();
     await expect(
