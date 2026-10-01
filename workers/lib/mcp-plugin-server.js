@@ -102,11 +102,6 @@ function claimsLookValid(claims, env, nowSeconds = Math.floor(Date.now() / 1000)
   if (claims.iss !== authorizationIssuer(env)) return false;
   const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud];
   if (!audiences.includes('authenticated')) return false;
-  const resource = resourceIdentifier(env);
-  const resources = Array.isArray(claims.resource) ? claims.resource : [claims.resource];
-  if (!resource || (!audiences.includes(resource) && !resources.includes(resource))) return false;
-  const scopes = typeof claims.scope === 'string' ? claims.scope.split(/\s+/) : [];
-  if (!scopes.includes('email')) return false;
   if (!Number.isFinite(claims.exp) || claims.exp <= nowSeconds) return false;
   if (typeof claims.sub !== 'string' || !UUID.test(claims.sub)) return false;
   // Discovery can precede dynamic client registration. Tool access remains
