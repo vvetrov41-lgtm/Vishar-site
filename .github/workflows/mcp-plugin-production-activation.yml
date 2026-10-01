@@ -1,0 +1,257 @@
+name: MCP Plugin production activation
+
+# Pins the reviewed ChatGPT/Supabase public OAuth client to the already
+# bootstrapped Plugin MCP Worker. This is deliberately separate from bootstrap:
+# bootstrap exposes discovery while keeping all bearer access closed; activation
+# changes only the non-secret OAuth client binding after exact-head validation.
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-inventory-mcp-plugin-activation'
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: mcp-plugin-production-activation
+  cancel-in-progress: false
+
+jobs:
+  activate:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      CANONICAL_BRANCH: agent/platform-telegram-self-service
+      APPROVED_SHA: ${{ github.event.before }}
+      WORKER_NAME: vishar-mcp-production
+      MCP_HOST: mcp.vishartattoo.com
+      MCP_RESOURCE: https://mcp.vishartattoo.com/mcp
+      PLUGIN_CLIENT_ID: 3b5c6da9-cac4-4720-ad47-5188136a5534
+      RELEASE_MARKER: .release/mcp-plugin-oauth-client-activation.txt
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PROJECT_REF: ${{ vars.CRM_PRODUCTION_SUPABASE_PROJECT_REF }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.CRM_PRODUCTION_SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.CRM_PRODUCTION_SUPABASE_DB_PASSWORD }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Verify exact release trigger and production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*-inventory-mcp-plugin-activation) ;;
+            *) echo 'Plugin MCP activation must use the reserved release namespace.' >&2; exit 1 ;;
+          esac
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$APPROVED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$PLUGIN_CLIENT_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          [ "$SUPABASE_PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) echo 'Production publishable key is missing or invalid.' >&2; exit 1 ;; esac
+          [ -n "$SUPABASE_ACCESS_TOKEN" ]
+          [ -n "$SUPABASE_DB_PASSWORD" ]
+          [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[0-9a-f]{32}$ ]]
+          [ -n "$CLOUDFLARE_API_TOKEN" ]
+
+      - name: Checkout release operator commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify immutable canonical lineage, marker-only release and exact-head CI
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ] || {
+            echo 'Activation commit is not a direct child of the approved canonical SHA.' >&2
+            exit 1
+          }
+          changed="$(git diff --name-only "$APPROVED_SHA" "$GITHUB_SHA")"
+          [ "$changed" = "$RELEASE_MARKER" ] || {
+            echo "Activation release commit must change only $RELEASE_MARKER; got: $changed" >&2
+            exit 1
+          }
+          [ "$(cat "$RELEASE_MARKER")" = "$PLUGIN_CLIENT_ID" ] || {
+            echo 'Activation marker does not contain the reviewed OAuth client ID.' >&2
+            exit 1
+          }
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || {
+            echo 'Approved SHA is no longer the canonical Vishar CRM head.' >&2
+            exit 1
+          }
+          git checkout --detach "$APPROVED_SHA"
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+
+          required_workflows=(
+            'Static Validation'
+            'CRM and booking validation'
+            'MCP Plugin migration validation'
+          )
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' \
+            | jq -s . > "$RUNNER_TEMP/exact-head-runs.json"
+          for workflow in "${required_workflows[@]}"; do
+            jq -e --arg name "$workflow" --arg sha "$APPROVED_SHA" '
+              any(.[]; .name == $name and .head_sha == $sha
+                       and .status == "completed" and .conclusion == "success")
+            ' "$RUNNER_TEMP/exact-head-runs.json" >/dev/null || {
+              echo "Required exact-head workflow is not green: $workflow" >&2
+              exit 1
+            }
+          done
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Fail-closed Plugin validation at approved SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts
+          npm audit --audit-level=moderate
+          node scripts/build-mcp-plugin-tools.mjs
+          node scripts/test-mcp-plugin-tools.mjs
+          node scripts/build-mcp-plugin-parity.mjs --check
+          node scripts/test-mcp-domain-contracts.mjs
+          node scripts/test-mcp-production-config.mjs
+          npm run check:mcp-production-bundle
+          npm run scan:secrets
+
+          grep -Fq 'MCP_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_PLUGIN_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_META_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq 'MCP_GMAIL_TOOLS_ENABLED = "false"' wrangler.mcp.production.toml
+          grep -Fq "pattern = \"$MCP_HOST\", custom_domain = true" wrangler.mcp.production.toml
+          grep -Fq 'binding = "GPT_ACTIONS_SERVICE"' wrangler.mcp.production.toml
+          grep -Fq 'service = "vishar-gpt-actions-production"' wrangler.mcp.production.toml
+          ! grep -Eq 'SERVICE_ROLE|SECRET_KEY|service_role|CLIENT_SECRET' wrangler.mcp.production.toml
+          ! grep -Eq '^MCP_PLUGIN_OAUTH_CLIENT_ID[[:space:]]*=' wrangler.mcp.production.toml
+
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3
+        with:
+          version: 2.110.0
+
+      - name: Verify production database has no pending migration drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase link --project-ref "$SUPABASE_PROJECT_REF"
+          supabase db push --dry-run 2>&1 | tee "$RUNNER_TEMP/supabase-dry-run.log"
+          if grep -Eiq 'Would push|pending migration|apply these migrations' "$RUNNER_TEMP/supabase-dry-run.log"; then
+            echo 'Pending production database migration detected. Refusing edge mutation.' >&2
+            exit 1
+          fi
+
+      - name: Fresh read-only Cloudflare preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/cloudflare-production-inventory.mjs \
+            --output "$RUNNER_TEMP/cloudflare-before.json" \
+            --summary "$RUNNER_TEMP/cloudflare-before.md"
+          cat "$RUNNER_TEMP/cloudflare-before.md" >> "$GITHUB_STEP_SUMMARY"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-before.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) throw new Error('Production MCP Worker is missing');
+          if (worker.workers_dev_enabled === true || worker.preview_urls_enabled === true) throw new Error('MCP Worker has an unexpected public preview surface');
+          const hosts = (data.worker_custom_domains || []).filter((row) => row.service === process.env.WORKER_NAME).map((row) => row.hostname);
+          if (JSON.stringify(hosts) !== JSON.stringify([process.env.MCP_HOST])) throw new Error(`Unexpected MCP custom domains: ${hosts.join(',') || 'none'}`);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          const requireValue = (name, value) => { if (bindings.get(name)?.value !== value) throw new Error(`${name}=${bindings.get(name)?.value}`); };
+          requireValue('MCP_ENABLED', 'true');
+          requireValue('MCP_PLUGIN_TOOLS_ENABLED', 'true');
+          requireValue('MCP_META_TOOLS_ENABLED', 'false');
+          requireValue('MCP_GMAIL_TOOLS_ENABLED', 'false');
+          const existing = bindings.get('MCP_PLUGIN_OAUTH_CLIENT_ID')?.value;
+          if (existing && existing !== process.env.PLUGIN_CLIENT_ID) throw new Error(`A different Plugin OAuth client is already pinned: ${existing}`);
+          NODE
+
+      - name: Re-check canonical immediately before mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/$CANONICAL_BRANCH" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$APPROVED_SHA" ] || { echo 'Canonical moved; refusing stale mutation.' >&2; exit 1; }
+          trigger_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$trigger_sha" = "$GITHUB_SHA" ] || { echo 'Release branch moved; refusing mutation.' >&2; exit 1; }
+
+      - name: Pin reviewed ChatGPT OAuth client and redeploy exact approved source
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "Activate Plugin OAuth client for $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production \
+            --var MCP_PUBLIC_HOST:"$MCP_HOST" \
+            --var MCP_ENABLED:true \
+            --var MCP_PLUGIN_TOOLS_ENABLED:true \
+            --var MCP_GMAIL_TOOLS_ENABLED:false \
+            --var MCP_META_TOOLS_ENABLED:false \
+            --var MCP_PLUGIN_OAUTH_CLIENT_ID:"$PLUGIN_CLIENT_ID" \
+            --var SUPABASE_URL:"$SUPABASE_URL" \
+            --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Production readback and live closed-access probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          success=false
+          for attempt in $(seq 1 20); do
+            if node scripts/cloudflare-production-inventory.mjs --output "$RUNNER_TEMP/cloudflare-after.json" --summary "$RUNNER_TEMP/cloudflare-after.md"; then
+              if node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const data = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/cloudflare-after.json', 'utf8'));
+          const worker = data.workers.find((row) => row.name === process.env.WORKER_NAME);
+          if (!worker) process.exit(1);
+          const bindings = new Map((worker.bindings || []).map((row) => [row.name, row]));
+          const checks = [
+            [worker.workers_dev_enabled !== true, 'workers.dev disabled'],
+            [worker.preview_urls_enabled !== true, 'preview URLs disabled'],
+            [bindings.get('MCP_ENABLED')?.value === 'true', 'MCP enabled'],
+            [bindings.get('MCP_PLUGIN_TOOLS_ENABLED')?.value === 'true', 'Plugin tools enabled'],
+            [bindings.get('MCP_META_TOOLS_ENABLED')?.value === 'false', 'Meta tools disabled'],
+            [bindings.get('MCP_GMAIL_TOOLS_ENABLED')?.value === 'false', 'Gmail tools disabled'],
+            [bindings.get('MCP_PLUGIN_OAUTH_CLIENT_ID')?.value === process.env.PLUGIN_CLIENT_ID, 'exact Plugin OAuth client pinned'],
+          ];
+          if (checks.some(([ok]) => !ok)) process.exit(1);
+          NODE
+              then success=true; break; fi
+            fi
+            sleep 6
+          done
+          [ "$success" = true ] || { echo 'Production binding readback did not converge.' >&2; exit 1; }
+          cat "$RUNNER_TEMP/cloudflare-after.md" >> "$GITHUB_STEP_SUMMARY"
+          node scripts/probe-mcp-plugin-production.mjs
+
+      - name: Activation summary
+        shell: bash
+        run: |
+          {
+            echo '### MCP Plugin production OAuth activation'
+            echo "- Exact canonical SHA: \`$APPROVED_SHA\`"
+            echo '- Worker: `vishar-mcp-production`'
+            echo '- Host: `mcp.vishartattoo.com`'
+            echo '- Plugin OAuth client: exact reviewed public client pinned'
+            echo '- MCP Plugin tools: enabled'
+            echo '- Meta/Gmail MCP tools: disabled'
+            echo '- Legacy GPT Actions: unchanged'
+            echo '- Database mutations: none'
+            echo '- Production readback: passed'
+          } >> "$GITHUB_STEP_SUMMARY"
