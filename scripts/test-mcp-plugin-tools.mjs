@@ -24,7 +24,7 @@ function base64url(value) {
 function token(overrides = {}) {
   const now = Math.floor(Date.now() / 1000);
   return `${base64url({ alg: 'RS256', typ: 'JWT' })}.${base64url({
-    iss: `${SUPABASE}/auth/v1`, aud: 'authenticated', resource: RESOURCE, scope: 'email', exp: now + 3600,
+    iss: `${SUPABASE}/auth/v1`, aud: 'authenticated', exp: now + 3600,
     sub: USER, client_id: CLIENT, ...overrides,
   })}.synthetic-signature`;
 }
@@ -217,10 +217,6 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
 
 for (const claims of [
   { client_id: undefined },
-  { resource: 'https://other.example/mcp' },
-  { resource: undefined },
-  { scope: 'profile' },
-  { scope: undefined },
   { client_id: 'legacy-gpt-client-12345' },
   { exp: Math.floor(Date.now() / 1000) - 1 },
 ]) {
@@ -232,7 +228,7 @@ for (const claims of [
     async () => { authCalled = true; return Response.json({ id: USER }); },
   );
   await assertAuthChallenge(response, 'CRM authentication is invalid or expired.');
-  assert.equal(authCalled, false, 'wrong resource, scope, client and expiry fail before network validation');
+  assert.equal(authCalled, false, 'wrong client and expiry fail before network validation');
   assert.equal(actionCalled, false);
 }
 
@@ -248,15 +244,15 @@ for (const claims of [
 }
 
 {
-  const accessToken = token({ resource: undefined, aud: ['authenticated', RESOURCE] });
+  const accessToken = token();
   let actionRequest;
   const response = await handlePluginMcpRequest(
     rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }, accessToken),
     env({ async fetch(request) { actionRequest = request; return Response.json({ items: [] }); } }),
     authFetch(accessToken),
   );
-  assert.equal(response.status, 200, 'resource-bound audience array is accepted');
-  assert(actionRequest, 'valid resource-bound token reaches action service');
+  assert.equal(response.status, 200, 'standard Supabase OAuth token shape is accepted');
+  assert(actionRequest, 'valid dedicated-client token reaches action service');
 }
 
 {
@@ -317,4 +313,4 @@ for (const claims of [
   assert.equal(actionCalled, false);
 }
 
-console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict resource/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
+console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict issuer/audience/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
