@@ -42,3 +42,16 @@ Audit snapshot: 2026-09-30. Recheck every item against the exact release SHA and
 - Production readback and signed-in Plugin acceptance succeed before the legacy GPT path is considered removable.
 
 References: https://developers.openai.com/plugins/build/auth ; https://supabase.com/docs/guides/auth/oauth-server/mcp-authentication
+
+## Fresh check on 2026-10-01
+
+- Canonical CRM source `c6369a1dea9e4f6ee710d5f33d84cb8510f47d99`; website main remains `515fd218766c27a6d8f423121a1396c000c2f773`.
+- Bootstrap run `36780211300` succeeded, including DB dry-run (up to date), Cloudflare readback and live discovery boundary acceptance. Deployed Worker version `86b97640-85fc-4bd7-9089-206ca88e0b5b`.
+- Fresh DB reads show migration head `20260930150000`, no MCP resource authorizations and no dedicated Plugin OAuth client. Both active Artist-bound GPT clients remain present. The dormant profile binding `vishar-unified-gpt` is inactive.
+- Public authorization metadata advertises S256, authorization code and refresh token grants, but no registration endpoint or CIMD support. Existing GPT bootstrap explicitly disables dynamic registration. Do not promise that clicking Connect alone will complete the flow.
+- Use the exact callback displayed by ChatGPT's MCP management page for a predefined dedicated client. Never infer a callback ID or reuse the legacy relay callback. If DCR is chosen later, review consent and direct Supabase RLS access by arbitrary registered clients before changing that global policy.
+- Pinning a Worker client ID alone is insufficient: the existing Action RPC boundary also requires an active profile binding with explicit capability ceilings. Prepare that dedicated binding after the actual client is identified; preserve legacy rows.
+- The read-only production acceptance workflow compares all advertised tool schemas with the generated 205-tool registry and checks MCP runtime OAuth challenges without invoking any authenticated CRM action. It also reads only the non-secret OAuth configuration fields needed to establish registration readiness.
+- Remaining acceptance: exact registered client, redacted real token resource/scope claims, profile binding/capability ceilings, authenticated reads, cross-workspace denials and safe write authorization checks. Legacy GPT retirement remains a separate step.
+
+- Existing consent UI (`admin/src/lib/oauth-consent-api.ts`) accepts only the exact `email` scope. Current OpenAI documentation says advertised OIDC scopes can also be requested automatically. Verify the actual Plugin request and make a Plugin-specific consent adaptation if needed, keeping legacy scope checks strict. This is another reason authenticated acceptance is still pending.

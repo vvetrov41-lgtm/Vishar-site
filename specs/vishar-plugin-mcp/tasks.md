@@ -3,17 +3,21 @@
 - [x] Fresh-check canonical CRM branch and create bounded migration branch.
 - [x] Audit existing MCP Worker, auth boundary and production rollout.
 - [x] Audit Unified GPT execution path and parity sources.
-- [ ] Add deterministic Unified GPT -> MCP contract compiler.
-- [ ] Generate committed Plugin MCP tool manifest from all approved Unified domains.
-- [ ] Add drift/security tests for parity, exclusions, authority fields and annotations.
-- [ ] Add feature-gated MCP runtime adapter that reuses `handleGptActionsRequest`.
-- [ ] Extend MCP domain validation and production config tests.
-- [ ] Verify/adjust protected-resource OAuth metadata for the private Plugin.
-- [ ] Add reproducible private Plugin package/skill source.
-- [ ] Open PR against `agent/platform-telegram-self-service` and run exact-head CI.
-- [ ] Review/fix CI and security findings.
-- [ ] Merge only after fresh canonical check.
-- [ ] Production MCP rollout with fail-closed activation and Cloudflare/Supabase readback.
-- [ ] Create/connect private Vishar CRM Plugin.
+- [x] Add deterministic Unified GPT -> MCP contract compiler.
+- [x] Generate reproducible Plugin MCP tool manifest (built in CI and before bundling) from all approved Unified domains.
+- [x] Add drift/security tests for parity, exclusions, authority fields and annotations.
+- [x] Add feature-gated MCP runtime adapter that reuses the production GPT Action service binding.
+- [x] Extend MCP domain validation and production config tests.
+- [x] Verify/adjust protected-resource OAuth metadata for the private Plugin.
+- [x] Add reproducible private Plugin package/skill source.
+- [x] Open PR against `agent/platform-telegram-self-service` and run exact-head CI.
+- [x] Review/fix CI and security findings.
+- [x] Merge only after fresh canonical check.
+- [x] Production OAuth discovery bootstrap with Cloudflare readback and Supabase migration dry-run.
+- [ ] Dedicated OAuth client registration, backend profile binding and capability ceilings.
+- [ ] Verify negotiated OIDC scopes against the consent UI and real token claims.
+- [ ] Authenticated Plugin activation with exact-head CI and production readback.
+- [x] Create private Vishar CRM Plugin.
+- [ ] Connect the dedicated Plugin through human OAuth consent.
 - [ ] Authenticated production acceptance across representative read/write/provider/money/permission classes.
-- [ ] Keep GPT Actions as transition rollback until Plugin parity is proven.
+- [x] Keep GPT Actions as transition rollback until Plugin parity is proven.

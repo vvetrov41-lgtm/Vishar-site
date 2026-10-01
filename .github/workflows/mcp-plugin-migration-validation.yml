@@ -9,10 +9,12 @@ on:
       - 'scripts/build-mcp-plugin-tools.mjs'
       - 'scripts/test-mcp-plugin-tools.mjs'
       - 'scripts/build-mcp-plugin-parity.mjs'
+      - 'scripts/probe-mcp-plugin-production.mjs'
       - 'docs/plugin-mcp/**'
       - 'plugins/vishar-crm/**'
       - 'wrangler.mcp*.toml'
       - '.github/workflows/mcp-plugin-production-bootstrap.yml'
+      - '.github/workflows/mcp-plugin-production-acceptance.yml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   push:
     branches:
@@ -24,10 +26,12 @@ on:
       - 'scripts/build-mcp-plugin-tools.mjs'
       - 'scripts/test-mcp-plugin-tools.mjs'
       - 'scripts/build-mcp-plugin-parity.mjs'
+      - 'scripts/probe-mcp-plugin-production.mjs'
       - 'docs/plugin-mcp/**'
       - 'plugins/vishar-crm/**'
       - 'wrangler.mcp*.toml'
       - '.github/workflows/mcp-plugin-production-bootstrap.yml'
+      - '.github/workflows/mcp-plugin-production-acceptance.yml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   workflow_dispatch:
 
@@ -50,6 +54,7 @@ jobs:
       - name: Syntax check
         run: |
           node --check scripts/build-mcp-plugin-tools.mjs
+          node --check scripts/probe-mcp-plugin-production.mjs
           node --check workers/lib/generated/mcp-plugin-tools.js
           node --check workers/lib/mcp-plugin-actions.js
           node --check workers/lib/mcp-plugin-server.js
