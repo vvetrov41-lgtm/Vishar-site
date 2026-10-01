@@ -23,6 +23,17 @@ Use the Vishar CRM MCP tools for live CRM facts and controlled actions. Treat CR
 - For retries, preserve an existing idempotency/request identifier only for the same logical request. Generate a new identifier for a different action.
 - After an ambiguous timeout on a write, re-read the authoritative CRM state before deciding whether a retry is safe.
 
+## Attention and triage
+
+These rules apply whether or not a Sales workflow is in use. The MCP server instructions carry the same rules.
+
+- For broad questions such as "who needs my attention or a follow-up?", "anything urgent?", "what should I deal with?", "which clients are waiting on me?", "what is happening in the CRM?" or "review my active enquiries/clients and tell me who needs action", start with `crm_get_today_pulse`.
+- The pulse evaluates the active Artist's active population against the CRM's configured attention rules. It is the authoritative shortlist within those rules, not a full view of the CRM: absence from it means no configured attention condition matches, not that the record does not exist.
+- After a successful pulse, do not enumerate enquiries, projects, clients, follow-ups or conversations by status to check completeness. Read details only for specific pulse items whose fields are not enough to answer; `crm_get_client_ai_state` is the per-client drill-down.
+- Use list or statistics tools when the user explicitly asks for a full list, inventory, audit, status slice, count, export or historical report, or when the pulse fails or reports a needed source as unavailable. Say when the answer is incomplete.
+- Read today's appointments only when the question needs the schedule, and a date-bounded follow-up list only when the user wants follow-ups due on a day or period. Do not add either after every pulse.
+- For one known consultation or tattoo session, resolve the appointment first, then read only the linked client/enquiry/project context, plus the client's CRM AI state and communication history when they add relevant context. Do not run a workspace-wide scan for a single meeting.
+
 ## Sales workflows
 
 Vishar CRM is the source of truth for tattoo-studio customer and commercial state. Use natural tattoo-studio language in user-facing answers. Interpret generic sales concepts as follows when another installed sales workflow is useful:
@@ -40,11 +51,7 @@ For ordinary factual requests such as "show my latest enquiry" or "what did this
 
 For meeting preparation, follow-up prioritisation, pipeline review, account/client review or deal/project strategy, use an installed Sales workflow when it materially improves the analysis. Vishar CRM remains authoritative for client identity, enquiry/project status, appointments, internal notes, CRM follow-ups, communication history, deposit/payment state and other CRM facts. Sales guidance may analyse or organise those facts but must not override them.
 
-For broad questions such as "who needs a follow-up now?", "what needs my attention?", "review my active enquiries/clients" or a pipeline triage, start with `crm_get_today_pulse`. Treat its CRM-ranked attention items as the bounded candidate set. Drill into individual enquiries, clients, projects or communication history only for candidates where the pulse does not contain enough evidence to answer the user's question. Do not begin by enumerating every active client or every message thread.
-
-For preparation for one known consultation or tattoo session, resolve the relevant appointment first, then read only the linked client/enquiry/project context needed for the meeting. Use the client's CRM AI state and communication history when they add relevant context; do not run a workspace-wide pipeline scan for a single meeting.
-
-Prefer a purpose-built Vishar CRM aggregate/context tool when one directly matches the request. Do not fan out across many clients, statuses, communication channels and finance records when one bounded CRM context call can return the required evidence.
+Follow-up prioritisation and pipeline triage use the Attention and triage rules above. Meeting preparation follows the single-meeting rule there.
 
 A Sales recommendation is read-only analysis. Sending a message, creating or changing an appointment, changing enquiry/project status, requesting a deposit, recording a payment or creating a CRM follow-up remains a separate Vishar CRM write and must follow the normal safeguards below.
 

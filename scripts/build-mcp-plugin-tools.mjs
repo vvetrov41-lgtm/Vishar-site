@@ -33,6 +33,22 @@ const INITIAL_EXCLUSIONS = new Set([
   'inviteArtist',
 ]);
 
+// MCP-only routing guidance appended to the shared Unified description. The
+// legacy GPT Action schemas stay byte-identical; only the Plugin MCP surface
+// learns when a broad attention question belongs to the Today pulse.
+const PULSE_FIRST = 'For a broad attention question (who needs attention or a follow-up, anything urgent, what to deal with) use crm_get_today_pulse instead.';
+const NOT_FOR_COMPLETENESS = 'Do not call it after a successful crm_get_today_pulse just to re-check that the attention shortlist is complete.';
+export const PLUGIN_TOOL_GUIDANCE = Object.freeze({
+  getTodayPulse: 'Primary entry point for broad attention and triage questions: who needs attention or a follow-up, anything urgent, what to deal with, which clients are waiting, what is happening in the CRM, or a review of active enquiries/clients for who needs action. It evaluates the active Artist\'s active clients, enquiries, projects, appointments, conversations, follow-ups and deposits against the CRM\'s configured attention rules and returns the matched items ranked, each with a rule reason. Treat it as the authoritative shortlist within those rules: absence from it means no configured attention condition currently matches, not that the client, enquiry or project does not exist. Read details only for listed items whose fields are not enough to answer. Use the list or statistics tools for an explicit inventory, status slice, count, audit, export or historical report.',
+  listEnquiries: `For an explicit enquiry list, status slice, count, audit or export. ${PULSE_FIRST} ${NOT_FOR_COMPLETENESS}`,
+  listProjects: `For an explicit project list, status slice, count, audit or export. ${PULSE_FIRST} ${NOT_FOR_COMPLETENESS}`,
+  listClients: `For an explicit client list, count, audit or export. ${PULSE_FIRST} ${NOT_FOR_COMPLETENESS}`,
+  listFollowUps: `For an explicit follow-up list or a calendar view of follow-ups due in a period, including ones not yet overdue. Overdue follow-ups already appear in crm_get_today_pulse. ${NOT_FOR_COMPLETENESS}`,
+  listFailedDeliveries: `For an explicit review of failed outgoing deliveries. crm_get_today_pulse already reports the integration failure count. ${NOT_FOR_COMPLETENESS}`,
+  listCommunicationConversations: `For an explicit inbox or conversation list. Unanswered client messages and unknown senders already appear in crm_get_today_pulse. ${NOT_FOR_COMPLETENESS}`,
+  getClientAiState: 'Preferred per-client drill-down for a client listed by crm_get_today_pulse when its item is not enough: returns the CRM AI brief, the open recommended next action and live project/session facts for that one client.',
+});
+
 function isForbiddenToolInput(operationId, name) {
   if (!FORBIDDEN_TOOL_INPUTS.has(name)) return false;
   return !OPERATION_SPECIFIC_INPUTS.get(operationId)?.has(name);
@@ -317,7 +333,7 @@ function compileInput(operation, components, operationId) {
   return { inputSchema, pathParams, queryParams, bodyParams };
 }
 
-export function buildPluginTools() {
+export function buildPluginTools({ guidance = PLUGIN_TOOL_GUIDANCE } = {}) {
   const files = readdirSync(sourceDir).filter((name) => /^openapi\.[a-z0-9-]+\.yaml$/.test(name)).sort();
   const tools = [];
   const operationIds = new Set();
@@ -361,7 +377,8 @@ export function buildPluginTools() {
           definition: {
             name,
             title: operation.summary || operationId,
-            description: operation.description || operation.summary || operationId,
+            description: [operation.description || operation.summary || operationId, guidance[operationId]]
+              .filter(Boolean).join(' '),
             inputSchema,
             annotations,
             securitySchemes,
@@ -389,6 +406,8 @@ export function buildPluginTools() {
     return !row || row.gpt.status === 'available';
   });
   if (requiredMissing.length) throw new Error(`Approved MCP operations missing from Unified schemas: ${requiredMissing.join(', ')}`);
+  const unknownGuidance = Object.keys(guidance).filter((id) => !operationIds.has(id));
+  if (unknownGuidance.length) throw new Error(`Plugin tool guidance names unknown operations: ${unknownGuidance.join(', ')}`);
 
   return tools;
 }

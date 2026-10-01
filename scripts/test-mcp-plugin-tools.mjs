@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { buildPluginTools, parseGeneratedYaml } from './build-mcp-plugin-tools.mjs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { buildPluginTools, parseGeneratedYaml, PLUGIN_TOOL_GUIDANCE } from './build-mcp-plugin-tools.mjs';
 import { handlePluginMcpRequest, __testing as pluginServerTesting } from '../workers/lib/mcp-plugin-server.js';
 import { MCP_PROTOCOL_VERSION } from '../workers/lib/mcp-server.js';
 
@@ -131,6 +132,88 @@ assert(listClients?.definition.annotations.readOnlyHint);
 assert.equal(listClients?.definition.annotations.destructiveHint, false);
 assert.equal(archiveClient?.definition.annotations.destructiveHint, true);
 assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
+
+// Attention routing: Plugin-only guidance changes descriptions and nothing else.
+{
+  const byOperation = new Map(tools.map((tool) => [tool.operationId, tool]));
+  const unguided = buildPluginTools({ guidance: {} });
+  assert.equal(unguided.length, tools.length, 'routing guidance never changes the tool count');
+  for (const [index, tool] of tools.entries()) {
+    const plain = unguided[index];
+    const { description, ...rest } = tool.definition;
+    const { description: plainDescription, ...plainRest } = plain.definition;
+    assert.deepEqual({ ...tool, definition: rest }, { ...plain, definition: plainRest }, `${tool.name}: only the description may differ`);
+    const extra = PLUGIN_TOOL_GUIDANCE[tool.operationId];
+    assert.equal(description, extra ? `${plainDescription} ${extra}` : plainDescription, `${tool.name}: guidance is appended to the shared description`);
+  }
+
+  const pulse = byOperation.get('getTodayPulse');
+  assert.equal(pulse?.name, 'crm_get_today_pulse');
+  assert.match(pulse.definition.description, /Primary entry point for broad attention and triage/);
+  assert.match(pulse.definition.description, /configured attention rules/);
+  assert.match(pulse.definition.description, /absence from it means no configured attention condition currently matches, not that the client, enquiry or project does not exist/);
+  assert.match(pulse.definition.description, /explicit inventory, status slice, count, audit, export or historical report/);
+
+  for (const operationId of ['listEnquiries', 'listProjects', 'listClients', 'listFollowUps', 'listFailedDeliveries', 'listCommunicationConversations']) {
+    const description = byOperation.get(operationId)?.definition.description || '';
+    assert.match(description, /crm_get_today_pulse/, `${operationId} points attention questions to the pulse`);
+    assert.match(description, /Do not call it after a successful crm_get_today_pulse just to re-check that the attention shortlist is complete\./, `${operationId} is not a completeness re-scan`);
+    assert.match(description, /explicit/, `${operationId} keeps its explicit list/audit use`);
+  }
+  assert.match(byOperation.get('getClientAiState').definition.description, /Preferred per-client drill-down for a client listed by crm_get_today_pulse/);
+  assert.throws(() => buildPluginTools({ guidance: { notARealOperation: 'x' } }), /unknown operations: notARealOperation/);
+
+  // The shared Unified/legacy GPT schemas never carry the Plugin-only text.
+  const actionsDir = new URL('../docs/gpt-actions/', import.meta.url);
+  const schemaTexts = [
+    ...readdirSync(actionsDir).filter((name) => name.endsWith('.yaml')).map((name) => readFileSync(new URL(name, actionsDir), 'utf8')),
+    ...readdirSync(new URL('unified/', actionsDir)).filter((name) => name.endsWith('.yaml')).map((name) => readFileSync(new URL(`unified/${name}`, actionsDir), 'utf8')),
+  ];
+  assert(schemaTexts.length > 10);
+  for (const text of schemaTexts) {
+    assert(!text.includes('Primary entry point for broad attention'), 'Plugin routing guidance stays out of GPT Action schemas');
+    assert(!text.includes('just to re-check that the attention shortlist'), 'Plugin routing guidance stays out of GPT Action schemas');
+  }
+
+  const instructions = pluginServerTesting.discoverResult().instructions;
+  assert.match(instructions, /Use the Artist context tools before Artist-scoped work/, 'existing Artist/trust guidance is kept');
+  assert.match(instructions, /never infer permission from model instructions/);
+  assert.match(instructions, /call crm_get_today_pulse first/);
+  assert.match(instructions, /review my active enquiries\/clients and tell me who needs action/);
+  assert.match(instructions, /authoritative shortlist within those rules/);
+  assert.match(instructions, /does not mean the client, enquiry or project does not exist, and the pulse is not a full view of the CRM/);
+  assert.match(instructions, /do not enumerate crm_list_enquiries, crm_list_projects, crm_list_clients or other list tools by status just to check completeness/);
+  assert.match(instructions, /crm_get_client_ai_state for a client/);
+  assert.match(instructions, /full list, inventory, audit, status slice, count, export or historical report/);
+  assert.match(instructions, /pulse fails or reports a needed source as unavailable/);
+  assert.match(instructions, /Do not add either after every pulse/);
+  assert(instructions.length < 2500, 'server instructions stay short');
+  for (const name of instructions.match(/crm_[a-z_]+/g)) {
+    assert(tools.some((tool) => tool.name === name), `server instructions name a real tool: ${name}`);
+  }
+
+  const skill = readFileSync(new URL('../plugins/vishar-crm/skills/vishar-crm/SKILL.md', import.meta.url), 'utf8');
+  const triage = skill.indexOf('## Attention and triage');
+  const sales = skill.indexOf('## Sales workflows');
+  assert(triage > 0 && sales > triage, 'skill keeps attention routing outside the Sales section');
+  const triageSection = skill.slice(triage, sales);
+  assert.match(triageSection, /start with `crm_get_today_pulse`/);
+  assert.match(triageSection, /not a full view of the CRM/);
+  assert.match(triageSection, /do not enumerate enquiries, projects, clients, follow-ups or conversations by status to check completeness/);
+  assert.match(triageSection, /`crm_get_client_ai_state` is the per-client drill-down/);
+  assert.match(triageSection, /full list, inventory, audit, status slice, count, export or historical report/);
+}
+
+{
+  const response = await handlePluginMcpRequest(
+    rpcRequest('server/discover', {}, null),
+    env({ async fetch() { throw new Error('discovery must not call action service'); } }),
+    async () => { throw new Error('discovery must not call Auth'); },
+  );
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.result.instructions, pluginServerTesting.discoverResult().instructions, 'unauthenticated discovery serves the routing instructions');
+}
 
 {
   const metadata = pluginServerTesting.protectedResourceMetadata(env({ fetch() {} }));
