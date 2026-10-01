@@ -104,7 +104,7 @@ function requestedClientName(data: any): string {
 }
 
 function requestedScopes(data: any, details: GptConsentDetails | null = null): string[] {
-  const scopes = typeof data?.scope === 'string'
+  const scopes: string[] = typeof data?.scope === 'string'
     ? data.scope.split(/\s+/).map((scope: string) => scope.trim()).filter(Boolean)
     : [];
   // Only the database-approved dedicated Plugin binding accepts OIDC identity
