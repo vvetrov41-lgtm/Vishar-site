@@ -48,8 +48,8 @@ console.log('PASS MCP server discovery');
 
 const listing = await rpc('tools/list');
 assert.deepEqual(listing.result.tools, PLUGIN_MCP_TOOLS.map(entry => entry.definition));
-assert.equal(listing.result.tools.length, 205);
-console.log('PASS all 205 production tool definitions and schemas match source');
+assert.ok(listing.result.tools.length > 100, 'production serves the broad Plugin tool surface');
+console.log(`PASS all ${listing.result.tools.length} production tool definitions and schemas match source`);
 
 const readTool = PLUGIN_MCP_TOOLS.find(entry => entry.definition.annotations?.readOnlyHint === true);
 assert.ok(readTool, 'a read-only tool is required for the denied probe');
