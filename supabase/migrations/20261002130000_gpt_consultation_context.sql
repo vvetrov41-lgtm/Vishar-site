@@ -48,6 +48,7 @@ declare
   v_notes jsonb;
   v_comms jsonb;
   v_messages jsonb := '[]'::jsonb;
+  v_truncated boolean := false;
   v_snapshot record;
   v_latest_email_at timestamptz;
   v_email_incomplete boolean;
@@ -142,10 +143,10 @@ begin
     end if;
   end if;
 
-  if v_enquiry_status <> 'linked' then v_gaps := v_gaps || 'enquiry_not_linked'; end if;
-  if v_project_status <> 'linked' then v_gaps := v_gaps || 'project_not_linked'; end if;
-  if v_enquiry_status = 'not_permitted' then v_gaps := v_gaps || 'enquiry_not_permitted'; end if;
-  if v_project_status = 'not_permitted' then v_gaps := v_gaps || 'project_not_permitted'; end if;
+  if v_enquiry_status <> 'linked' then v_gaps := array_append(v_gaps, 'enquiry_not_linked'); end if;
+  if v_project_status <> 'linked' then v_gaps := array_append(v_gaps, 'project_not_linked'); end if;
+  if v_enquiry_status = 'not_permitted' then v_gaps := array_append(v_gaps, 'enquiry_not_permitted'); end if;
+  if v_project_status = 'not_permitted' then v_gaps := array_append(v_gaps, 'project_not_permitted'); end if;
 
   -- ------------------------------------------------------- enquiry and intake
   if v_enquiry_id is not null and v_can_enquiries then
@@ -203,7 +204,7 @@ begin
       end if;
     end if;
   elsif v_enquiry_id is not null then
-    v_gaps := v_gaps || 'enquiry_not_permitted';
+    v_gaps := array_append(v_gaps, 'enquiry_not_permitted');
   end if;
 
   -- ----------------------------------------------------------------- project
@@ -219,7 +220,7 @@ begin
       into v_project
     from public.projects p where p.id = v_project_id and p.artist_id = v_artist;
   elsif v_project_id is not null then
-    v_gaps := v_gaps || 'project_not_permitted';
+    v_gaps := array_append(v_gaps, 'project_not_permitted');
   end if;
 
   -- ---------------------------------------------------------------- payments
@@ -235,7 +236,7 @@ begin
           order by pr.created_at desc limit 5) x;
   else
     v_payments := jsonb_build_object('available', false, 'reason', 'not_permitted', 'requests', '[]'::jsonb);
-    v_gaps := v_gaps || 'finance_not_permitted';
+    v_gaps := array_append(v_gaps, 'finance_not_permitted');
   end if;
 
   -- ------------------------------------------------------------------- notes
@@ -262,19 +263,22 @@ begin
     ) x;
   else
     v_notes := null;
-    v_gaps := v_gaps || 'notes_not_permitted';
+    v_gaps := array_append(v_gaps, 'notes_not_permitted');
   end if;
 
   -- ---------------------------------------------------------- communications
   if v_can_comms then
-    select coalesce(jsonb_agg(m.msg order by m.at desc), '[]'::jsonb) into v_messages
+    -- Deterministic order (ties broken by channel and id); one extra row is
+    -- read only to tell whether the 15-message cap actually dropped anything.
+    select coalesce(jsonb_agg(m.msg order by m.rn) filter (where m.rn <= 15), '[]'::jsonb), count(*) > 15
+      into v_messages, v_truncated
     from (
       select * from (
         select jsonb_build_object(
                  'channel', all_msgs.channel, 'direction', all_msgs.direction, 'at', all_msgs.at,
                  'body', all_msgs.body, 'attachment_count', all_msgs.attachment_count,
                  'status', all_msgs.status, 'source_id', all_msgs.source_id) as msg,
-               all_msgs.at
+               row_number() over (order by all_msgs.at desc nulls last, all_msgs.channel, all_msgs.source_id) as rn
         from (
           select m.channel::text as channel, m.direction::text as direction,
                  coalesce(m.provider_timestamp, m.sent_at, m.created_at) as at,
@@ -298,8 +302,8 @@ begin
                             where em2.artist_id = v_artist and em2.provider_message_id is not null
                               and em2.provider_message_id = gx.provider_message_id)
         ) all_msgs
-        order by all_msgs.at desc nulls last
-        limit 15
+        order by all_msgs.at desc nulls last, all_msgs.channel, all_msgs.source_id
+        limit 16
       ) limited
     ) m;
 
@@ -319,8 +323,8 @@ begin
     else
       v_email_incomplete := false;
     end if;
-    if v_email_incomplete then v_gaps := v_gaps || 'email_history_incomplete'; end if;
-    if jsonb_array_length(v_messages) = 0 then v_gaps := v_gaps || 'no_messages'; end if;
+    if v_email_incomplete then v_gaps := array_append(v_gaps, 'email_history_incomplete'); end if;
+    if jsonb_array_length(v_messages) = 0 then v_gaps := array_append(v_gaps, 'no_messages'); end if;
 
     v_comms := jsonb_build_object(
       'available', true, 'reason', null,
@@ -336,18 +340,17 @@ begin
               from jsonb_array_elements(v_messages) x group by 1) ch), '{}'::jsonb),
       'last_inbound_at', (select max((x ->> 'at')::timestamptz) from jsonb_array_elements(v_messages) x where x ->> 'direction' = 'inbound'),
       'last_outbound_at', (select max((x ->> 'at')::timestamptz) from jsonb_array_elements(v_messages) x where x ->> 'direction' = 'outbound'),
-      'last_writer', (select case x ->> 'direction' when 'inbound' then 'client' when 'outbound' then 'studio' end
-                      from jsonb_array_elements(v_messages) x order by (x ->> 'at')::timestamptz desc nulls last limit 1),
+      'last_writer', case v_messages -> 0 ->> 'direction' when 'inbound' then 'client' when 'outbound' then 'studio' end,
       'email_snapshot', case when v_snapshot.last_message_at is null and v_snapshot.refreshed_at is null then null
                              else jsonb_build_object('last_message_at', v_snapshot.last_message_at,
                                                      'direction', v_snapshot.direction,
                                                      'refreshed_at', v_snapshot.refreshed_at) end,
       'email_history_incomplete', v_email_incomplete,
-      'truncated', jsonb_array_length(v_messages) >= 15);
+      'truncated', v_truncated);
   else
     v_comms := jsonb_build_object('available', false, 'reason', 'not_permitted', 'untrusted_content', true,
                                   'messages', '[]'::jsonb, 'email_history_incomplete', null);
-    v_gaps := v_gaps || 'communications_not_permitted';
+    v_gaps := array_append(v_gaps, 'communications_not_permitted');
   end if;
 
   -- --------------------------------------------------------------- attention
@@ -367,7 +370,7 @@ begin
   from (select crm_private.client_attention(v_artist, v_session.client_id) as a) t;
   else
     v_attention := null;
-    v_gaps := v_gaps || 'attention_not_permitted';
+    v_gaps := array_append(v_gaps, 'attention_not_permitted');
   end if;
 
   -- ---------------------------------------------------------------- AI state
