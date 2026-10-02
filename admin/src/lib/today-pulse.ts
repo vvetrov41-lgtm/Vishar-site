@@ -82,6 +82,8 @@ export function pulseToTodayItems(pulse: TodayPulse): TodayItem[] {
     items.push({
       key: item.key,
       kind: item.kind,
+      artistId: item.artist_id,
+      clientId: item.client_id,
       href: item.href,
       subject: item.subject,
       at: item.at,

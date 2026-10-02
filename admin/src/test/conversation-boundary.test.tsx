@@ -118,7 +118,7 @@ describe('unknown senders are not studio work', () => {
     const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
       .closest('section') as HTMLElement;
 
-    expect(needsYou.querySelector(`a[href="#/inbox/${KNOWN_ID}"]`)).not.toBeNull();
+    expect(needsYou.querySelector(`a[href="#/enquiries/${ENQUIRY_ID}"]`)).not.toBeNull();
     expect(needsYou.querySelector(`a[href="#/inbox/${STRANGER_ID}"]`)).toBeNull();
   });
 

@@ -29,6 +29,7 @@ import type { MonzoReconciliationCandidate } from '../lib/payment-api';
 import type { ActivityEntry, Enquiry, FollowUp, Project } from '../lib/types';
 import type { AttentionAcknowledgement, AttentionItemRef } from '../lib/attention-api';
 import { operationalLabel } from '../lib/operational-labels';
+import { enquiryTargetsForToday } from '../lib/today-navigation';
 
 interface TodayData {
   appointments: Appointment[];
@@ -197,7 +198,12 @@ export function DashboardPage() {
   // One engine for Today and Telegram once the server pulse is switched on.
   // The schedule below still comes from the appointments read here.
   const serverPulse = data.pulse?.enabled ? data.pulse : null;
-  const needsYou = serverPulse ? pulseToTodayItems(serverPulse) : snapshot.needsYou;
+  const needsYou = enquiryTargetsForToday(
+    serverPulse ? pulseToTodayItems(serverPulse) : snapshot.needsYou,
+    data.enquiries,
+    conversations,
+    data.emailThreads,
+  );
 
   async function dismissAttention(item: AttentionItemRef, key: string) {
     setDismissing(key);

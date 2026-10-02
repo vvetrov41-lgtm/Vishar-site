@@ -3,6 +3,7 @@ import { screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import {
   CLIENT_ID,
+  ENQUIRY_ID,
   VLADIMIR_ARTIST_ID,
   renderWithSession,
 } from './fixtures';
@@ -59,7 +60,7 @@ describe('Today Gmail loading', () => {
       expect(await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
         .toBeInTheDocument();
       await waitFor(() => {
-        expect(document.querySelector(`a[href="#/inbox/email/client-${CLIENT_ID}"]`)).not.toBeNull();
+        expect(document.querySelector(`a[href="#/enquiries/${ENQUIRY_ID}"]`)).not.toBeNull();
       });
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {

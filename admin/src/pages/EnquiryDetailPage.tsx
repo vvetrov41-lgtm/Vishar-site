@@ -465,16 +465,16 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       {emailThread || client || instagramConversations.length > 0 ? (
         <Section title={t('enquiry.conversations')}>
           <div className="enquiry-channels">
-            {emailThread ? (
+            {emailThread || client?.email ? (
               <div className="enquiry-channel">
                 <div className="enquiry-channel-head">
                   <span className="enquiry-channel-name">{t('enquiry.email')}</span>
-                  <Link to={`/inbox/email/${emailThread.key}`} className="badge">
+                  <Link to={`/inbox/email/${emailThread?.key ?? `client-${enquiry.client_id}`}`} className="badge">
                     {t('enquiry.openEmailConversation')}
                   </Link>
                 </div>
-                <p className="meta" style={{ margin: '4px 0 0' }}>{emailThread.subject}</p>
-                {threadNeedsOperator(emailThread) ? (
+                {emailThread ? <p className="meta" style={{ margin: '4px 0 0' }}>{emailThread.subject}</p> : null}
+                {emailThread && threadNeedsOperator(emailThread) ? (
                   <span className="badge warn" style={{ marginTop: 6 }}>
                     {emailThread.state === 'send_failed'
                       ? t('enquiry.emailSendFailed')

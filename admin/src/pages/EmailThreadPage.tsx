@@ -28,7 +28,7 @@ type LiveGmailMessageGroup = {
 };
 
 interface ThreadView {
-  thread: EmailThread | null;
+  thread: Omit<EmailThread, 'artist_id'> | null;
   actionable: EmailMessageDetail | null;
   liveGmail: LiveGmailMessageGroup[] | null;
   liveGmailError: string | null;
@@ -56,7 +56,32 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
           ? await api.listEmailMessages({ clientId: id, limit: 100 })
           : (await api.listEmailMessages({ limit: 200 })).filter((message) => message.id === id);
 
-      const thread = groupEmailThreads(messages).find((candidate) => candidate.key === threadKey) ?? null;
+      // Inbox and Today use client keys, while stored drafts normally carry an
+      // enquiry key. Aggregate the client's visible history without changing
+      // the underlying records or binding Gmail to an arbitrary enquiry.
+      const singleArtist = new Set(messages.map((message) => message.artist_id)).size <= 1;
+      const grouped = kind === 'client' && !singleArtist ? [] : groupEmailThreads(kind === 'client'
+        ? messages.map((message) => ({ ...message, enquiry_id: null })) : messages);
+      let thread: ThreadView['thread'] = grouped.find((candidate) => candidate.key === threadKey) ?? null;
+      if (thread && kind === 'client') {
+        const original = messages.filter((message) => thread?.messages.some((row) => row.id === message.id));
+        const enquiryIds = [...new Set(original.map((message) => message.enquiry_id).filter(Boolean))];
+        const projectIds = [...new Set(original.map((message) => message.project_id).filter(Boolean))];
+        thread = { ...thread, messages: original,
+          enquiry_id: enquiryIds.length === 1 ? enquiryIds[0]! : null,
+          project_id: projectIds.length === 1 ? projectIds[0]! : null };
+      }
+      if (!thread && kind === 'client') {
+        // Gmail-only correspondence is valid even without an outbox record.
+        // Resolve the client under RLS before requesting provider history.
+        const client = await api.getClient(id);
+        if (client) thread = {
+          key: threadKey, client_id: client.id, enquiry_id: null, project_id: null,
+          to_email: client.email ?? '', subject: client.full_name,
+          last_activity_at: client.updated_at, state: 'closed',
+          actionable_message_id: null, messages: [],
+        };
+      }
       const actionable = thread?.actionable_message_id
         ? await api.getEmailMessage(thread.actionable_message_id)
         : null;
@@ -64,7 +89,9 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
       let liveGmail: LiveGmailMessageGroup[] | null = null;
       let liveGmailError: string | null = null;
       try {
-        if (thread?.enquiry_id) {
+        if (kind === 'client' && thread?.client_id) {
+          liveGmail = (await api.listLiveGmailForClient(thread.client_id)).threads;
+        } else if (thread?.enquiry_id) {
           liveGmail = (await api.listLiveGmailHistory(thread.enquiry_id)).threads;
         } else if (thread?.client_id) {
           liveGmail = (await api.listLiveGmailForClient(thread.client_id)).threads;
@@ -138,7 +165,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
         <h2 className="conversation-title">{thread.subject || copy.noSubject}</h2>
         <div className="meta conversation-badges">
           <span className="badge channel-email">{copy.email}</span>
-          <span className={badgeClass(thread)}>{stateLabel(thread, language)}</span>
+          {thread.messages.length ? <span className={badgeClass(thread)}>{stateLabel(thread, language)}</span> : null}
         </div>
         <p className="meta">{copy.to}: {thread.to_email}</p>
 
@@ -295,7 +322,7 @@ function splitKey(key: string): ['enquiry' | 'client' | 'message', string] {
   return ['message', key.replace(/^message-/, '')];
 }
 
-function badgeClass(thread: EmailThread): string {
+function badgeClass(thread: Pick<EmailThread, 'state'>): string {
   if (thread.state === 'send_failed') return 'badge danger';
   if (thread.state === 'awaiting_approval') return 'badge warn';
   if (thread.state === 'sent') return 'badge ok';
@@ -309,7 +336,7 @@ function stateBadge(state: ReturnType<typeof stateFor>): string {
   return '';
 }
 
-function stateLabel(thread: EmailThread, language: Language): string {
+function stateLabel(thread: Pick<EmailThread, 'state'>, language: Language): string {
   return COPY[language].state[thread.state];
 }
 

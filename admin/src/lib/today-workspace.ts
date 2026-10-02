@@ -63,6 +63,9 @@ const KIND_ORDER: TodayItemKind[] = [
 export interface TodayItem {
   key: string;
   kind: TodayItemKind;
+  artistId?: string;
+  clientId?: string | null;
+  enquiryId?: string | null;
   /** Where the item is dealt with. Null only when nothing can be opened. */
   href: string | null;
   /** Who it is about, when the record knows. */
@@ -191,6 +194,9 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
     items.push({
       key: `reply-${conversation.id}`,
       kind: 'reply',
+      artistId: conversation.artist_id,
+      clientId: conversation.client_id,
+      enquiryId: conversation.enquiry_id,
       href: `/inbox/${conversation.id}`,
       subject: conversation.client_name
         ?? conversation.external_display_label
@@ -215,6 +221,8 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
     items.push({
       key: `gmail-${waiting.client_id}`,
       kind: 'reply',
+      artistId: waiting.artist_id,
+      clientId: waiting.client_id,
       href: `/inbox/email/client-${waiting.client_id}`,
       subject: waiting.client_name ?? input.clientName(waiting.client_id),
       at: waiting.last_message_at,
@@ -238,6 +246,9 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
     items.push({
       key: `email-${thread.key}`,
       kind: thread.state === 'send_failed' ? 'email_send_failed' : 'email_draft_to_approve',
+      artistId: thread.artist_id,
+      clientId: thread.client_id,
+      enquiryId: thread.enquiry_id,
       href: `/inbox/email/${thread.key}`,
       subject: (thread.client_id ? input.clientName(thread.client_id) : null) ?? thread.to_email,
       at: thread.last_activity_at,
