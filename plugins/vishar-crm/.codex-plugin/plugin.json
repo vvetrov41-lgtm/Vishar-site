@@ -1,0 +1,21 @@
+{
+  "apps": "./.app.json",
+  "author": {
+    "name": "App developer"
+  },
+  "description": "Vishar CRM MCP connection",
+  "interface": {
+    "capabilities": [],
+    "category": "Other",
+    "defaultPrompt": null,
+    "developerName": "App developer",
+    "displayName": "Vishar CRM",
+    "longDescription": "Vishar CRM MCP connection",
+    "shortDescription": "Vishar CRM MCP connection",
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
+  },
+  "name": "dev-6abe429f5e388191ac24e96159a1dbc0",
+  "version": "1.0.2",
+  "skills": "./skills/"
+}

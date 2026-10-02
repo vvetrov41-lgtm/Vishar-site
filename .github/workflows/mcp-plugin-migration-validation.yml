@@ -101,7 +101,7 @@ jobs:
       - name: Plugin package and operation parity
         run: |
           node scripts/build-mcp-plugin-parity.mjs --check
-          node --input-type=module -e "import {readFileSync} from 'node:fs'; for (const file of ['plugins/vishar-crm/plugin.json', 'plugins/vishar-crm/mcp.json']) JSON.parse(readFileSync(file, 'utf8'));"
+          node --input-type=module -e "import {readFileSync} from 'node:fs'; for (const file of ['plugins/vishar-crm/.codex-plugin/plugin.json', 'plugins/vishar-crm/.app.json']) JSON.parse(readFileSync(file, 'utf8'));"
       - name: Existing MCP regression tests
         run: |
           node scripts/test-mcp-domain-contracts.mjs
