@@ -47,6 +47,9 @@ export const PLUGIN_TOOL_GUIDANCE = Object.freeze({
   listFailedDeliveries: `For an explicit review of failed outgoing deliveries. crm_get_today_pulse already reports the integration failure count. ${NOT_FOR_COMPLETENESS}`,
   listCommunicationConversations: `For an explicit inbox or conversation list. Unanswered client messages and unknown senders already appear in crm_get_today_pulse. ${NOT_FOR_COMPLETENESS}`,
   getClientAiState: 'Preferred per-client drill-down for a client listed by crm_get_today_pulse when its item is not enough: returns the CRM AI brief, the open recommended next action and live project/session facts for that one client.',
+  listAppointments: 'Studio consultations and tattoo sessions in a time range; each row carries client_name, client_id, enquiry_id and project_id. Preferred first CRM tool when the user asks about a consultation or session with a named client on a known date (prepare for it, what to discuss, reschedule it, what happened at it): query that calendar day in Europe/London (from 00:00 to 24:00 local time) and find the client among that day\'s rows. Do not start with a client search when the date is given.',
+  searchAppointmentClients: 'Finds a client ID by name; it does not find appointments. When the date of the consultation or session is known, call crm_list_appointments for that day first and use this tool only if the client is not among that day\'s rows or no date was given.',
+  getClient: 'Contact and profile fields only (email, phone, Instagram, preferred contact, travelling from). Use it when those fields are actually needed; it is not a required step for consultation prep, a client brief or a summary.',
 });
 
 function isForbiddenToolInput(operationId, name) {
