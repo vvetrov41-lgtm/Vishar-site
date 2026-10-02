@@ -207,6 +207,11 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     summary: 'Read whether the client booking card for a session was sent and answered',
   }),
   op({
+    id: 'getConsultationContext', domain: 'Scheduling', method: 'GET', path: '/v1/appointments/{appointment_id}/consultation-context',
+    rpc: 'gpt_get_consultation_context', params: [p.path('appointment_id', 'p_appointment_id')],
+    summary: 'Read one consultation with its client, linked or candidate enquiry and project, recent messages, notes and AI state',
+  }),
+  op({
     id: 'getSchedulingPreferences', domain: 'Scheduling', method: 'GET', path: '/v1/scheduling/preferences',
     rpc: 'gpt_get_scheduling_preferences',
     summary: 'Read the artist working hours and consultation rules',
