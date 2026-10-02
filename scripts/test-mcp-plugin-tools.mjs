@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { buildPluginTools, parseGeneratedYaml, PLUGIN_TOOL_GUIDANCE } from './build-mcp-plugin-tools.mjs';
 import { handlePluginMcpRequest, __testing as pluginServerTesting } from '../workers/lib/mcp-plugin-server.js';
 import { MCP_PROTOCOL_VERSION } from '../workers/lib/mcp-server.js';
@@ -216,7 +217,7 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   const manifest = JSON.parse(readFileSync(new URL('.codex-plugin/plugin.json', pluginRoot), 'utf8'));
   const apps = JSON.parse(readFileSync(new URL('.app.json', pluginRoot), 'utf8'));
   assert.equal(manifest.name, 'dev-6abe429f5e388191ac24e96159a1dbc0');
-  assert.match(manifest.version, /^\d+\.\d+\.\d+$/);
+  assert.equal(manifest.version, '1.0.3');
   assert.equal(manifest.apps, './.app.json');
   assert.equal(manifest.skills, './skills/');
   assert.deepEqual(apps, { apps: { [manifest.name]: { id: 'asdk_app_6abe429f5e388191ac24e96159a1dbc0' } } });
@@ -228,6 +229,72 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   readFileSync(new URL('skills/vishar-crm/SKILL.md', pluginRoot));
   const rootEntries = readdirSync(pluginRoot).sort();
   assert.deepEqual(rootEntries, ['.app.json', '.codex-plugin', 'assets', 'skills'], 'no portable root manifest or bundled MCP server competes with the app mapping');
+}
+
+// Focused workflow skills: one named client or one consultation each, kept
+// away from the Today pulse, the system Sales plugin and B2B vocabulary.
+{
+  const skillsRoot = new URL('../plugins/vishar-crm/skills/', import.meta.url);
+  const FOCUSED = ['vishar-consultation-prep', 'vishar-post-consultation', 'vishar-stalled-client'];
+  assert.deepEqual(readdirSync(skillsRoot).sort(), ['vishar-consultation-prep', 'vishar-crm', 'vishar-post-consultation', 'vishar-stalled-client']);
+  const read = (name) => readFileSync(new URL(`${name}/SKILL.md`, skillsRoot), 'utf8');
+  const frontmatter = (text) => {
+    const match = /^---\nname: ([a-z0-9-]+)\ndescription: (.+)\n---\n/.exec(text);
+    assert(match, 'skill starts with name/description frontmatter');
+    return { name: match[1], description: match[2] };
+  };
+
+  for (const name of [...FOCUSED, 'vishar-crm']) {
+    const text = read(name);
+    assert.equal(frontmatter(text).name, name, `${name}: frontmatter name matches its folder`);
+    for (const tool of new Set(text.match(/crm_[a-z_]+/g) || [])) {
+      if (tool === 'crm_facts') continue; // AI state field, not a tool
+      assert(tools.some((entry) => entry.name === tool), `${name} names a real tool: ${tool}`);
+    }
+    assert(!existsSync(new URL(`${name}/agents`, skillsRoot)), `${name}: no extra MCP dependency file`);
+  }
+
+  for (const name of FOCUSED) {
+    const text = read(name);
+    const { description } = frontmatter(text);
+    assert.match(description, /one (named )?(tattoo )?(client|consultation|upcoming tattoo consultation|real record)/i, `${name} is scoped to one client or consultation`);
+    assert.match(description, /not for who needs attention/i, `${name} hands attention questions back`);
+    assert.match(description, /Today pulse in the vishar-crm skill/, `${name} names the Today pulse as the owner of broad questions`);
+    assert.match(description, /[а-яё]/i, `${name} carries Russian trigger phrases`);
+    assert.doesNotMatch(text, /\bsales\b|opportunit|buying committee|procurement|pipeline|forecast|close date/i, `${name} uses no Sales/B2B framing`);
+    assert.match(text, /`is_stale: false` alone/, `${name}: is_stale=false is not proof of freshness`);
+    assert.match(text, /refreshed_at/, `${name}: AI freshness is compared with the newest message`);
+    assert.match(text, /explicit yes|says yes/, `${name}: writes need explicit confirmation`);
+    assert.doesNotMatch(text, /crm_list_clients|crm_list_projects/, `${name}: no global client or project scan`);
+  }
+
+  const prep = read('vishar-consultation-prep');
+  assert.match(prep, /Find the appointment first/);
+  assert.match(prep, /Do not list clients, enquiries or projects when the appointment already gives the IDs/);
+  assert.doesNotMatch(prep, /crm_list_enquiries/);
+
+  const stalled = read('vishar-stalled-client');
+  assert.match(stalled, /Never enumerate enquiries by status/);
+  assert.equal((stalled.match(/crm_list_enquiries/g) || []).length, 1, 'stalled: one bounded enquiry lookup at most');
+  assert.match(stalled, /at most one `crm_list_enquiries` call with `from`\/`to` limited to the last 120 days/);
+  assert(stalled.indexOf('IDs already in this chat') < stalled.indexOf('A Today pulse item') && stalled.indexOf('A Today pulse item') < stalled.indexOf('An appointment of this client') && stalled.indexOf('An appointment of this client') < stalled.indexOf('Targeted resolution') && stalled.indexOf('Targeted resolution') < stalled.indexOf('Only if the enquiry still cannot be found'), 'stalled: ID resolution order');
+  assert.match(stalled, /Do not guess the client's feelings or motives/);
+
+  const post = read('vishar-post-consultation');
+  assert.match(post, /ask the user for notes or a transcript and stop/);
+  assert.match(post, /Never reconstruct what was said from the enquiry, the AI state or earlier messages/);
+  assert.match(post, /Never write or send automatically after the analysis/);
+  assert.doesNotMatch(post, /crm_list_enquiries/);
+
+  // The core Today pulse contract stays byte-identical to 1.0.2; 1.0.3 only
+  // adds the one pointer line to the focused skills.
+  const core = read('vishar-crm');
+  const attention = core.slice(core.indexOf('## Attention and triage'), core.indexOf('## Sales workflows'));
+  const pointer = '- For one named client or one consultation, use the matching focused Vishar skill';
+  assert.equal(attention.split('\n').filter((line) => line.startsWith(pointer)).length, 1, 'core points to the focused skills once');
+  const unchanged = attention.split('\n').filter((line) => !line.startsWith(pointer)).join('\n');
+  assert.equal(createHash('sha256').update(unchanged).digest('hex'), 'eface82def03f43566336dcd976745954f2b47f8b7a3ec9907dae18a97ad19cc', 'core Today pulse routing text is unchanged');
+  for (const name of FOCUSED) assert(attention.includes(`\`${name}\``), `core points to ${name}`);
 }
 
 {

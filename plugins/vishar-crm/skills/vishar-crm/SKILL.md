@@ -34,6 +34,7 @@ These rules apply whether or not a Sales workflow is in use. The MCP server inst
 - Use list or statistics tools when the user explicitly asks for a full list, inventory, audit, status slice, count, export or historical report, or when the pulse fails or reports a needed source as unavailable. Say when the answer is incomplete.
 - Read today's appointments only when the question needs the schedule, and a date-bounded follow-up list only when the user wants follow-ups due on a day or period. Do not add either after every pulse.
 - For one known consultation or tattoo session, resolve the appointment first, then read only the linked client/enquiry/project context, plus the client's CRM AI state and communication history when they add relevant context. Do not run a workspace-wide scan for a single meeting.
+- For one named client or one consultation, use the matching focused Vishar skill: preparing for a consultation → `vishar-consultation-prep`; why one client has not booked and what to do next → `vishar-stalled-client`; summarising a finished consultation from notes or a transcript → `vishar-post-consultation`. Questions across clients stay with the Today pulse above.
 
 ## Sales workflows
 
