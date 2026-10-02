@@ -201,6 +201,40 @@ describe('email in the inbox list', () => {
 });
 
 describe('an email conversation', () => {
+  it('offers mailbox history from an enquiry without a stored outbound email', async () => {
+    renderWithSession(<App />, { role: 'owner', path: `/enquiries/${ENQUIRY_ID}`, emailMessages: [] });
+    expect(await screen.findByRole('link', { name: 'Open email conversation' }))
+      .toHaveAttribute('href', `#/inbox/email/client-${CLIENT_ID}`);
+  });
+  it('does not request provider history for an inaccessible client', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderWithSession(<App />, { role: 'owner', path: '/inbox/email/client-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' });
+      expect(await screen.findByText('That email conversation is not here')).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+  it.each(['enquiry-linked', 'gmail-only'])('opens a client key with %s correspondence', async (source) => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => Response.json({
+      client_id: CLIENT_ID, threads: [{ subject: 'About your tattoo design', message_count: 1,
+        messages: [{ from: 'diana@example.com', to: 'studio@example.test',
+          subject: 'About your tattoo design', timestamp: '2026-10-02T08:34:56Z',
+          body: 'Happy to simplify the concept.', direction: 'inbound', untrusted_content: true }],
+        untrusted_content: true }], untrusted_content: true,
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      renderWithSession(<App />, { role: 'owner', path: `/inbox/email/client-${CLIENT_ID}`,
+        emailMessages: source === 'enquiry-linked' ? [email({ status: 'sent' })] : [] });
+      expect(await screen.findByText('Happy to simplify the concept.')).toBeInTheDocument();
+      expect(screen.queryByText('That email conversation is not here')).not.toBeInTheDocument();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(String(fetchMock.mock.calls[0]?.[0])).toContain(`/clients/${CLIENT_ID}/gmail/history`);
+      if (source === 'enquiry-linked') expect(screen.getAllByRole('link', { name: 'Open enquiry' })[0])
+        .toHaveAttribute('href', `#/enquiries/${ENQUIRY_ID}`);
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('keeps the client, enquiry and project context on screen', async () => {
     renderWithSession(<App />, {
       role: 'owner',

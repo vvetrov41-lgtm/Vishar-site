@@ -117,7 +117,7 @@ describe('CRM-owned Gmail metadata snapshot', () => {
       const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
         .closest('section') as HTMLElement;
       await waitFor(() => {
-        expect(needsYou.querySelector(`a[href="#/inbox/email/client-${CLIENT_ID}"]`)).not.toBeNull();
+        expect(needsYou.querySelector(`a[href="#/enquiries/${ENQUIRY_ID}"]`)).not.toBeNull();
       });
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {

@@ -14,7 +14,7 @@ import {
   PROJECT_ID,
   SESSION_ID,
   SESSION,
-  UNANSWERED_CONVERSATION_ID,
+  SECOND_CLIENT_ID,
   renderWithSession,
 } from './fixtures';
 
@@ -48,7 +48,7 @@ describe('today workspace', () => {
       .closest('section') as HTMLElement;
 
     const reply = within(needsYou).getByText('Waiting for your reply').closest('a') as HTMLElement;
-    expect(reply).toHaveAttribute('href', `#/inbox/${UNANSWERED_CONVERSATION_ID}`);
+    expect(reply).toHaveAttribute('href', `#/clients/${SECOND_CLIENT_ID}`);
   });
 
   it('lets an operator remove a handled client item without changing its business record', async () => {
@@ -204,4 +204,3 @@ describe('today workspace', () => {
     });
   });
 });
-
