@@ -162,6 +162,16 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
     assert.match(description, /explicit/, `${operationId} keeps its explicit list/audit use`);
   }
   assert.match(byOperation.get('getClientAiState').definition.description, /Preferred per-client drill-down for a client listed by crm_get_today_pulse/);
+  const appointments = byOperation.get('listAppointments').definition.description;
+  assert.match(appointments, /^List appointments in this GPT artist scope /, 'shared description is kept');
+  assert.match(appointments, /Preferred first CRM tool when the user asks about a consultation or session with a named client on a known date/);
+  assert.match(appointments, /query that calendar day in Europe\/London .* and find the client among that day's rows\. Do not start with a client search when the date is given\./);
+  const clientSearch = byOperation.get('searchAppointmentClients').definition.description;
+  assert.match(clientSearch, /Finds a client ID by name; it does not find appointments\./);
+  assert.match(clientSearch, /call crm_list_appointments for that day first and use this tool only if the client is not among that day's rows or no date was given/);
+  const client = byOperation.get('getClient').definition.description;
+  assert.match(client, /Contact and profile fields only/);
+  assert.match(client, /it is not a required step for consultation prep, a client brief or a summary/);
   assert.throws(() => buildPluginTools({ guidance: { notARealOperation: 'x' } }), /unknown operations: notARealOperation/);
 
   // The shared Unified/legacy GPT schemas never carry the Plugin-only text.
@@ -188,6 +198,8 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   assert.match(instructions, /full list, inventory, audit, status slice, count, export or historical report/);
   assert.match(instructions, /pulse fails or reports a needed source as unavailable/);
   assert.match(instructions, /Do not add either after every pulse/);
+  assert.match(instructions, /One client and a known date for a consultation or tattoo session .*: the first CRM data call is crm_list_appointments for that calendar day in Europe\/London; find the client among that day's rows, then crm_get_appointment_full\./);
+  assert.match(instructions, /Use crm_search_appointment_clients only if the client is not on that day or no date was given; crm_get_client only when contact details are needed\./);
   assert(instructions.length < 2500, 'server instructions stay short');
   for (const name of instructions.match(/crm_[a-z_]+/g)) {
     assert(tools.some((tool) => tool.name === name), `server instructions name a real tool: ${name}`);

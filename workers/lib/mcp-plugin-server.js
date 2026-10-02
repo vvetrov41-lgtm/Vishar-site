@@ -285,6 +285,7 @@ const SERVER_INSTRUCTIONS = [
   'After a successful pulse, do not enumerate crm_list_enquiries, crm_list_projects, crm_list_clients or other list tools by status just to check completeness. Read details only for specific items from the pulse when their fields are not enough to answer accurately (crm_get_client_ai_state for a client; the matching get tool for an enquiry, project, appointment or conversation).',
   'Use list or statistics tools when the user explicitly asks for a full list, inventory, audit, status slice, count, export or historical report, or when the pulse fails or reports a needed source as unavailable; say so if the answer is then incomplete.',
   'Add a date-bounded appointments read only when the question needs today\'s schedule, and a date-bounded follow-up list only when the user wants follow-ups due on a given day or period, including ones not yet overdue. Do not add either after every pulse.',
+  'One client and a known date for a consultation or tattoo session (prepare for it, what to discuss, reschedule, after it): the first CRM data call is crm_list_appointments for that calendar day in Europe/London; find the client among that day\'s rows, then crm_get_appointment_full. Use crm_search_appointment_clients only if the client is not on that day or no date was given; crm_get_client only when contact details are needed.',
 ].join('\n');
 
 function discoverResult() {
