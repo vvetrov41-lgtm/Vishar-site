@@ -231,6 +231,14 @@ paths:
       parameters:
         - {name: "session_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/appointments/{appointment_id}/consultation-context:
+    get:
+      operationId: getConsultationContext
+      summary: "Read one consultation with its client, linked or candidate enquiry and project, recent messages, notes and AI state"
+      x-openai-isConsequential: false
+      parameters:
+        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/availability:
     get:
       operationId: listAvailability

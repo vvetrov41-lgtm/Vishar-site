@@ -1,11 +1,11 @@
 {
   "source": "13 current Unified GPT OpenAPI schemas and operator-parity.current.mjs",
   "summary": {
-    "currentGptOperations": 205,
-    "mcpTools": 205,
-    "semanticParityThroughAdapter": 205,
+    "currentGptOperations": 206,
+    "mcpTools": 206,
+    "semanticParityThroughAdapter": 206,
     "directHandlerWithoutAdapter": 0,
-    "requiringActionAdapter": 205,
+    "requiringActionAdapter": 206,
     "requiringSchemaChange": 0,
     "uiOnly": 16,
     "excludedCurrentGptOperations": 0,
@@ -2603,6 +2603,42 @@
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
       "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
       "sourceSchema": "openapi.communications.yaml"
+    },
+    {
+      "operationId": "getConsultationContext",
+      "mcpTool": "crm_get_consultation_context",
+      "domain": "Scheduling",
+      "description": "Read one consultation with its client, linked or candidate enquiry and project, recent messages, notes and AI state",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "outputShape": null,
+      "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
+      "method": "GET",
+      "path": "/v1/appointments/{appointment_id}/consultation-context",
+      "readWrite": "read",
+      "destructive": false,
+      "permission": "view_sessions",
+      "scopes": [
+        "email"
+      ],
+      "handler": [
+        "public.gpt_get_consultation_context"
+      ],
+      "compatibility": "existing_action_adapter",
+      "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
+      "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
+      "sourceSchema": "openapi.scheduling.yaml"
     },
     {
       "operationId": "getConversationLinkSuggestion",
