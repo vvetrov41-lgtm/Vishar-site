@@ -51,6 +51,7 @@ declare
   v_truncated boolean := false;
   v_snapshot record;
   v_latest_email_at timestamptz;
+  v_snapshot_at timestamptz;
   v_email_incomplete boolean;
   v_attention jsonb;
   v_ai_full jsonb;
@@ -310,6 +311,7 @@ begin
     select g.last_message_at, g.direction, g.refreshed_at into v_snapshot
     from public.gmail_client_metadata_snapshots g
     where g.artist_id = v_artist and g.client_id = v_session.client_id;
+    v_snapshot_at := v_snapshot.last_message_at;
 
     select max((x ->> 'at')::timestamptz) into v_latest_email_at
     from jsonb_array_elements(v_messages) x
@@ -393,7 +395,7 @@ begin
   select max(t) into v_latest_fact from (
     select (x ->> 'at')::timestamptz as t from jsonb_array_elements(v_messages) x
     union all select (x ->> 'created_at')::timestamptz from jsonb_array_elements(coalesce(v_notes, '[]'::jsonb)) x
-    union all select case when v_can_comms then v_snapshot.last_message_at end
+    union all select v_snapshot_at
   ) facts;
 
   v_ai := jsonb_build_object(
