@@ -217,7 +217,7 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   const manifest = JSON.parse(readFileSync(new URL('.codex-plugin/plugin.json', pluginRoot), 'utf8'));
   const apps = JSON.parse(readFileSync(new URL('.app.json', pluginRoot), 'utf8'));
   assert.equal(manifest.name, 'dev-6abe429f5e388191ac24e96159a1dbc0');
-  assert.equal(manifest.version, '1.0.3');
+  assert.equal(manifest.version, '1.0.4');
   assert.equal(manifest.apps, './.app.json');
   assert.equal(manifest.skills, './skills/');
   assert.deepEqual(apps, { apps: { [manifest.name]: { id: 'asdk_app_6abe429f5e388191ac24e96159a1dbc0' } } });
@@ -269,9 +269,24 @@ assert.equal(searchWeb?.definition.annotations.openWorldHint, true);
   }
 
   const prep = read('vishar-consultation-prep');
-  assert.match(prep, /Find the appointment first/);
-  assert.match(prep, /Do not list clients, enquiries or projects when the appointment already gives the IDs/);
-  assert.doesNotMatch(prep, /crm_list_enquiries/);
+  const explicitDate = prep.slice(prep.indexOf('## A. The request gives a date'), prep.indexOf('## B. The request gives no date'));
+  const noDate = prep.slice(prep.indexOf('## B. The request gives no date'), prep.indexOf('## Freshness'));
+  assert(explicitDate.length > 0 && noDate.length > 0, 'prep keeps the dated and undated routes apart');
+  assert.match(explicitDate, /Your first CRM data call is `crm_list_appointments` for that calendar day/);
+  assert.match(explicitDate, /Do not call `crm_search_appointment_clients`, `crm_get_client_ai_state` or any message tool before it/);
+  assert.match(explicitDate, /Exactly one match: use it\. No client search\./);
+  assert(explicitDate.indexOf('crm_list_appointments') < explicitDate.indexOf('crm_get_client_ai_state('), 'appointment lookup precedes the AI state read');
+  assert.match(prep, /Do not call `crm_get_client`, `crm_get_enquiry_full` or `crm_get_communication_conversation`/);
+  for (const tool of ['crm_get_client(', 'crm_get_enquiry_full(', 'crm_get_communication_conversation(']) assert(!prep.includes(tool), `prep never calls ${tool}`);
+  assert.equal((prep.match(/crm_list_enquiries/g) || []).length, 1, 'prep: one bounded enquiry lookup at most');
+  assert.match(explicitDate, /`enquiry_id` empty \(consultation not linked to an enquiry\): at most one `crm_list_enquiries`/);
+  assert.match(explicitDate, /crm_search_client_email_history\(client_id, thread_limit 2, message_limit 10\)/);
+  assert.match(explicitDate, /directly `crm_list_whats_app_messages\(conversation_id, limit 15\)`/);
+  assert.match(explicitDate, /Call `crm_list_enquiry_files\(enquiry_id\)` only when/);
+  assert.doesNotMatch(prep, /next 14 days|preferred channel/, 'no open-ended date scan or preferred-channel lookup');
+  assert.match(noDate, /crm_search_appointment_clients\(q=name\)/);
+  assert.match(noDate, /earliest future `start_at` in `crm_facts\.sessions`/);
+  assert.match(frontmatter(prep).description, /6 November|6 ноября/, 'prep triggers on an explicit calendar date');
 
   const stalled = read('vishar-stalled-client');
   assert.match(stalled, /Never enumerate enquiries by status/);

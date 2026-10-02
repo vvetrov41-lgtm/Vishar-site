@@ -1,6 +1,6 @@
 ---
 name: vishar-consultation-prep
-description: Prepare the artist for one upcoming tattoo consultation with one named client in Vishar CRM, e.g. "prepare me for the consultation with Ken tomorrow", "what should I discuss with Barry at the consultation?", «подготовь меня к консультации с Ken завтра», «что обсудить с Barry на консультации?», «напомни, что хотел клиент перед сегодняшней консультацией». Not for who needs attention, who to reply to, follow-ups or anything urgent (use the Today pulse in the vishar-crm skill), not for just reading or changing an appointment time, and not for notes after a consultation has happened (use vishar-post-consultation).
+description: Prepare the artist for one upcoming tattoo consultation with one named client in Vishar CRM, e.g. "prepare me for the consultation with Barry on 6 November", "prepare me for the consultation with Ken tomorrow", "what should I discuss with Barry at the consultation?", «подготовь меня к консультации с Barry 6 ноября», «подготовь меня к консультации с Ken завтра», «что обсудить с Barry на консультации?», «напомни, что хотел клиент перед сегодняшней консультацией». Read this skill before any CRM call for such a request. Not for who needs attention, who to reply to, follow-ups or anything urgent (use the Today pulse in the vishar-crm skill), not for just reading or changing an appointment time, and not for notes after a consultation has happened (use vishar-post-consultation).
 ---
 
 # Consultation prep
@@ -12,29 +12,36 @@ Build a short working brief for one consultation with one client. Use Vishar CRM
 - Resolve the Artist with `crm_get_artist_context` when it is not already known in this chat. Never pass an Artist ID to another tool.
 - This workflow only reads. Any write (note, status, message, appointment change) is a separate request that follows the vishar-crm write rules and needs the user's explicit yes.
 - A permission refusal is final. Do not try another tool to get around it.
+- Use exactly the tools and limits below. Do not call `crm_get_client`, `crm_get_enquiry_full` or `crm_get_communication_conversation` in this workflow.
 
-## Retrieval (in this order)
+## A. The request gives a date
 
-1. Find the appointment first. It already carries `client_id`, `client_name`, `enquiry_id` and `project_id`.
-   - If an appointment or its ID is already in this chat, use it.
-   - Otherwise call `crm_list_appointments` once for the named day: `from` = 00:00 and `to` = 24:00 of that calendar day in Europe/London, with the correct UTC offset. "Today" and "tomorrow" mean calendar days in Europe/London.
-   - Match the client name in the returned rows. Prefer the consultation-type appointment if the client has several that day.
-   - No date given, or no match on that day: one more `crm_list_appointments` call covering the next 14 days, then say which date you found.
-2. `crm_get_appointment_full(appointment_id)` for the appointment notes.
-3. `crm_get_client_ai_state(client_id)` for live project/session/deposit facts (`crm_facts`) and the AI brief with `is_stale` and `refreshed_at`.
-4. If `enquiry_id` is present: `crm_get_enquiry(enquiry_id)` for the idea, placement, size, style, cover-up and timing. Add `crm_get_enquiry_ai_result` only when the intake is unclear or long.
-5. If `project_id` is present and price or deposit matters: `crm_get_project_finance(project_id)`.
-6. Recent messages, preferred channel first, a second channel only if the first is empty:
-   - email: `crm_search_client_email_history(client_id, thread_limit 2, message_limit 10)`;
-   - WhatsApp: `crm_get_whats_app_conversation(enquiry_id)` then `crm_list_whats_app_messages(conversation_id, limit 15)`.
-7. Only if useful: `crm_list_internal_notes(client_id, limit 5)`.
+This covers "today", "tomorrow", a weekday or a calendar date such as "6 November".
 
-Do not list clients, enquiries or projects when the appointment already gives the IDs. Do not call `crm_get_today_pulse` for a single consultation.
+1. Your first CRM data call is `crm_list_appointments` for that calendar day in Europe/London: `from` = 00:00 and `to` = 24:00 with the correct UTC offset (BST +01:00, GMT +00:00). Do not call `crm_search_appointment_clients`, `crm_get_client_ai_state` or any message tool before it. Skip this call only if the appointment or its ID is already in this chat.
+2. Match the client name in that day's rows.
+   - Exactly one match: use it. No client search.
+   - Several matches: prefer the consultation-type appointment. If still ambiguous, list them with their times and ask.
+   - No match that day: say so, then call `crm_search_appointment_clients(q=name)` and continue with section B for that client.
+3. `crm_get_appointment_full(appointment_id)` for `client_id`, `enquiry_id`, `project_id` and the appointment notes.
+4. `crm_get_client_ai_state(client_id)` for live project, session and deposit facts (`crm_facts`) and the AI brief with `is_stale` and `refreshed_at`.
+5. Enquiry and intake:
+   - `enquiry_id` present: `crm_get_enquiry(enquiry_id)`. Add `crm_get_enquiry_ai_result` only when the intake is unclear or long.
+   - `enquiry_id` empty (consultation not linked to an enquiry): at most one `crm_list_enquiries` with `from`/`to` no wider than 60 days around the client's first contact, taken from the AI brief or messages, or else the last 120 days. Match by `client_id`, then `crm_get_enquiry` on the match. If nothing matches, skip the intake and say "consultation is not linked to an enquiry".
+6. If `project_id` is present and price or deposit matters: `crm_get_project_finance(project_id)`.
+7. Recent messages, one channel first:
+   - an enquiry is known: `crm_get_whats_app_conversation(enquiry_id)`, then directly `crm_list_whats_app_messages(conversation_id, limit 15)`;
+   - otherwise email: `crm_search_client_email_history(client_id, thread_limit 2, message_limit 10)`.
+   Read the other channel only if the first one has no message from the last 30 days.
+8. Only if useful: `crm_list_internal_notes(client_id, limit 5)`. Call `crm_list_enquiry_files(enquiry_id)` only when the user asks about references or the messages mention reference images.
 
-## Name resolution
+Do not list clients or projects. Do not call `crm_get_today_pulse` for a single consultation.
 
-- If no appointment matches the name, call `crm_search_appointment_clients(q=name)`. Zero results: say so and ask for the spelling. One result: continue from its upcoming appointment.
-- Several clients share the name: do not guess. Pick one only when the chat or the requested date makes it unambiguous, and say why. Otherwise list the candidates with one distinguishing fact and ask.
+## B. The request gives no date
+
+1. `crm_search_appointment_clients(q=name)`. Zero results: ask for the spelling. Several: list them and ask which client.
+2. `crm_get_client_ai_state(client_id)`. Take the earliest future `start_at` in `crm_facts.sessions`. These rows do not say whether a session is a consultation. If there is no future session, say that no upcoming consultation was found and stop.
+3. `crm_list_appointments` for that one day, then pick this client's consultation-type row. If that day only has a tattoo session for the client, say so and ask which appointment the user means. Then continue from step A3, without repeating the AI state read.
 
 ## Freshness and source precedence
 
