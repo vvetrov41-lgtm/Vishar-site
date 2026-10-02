@@ -32,10 +32,14 @@ insert into auth.users (id, email) values
 insert into public.profiles (id, email, display_name, role, is_active) values
   ('dc511111-1111-4111-8111-111111111111', 'gpt-consult-owner@example.test', 'GPT Consult Owner', 'owner', true);
 
-insert into public.clients (id, full_name, email, phone, instagram, preferred_contact) values
-  ('dc521111-1111-4111-8111-111111111111', 'Consult Linked Client', 'consult-1843@example.test', '+447700900184', 'consult_1843_handle', 'whatsapp'),
-  ('dc522222-2222-4222-8222-222222222222', 'Consult Ambiguous Client', 'ambiguous-1843@example.test', null, null, null),
-  ('dc523333-3333-4333-8333-333333333333', 'Consult Kristina Client', 'kristina-1843@example.test', null, null, null);
+insert into public.clients (id, full_name, email, phone, instagram, preferred_contact, workspace_id)
+select v.id::uuid, v.full_name, v.email, v.phone, v.instagram, v.preferred_contact, a.workspace_id
+from (values
+  ('dc521111-1111-4111-8111-111111111111', 'Consult Linked Client', 'consult-1843@example.test', '+447700900184', 'consult_1843_handle', 'WhatsApp', 'a1111111-1111-4111-8111-111111111111'),
+  ('dc522222-2222-4222-8222-222222222222', 'Consult Ambiguous Client', 'ambiguous-1843@example.test', null, null, null, 'a1111111-1111-4111-8111-111111111111'),
+  ('dc523333-3333-4333-8333-333333333333', 'Consult Kristina Client', 'kristina-1843@example.test', null, null, null, 'a2222222-2222-4222-8222-222222222222')
+) as v(id, full_name, email, phone, instagram, preferred_contact, artist_id)
+join public.artists a on a.id = v.artist_id::uuid;
 
 insert into public.enquiries (
   id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
