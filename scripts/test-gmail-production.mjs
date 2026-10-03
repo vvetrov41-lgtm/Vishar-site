@@ -13,6 +13,7 @@ import {
   __testing as gmail,
 } from '../workers/lib/google-gmail.js';
 import { __testing as worker } from '../workers/gmail-production.js';
+import { bookingCardReplyThread } from '../workers/gmail-production.js';
 import { __testing as gateway } from '../workers/lib/gmail-supabase.js';
 
 let passes = 0;
@@ -478,6 +479,85 @@ await test('leased payment email without an enquiry sends once and deduplicates 
       throw new Error('provider must not be called');
     }), { message: error });
   }
+});
+
+await test('booking-card reply selection excludes outbound-only cards and missing reply headers', () => {
+  const message = (direction, timestamp, id = '<valid@example.test>') => ({ direction, timestamp, subject: 'Re: Tattoo', _rfc822_message_id: id });
+  const bilateral = { _bilateral: true, providerThreadId: 'existing_thread', messages: [message('inbound', '2026-10-02T16:37:00Z')] };
+  const card = { _bilateral: true, providerThreadId: 'standalone_card', messages: [message('outbound', '2026-10-02T16:45:00Z')] };
+  const malformed = { _bilateral: true, providerThreadId: 'missing_header', messages: [message('inbound', '2026-10-03T16:45:00Z', null)] };
+  assert.equal(bookingCardReplyThread([card, malformed, bilateral]), bilateral);
+  assert.equal(bookingCardReplyThread([card, malformed]), null);
+  const newer = { ...bilateral, providerThreadId: 'newer_thread', messages: [message('inbound', '2026-10-03T16:37:00Z')] };
+  assert.equal(bookingCardReplyThread([bilateral, newer]), newer);
+  assert.equal(bookingCardReplyThread([{ ...newer, _bilateral: false }]), null);
+});
+
+await test('server-proven booking card sends HTML in the existing bilateral Gmail thread', async () => {
+  const env = oauthEnv();
+  const job = {
+    outbox_id: 'f1111111-1111-4111-8111-111111111111',
+    email_message_id: 'f2222222-2222-4222-8222-222222222222',
+    artist_id: 'a1111111-1111-4111-8111-111111111111',
+    client_id: 'f3333333-3333-4333-8333-333333333333', enquiry_id: null,
+    integration_key: 'google_gmail_vladimir', mailbox_email: 'vvetrov41@gmail.com',
+    to_email: 'local-client@example.test', subject: 'Your consultation is booked',
+    body: 'Confirm your consultation', html_body: '<p>Confirm your consultation</p>', job_valid: true,
+  };
+  await storeRefreshToken(env, {
+    artist_id: job.artist_id, integration_key: job.integration_key, mailbox_email: job.mailbox_email,
+    refresh_token: syntheticSecret('refresh-'), scope: `${GMAIL_READ_SCOPE} ${GMAIL_SEND_SCOPE}`,
+  });
+  const db = { async backendRpc(name) {
+    if (name === 'service_resolve_gmail_outbox_target') return [{
+      ...job, client_email: job.to_email, delivery_allowed: true,
+      configuration: { booking_card_reply_in_existing_thread: true },
+    }];
+    assert.equal(name, 'record_email_outbox_result');
+    return { changed: true };
+  } };
+  let posted;
+  const fetchImpl = async (url, options = {}) => {
+    if (String(url).includes('oauth2.googleapis.com/token')) return Response.json({ access_token: 'synthetic-access' });
+    if (String(url).endsWith('/profile')) return Response.json({ emailAddress: job.mailbox_email });
+    if (String(url).includes('/threads?')) return Response.json({ threads: [{ id: 'existing_thread' }] });
+    if (String(url).includes('/threads/existing_thread?')) return Response.json({
+      id: 'existing_thread', messages: [{
+        id: 'incoming_message', internalDate: String(Date.parse('2026-10-02T16:37:00Z')),
+        payload: { mimeType: 'text/plain', headers: [
+          { name: 'From', value: job.to_email }, { name: 'To', value: job.mailbox_email },
+          { name: 'Subject', value: 'Re: Your tattoo enquiry' },
+          { name: 'Message-ID', value: '<client-reply@example.test>' },
+          { name: 'References', value: '<earlier@example.test>' },
+        ], body: { data: Buffer.from('Yes, that works for me').toString('base64url') } },
+      }],
+    });
+    if (String(url).includes('/messages?')) return Response.json({ messages: [] });
+    if (String(url).endsWith('/messages/send')) {
+      posted = JSON.parse(options.body);
+      return Response.json({ id: 'sent_card', threadId: 'existing_thread' });
+    }
+    throw new Error(`unexpected ${url}`);
+  };
+  assert.equal((await worker.processEmailJob(job, env, db, 'local-worker', fetchImpl)).outcome, 'sent');
+  assert.equal(posted.threadId, 'existing_thread');
+  const raw = Buffer.from(posted.raw, 'base64url').toString('utf8');
+  assert.match(raw, /Subject: Re: Your tattoo enquiry/);
+  assert.match(raw, /In-Reply-To: <client-reply@example.test>/);
+  assert.match(raw, /References: <earlier@example.test> <client-reply@example.test>/);
+  assert.match(raw, /Content-Type: multipart\/alternative/);
+  assert.match(raw, /<p>Confirm your consultation<\/p>/);
+  // No correspondence: deliver a standalone card, without reply headers.
+  const fallbackFetch = (url, options) => String(url).includes('/threads?')
+    ? Promise.resolve(Response.json({ threads: [] })) : fetchImpl(url, options);
+  await worker.processEmailJob(job, env, db, 'local-worker', fallbackFetch);
+  assert.equal(posted.threadId, undefined);
+  const fallbackRaw = Buffer.from(posted.raw, 'base64url').toString('utf8');
+  assert.match(fallbackRaw, /Subject: Your consultation is booked/);
+  assert.doesNotMatch(fallbackRaw, /In-Reply-To:/);
+  const failingFetch = (url, options) => String(url).includes('/threads?')
+    ? Promise.resolve(Response.json({ error: 'unavailable' }, { status: 503 })) : fetchImpl(url, options);
+  await assert.rejects(worker.processEmailJob(job, env, db, 'local-worker', failingFetch), /gmail_api_error/);
 });
 
 await test('production config enables Vladimir and keeps Kristina independently gated', () => {

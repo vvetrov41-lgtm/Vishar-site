@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { AppointmentRow } from '../components/AppointmentRow';
+import { appointmentDisplayStatus } from '../lib/appointment-display-status';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 import { BookingPanel } from '../components/BookingPanel';
 import { ClientPicker } from '../components/ClientPicker';
 import { MonthCalendarView, dayHeading, timeOffLabel } from '../components/MonthCalendarView';
@@ -103,6 +105,8 @@ export function AppointmentsPage() {
     )).flat();
     return { appointments, projects, enquiries, clients, timeOff };
   }, [api, selectedArtistId, view, monthWindow.start, monthWindow.end, gridWindow.start, gridWindow.end, readFrom, readTo]);
+
+  useAppointmentResponseRefresh(reload);
 
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all');
   const [clientId, setClientId] = useState('');
@@ -306,7 +310,7 @@ export function AppointmentsPage() {
             clients={data.clients}
             projects={data.projects}
             artistNames={artistNames}
-            statusLabelFor={(appointment) => label('sessionStatus', appointment.status)}
+            statusLabelFor={(appointment) => appointmentDisplayStatus(appointment, language, label('sessionStatus', appointment.status))}
             canMove={(appointment) => canManageArtistSessions(profile?.role, memberships, appointment.artist_id)}
             movingAppointmentId={changingAppointmentId}
             onMove={(request) => { void moveAppointment(request); }}

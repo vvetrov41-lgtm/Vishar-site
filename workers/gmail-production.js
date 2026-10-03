@@ -419,6 +419,15 @@ function workerId() {
   return `gmail-worker-${randomB64url(12).toLowerCase()}`.replace(/[^a-z0-9_-]/g, '').slice(0, 100);
 }
 
+export function bookingCardReplyThread(threads) {
+  // An outbound-only card is not a conversation. Prefer the latest bilateral
+  // thread, but never infer a recipient from its body or subject.
+  return threads.filter((thread) => thread._bilateral === true && thread.messages.some((message) => message.direction === 'inbound')
+    && thread.messages.at(-1)?._rfc822_message_id
+    && thread.messages.at(-1)?.subject)
+    .sort((a, b) => (Date.parse(b.messages.at(-1).timestamp) || 0) - (Date.parse(a.messages.at(-1).timestamp) || 0))[0] ?? null;
+}
+
 async function processEmailJob(job, env, db, id, fetchImpl) {
   if (!uuid(job?.outbox_id) || !uuid(job.artist_id) || !uuid(job.email_message_id) || !uuid(job.client_id)
       || (job.enquiry_id !== null && !uuid(job.enquiry_id)) || job.job_valid !== true) {
@@ -443,6 +452,7 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
   let inReplyTo = null;
   let references = null;
   let context = null;
+  let subject = job.subject;
   if (job.thread_context_id) {
     context = firstRow(await db.backendRpc('service_get_gmail_thread_context', {
       p_thread_context_id: job.thread_context_id,
@@ -462,11 +472,27 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
     providerThreadId = context.provider_thread_id;
     inReplyTo = latest._rfc822_message_id;
     references = [latest._references, latest._rfc822_message_id].filter(Boolean).join(' ').trim();
+  } else if (target.configuration?.booking_card_reply_in_existing_thread === true) {
+    const found = await searchThreads(accessToken, {
+      mailboxEmail: target.mailbox_email,
+      clientEmail: target.client_email,
+      threadLimit: 8,
+      messageLimit: 30,
+      fetchImpl,
+    });
+    const thread = bookingCardReplyThread(found);
+    if (thread) {
+      const latest = thread.messages.at(-1);
+      providerThreadId = thread.providerThreadId;
+      subject = latest.subject;
+      inReplyTo = latest._rfc822_message_id;
+      references = [latest._references, latest._rfc822_message_id].filter(Boolean).join(' ').trim();
+    }
   }
 
   const sent = await sendMessage(accessToken, {
     toEmail: target.client_email,
-    subject: job.subject,
+    subject,
     body: job.body,
     htmlBody: job.html_body ?? null,
     emailMessageId: job.email_message_id,

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { calendarSyncLabel } from '../lib/calendar-sync';
+import { appointmentDisplayStatus } from '../lib/appointment-display-status';
 import { formatDateTime } from '../lib/format';
 import type { Language } from '../lib/i18n';
 import { Link } from '../lib/router';
@@ -46,11 +47,10 @@ export function AppointmentRow({
       <div className="title">{formatDateTime(appointment.start_at, language)}</div>
       <div className="meta">
         <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
-        <span className={appointment.status === 'confirmed' ? 'badge ok' : 'badge'}>{statusLabel}</span>{' '}
-        {appointment.client_response ? (
+        <span className={appointment.status === 'confirmed' && appointment.client_response_calendar_version === appointment.calendar_version ? appointment.client_response === 'attendance_confirmed' ? 'badge ok' : appointment.client_response === 'reschedule_requested' ? 'badge warn' : 'badge' : 'badge'}>{appointmentDisplayStatus(appointment, language, statusLabel)}</span>{' '}
+        {appointment.status === 'confirmed' && appointment.client_response && appointment.client_response_calendar_version === appointment.calendar_version && appointment.client_response_at ? (
           <span className={appointment.client_response === 'reschedule_requested' ? 'badge warn' : 'badge ok'}>
-            {clientResponseLabel(appointment.client_response, language)}
-            {appointment.client_response_at ? ` · ${formatDateTime(appointment.client_response_at, language)}` : ''}
+            {formatDateTime(appointment.client_response_at, language)}
           </span>
         ) : null}{' '}
         <span className="badge">{durationValue(appointment.duration_hours, language)}</span>{' '}
