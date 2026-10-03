@@ -3,19 +3,19 @@
   "author": {
     "name": "App developer"
   },
-  "description": "Vishar CRM MCP connection",
+  "description": "Tattoo studio CRM and the source of truth for clients, enquiries, consultations and tattoo sessions. For questions about a named studio client, consultation or session, use Vishar CRM before Google Calendar or Gmail, unless the user explicitly asks for those services.",
   "interface": {
     "capabilities": [],
     "category": "Other",
     "defaultPrompt": null,
     "developerName": "App developer",
     "displayName": "Vishar CRM",
-    "longDescription": "Vishar CRM MCP connection",
-    "shortDescription": "Vishar CRM MCP connection",
+    "longDescription": "Tattoo studio CRM and the source of truth for clients, enquiries, consultations and tattoo sessions. For questions about a named studio client, consultation or session, use Vishar CRM before Google Calendar or Gmail, unless the user explicitly asks for those services.",
+    "shortDescription": "Tattoo studio CRM: clients, enquiries, consultations and tattoo sessions",
     "composerIcon": "./assets/icon.png",
     "logo": "./assets/logo.png"
   },
   "name": "dev-6abe429f5e388191ac24e96159a1dbc0",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "skills": "./skills/"
 }
