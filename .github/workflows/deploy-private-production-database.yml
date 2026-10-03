@@ -123,8 +123,9 @@ jobs:
       - name: Install locked root dependencies
         run: npm ci
 
-      - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+      - name: Audit production dependencies
+        # Frontend/build tooling is dev-only; production gate audits runtime dependencies.
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
