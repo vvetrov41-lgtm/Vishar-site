@@ -1,8 +1,27 @@
-import { render, screen } from '@testing-library/react';
+import { render, renderHook, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { CrmClient } from '../lib/api';
 import { createAppointmentApi, type Appointment } from '../lib/appointment-api';
 import { AppointmentRow, clientResponseLabel } from '../pages/AppointmentsPage';
+import { appointmentDisplayStatus } from '../lib/appointment-display-status';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
+
+it('refreshes response facts on return and removes listeners on unmount', () => {
+  const reload = vi.fn();
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  const { unmount } = renderHook(() => useAppointmentResponseRefresh(reload));
+  window.dispatchEvent(new Event('focus'));
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(reload).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue('hidden');
+  document.dispatchEvent(new Event('visibilitychange'));
+  expect(reload).toHaveBeenCalledTimes(2);
+  unmount();
+  visibility.mockReturnValue('visible');
+  window.dispatchEvent(new Event('focus'));
+  expect(reload).toHaveBeenCalledTimes(2);
+  visibility.mockRestore();
+});
 
 const BASE_APPOINTMENT: Appointment = {
   id: '55555555-5555-4555-8555-555555555555',
@@ -100,11 +119,18 @@ describe('appointment client response visibility', () => {
     });
 
     const badge = screen.getByText(/Client requested reschedule/);
-    expect(badge).toHaveClass('badge', 'warn');
+    expect(badge).toHaveClass('badge');
   });
 
   it('keeps operator wording available in both CRM languages', () => {
     expect(clientResponseLabel('attendance_confirmed', 'ru')).toBe('Клиент подтвердил');
     expect(clientResponseLabel('reschedule_requested', 'ru')).toBe('Клиент просит перенос');
+  });
+
+  it('distinguishes booking from the current client response', () => {
+    expect(appointmentDisplayStatus(BASE_APPOINTMENT, 'ru', 'Подтверждено')).toBe('Ожидаем подтверждения клиента');
+    expect(appointmentDisplayStatus({ ...BASE_APPOINTMENT, client_response: 'attendance_confirmed', client_response_calendar_version: 3 }, 'ru', 'Подтверждено')).toBe('Клиент подтвердил');
+    expect(appointmentDisplayStatus({ ...BASE_APPOINTMENT, client_response: 'attendance_confirmed', client_response_calendar_version: 2 }, 'ru', 'Подтверждено')).toBe('Ожидаем подтверждения клиента');
+    expect(appointmentDisplayStatus({ ...BASE_APPOINTMENT, status: 'cancelled', client_response: 'attendance_confirmed', client_response_calendar_version: 3 }, 'ru', 'Отменено')).toBe('Отменено');
   });
 });

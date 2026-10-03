@@ -8,6 +8,7 @@ import { useLanguage } from '../lib/i18n';
 import type { Client, Enquiry, Project, SessionStatus } from '../lib/types';
 import type { Appointment } from '../lib/appointment-api';
 import { AppointmentRow } from './AppointmentsPage';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 
 type PageData = {
   appointments: Appointment[];
@@ -37,6 +38,8 @@ export function FocusedAppointmentPage({ appointmentId }: { appointmentId: strin
     ]);
     return { appointments, projects, enquiries, clients };
   }, [api, appointmentId]);
+
+  useAppointmentResponseRefresh(state.reload);
 
   if (state.loading) {
     return <LoadingState label={language === 'ru' ? 'Загрузка записи…' : 'Loading appointment…'} />;

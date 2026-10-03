@@ -15,6 +15,8 @@
 .calendar-event.status-cancelled,.calendar-event.status-no_show { opacity: 0.55; }
 .calendar-event.time-off { border-style: dashed; border-color: rgba(255,204,102,0.34); background: rgba(255,204,102,0.08); }
 .calendar-event-time { white-space: nowrap; }
+.calendar-event-response { display: block; flex-basis: 100%; font-size: 0.6rem; overflow: hidden; text-overflow: ellipsis; }
+.calendar-event { flex-wrap: wrap; }
 .calendar-event-client { display: none; margin-left: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .calendar-more { border-color: transparent; background: transparent; color: var(--muted); }
 .calendar-selected-day .row + .row { margin-top: 10px; }

@@ -12,6 +12,8 @@
 // order and render.
 
 import { isBlockingDetailLoad } from '../lib/detail-loading';
+import { appointmentDisplayStatus } from '../lib/appointment-display-status';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 import { useEffect, useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
@@ -103,6 +105,8 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
     return { client, enquiries, projects, notes, appointments, followUps, conversations, latestMessages };
   }, [api, clientId, role]);
+
+  useAppointmentResponseRefresh(reload);
 
   if (isBlockingDetailLoad(loading, data?.client?.id, clientId)) return <LoadingState label={t('client.loading')} />;
   if (error) return <ErrorState message={error} onRetry={reload} />;
@@ -295,8 +299,8 @@ function ClientStatusHeader({
               <Link to={`/appointments/${next.id}`} className="client-workspace-fact">
                 {formatDateTime(next.start_at, language)} · {typeLabel(next.appointment_type, language)}
                 {' '}
-                <span className={next.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
-                  {label('sessionStatus', next.status)}
+                <span className="badge">
+                  {appointmentDisplayStatus(next, language, label('sessionStatus', next.status))}
                 </span>
               </Link>
             ) : (
@@ -503,8 +507,8 @@ function ClientAppointmentRow({ appointment }: { appointment: Appointment }) {
       <div className="title">{formatDateTime(appointment.start_at, language)}</div>
       <div className="meta">
         <span className="badge">{typeLabel(appointment.appointment_type, language)}</span>{' '}
-        <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' ? 'badge ok' : 'badge warn'}>
-          {label('sessionStatus', appointment.status)}
+        <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' && appointment.client_response === 'attendance_confirmed' && appointment.client_response_calendar_version === appointment.calendar_version ? 'badge ok' : 'badge'}>
+          {appointmentDisplayStatus(appointment, language, label('sessionStatus', appointment.status))}
         </span>{' '}
         {appointment.duration_hours !== null ? (
           <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>

@@ -437,13 +437,14 @@ where b.session_id = 'fd6b1111-1111-4111-8111-111111111111'
   and o.dedupe_key = 'email:booking_card:' || b.id::text;
 
 select results_eq(
-  $$ select t.enquiry_id, t.client_email, t.delivery_allowed
+  $$ select t.enquiry_id, t.client_email, t.delivery_allowed,
+            t.configuration->>'booking_card_reply_in_existing_thread'
      from crm_private.booking_cards b
      join public.integration_outbox o on o.dedupe_key = 'email:booking_card:' || b.id::text
      cross join lateral public.service_resolve_gmail_outbox_target(o.id, 'gmail-worker-suite') t
      where b.session_id = 'fd6b1111-1111-4111-8111-111111111111'
        and b.superseded_at is null $$,
-  $$ values (null::uuid, 'email-only@example.test'::text, true) $$,
+  $$ values (null::uuid, 'email-only@example.test'::text, true, 'true'::text) $$,
   'Gmail resolves a booking card email that has no enquiry'
 );
 

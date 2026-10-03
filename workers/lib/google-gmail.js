@@ -308,7 +308,16 @@ async function getThread(accessToken, providerThreadId, { mailboxEmail, clientEm
     .filter(Boolean)
     .slice(-Math.max(1, Math.min(Number(messageLimit) || 30, 30)));
   if (!messages.length) throw new Error('gmail_thread_outside_client_scope');
-  return { providerThreadId, messages };
+  // Automatic booking replies must not join a group or unrelated thread.
+  // Explicit operator-selected threads retain their existing behavior.
+  const allowedParticipants = new Set([safeEmail(mailboxEmail), safeEmail(clientEmail)]);
+  const bilateral = thread.messages.every((message) => {
+    const headers = headerMap(message?.payload?.headers);
+    const participants = ['from', 'to', 'cc', 'bcc'].flatMap((name) => [...extractEmails(headers.get(name))]);
+    return participants.length >= 2 && participants.every((email) => allowedParticipants.has(email))
+      && normalizeMessage(message, { mailboxEmail, clientEmail }) !== null;
+  });
+  return { providerThreadId, messages, _bilateral: bilateral };
 }
 
 async function searchThreads(accessToken, { mailboxEmail, clientEmail, threadLimit = 4, messageLimit = 20, fetchImpl = fetch } = {}) {
