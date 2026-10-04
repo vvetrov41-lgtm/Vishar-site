@@ -1,0 +1,62 @@
+name: Temp Bento aftercare build
+on:
+  push:
+    branches:
+      - tmp-bento-aftercare-build-20261004
+    paths:
+      - '.github/workflows/tmp-bento-aftercare-build.yml'
+      - 'tmp/bento-aftercare/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assemble document JSON
+        shell: bash
+        run: |
+          cat tmp/bento-aftercare/doc.part* > /tmp/doc.b64
+          base64 -d /tmp/doc.b64 > /tmp/doc.json.gz
+          gzip -dc /tmp/doc.json.gz > /tmp/doc.json
+          python -m json.tool /tmp/doc.json >/dev/null
+
+      - name: Download Bento Slides v1.2.5
+        shell: bash
+        run: |
+          curl -fL --retry 3 --retry-delay 2 \
+            https://github.com/nyblnet/bento/releases/download/v1.2.5/Bento_Slides.bento.html \
+            -o /tmp/Bento_Slides.bento.html
+          sha256sum /tmp/Bento_Slides.bento.html
+
+      - name: Insert document into official Bento shell
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          shell = Path('/tmp/Bento_Slides.bento.html').read_text(encoding='utf-8')
+          doc = Path('/tmp/doc.json').read_text(encoding='utf-8').strip()
+          pattern = re.compile(r'(<script[^>]*id=["\']bento-doc["\'][^>]*>)(.*?)(</script>)', re.S)
+          out, count = pattern.subn(lambda m: m.group(1) + '\n' + doc + '\n' + m.group(3), shell, count=1)
+          if count != 1:
+              raise SystemExit('Could not locate #bento-doc block in Bento shell')
+          Path('Vladimir_Vishar_Tattoo_Aftercare.bento.html').write_text(out, encoding='utf-8')
+          print('Built bytes:', len(out.encode('utf-8')))
+          PY
+
+      - name: Sanity check final file
+        shell: bash
+        run: |
+          grep -q 'id="bento-doc"' Vladimir_Vishar_Tattoo_Aftercare.bento.html
+          grep -q '"format":"bento/slides"' Vladimir_Vishar_Tattoo_Aftercare.bento.html
+          test -s Vladimir_Vishar_Tattoo_Aftercare.bento.html
+
+      - name: Upload Bento artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vladimir_Vishar_Tattoo_Aftercare
+          path: Vladimir_Vishar_Tattoo_Aftercare.bento.html
+          retention-days: 7
