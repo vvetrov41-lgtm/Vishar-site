@@ -61,11 +61,16 @@ const uiOnly = OPERATOR_PARITY.filter((row) => row.gpt.status === 'ui_only').map
 }));
 const ids = new Set(operations.map((row) => row.operationId));
 if (ids.size !== operations.length || operations.length !== byId.size) throw new Error('Unified GPT operations and MCP tools differ');
+const INVITATIONS = new Set(['inviteArtist', 'inviteStaffMember']);
 const stage2 = OPERATOR_PARITY.filter((row) => row.gpt.status === 'implement_now').map((row) => ({
   operationId: row.gpt.operationId, status: 'excluded_initial_release',
-  reason: 'Stage 2 invitation flow requires its own security review and is not in the current 13 OpenAPI schemas.',
+  reason: INVITATIONS.has(row.gpt.operationId)
+    ? 'Stage 2 invitation flow requires its own security review and is not in the current 13 OpenAPI schemas.'
+    : `${row.note} Not in the current 13 OpenAPI schemas.`,
 }));
-if (stage2.map((row) => row.operationId).sort().join(',') !== 'inviteArtist,inviteStaffMember') throw new Error('Unexpected Stage 2 inventory');
+if (stage2.map((row) => row.operationId).sort().join(',') !== 'inviteArtist,inviteStaffMember,setEnquiryReplyOutsideCrm') {
+  throw new Error('Unexpected Stage 2 inventory');
+}
 const report = {
   source: '13 current Unified GPT OpenAPI schemas and operator-parity.current.mjs',
   summary: {

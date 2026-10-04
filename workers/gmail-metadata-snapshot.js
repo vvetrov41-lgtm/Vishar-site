@@ -9,7 +9,8 @@ const SNAPSHOT_WINDOW_DAYS = 30;
 const HISTORY_CLIENTS_PER_RUN = 3;
 const HISTORY_MESSAGES_PER_CLIENT = 2;
 const REPLY_ENQUIRIES_PER_RUN = 3;
-const REPLY_LOOKUP_MAX_RESULTS = 50;
+const REPLY_LOOKUP_MAX_RESULTS = 500;
+const REPLY_EXTRA_CALLS_PER_RUN = 2;
 const OUTBOUND_EVIDENCE_PER_RUN = 50;
 // Cloudflare caps subrequests per Worker invocation. Fetching metadata for
 // every message of the last 30 days hit that cap on every run, so no snapshot
@@ -357,69 +358,101 @@ async function newestClientMessage(accessToken, mailboxEmail, clientEmail, fetch
 }
 
 /**
- * The oldest SENT message from the mailbox to the client inside the
- * enquiry's reply window (from the enquiry until the client's next one), as a
- * time only. Gmail lists newest first, so the last listed id is the oldest on
- * the page. The window bound keeps every result inside this enquiry: with
- * more than one page the time found is a later reply in the same window, so
- * the enquiry is still correctly answered.
+ * The first SENT message from the mailbox to the client inside the enquiry's
+ * reply window (from the enquiry until the client's next one), as a time
+ * only, and whether that is certain.
+ *
+ * Gmail lists newest first, so the earliest message is the last id of the
+ * last page; ids of every page are kept so a skipped oldest message falls
+ * back to the next older one. The lookup pages through the whole window; extra pages and
+ * extra message reads come from a small pool shared by the run, so a run
+ * stays inside the subrequest budget. When the pool runs out before the
+ * window is read, the answer is `complete: false`: the enquiry is answered,
+ * but this is not its first reply time.
  */
-async function firstSentAfter(accessToken, mailboxEmail, clientEmail, afterIso, fetchImpl = fetch, beforeIso = null) {
+async function firstSentAfter(accessToken, mailboxEmail, clientEmail, afterIso, fetchImpl = fetch, beforeIso = null,
+  pool = { extra: REPLY_EXTRA_CALLS_PER_RUN }) {
+  const none = { sentAt: null, complete: true };
   const mailbox = safeEmail(mailboxEmail);
   const client = safeEmail(clientEmail);
   const after = Date.parse(afterIso || '');
   const before = beforeIso ? Date.parse(beforeIso) : Number.NaN;
-  if (!mailbox || !client || mailbox === client || !Number.isFinite(after)) return null;
-  if (beforeIso && (!Number.isFinite(before) || before <= after)) return null;
-  const params = new URLSearchParams({
-    maxResults: String(REPLY_LOOKUP_MAX_RESULTS),
-    q: `from:${gmailQueryAddress(mailbox)} to:${gmailQueryAddress(client)} after:${Math.floor(after / 1000)}`
-      + (Number.isFinite(before) ? ` before:${Math.floor(before / 1000)}` : '')
-      + ' -in:drafts -in:scheduled -in:chats -in:spam -in:trash',
-  });
-  const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
-  const ids = (Array.isArray(listing.messages) ? listing.messages : [])
-    .map((item) => safeProviderId(item?.id))
-    .filter(Boolean);
-  if (!ids.length) return null;
-  const message = await gmailJson(
-    `/gmail/v1/users/me/messages/${encodeURIComponent(ids[ids.length - 1])}`
-      + '?format=metadata&metadataHeaders=From&metadataHeaders=To',
-    accessToken,
-    fetchImpl,
-  );
-  const evidence = historyEvidence(message, mailbox, client);
-  if (evidence?.direction !== 'outbound') return null;
-  if (!Array.isArray(message?.labelIds) || !message.labelIds.includes('SENT')) return null;
-  const at = Date.parse(evidence.last_message_at);
-  if (at < after || (Number.isFinite(before) && at >= before)) return null;
-  return evidence.last_message_at;
+  if (!mailbox || !client || mailbox === client || !Number.isFinite(after)) return none;
+  if (beforeIso && (!Number.isFinite(before) || before <= after)) return none;
+  const q = `from:${gmailQueryAddress(mailbox)} to:${gmailQueryAddress(client)} after:${Math.floor(after / 1000)}`
+    + (Number.isFinite(before) ? ` before:${Math.floor(before / 1000)}` : '')
+    + ' -in:drafts -in:scheduled -in:chats -in:spam -in:trash';
+
+  let ids = [];
+  let pageToken = null;
+  let complete = true;
+  for (let page = 0; ; page += 1) {
+    if (page > 0) {
+      if (pool.extra < 1) { complete = false; break; }
+      pool.extra -= 1;
+    }
+    const params = new URLSearchParams({ maxResults: String(REPLY_LOOKUP_MAX_RESULTS), q });
+    if (pageToken) params.set('pageToken', pageToken);
+    const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
+    const pageIds = (Array.isArray(listing.messages) ? listing.messages : [])
+      .map((item) => safeProviderId(item?.id))
+      .filter(Boolean);
+    ids = ids.concat(pageIds);
+    pageToken = typeof listing.nextPageToken === 'string' && listing.nextPageToken ? listing.nextPageToken : null;
+    if (!pageToken) break;
+  }
+  if (!ids.length) return none;
+
+  // Oldest first. A message that is not strictly mailbox -> client, SENT and
+  // inside the window is skipped; the first one that is, is the answer.
+  for (let index = ids.length - 1, read = 0; index >= 0; index -= 1, read += 1) {
+    if (read > 0) {
+      if (pool.extra < 1) return { sentAt: null, complete: false };
+      pool.extra -= 1;
+    }
+    const message = await gmailJson(
+      `/gmail/v1/users/me/messages/${encodeURIComponent(ids[index])}`
+        + '?format=metadata&metadataHeaders=From&metadataHeaders=To',
+      accessToken,
+      fetchImpl,
+    );
+    const evidence = historyEvidence(message, mailbox, client);
+    if (evidence?.direction !== 'outbound') continue;
+    if (!Array.isArray(message?.labelIds) || !message.labelIds.includes('SENT')) continue;
+    const at = Date.parse(evidence.last_message_at);
+    if (at < after || (Number.isFinite(before) && at >= before)) continue;
+    return { sentAt: evidence.last_message_at, complete };
+  }
+  return { sentAt: null, complete };
 }
 
 /**
- * Recent enquiries the CRM has no provider-confirmed reply for: look up the
- * artist's first sent mail after each in Gmail, including mail written in
- * Gmail itself rather than from the CRM. Bounded: a few enquiries per run,
- * each re-checked at most every six hours by the database.
+ * Recent enquiries without a complete Gmail lookup: find the artist's first
+ * sent mail in each enquiry window, including mail written in Gmail itself
+ * rather than from the CRM. Bounded: a few enquiries per run, a small shared
+ * pool of extra calls, and a found-nothing lookup is repeated at most every
+ * six hours by the database.
  */
 async function backfillEnquiryReplies(env, artistId, accessToken, mailboxEmail, fetchImpl = fetch) {
   const candidates = await serviceRpc(env, 'service_list_gmail_reply_candidates', {
     p_artist_id: artistId,
     p_limit: REPLY_ENQUIRIES_PER_RUN,
   }, fetchImpl);
+  const pool = { extra: REPLY_EXTRA_CALLS_PER_RUN };
   let checked = 0;
   for (const candidate of Array.isArray(candidates) ? candidates : []) {
     const enquiryId = uuid(candidate?.enquiry_id);
     const clientEmail = safeEmail(candidate?.client_email);
     if (!enquiryId || !clientEmail) continue;
     try {
-      const sentAt = await firstSentAfter(
-        accessToken, mailboxEmail, clientEmail, candidate?.created_at, fetchImpl, candidate?.closed_at ?? null,
+      const result = await firstSentAfter(
+        accessToken, mailboxEmail, clientEmail, candidate?.created_at, fetchImpl, candidate?.closed_at ?? null, pool,
       );
       await serviceRpc(env, 'service_record_gmail_enquiry_reply_check', {
         p_artist_id: artistId,
         p_enquiry_id: enquiryId,
-        p_first_sent_at: sentAt,
+        p_first_sent_at: result.sentAt,
+        p_complete: result.complete,
       }, fetchImpl);
       checked += 1;
     } catch {
@@ -593,6 +626,7 @@ export const __testing = Object.freeze({
   HISTORY_MESSAGES_PER_CLIENT,
   REPLY_ENQUIRIES_PER_RUN,
   REPLY_LOOKUP_MAX_RESULTS,
+  REPLY_EXTRA_CALLS_PER_RUN,
   OUTBOUND_EVIDENCE_PER_RUN,
   SUBREQUEST_BUDGET,
   METADATA_MESSAGES_PER_RUN,
