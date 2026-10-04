@@ -165,6 +165,20 @@ select ok(not exists (
   where c.enquiry_id = 'e3242222-0000-4000-8000-000000000000'),
   'a complete lookup that found the first reply is not repeated');
 
+-- Found SENT mail, window not read in full: repeated the next day.
+select ok(not exists (
+  select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+  where c.enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  'an incomplete lookup is not repeated within the day');
+update crm_private.gmail_enquiry_reply_checks set checked_at = now() - interval '25 hours'
+where enquiry_id = 'e3244444-0000-4000-8000-000000000000';
+select ok(exists (
+  select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+  where c.enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  'an incomplete lookup that found SENT mail is repeated after a day');
+update crm_private.gmail_enquiry_reply_checks set checked_at = now()
+where enquiry_id = 'e3244444-0000-4000-8000-000000000000';
+
 -- A complete miss in a window the client's next enquiry has closed is final.
 insert into public.enquiries (
   id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
