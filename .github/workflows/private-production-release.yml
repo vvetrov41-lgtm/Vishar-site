@@ -117,7 +117,9 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        run: npm audit --audit-level=moderate
+        run: |
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Validate public and Worker boundaries
         run: |
@@ -432,7 +434,8 @@ jobs:
 
       - name: Audit deployment dependencies and scan secrets
         run: |
-          npm audit --audit-level=moderate
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
           npm run scan:secrets
 
       - name: Install pinned Supabase CLI
@@ -595,7 +598,6 @@ jobs:
           console.log(summary);
           require('node:fs').appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${summary}\n`);
           if (after.mfa_totp_verify_enabled === false) {
-            // Verification off would strand an enrolled account at the code prompt.
             console.log('::warning::Production Auth TOTP verification is disabled');
           }
           NODE
