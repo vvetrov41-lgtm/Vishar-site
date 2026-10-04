@@ -68,6 +68,10 @@ const COPY = {
     noSubject: 'No subject',
     attachment: 'Attachment',
     emailUnavailable: 'Email conversations could not be loaded.',
+    unmatchedTitle: 'Unknown senders waiting on a decision',
+    unmatchedHint: 'Open each one: link it to a client, mark it handled outside the CRM, or mark it personal. Reactions and edits are not counted.',
+    unmatchedNone: 'No unknown sender is waiting on you',
+    backToQueue: 'Back to the inbox',
   },
   ru: {
     title: 'Сообщения',
@@ -95,6 +99,10 @@ const COPY = {
     noSubject: 'Без темы',
     attachment: 'Вложение',
     emailUnavailable: 'Не удалось загрузить переписку по почте.',
+    unmatchedTitle: 'Неизвестные отправители ждут решения',
+    unmatchedHint: 'Откройте каждый диалог: свяжите с клиентом, отметьте «Обработано вне CRM» или «Личное / не CRM». Реакции и правки не считаются.',
+    unmatchedNone: 'Неизвестных отправителей, ждущих решения, нет',
+    backToQueue: 'Вернуться к сообщениям',
   },
 } as const;
 
@@ -105,13 +113,14 @@ type ChannelFilter = '' | InboxChannel;
  * with, so it is a view of its own rather than something to work out from the
  * unread badges.
  *
- * There is deliberately no view for unknown senders. This screen is the
+ * There is deliberately no tab for unknown senders. This screen is the
  * studio's work queue, and a message from somebody the CRM cannot name is not
- * work - not as a row, not as a tab, not as a filter that hints there is a
- * backlog behind it. The rows are still stored and still readable by the
- * backend; they are simply not part of this surface.
+ * a reply owed. Deciding who they are is: Today counts the unknown senders
+ * whose real (actionable) message nobody has dealt with, and its row links to
+ * `view=unmatched`, a separate decision list holding exactly those - never
+ * mixed into the queue, never a tab here.
  */
-type ViewFilter = '' | 'needs_reply';
+type ViewFilter = '' | 'needs_reply' | 'unmatched';
 
 interface InboxData {
   conversations: ConversationSummary[];
@@ -143,6 +152,18 @@ export function InboxPage() {
 
   const { data, loading, error, reload } = useAsync<InboxData>(
     async () => {
+      if (view === 'unmatched') {
+        // The server decides who waits (actionable inbound, not personal, not
+        // handled outside the CRM); this list only shows them.
+        const unknown = await api.listConversations({ linkState: 'unmatched', needsReply: true, limit: 100 });
+        return {
+          conversations: unknown,
+          emailFailed: false,
+          items: mergeInbox(unknown.map(
+            (conversation) => conversationItem(conversation, participantLabel(conversation, copy.unknownSender)),
+          )),
+        };
+      }
       const conversations = await api.listConversations({
         channel: channel === 'whatsapp' || channel === 'instagram' ? channel : undefined,
         linkState,
@@ -217,7 +238,7 @@ export function InboxPage() {
         ]),
       };
     },
-    [api, channel, linkState, selectedArtistId, copy.unknownSender],
+    [api, channel, linkState, selectedArtistId, copy.unknownSender, view],
   );
 
   // Artist scope is a usability filter here, exactly as it is on every other
@@ -231,7 +252,7 @@ export function InboxPage() {
     () => (data?.items ?? []).filter(
       (item) => (!selectedArtistId || item.artist_id === selectedArtistId)
         && (channel === '' || item.channel === channel)
-        && isActionableConversation(item)
+        && (view === 'unmatched' || isActionableConversation(item))
         && (view !== 'needs_reply' || isWaiting(item)),
     ),
     [data, selectedArtistId, channel, view],
@@ -243,6 +264,40 @@ export function InboxPage() {
   );
 
   const filtered = channel !== '' || view !== '';
+
+  if (view === 'unmatched') {
+    return (
+      <>
+        <div className="card">
+          <h2>{copy.unmatchedTitle}</h2>
+          <p className="notice">{copy.unmatchedHint}</p>
+          <button type="button" className="badge" onClick={() => setView('')}>{copy.backToQueue}</button>
+        </div>
+        {loading ? <LoadingState label={copy.loading} /> : null}
+        {error ? <ErrorState message={error} onRetry={reload} /> : null}
+        {!loading && !error && items.length === 0 ? <EmptyState title={copy.unmatchedNone} /> : null}
+        {!loading && !error && items.length > 0 ? (
+          <div className="list">
+            {items.map((item) => (
+              <Link key={item.key} to={item.href.replace(/^#/, '')} className="row inbox-row unread">
+                <div className="inbox-row-head">
+                  <span className="title">{item.title}</span>
+                  <span className={`badge channel-${item.channel}`}>
+                    {item.channel === 'instagram' ? copy.instagram : copy.whatsapp}
+                  </span>
+                </div>
+                <div className="meta inbox-preview">{item.preview ?? `[${copy.attachment}]`}</div>
+                <div className="meta inbox-row-foot">
+                  <span>{item.timestamp ? formatDateTime(item.timestamp, language) : ''}</span>
+                  <span className="inbox-flags"><span className="badge warn">{copy.awaitingReply}</span></span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <>

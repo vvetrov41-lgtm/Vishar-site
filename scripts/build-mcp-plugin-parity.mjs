@@ -68,7 +68,7 @@ const stage2 = OPERATOR_PARITY.filter((row) => row.gpt.status === 'implement_now
     ? 'Stage 2 invitation flow requires its own security review and is not in the current 13 OpenAPI schemas.'
     : `${row.note} Not in the current 13 OpenAPI schemas.`,
 }));
-if (stage2.map((row) => row.operationId).sort().join(',') !== 'inviteArtist,inviteStaffMember,setEnquiryReplyOutsideCrm') {
+if (stage2.map((row) => row.operationId).sort().join(',') !== 'inviteArtist,inviteStaffMember,setConversationOperatorState,setEnquiryReplyOutsideCrm') {
   throw new Error('Unexpected Stage 2 inventory');
 }
 const report = {

@@ -15,11 +15,11 @@ select no_plan();
 -- ---------------------------------------------------------------------------
 
 select ok(
-  not has_function_privilege('anon', 'public.list_communication_conversations(text,text,integer,timestamptz)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.list_communication_conversations(text,text,integer,timestamptz,boolean)', 'EXECUTE'),
   'anon cannot list conversations'
 );
 select ok(
-  has_function_privilege('authenticated', 'public.list_communication_conversations(text,text,integer,timestamptz)', 'EXECUTE'),
+  has_function_privilege('authenticated', 'public.list_communication_conversations(text,text,integer,timestamptz,boolean)', 'EXECUTE'),
   'an authenticated CRM session may list conversations'
 );
 select ok(

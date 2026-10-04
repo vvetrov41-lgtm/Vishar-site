@@ -33,6 +33,26 @@ export interface ConversationSummary {
   latest_preview: string | null;
   latest_direction: CommunicationDirection | null;
   latest_message_type: string | null;
+  /**
+   * The server's answer (crm_private.conversation_awaiting_reply_since): the
+   * newest actionable client message the studio has not answered, ignoring
+   * reactions, edits, revokes and unsupported events. Absent on rows from an
+   * older projection.
+   */
+  awaiting_reply_since?: string | null;
+  needs_reply?: boolean;
+  not_crm_at?: string | null;
+  handled_outside_crm_at?: string | null;
+}
+
+/** What the conversation screen needs to offer the operator states. */
+export interface ConversationAttention {
+  conversation_id: string;
+  artist_id: string;
+  awaiting_reply_since: string | null;
+  not_crm_at: string | null;
+  handled_outside_crm_at: string | null;
+  needs_reply: boolean;
 }
 
 export interface ConversationDetail {
@@ -129,8 +149,9 @@ export type LinkSuggestion =
   | { status: 'suggested'; client_id: string; client_name: string | null; match: 'phone' | 'instagram' };
 
 export function conversationNeedsReply(
-  conversation: Pick<ConversationSummary, 'state' | 'latest_direction'>,
+  conversation: Pick<ConversationSummary, 'state' | 'latest_direction' | 'needs_reply'>,
 ): boolean {
+  if (typeof conversation.needs_reply === 'boolean') return conversation.needs_reply;
   return conversation.state === 'open' && conversation.latest_direction === 'inbound';
 }
 
@@ -175,12 +196,14 @@ export function createCommunicationsApi(client: CrmClient) {
       linkState?: CommunicationLinkState;
       limit?: number;
       before?: string;
+      needsReply?: boolean;
     } = {}): Promise<ConversationSummary[]> {
       const result = await client.rpc('list_communication_conversations', {
         p_channel: filter.channel ?? null,
         p_link_state: filter.linkState ?? null,
         p_limit: filter.limit ?? 30,
         p_before: filter.before ?? null,
+        p_needs_reply: filter.needsReply ?? null,
       });
       if (result.error) throw new ApiError(apiMessage('Could not load the inbox.'), result.error);
       return assertConversations(result.data ?? []);
@@ -241,6 +264,45 @@ export function createCommunicationsApi(client: CrmClient) {
         p_request_id: requestId,
       });
       if (result.error) throw new ApiError(apiMessage('Could not queue that reply.'), result.error);
+      return result.data;
+    },
+
+    async getConversationAttention(conversationId: string): Promise<ConversationAttention | null> {
+      const result = await client.rpc('get_conversation_attention', {
+        p_conversation_id: conversationId,
+      });
+      if (result.error) return null;
+      return (result.data as ConversationAttention | null) ?? null;
+    },
+
+    /** Personal, not CRM work. Reversible; hides nothing once a client is linked. */
+    async setNotCrm(conversationId: string, notCrm: boolean) {
+      const result = await client.rpc('set_conversation_not_crm', {
+        p_conversation_id: conversationId,
+        p_not_crm: notCrm,
+      });
+      if (result.error) throw new ApiError(apiMessage('Could not update that conversation.'), result.error);
+      return result.data;
+    },
+
+    /**
+     * Handled outside the CRM: the Today acknowledgement for the exact client
+     * message the operator saw. A newer real message is not covered.
+     */
+    async setHandledOutsideCrm(attention: ConversationAttention, handled: boolean) {
+      const result = handled
+        ? await client.rpc('acknowledge_attention_item', {
+          p_artist_id: attention.artist_id,
+          p_item_kind: 'conversation_reply',
+          p_entity_id: attention.conversation_id,
+          p_observed_at: attention.awaiting_reply_since,
+        })
+        : await client.rpc('clear_attention_acknowledgement', {
+          p_artist_id: attention.artist_id,
+          p_item_kind: 'conversation_reply',
+          p_entity_id: attention.conversation_id,
+        });
+      if (result.error) throw new ApiError(apiMessage('Could not update that conversation.'), result.error);
       return result.data;
     },
 

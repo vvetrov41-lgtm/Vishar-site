@@ -236,7 +236,14 @@ select ok(
     pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '24h'), '2026-10-08 10:00:00+01'),
   'a reminder older than 72 hours is not sent after an outage');
 
--- Answered after the reminder was queued: the claim drops it.
+-- Answered after the reminder was queued: the claim drops it. The reply is
+-- the provider-accepted message, not the conversation's timestamp column.
+insert into public.communication_messages(
+  conversation_id, artist_id, channel, direction, origin, status, body, created_at
+) values (
+  'f1004300-0000-4000-8000-000000000001', 'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'outbound', 'provider_app', 'sent', 'Answered', '2026-10-05 10:02:00+01'
+);
 update public.communication_conversations
 set last_outbound_at = '2026-10-05 10:02:00+01'
 where id = 'f1004300-0000-4000-8000-000000000001';
@@ -244,6 +251,8 @@ select ok(
   not crm_private.unanswered_reminder_is_current(
     pg_temp.reminder('f1004300-0000-4000-8000-000000000001', '24h'), '2026-10-05 10:05:00+01'),
   'a reminder queued before the artist replied is not sent');
+delete from public.communication_messages
+where conversation_id = 'f1004300-0000-4000-8000-000000000001' and body = 'Answered';
 update public.communication_conversations
 set last_outbound_at = '2026-10-02 16:00:00+01'
 where id = 'f1004300-0000-4000-8000-000000000001';
