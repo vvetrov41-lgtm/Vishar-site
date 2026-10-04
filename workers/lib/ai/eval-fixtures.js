@@ -353,8 +353,58 @@ export const VISION_FIXTURES = Object.freeze({
   },
 });
 
+// Manual translation fixtures. Each one is modelled on the structure of a
+// real enquiry (wording, typos, mixed languages, the facts that went wrong in
+// production on 2026-10-04) with every name, date and personal detail
+// replaced. `must` patterns have to appear in the Russian; `mustNot` patterns
+// are the specific distortions seen or feared (wrong side, wrong body part,
+// a refusal turned into a request, an invented price).
+export const TRANSLATION_FIXTURES = Object.freeze({
+  forearm_half_sleeve_no_colour: {
+    source: "Hi, I'm looking to get a half sleeve on my left inner forearm, around 15cm long. I don't want any colour, just black and grey. Would you be able to work around my existing small rose without covering it?",
+    expect: { must: ['лев', 'внутрен', 'предплеч', '15', 'не', 'ч[её]рн|сер'], mustNot: ['прав', 'плеч(?!ь)', 'перекрыть розу'] },
+  },
+  shin_add_colour: {
+    source: 'Want to add colour to the black and white design already there on my shin. Add more flowers and butterflies and fairies. Front of the shin only, not the calf.',
+    expect: { must: ['голен', 'цвет', 'бабоч', 'не'], mustNot: ['бок', 'бедр'] },
+  },
+  three_pieces_sizes_dates: {
+    source: "I'm thinking of 3 tattoos (maybe 4). 2 on either side of the front shoulder, around 5cm - 6cm each, and one on the forearm 10cm-12cm. I have a lion on my centre chest approx 8cm and want it all to balance. Preferred timing: November 17th",
+    expect: { must: ['3', '4', '5', '6', '10', '12', '8', '17', 'ноябр', 'предплеч', 'плеч'], mustNot: ['18', 'стоимост'] },
+  },
+  budget_question: {
+    source: "My budget is around £800, is that enough for a half sleeve? I really don't want to go over £1000. How many sessions would it take?",
+    expect: { must: ['800', '1000', '\\?', 'сеанс', 'не'], mustNot: ['900', '1200'] },
+  },
+  whatsapp_slang: {
+    source: 'hey mate wanna get sumthin on my right calf, nothin too big tbh maybe 10x8cm?? b&g. free any sat in dec',
+    expect: { must: ['прав', 'икр', '10', '8', 'суббот', 'декабр'], mustNot: ['лев', 'бедр', 'цвет'] },
+  },
+  mixed_ru_en: {
+    source: 'Привет! I want a portrait of my dad on my upper left arm, черно-белый реализм, примерно 20 см. Not sure about the background yet.',
+    expect: { must: ['лев', 'плеч', '20', 'портрет', 'не увер|пока не|ещё не|еще не'], mustNot: ['прав', 'предплеч'] },
+  },
+  keep_and_change: {
+    source: "I like the reference but I don't want the skull. Keep the roses and the clock, the clock should show 4:20. Outer right thigh, about 25cm tall. Not sure about colour yet, maybe some red?",
+    expect: { must: ['череп', 'роз', 'час', '4', '20', 'внешн|наружн', 'прав', 'бедр', '25', 'красн'], mustNot: ['лев', 'голен'] },
+  },
+  cover_up_old_name: {
+    source: 'Need a cover up for an old name on my lower back, its quite dark and faded. Something bigger is fine. I dont mind colour if it helps.',
+    expect: { must: ['перекр|кавер|закры', 'имя|имен', 'поясниц|нижн', 'цвет'], mustNot: ['вокруг'] },
+  },
+  negations_only: {
+    source: 'No lettering, no colour, nothing on the elbow please. I never want it to go past the wrist.',
+    expect: { must: ['надпис|букв|текст', 'цвет', 'локт', 'запяст', 'не|без|ни'], mustNot: [] },
+  },
+  long_story_questions: {
+    source: "This tattoo means a lot to me, it's for my nan who passed last year. She loved sunflowers and her cat. Could the cat sit inside one big sunflower? Inner bicep, left arm. Do you do consultations on weekends? I can travel from Leeds.",
+    expect: { must: ['подсолн', 'кош|кот', 'внутрен', 'бицепс', 'лев', 'выходн', '\\?'], mustNot: ['прав'] },
+  },
+});
+
 export const EVAL_FIXTURE_IDS = Object.freeze({
   crm_client_state: Object.freeze(Object.keys(CLIENT_STATE_FIXTURES)),
   enquiry_intake: Object.freeze(Object.keys(ENQUIRY_FIXTURES)),
   vision_reference_extraction: Object.freeze(Object.keys(VISION_FIXTURES)),
+  enquiry_translation: Object.freeze(Object.keys(TRANSLATION_FIXTURES)),
 });

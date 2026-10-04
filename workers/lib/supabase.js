@@ -104,6 +104,10 @@ export const ENQUIRY_AI_RPCS = new Set([
   'service_claim_enquiry_ai_jobs',
   'service_complete_enquiry_ai_job',
   'service_fail_enquiry_ai_job',
+  // Manual enquiry translation (20261004160000): one job by id, on a click.
+  'service_claim_enquiry_translation',
+  'service_complete_enquiry_translation',
+  'service_fail_enquiry_translation',
 ]);
 
 /** Scheduler liveness proof is separate from the automation execution surface. */

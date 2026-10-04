@@ -36,6 +36,7 @@ import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { BookingPanel } from '../components/BookingPanel';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
 import { EnquiryReplyEvidence } from '../components/EnquiryReplyEvidence';
+import { EnquiryTranslation } from '../components/EnquiryTranslation';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -417,6 +418,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         <div style={{ marginTop: 12 }}>
           <div className="meta" style={{ fontWeight: 600 }}>{clientBriefLabel}</div>
           <ClientBrief text={enquiry.idea} />
+          {enquiry.idea ? <EnquiryTranslation enquiryId={enquiry.id} api={api} language={language} /> : null}
         </div>
         <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
       </Section>

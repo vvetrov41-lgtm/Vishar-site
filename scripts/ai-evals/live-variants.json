@@ -2,12 +2,114 @@
   "repeats": 2,
   "maxCalls": 220,
   "variants": [
-    { "id": "intake-qwen-full", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "full" } },
-    { "id": "intake-qwen-transport", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "transport" } },
-    { "id": "intake-qwen-object", "task": "enquiry_intake", "variant": { "provider": "qwen", "schemaMode": "object" } },
-    { "id": "intake-llama", "task": "enquiry_intake", "variant": { "provider": "workers_ai" } },
-    { "id": "state-qwen-current", "task": "crm_client_state", "variant": { "provider": "qwen", "timeoutMs": 60000 } },
-    { "id": "state-qwen-nothink", "task": "crm_client_state", "variant": { "provider": "qwen", "thinking": "off", "timeoutMs": 60000 } },
-    { "id": "state-llama", "task": "crm_client_state", "variant": { "provider": "workers_ai", "timeoutMs": 60000 } }
+    {
+      "id": "intake-qwen-full",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "qwen",
+        "schemaMode": "full"
+      }
+    },
+    {
+      "id": "intake-qwen-transport",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "qwen",
+        "schemaMode": "transport"
+      }
+    },
+    {
+      "id": "intake-qwen-object",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "qwen",
+        "schemaMode": "object"
+      }
+    },
+    {
+      "id": "intake-llama",
+      "task": "enquiry_intake",
+      "variant": {
+        "provider": "workers_ai"
+      }
+    },
+    {
+      "id": "state-qwen-current",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "qwen",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-qwen-nothink",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "qwen",
+        "thinking": "off",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "state-llama",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "workers_ai",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "tr-qwen-27b",
+      "task": "enquiry_translation",
+      "variant": {
+        "provider": "qwen",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "tr-gemma-4-26b",
+      "task": "enquiry_translation",
+      "variant": {
+        "provider": "workers_ai",
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "tr-llama-3.3-70b",
+      "task": "enquiry_translation",
+      "variant": {
+        "provider": "workers_ai",
+        "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "tr-gpt-oss-120b",
+      "task": "enquiry_translation",
+      "variant": {
+        "provider": "workers_ai",
+        "model": "@cf/openai/gpt-oss-120b",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "tr-mistral-small-24b",
+      "task": "enquiry_translation",
+      "variant": {
+        "provider": "workers_ai",
+        "model": "@cf/mistralai/mistral-small-3.1-24b-instruct",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "tr-llama-3.1-8b-baseline",
+      "task": "enquiry_translation",
+      "variant": {
+        "provider": "workers_ai",
+        "model": "@cf/meta/llama-3.1-8b-instruct-fast",
+        "timeoutMs": 60000
+      }
+    }
   ]
 }

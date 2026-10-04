@@ -9,7 +9,7 @@
 // Output: per-variant validity, check pass rate, first-attempt outcome codes,
 // p50/p95 latency and token means, as JSON and as a Markdown table.
 import { readFileSync, appendFileSync } from 'node:fs';
-import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
+import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, TRANSLATION_FIXTURES, VISION_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
 import { checkAnswer } from './assertions.mjs';
 import { toStoredClientState } from '../../workers/lib/ai/client-state-schema.js';
 
@@ -80,7 +80,8 @@ for (const entry of plan.variants) {
     ? EVAL_FIXTURE_IDS[entry.task].filter((id) => subset.includes(id))
     : EVAL_FIXTURE_IDS[entry.task];
   const expectations = entry.task === 'enquiry_intake' ? ENQUIRY_FIXTURES
-    : entry.task === 'vision_reference_extraction' ? VISION_FIXTURES : CLIENT_STATE_FIXTURES;
+    : entry.task === 'vision_reference_extraction' ? VISION_FIXTURES
+      : entry.task === 'enquiry_translation' ? TRANSLATION_FIXTURES : CLIENT_STATE_FIXTURES;
   const rows = [];
   for (let repeat = 0; repeat < plan.repeats; repeat += 1) {
     for (const fixture of fixtures) {
@@ -98,7 +99,7 @@ for (const entry of plan.variants) {
       const scored = result.ok && result.answer && entry.variant?.contract === 'v2'
         ? toStoredClientState(result.answer, expectations[fixture].input.attention)
         : result.answer;
-      const check = result.ok && scored ? checkAnswer(entry.task, scored, expectations[fixture].expect) : null;
+      const check = result.ok && scored ? checkAnswer(entry.task, scored, expectations[fixture].expect, expectations[fixture].source) : null;
       rows.push({
         fixture,
         ok: Boolean(result.ok),
