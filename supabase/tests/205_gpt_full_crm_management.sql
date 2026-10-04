@@ -114,6 +114,55 @@ select is(
   )),
   'vladimir-full@example.test',
   'specific full enquiry detail exposes canonical linked email');
+
+-- Stored vision analyses come with the enquiry (20261004170000).
+select is(
+  (select reference_analyses from public.gpt_get_enquiry_full(
+    (select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry))),
+  '[]'::jsonb,
+  'an enquiry without analysed images returns an empty reference_analyses list');
+reset role;
+insert into public.enquiry_files (
+  id, enquiry_id, ordinal, storage_path, mime_type, safe_extension, byte_size, upload_state, uploaded_at
+)
+select 'db0fa111-1111-4111-8111-111111111111', e.id, 0,
+  'clients/' || e.client_id || '/enquiries/' || e.id || '/references/db0fa111-1111-4111-8111-111111111111.jpg',
+  'image/jpeg', 'jpg', 3538090, 'ready', now()
+from public.enquiries e where e.id = (select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry);
+insert into public.enquiry_file_ai_analysis (
+  artist_id, workspace_id, client_id, enquiry_id, enquiry_file_id, source_checksum, analysis, summary, provider, model
+)
+select e.artist_id, a.workspace_id, e.client_id, e.id, 'db0fa111-1111-4111-8111-111111111111', repeat('f', 64),
+  jsonb_build_object(
+    'summary', 'Faded blue-grey old tattoo on the upper forearm next to a red marker sketch of two flowers.',
+    'palette', 'Skin tones, faded blue-grey ink, red marker.',
+    'subjects', jsonb_build_array('faded old tattoo', 'red marker flower sketch'),
+    'body_area', 'forearm',
+    'image_kind', 'existing_tattoo',
+    'composition', 'Forearm photographed vertically against a dark background.',
+    'quality_limitations', jsonb_build_array('old tattoo subject unclear'),
+    'existing_tattoo_visible', true),
+  'Faded blue-grey old tattoo on the upper forearm next to a red marker sketch of two flowers.',
+  'qwen', '@cf/qwen/qwen3.8-27b'
+from public.enquiries e join public.artists a on a.id = e.artist_id
+where e.id = (select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry);
+set local role authenticated;
+select pg_temp.gpt_full_claims(
+  '{"sub":"db011111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-vladimir-full-test"}'
+);
+create temporary table full_with_images as
+select * from public.gpt_get_enquiry_full((select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry));
+select is((select jsonb_array_length(reference_analyses) from full_with_images), 1,
+  'reviewing the enquiry returns its analysed image without a separate request');
+select is((select reference_analyses -> 0 ->> 'summary' from full_with_images),
+  'Faded blue-grey old tattoo on the upper forearm next to a red marker sketch of two flowers.',
+  'the stored vision summary is returned exactly as written');
+select is((select reference_analyses -> 0 -> 'analysis' ->> 'existing_tattoo_visible' from full_with_images), 'true',
+  'the full stored analysis object (existing tattoo, body area, subjects) comes with it');
+select is((select reference_analyses -> 0 ->> 'model' from full_with_images), '@cf/qwen/qwen3.8-27b',
+  'the item names the vision model that wrote it');
+select ok((select idea is not null from full_with_images),
+  'the client''s original text arrives in the same read');
 select is(
   (select count(*)::int from public.gpt_get_enquiry_full(
     (select (result ->> 'enquiry_id')::uuid from kristina_full_enquiry)
