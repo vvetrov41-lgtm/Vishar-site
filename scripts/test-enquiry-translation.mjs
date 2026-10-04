@@ -44,6 +44,10 @@ await test('"about" or "around" without a number is not uncertainty', () => {
   assert.ok(!translationFidelityFailures('A tattoo about my dad, cover around it', 'Татуировка о моём отце, перекрыть вокруг неё').includes('uncertainty'));
 });
 
+await test('"lower back" translated as "поясница" keeps the lower fact', () => {
+  assert.ok(!translationFidelityFailures('Cover up on my lower back', 'Перекрытие на пояснице').includes('lower'));
+});
+
 await test('a dropped half of the message is caught', () => {
   const long = 'My nan loved sunflowers and her cat. Could the cat sit inside one big sunflower? Inner bicep, left arm please.';
   assert.ok(translationFidelityFailures(long, 'Кот в подсолнухе?').includes('length'));
@@ -73,7 +77,7 @@ await test('every eval fixture has a translation that its own checks accept', ()
 
 await test('translation never runs on the 8B Llama', () => {
   const plan = resolveTask({}, 'enquiry_translation', PROVIDER_IDS);
-  assert.deepEqual([...plan.chain], ['qwen', 'workers_ai']);
+  assert.deepEqual([...plan.chain], ['workers_ai', 'qwen'], 'Gemma (pinned) leads, Qwen falls back');
   assert.equal(plan.workersAiModel, '@cf/google/gemma-4-26b-a4b-it');
   assert.ok(!TASK_WORKERS_AI_MODELS.has('@cf/meta/llama-3.1-8b-instruct-fast'));
   const forced = resolveTask({ AI_MODEL_WORKERS_AI_ENQUIRY_TRANSLATION: '@cf/meta/llama-3.1-8b-instruct-fast' }, 'enquiry_translation', PROVIDER_IDS);

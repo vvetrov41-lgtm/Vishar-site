@@ -86,3 +86,21 @@ sync, ad conversions or AI jobs.
   were provider timeouts, rate limits and schema misses, not a size refusal.
   `scripts/test-vision-upload-cap.mjs` pins the shared ceiling and pushes a
   3.9 MB image through download and routing.
+
+### Translation model choice (live eval 2026-10-04, run 37210254188)
+
+10 sanitized fixtures modelled on real enquiries, 2 repeats, each answer
+scored by the Worker fidelity checks plus fixture patterns (wrong side, body
+part, invented price):
+
+| model | checks pass | p50 | main misses |
+|---|---|---|---|
+| Gemma 4 26B | 0.9 (1.0 after checker fix) | 1.7 s | none real ("lower back" -> "поясница" was a checker gap) |
+| Qwen 3.8 27B | 0.7 | 9.1 s | calf lost, "upper arm" lost, "sessions" lost |
+| Llama 3.3 70B | 0.7 | 1.7 s | sleeve, left/upper arm, negation, cover-up |
+| gpt-oss-120b | 0.6 | 1.3 s | half sleeve, cover-up |
+| Mistral Small 24B | 0.6 | 4.1 s | half sleeve, calf, cover-up |
+| Llama 3.1 8B (old) | 0.5 | 0.4 s | sleeve, calf, cover-up, Saturday |
+
+Chosen: Gemma 4 26B first, Qwen 27B fallback. Answers that fail the
+fidelity checks are refused at runtime, whatever the model.

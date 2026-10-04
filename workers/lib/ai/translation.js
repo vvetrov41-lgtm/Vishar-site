@@ -54,7 +54,8 @@ const ANCHORS = Object.freeze([
   { fact: 'inner', source: /\binner\b|\binside of\b/i, target: /внутрен/i },
   { fact: 'outer', source: /\bouter\b|\boutside of\b/i, target: /внешн|наружн/i },
   { fact: 'upper', source: /\bupper\b/i, target: /верх|плеч/i },
-  { fact: 'lower', source: /\blower\b/i, target: /нижн|низ|предплеч|голен/i },
+  // "lower back" is "поясница" in Russian, with no word for "lower" in it.
+  { fact: 'lower', source: /\blower\b/i, target: /нижн|низ|предплеч|голен|поясниц/i },
   { fact: 'forearm', source: /\bfore\s?arms?\b/i, target: /предплеч/i },
   { fact: 'shin', source: /\bshins?\b/i, target: /голен/i },
   { fact: 'calf', source: /\bcal(?:f|ves)\b/i, target: /икр/i },
