@@ -201,7 +201,7 @@ test('reply lookup records the oldest SENT mail after the enquiry, a checked mis
     if (href.includes('/rpc/service_list_gmail_reply_candidates')) {
       assert.deepEqual(JSON.parse(init.body), { p_artist_id: ARTIST, p_limit: __testing.REPLY_ENQUIRIES_PER_RUN });
       return jsonResponse([
-        { enquiry_id: ENQUIRY, client_email: 'client@example.com', created_at: '2026-09-23T14:10:23.732Z' },
+        { enquiry_id: ENQUIRY, client_email: 'client@example.com', created_at: '2026-09-23T14:10:23.732Z', closed_at: '2026-09-30T08:00:00.000Z' },
         { enquiry_id: QUIET, client_email: 'quiet@example.com', created_at: '2026-09-23T14:10:23.732Z' },
         { enquiry_id: DRAFTY, client_email: 'drafty@example.com', created_at: '2026-09-23T14:10:23.732Z' },
       ]);
@@ -240,8 +240,25 @@ test('reply lookup records the oldest SENT mail after the enquiry, a checked mis
   assert.equal(
     new URL(gmailPaths[0]).searchParams.get('q'),
     `from:"studio@example.com" to:"client@example.com" after:${Math.floor(Date.parse('2026-09-23T14:10:23.732Z') / 1000)}`
-      + ' -in:drafts -in:chats -in:spam -in:trash',
+      + ` before:${Math.floor(Date.parse('2026-09-30T08:00:00.000Z') / 1000)}`
+      + ' -in:drafts -in:scheduled -in:chats -in:spam -in:trash',
   );
+  assert.equal(new URL(gmailPaths[2]).searchParams.get('q').includes('before:'), false,
+    'an enquiry with no later enquiry has an open window');
+});
+
+test('a reply after the client\'s next enquiry is never returned for the earlier one', async () => {
+  const sentAt = await __testing.firstSentAfter('token-value', 'studio@example.com', 'client@example.com',
+    '2026-09-23T14:10:23.732Z', async (url) => {
+      const href = String(url);
+      if (href.includes('/messages?')) return jsonResponse({ messages: [{ id: 'later1234' }] });
+      return jsonResponse({
+        internalDate: String(Date.parse('2026-09-30T09:00:00.000Z')),
+        labelIds: ['SENT'],
+        payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: 'client@example.com' }] },
+      });
+    }, '2026-09-30T08:00:00.000Z');
+  assert.equal(sentAt, null);
 });
 
 test('a reply before the enquiry is never returned as its first reply', async () => {

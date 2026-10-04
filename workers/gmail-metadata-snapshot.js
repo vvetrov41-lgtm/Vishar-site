@@ -357,19 +357,25 @@ async function newestClientMessage(accessToken, mailboxEmail, clientEmail, fetch
 }
 
 /**
- * The oldest SENT message from the mailbox to the client after the enquiry
- * arrived, as a time only. Gmail lists newest first, so the last listed id is
- * the oldest; one page is far more than any first-reply window holds.
+ * The oldest SENT message from the mailbox to the client inside the
+ * enquiry's reply window (from the enquiry until the client's next one), as a
+ * time only. Gmail lists newest first, so the last listed id is the oldest on
+ * the page. The window bound keeps every result inside this enquiry: with
+ * more than one page the time found is a later reply in the same window, so
+ * the enquiry is still correctly answered.
  */
-async function firstSentAfter(accessToken, mailboxEmail, clientEmail, afterIso, fetchImpl = fetch) {
+async function firstSentAfter(accessToken, mailboxEmail, clientEmail, afterIso, fetchImpl = fetch, beforeIso = null) {
   const mailbox = safeEmail(mailboxEmail);
   const client = safeEmail(clientEmail);
   const after = Date.parse(afterIso || '');
+  const before = beforeIso ? Date.parse(beforeIso) : Number.NaN;
   if (!mailbox || !client || mailbox === client || !Number.isFinite(after)) return null;
+  if (beforeIso && (!Number.isFinite(before) || before <= after)) return null;
   const params = new URLSearchParams({
     maxResults: String(REPLY_LOOKUP_MAX_RESULTS),
     q: `from:${gmailQueryAddress(mailbox)} to:${gmailQueryAddress(client)} after:${Math.floor(after / 1000)}`
-      + ' -in:drafts -in:chats -in:spam -in:trash',
+      + (Number.isFinite(before) ? ` before:${Math.floor(before / 1000)}` : '')
+      + ' -in:drafts -in:scheduled -in:chats -in:spam -in:trash',
   });
   const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
   const ids = (Array.isArray(listing.messages) ? listing.messages : [])
@@ -385,7 +391,8 @@ async function firstSentAfter(accessToken, mailboxEmail, clientEmail, afterIso, 
   const evidence = historyEvidence(message, mailbox, client);
   if (evidence?.direction !== 'outbound') return null;
   if (!Array.isArray(message?.labelIds) || !message.labelIds.includes('SENT')) return null;
-  if (Date.parse(evidence.last_message_at) < after) return null;
+  const at = Date.parse(evidence.last_message_at);
+  if (at < after || (Number.isFinite(before) && at >= before)) return null;
   return evidence.last_message_at;
 }
 
@@ -406,7 +413,9 @@ async function backfillEnquiryReplies(env, artistId, accessToken, mailboxEmail, 
     const clientEmail = safeEmail(candidate?.client_email);
     if (!enquiryId || !clientEmail) continue;
     try {
-      const sentAt = await firstSentAfter(accessToken, mailboxEmail, clientEmail, candidate?.created_at, fetchImpl);
+      const sentAt = await firstSentAfter(
+        accessToken, mailboxEmail, clientEmail, candidate?.created_at, fetchImpl, candidate?.closed_at ?? null,
+      );
       await serviceRpc(env, 'service_record_gmail_enquiry_reply_check', {
         p_artist_id: artistId,
         p_enquiry_id: enquiryId,

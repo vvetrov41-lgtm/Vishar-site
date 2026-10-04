@@ -83,9 +83,13 @@ $$;
 -- 2. Outbound WhatsApp written in the phone app after the enquiry.
 select pg_temp.msg(2, 'outbound', 'provider_app', 'delivered', interval '9 days');
 
--- 3. Gmail sent mail after the enquiry, written in Gmail, not the CRM.
+-- 3. Gmail sent mail after the enquiry, written in Gmail, not the CRM (the
+-- Worker records it after checking the SENT label).
+select crm_private.note_gmail_client_outbound('a1111111-1111-4111-8111-111111111111', pg_temp.cli(3), now() - interval '8 days');
+-- The newest-message record alone says "outbound", which a scheduled,
+-- not yet sent message also is: it is not evidence (case 1).
 insert into crm_private.gmail_client_email_activity (artist_id, client_id, last_message_at, last_direction)
-values ('a1111111-1111-4111-8111-111111111111', pg_temp.cli(3), now() - interval '8 days', 'outbound');
+values ('a1111111-1111-4111-8111-111111111111', pg_temp.cli(1), now() - interval '8 days', 'outbound');
 
 -- 4. Outbound Instagram after the enquiry.
 select pg_temp.msg(4, 'outbound', 'provider_app', 'sent', interval '7 days');
@@ -185,7 +189,7 @@ update public.enquiries set excluded_from_analytics = true where id = pg_temp.en
 
 -- ------------------------------------------------------------------ predicate
 
-select ok(not pg_temp.replied(1), '1. a new enquiry with no message is without reply');
+select ok(not pg_temp.replied(1), '1. a new enquiry with no sent message is without reply, whatever the newest-message record says');
 select is(pg_temp.first_reply(2)::text, (select (now() - interval '9 days')::text),
   '2. an outbound WhatsApp after the enquiry is its first reply');
 select is((select evidence_source from crm_private.enquiry_first_artist_reply(pg_temp.enq(3))),

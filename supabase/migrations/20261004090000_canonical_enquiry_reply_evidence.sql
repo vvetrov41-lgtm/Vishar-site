@@ -31,7 +31,7 @@
 --        (booking cards, deposit confirmations) are not a reply;
 --     3. a message Gmail holds in the artist mailbox's SENT label, From the
 --        mailbox To the client (crm_private.gmail_client_outbound_messages,
---        filled by the Gmail Worker and by the existing Gmail evidence).
+--        filled by the Gmail Worker, which checks the SENT label).
 --   The enquiry status (new, reviewing, ...) is not evidence either way.
 --   Replies before the enquiry, and replies after the client's next enquiry,
 --   belong to another enquiry.
@@ -109,65 +109,10 @@ $$;
 revoke all on function crm_private.note_gmail_client_outbound(uuid, uuid, timestamptz)
   from public, anon, authenticated, service_role;
 
--- The durable newest-message record and the per-message excerpts already
--- carry Gmail outbound observations; keep every one of them as evidence.
-create function crm_private.gmail_activity_notes_outbound()
-returns trigger
-language plpgsql
-security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-begin
-  if new.last_direction = 'outbound' and new.last_message_at is not null then
-    perform crm_private.note_gmail_client_outbound(new.artist_id, new.client_id, new.last_message_at);
-  end if;
-  return null;
-end;
-$$;
-
-revoke all on function crm_private.gmail_activity_notes_outbound()
-  from public, anon, authenticated, service_role;
-
-create trigger gmail_client_email_activity_notes_outbound
-  after insert or update of last_message_at, last_direction on crm_private.gmail_client_email_activity
-  for each row execute function crm_private.gmail_activity_notes_outbound();
-
-create function crm_private.gmail_excerpt_notes_outbound()
-returns trigger
-language plpgsql
-security definer
-set search_path = pg_catalog, public, crm_private
-as $$
-begin
-  if new.direction = 'outbound' and new.occurred_at is not null then
-    perform crm_private.note_gmail_client_outbound(new.artist_id, new.client_id, new.occurred_at);
-  end if;
-  return null;
-end;
-$$;
-
-revoke all on function crm_private.gmail_excerpt_notes_outbound()
-  from public, anon, authenticated, service_role;
-
-create trigger gmail_client_ai_excerpts_notes_outbound
-  after insert or update of occurred_at, direction on crm_private.gmail_client_ai_excerpts
-  for each row execute function crm_private.gmail_excerpt_notes_outbound();
-
--- Backfill from what the CRM already observed. Derived evidence only: no
--- communication history is changed.
-insert into crm_private.gmail_client_outbound_messages (artist_id, client_id, sent_at)
-select a.artist_id, a.client_id, a.last_message_at
-from crm_private.gmail_client_email_activity a
-where a.last_direction = 'outbound' and a.last_message_at is not null
-union
-select g.artist_id, g.client_id, g.last_message_at
-from public.gmail_client_metadata_snapshots g
-where g.direction = 'outbound' and g.last_message_at is not null
-union
-select x.artist_id, x.client_id, x.occurred_at
-from crm_private.gmail_client_ai_excerpts x
-where x.direction = 'outbound' and x.occurred_at is not null
-on conflict do nothing;
+-- Only messages Gmail filed as SENT are evidence. The snapshot and the
+-- per-client activity record keep the newest message of any outbound kind
+-- (a scheduled message included), so they are not copied here: the Gmail
+-- Worker records SENT messages and looks up each recent enquiry itself.
 
 -- ---------------------------------------------------------------------------
 -- 2. The canonical reply predicate
@@ -804,7 +749,8 @@ create function public.service_list_gmail_reply_candidates(
 returns table (
   enquiry_id uuid,
   client_email text,
-  created_at timestamptz
+  created_at timestamptz,
+  closed_at timestamptz
 )
 language plpgsql
 stable
@@ -820,9 +766,10 @@ begin
   end if;
 
   return query
-  select e.id, lower(btrim(c.email)), e.created_at
+  select e.id, lower(btrim(c.email)), e.created_at, w.closed_at
   from public.enquiries e
   join public.clients c on c.id = e.client_id and c.archived_at is null
+  cross join lateral crm_private.enquiry_reply_window(e.id) w
   left join crm_private.gmail_enquiry_reply_checks k on k.enquiry_id = e.id
   where e.artist_id = p_artist_id
     and e.archived_at is null and e.intake_state = 'complete'
@@ -840,7 +787,7 @@ revoke all on function public.service_list_gmail_reply_candidates(uuid, integer)
 grant execute on function public.service_list_gmail_reply_candidates(uuid, integer) to service_role;
 
 comment on function public.service_list_gmail_reply_candidates(uuid, integer) is
-  'Backend-only: recent enquiries of this artist with no provider-confirmed first reply yet, with the client address to look up in Gmail.';
+  'Backend-only: recent enquiries of this artist with no provider-confirmed first reply yet, with the client address and the reply window to look up in Gmail.';
 
 create function public.service_record_gmail_enquiry_reply_check(
   p_artist_id uuid,
