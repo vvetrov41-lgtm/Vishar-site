@@ -124,9 +124,13 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts
-          npm audit --audit-level=moderate
+          # Fail-closed allowlist: only the approved Tailwind 3 dev-build braces
+          # advisory passes; every other advisory still fails the release.
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
           node scripts/build-mcp-plugin-tools.mjs
           node scripts/test-mcp-plugin-tools.mjs
+          node scripts/test-mcp-enquiry-reference-analyses.mjs
           node scripts/build-mcp-plugin-parity.mjs --check
           node scripts/test-mcp-domain-contracts.mjs
           node scripts/test-mcp-production-config.mjs

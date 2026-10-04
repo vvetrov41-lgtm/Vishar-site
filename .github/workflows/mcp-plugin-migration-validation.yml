@@ -10,6 +10,7 @@ on:
       - 'workers/vishar-mcp.js'
       - 'scripts/build-mcp-plugin-tools.mjs'
       - 'scripts/test-mcp-plugin-tools.mjs'
+      - 'scripts/test-mcp-enquiry-reference-analyses.mjs'
       - 'scripts/build-mcp-plugin-parity.mjs'
       - 'scripts/probe-mcp-plugin-production.mjs'
       - 'scripts/activate-mcp-plugin-client.mjs'
@@ -31,6 +32,7 @@ on:
       - 'workers/vishar-mcp.js'
       - 'scripts/build-mcp-plugin-tools.mjs'
       - 'scripts/test-mcp-plugin-tools.mjs'
+      - 'scripts/test-mcp-enquiry-reference-analyses.mjs'
       - 'scripts/build-mcp-plugin-parity.mjs'
       - 'scripts/probe-mcp-plugin-production.mjs'
       - 'scripts/activate-mcp-plugin-client.mjs'
@@ -97,6 +99,7 @@ jobs:
       - name: Plugin MCP contracts
         run: |
           node scripts/test-mcp-plugin-tools.mjs
+          node scripts/test-mcp-enquiry-reference-analyses.mjs
           node scripts/test-mcp-plugin-client-activation.mjs
       - name: Plugin package and operation parity
         run: |
