@@ -58,7 +58,7 @@ send; none reached the client. The alert
 was count-only, deduplicated per UTC day over a rolling 24 hours, so a single
 evening failure alerted twice (10-01 18:50 and 10-02 00:00).
 
-Fixed in `20261004120000_crm_ai_rebuild_and_actionable_delivery_alerts.sql`:
+Fixed in `20261004140000_crm_ai_rebuild_and_actionable_delivery_alerts.sql`:
 the queue keeps enquiry and project; an unsendable record dies on the first
 attempt; one alert per failed client-facing delivery with client, time,
 attempts, reason, retry state, action and a link to the client; no alert for

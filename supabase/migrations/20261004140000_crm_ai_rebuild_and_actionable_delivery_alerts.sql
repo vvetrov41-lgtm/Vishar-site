@@ -1,4 +1,4 @@
--- 20261004120000_crm_ai_rebuild_and_actionable_delivery_alerts.sql
+-- 20261004140000_crm_ai_rebuild_and_actionable_delivery_alerts.sql
 --
 -- Two independent problems found in production on 2026-10-04.
 --
