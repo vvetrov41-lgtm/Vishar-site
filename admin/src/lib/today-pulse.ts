@@ -44,8 +44,13 @@ export interface PulseArtistSummary {
     sessions_booked: number;
     payments_received: number;
   };
+  /** Enquiry creation to first provider-confirmed artist reply, known times only. */
   median_first_reply_hours: number | null;
+  /** No reply through any channel and no operator attestation. */
   enquiries_without_reply_30d: number;
+  /** Answered, but the first reply time is not known (attested or unseen). */
+  enquiries_reply_attested_30d?: number;
+  first_reply_timed_30d?: number;
   sources: { gmail_snapshot: 'fresh' | 'stale' | 'unavailable'; gmail_refreshed_at: string | null };
 }
 

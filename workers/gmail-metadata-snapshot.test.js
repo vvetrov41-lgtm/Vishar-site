@@ -163,6 +163,115 @@ test('a run stays inside the Worker subrequest limit even in the worst case', ()
   assert.ok(__testing.SUBREQUEST_BUDGET < 50, 'below the free-plan cap of 50 subrequests');
 });
 
+test('a reply run stays inside the same subrequest limit', () => {
+  const worstCase = 1 + 1 + 1 + 1 + __testing.METADATA_MESSAGES_PER_RUN + 1 + 2
+    + 1 // outbound evidence
+    + 1 // reply candidates
+    + __testing.REPLY_ENQUIRIES_PER_RUN * (1 + 1 + 1); // list, oldest message, record
+  assert.ok(worstCase <= __testing.SUBREQUEST_BUDGET, `worst case ${worstCase}`);
+});
+
+test('only SENT outbound messages to known clients become reply evidence, once each', () => {
+  const sentMessage = (labelIds) => ({
+    internalDate: String(Date.parse('2026-09-23T19:36:35.000Z')),
+    labelIds,
+    payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: 'Client <client@example.com>' }] },
+  });
+  const sent = __testing.metadataCorrespondent(sentMessage(['SENT']), 'studio@example.com');
+  const scheduled = __testing.metadataCorrespondent(sentMessage(['SCHEDULED']), 'studio@example.com');
+  assert.equal(sent.sent, true);
+  assert.equal('sent' in scheduled, false, 'a scheduled or draft message is not a reply');
+  const rows = __testing.outboundEvidenceRows(
+    [sent, { ...sent }, scheduled,
+      { email: 'stranger@example.com', direction: 'outbound', sent: true, timestamp: '2026-09-23T20:00:00.000Z' },
+      { email: 'client@example.com', direction: 'inbound', timestamp: '2026-09-23T19:52:41.000Z' }],
+    [{ client_id: CLIENT, client_email: 'client@example.com' }],
+  );
+  assert.deepEqual(rows, [{ client_id: CLIENT, sent_at: '2026-09-23T19:36:35.000Z' }]);
+});
+
+test('reply lookup records the oldest SENT mail after the enquiry, a checked miss, and sends nothing', async () => {
+  const recorded = [];
+  const gmailPaths = [];
+  const ENQUIRY = '44444444-4444-4444-8444-444444444444';
+  const QUIET = '55555555-5555-4555-8555-555555555555';
+  const DRAFTY = '66666666-6666-4666-8666-666666666666';
+  const fetchImpl = async (url, init = {}) => {
+    const href = String(url);
+    if (href.includes('/rpc/service_list_gmail_reply_candidates')) {
+      assert.deepEqual(JSON.parse(init.body), { p_artist_id: ARTIST, p_limit: __testing.REPLY_ENQUIRIES_PER_RUN });
+      return jsonResponse([
+        { enquiry_id: ENQUIRY, client_email: 'client@example.com', created_at: '2026-09-23T14:10:23.732Z' },
+        { enquiry_id: QUIET, client_email: 'quiet@example.com', created_at: '2026-09-23T14:10:23.732Z' },
+        { enquiry_id: DRAFTY, client_email: 'drafty@example.com', created_at: '2026-09-23T14:10:23.732Z' },
+      ]);
+    }
+    if (href.includes('/rpc/service_record_gmail_enquiry_reply_check')) {
+      recorded.push(JSON.parse(init.body));
+      return jsonResponse(null);
+    }
+    if (href.startsWith('https://gmail.googleapis.com/')) {
+      assert.equal(init.method, 'GET', 'the provider is only ever read');
+      gmailPaths.push(href);
+      if (href.includes('/messages?')) {
+        const query = new URL(href).searchParams.get('q');
+        if (query.includes('quiet@example.com')) return jsonResponse({});
+        // Newest first: the last id is the first reply.
+        return jsonResponse({ messages: [{ id: 'newest123' }, { id: 'oldest123' }] });
+      }
+      assert.match(href, /oldest123/);
+      const to = gmailPaths.some((path) => path.includes('drafty')) ? 'drafty@example.com' : 'client@example.com';
+      return jsonResponse({
+        internalDate: String(Date.parse('2026-09-23T19:36:35.000Z')),
+        labelIds: to === 'drafty@example.com' ? ['DRAFT'] : ['SENT'],
+        payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: to }] },
+      });
+    }
+    throw new Error(`unexpected ${href}`);
+  };
+  const checked = await __testing.backfillEnquiryReplies(ENV, ARTIST, 'token-value', 'studio@example.com', fetchImpl);
+  assert.equal(checked, 3);
+  assert.deepEqual(recorded, [
+    { p_artist_id: ARTIST, p_enquiry_id: ENQUIRY, p_first_sent_at: '2026-09-23T19:36:35.000Z' },
+    { p_artist_id: ARTIST, p_enquiry_id: QUIET, p_first_sent_at: null },
+    { p_artist_id: ARTIST, p_enquiry_id: DRAFTY, p_first_sent_at: null },
+  ]);
+  assert.ok(gmailPaths.every((href) => !href.includes('/send')));
+  assert.equal(
+    new URL(gmailPaths[0]).searchParams.get('q'),
+    `from:"studio@example.com" to:"client@example.com" after:${Math.floor(Date.parse('2026-09-23T14:10:23.732Z') / 1000)}`
+      + ' -in:drafts -in:chats -in:spam -in:trash',
+  );
+});
+
+test('a reply before the enquiry is never returned as its first reply', async () => {
+  const sentAt = await __testing.firstSentAfter('token-value', 'studio@example.com', 'client@example.com',
+    '2026-09-23T14:10:23.732Z', async (url) => {
+      const href = String(url);
+      if (href.includes('/messages?')) return jsonResponse({ messages: [{ id: 'older1234' }] });
+      return jsonResponse({
+        internalDate: String(Date.parse('2026-09-23T14:10:23.000Z')),
+        labelIds: ['SENT'],
+        payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: 'client@example.com' }] },
+      });
+    });
+  assert.equal(sentAt, null);
+});
+
+test('evidence recording is one bounded backend call and skipped when empty', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init) => { calls.push({ url: String(url), body: JSON.parse(init.body) }); return jsonResponse(1); };
+  assert.equal(await __testing.recordOutboundEvidence(ENV, ARTIST, [], fetchImpl), 0);
+  assert.equal(calls.length, 0);
+  await __testing.recordOutboundEvidence(ENV, ARTIST, [{ client_id: CLIENT, sent_at: '2026-09-23T19:36:35.000Z' }], fetchImpl);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/rest\/v1\/rpc\/service_record_gmail_outbound_messages$/);
+  assert.deepEqual(calls[0].body, {
+    p_artist_id: ARTIST,
+    p_messages: [{ client_id: CLIENT, sent_at: '2026-09-23T19:36:35.000Z' }],
+  });
+});
+
 test('the budgeted fetch refuses calls beyond its limit', async () => {
   let calls = 0;
   const budgeted = __testing.budgetedFetch(async () => { calls += 1; return jsonResponse({}); }, 2);
