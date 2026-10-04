@@ -155,14 +155,15 @@ insert into public.clients (id, full_name, email) values
 
 insert into public.communication_conversations (
   id, artist_id, channel, client_id, link_state,
-  integration_key, external_contact_id, external_display_label
+  integration_key, external_contact_id, external_display_label,
+  last_message_at, last_inbound_at
 ) values
 ('9c111111-1111-4111-8111-111111111111', 'a1111111-1111-4111-8111-111111111111',
  'whatsapp', 'c9111111-1111-4111-8111-111111111111', 'linked',
- 'vladimir-production', '447700900001', 'Vladimir contact'),
+ 'vladimir-production', '447700900001', 'Vladimir contact', now(), now()),
 ('9c222222-2222-4222-8222-222222222222', 'a2222222-2222-4222-8222-222222222222',
  'whatsapp', 'c9222222-2222-4222-8222-222222222222', 'linked',
- 'kristina-production', '447700900002', 'Kristina contact');
+ 'kristina-production', '447700900002', 'Kristina contact', now(), now());
 
 select throws_ok(
   $$insert into public.communication_conversations

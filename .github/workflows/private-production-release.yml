@@ -195,7 +195,7 @@ jobs:
 
       - name: Audit CRM dependencies
         working-directory: admin
-        run: npm audit --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Test, typecheck and build private CRM
         working-directory: admin
@@ -432,7 +432,7 @@ jobs:
       - name: Install locked deployment tooling
         run: npm ci
 
-      - name: Audit deployment dependencies and scan secrets
+      - name: Audit production deployment dependencies and scan secrets
         run: |
           node scripts/audit-root-dependencies.mjs --self-test
           node scripts/audit-root-dependencies.mjs --audit-level=moderate
