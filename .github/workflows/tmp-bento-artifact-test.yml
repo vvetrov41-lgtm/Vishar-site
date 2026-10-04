@@ -1,0 +1,16 @@
+name: Temp Bento artifact test
+on:
+  push:
+    branches:
+      - tmp-bento-aftercare-build-20261004
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create test artifact
+        run: echo 'bento artifact test' > test.txt
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bento-artifact-test
+          path: test.txt
