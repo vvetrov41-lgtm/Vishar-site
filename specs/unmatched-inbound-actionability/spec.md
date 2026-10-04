@@ -16,4 +16,6 @@ Today showed 20 "messages from unknown senders" (Vladimir 19, Kristina 1). None 
 - Handled outside the CRM: the existing version-scoped `attention_acknowledgements(conversation_reply)`. A newer actionable inbound returns the item. It is undone with `clear_attention_acknowledgement`.
 - Archive: a new actionable inbound reopens the conversation, unless it is unlinked and `not_crm`.
 - Client-side exact E.164 relink happens on client, enquiry or project writes. It fails closed on ambiguity or cross-artist scope.
+- Automatic links carry provenance (`auto_linked_at`). When the exact match stops being unique, or the client changes phone or is archived, the automatic link is withdrawn and re-matched. An operator link or promotion clears the provenance and is never withdrawn. Links made before this change have no provenance and are left alone.
+- The studio's turn uses the same classifier as inbound: an outbound reaction, edit, revoke or unsupported echo is not a reply.
 - No history is deleted. The backfill touches only derived links and reopens archived conversations when the order is proven by the activity log. Nothing is auto-marked `not_crm`.
