@@ -189,7 +189,8 @@ grant execute on function public.service_record_gmail_enquiry_reply_check(uuid, 
 delete from crm_private.gmail_enquiry_reply_checks;
 
 -- Every recent enquiry with an address is looked up once; a lookup that
--- found nothing is repeated while the window is open.
+-- found nothing is repeated every six hours while the window is open (or
+-- when the last look predates the window closing).
 create or replace function public.service_list_gmail_reply_candidates(
   p_artist_id uuid,
   p_limit integer default 3
@@ -223,7 +224,11 @@ begin
     and e.archived_at is null and e.intake_state = 'complete'
     and e.created_at >= now() - interval '30 days'
     and nullif(btrim(coalesce(c.email, '')), '') is not null
-    and (k.enquiry_id is null or (not k.found and k.checked_at < now() - interval '6 hours'))
+    -- A complete miss is repeated only while the window can still gain mail;
+    -- a closed window (the client enquired again) cannot.
+    and (k.enquiry_id is null
+         or (not k.found and k.checked_at < now() - interval '6 hours'
+             and (w.closed_at is null or not k.complete or k.checked_at < w.closed_at)))
   order by k.checked_at nulls first, e.created_at desc, e.id
   limit p_limit;
 end;
@@ -350,6 +355,10 @@ as $$
          case
            -- An operator already attested an earlier, unseen reply.
            when att.attested_at is not null and att.attested_at < fr.replied_at then null
+           -- An explicit "answered outside the CRM" proves a hidden reply at
+           -- some unknown time, whenever it was recorded.
+           when exists (select 1 from crm_private.enquiry_reply_attestations r
+                        where r.enquiry_id = p_enquiry_id) then null
            -- Gmail may still hold an earlier one.
            when (select pending from gmail) then null
            else fr.replied_at

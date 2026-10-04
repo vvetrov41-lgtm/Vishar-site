@@ -115,6 +115,15 @@ select public.set_enquiry_reply_outside_crm('e3241111-0000-4000-8000-00000000000
 reset role;
 select set_config('request.jwt.claims', '', true);
 
+-- Gmail later turns up a SENT mail from before the statement: the hidden
+-- reply may be earlier still, so no first-reply time is claimed.
+select crm_private.note_gmail_client_outbound('a1111111-1111-4111-8111-111111111111',
+  'c3241111-0000-4000-8000-000000000000', now() - interval '4 days');
+insert into crm_private.gmail_enquiry_reply_checks (enquiry_id, artist_id, checked_at, found, complete)
+values ('e3241111-0000-4000-8000-000000000000', 'a1111111-1111-4111-8111-111111111111', now(), true, true);
+select is((select first_reply_at from crm_private.enquiry_reply_state('e3241111-0000-4000-8000-000000000000')),
+  null::timestamptz, 'an explicit outside-CRM statement keeps the first reply time unknown');
+
 -- ------------------------------------------------ 2. Gmail time needs a complete lookup
 
 select crm_private.note_gmail_client_outbound('a1111111-1111-4111-8111-111111111111',
@@ -155,6 +164,34 @@ select ok(not exists (
   select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
   where c.enquiry_id = 'e3242222-0000-4000-8000-000000000000'),
   'a complete lookup that found the first reply is not repeated');
+
+-- A complete miss in a window the client's next enquiry has closed is final.
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at, created_at
+) values ('e3244445-0000-4000-8000-000000000000', 'c3244444-0000-4000-8000-000000000000',
+  'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-3245', 'e3244445-9999-4000-8000-000000000000',
+  repeat('e', 64), 'new', 'complete', 'Silent Client', 'silent-324@example.test', '2026-08-05', now(), now() - interval '20 days');
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at, created_at
+) values ('e3242223-0000-4000-8000-000000000000', 'c3243333-0000-4000-8000-000000000000',
+  'a1111111-1111-4111-8111-111111111111', 'ENQ-2099-3246', 'e3242223-9999-4000-8000-000000000000',
+  repeat('f', 64), 'new', 'complete', 'Queued Client', 'queued-324@example.test', '2026-08-05', now(), now() - interval '20 days');
+insert into crm_private.gmail_enquiry_reply_checks (enquiry_id, artist_id, checked_at, found, complete) values
+  ('e3244445-0000-4000-8000-000000000000', 'a1111111-1111-4111-8111-111111111111', now() - interval '1 day', false, true),
+  ('e3242223-0000-4000-8000-000000000000', 'a1111111-1111-4111-8111-111111111111', now() - interval '1 day', false, true);
+select ok(not exists (
+  select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+  where c.enquiry_id in ('e3244445-0000-4000-8000-000000000000', 'e3242223-0000-4000-8000-000000000000')),
+  'a complete miss in a closed window is not looked up again');
+-- Same, but the window is still open: it is repeated.
+update crm_private.gmail_enquiry_reply_checks set checked_at = now() - interval '1 day'
+where enquiry_id = 'e3243333-0000-4000-8000-000000000000';
+select ok(exists (
+  select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+  where c.enquiry_id = 'e3243333-0000-4000-8000-000000000000'),
+  'a miss in an open window is looked up again');
 select set_config('request.jwt.claims', '', true);
 
 -- ------------------------------------------------ 3. reviewing waits for a sent message
@@ -202,7 +239,7 @@ select is((select last_speaker from crm_private.attention_comm_facts(
 select is(
   (crm_private.pulse_summary('a1111111-1111-4111-8111-111111111111') ->> 'enquiries_without_reply_30d')::int
     - (select without_reply from baseline),
-  -4, 'all four enquiries, unanswered at the start, are no longer counted without reply');
+  -4 + 2, 'the four enquiries unanswered at the start are answered; the two older closed-window ones are not');
 
 select * from finish();
 rollback;
