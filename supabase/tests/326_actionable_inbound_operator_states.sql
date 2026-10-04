@@ -107,12 +107,19 @@ select is(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000
   'reaction, unsupported, edit and revoke alone wait for nothing');
 select is(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000c'), null::timestamptz,
   'a reply sent from the phone is the studio''s turn');
--- F: the studio only reacted from the phone.
+-- F: the studio acknowledged the client's closing line with a reaction
+-- (20261004190000); an edit is not a turn, and a new message waits again.
 select pg_temp.conv('d3260000-0000-4000-8000-00000000000f', '447700326006');
 select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'inbound', 'text', now() - interval '3 hours');
-select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'reaction', now() - interval '2 hours', 'sent');
+select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'edit', now() - interval '150 minutes', 'sent');
 select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000f') is not null,
-  'a reaction from the studio is not a reply');
+  'an edit from the studio is not a reply');
+select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'reaction', now() - interval '2 hours', 'sent');
+select is(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000f'), null::timestamptz,
+  'a studio reaction after the client''s message is the studio''s turn');
+select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'inbound', 'text', now() - interval '90 minutes');
+select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000f') is not null,
+  'a new client message after the reaction waits again');
 select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'text', now() - interval '1 hour');
 select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000d') is not null,
   'a failed send and an automation are not a reply');
