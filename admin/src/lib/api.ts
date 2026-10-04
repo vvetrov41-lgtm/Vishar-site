@@ -28,6 +28,7 @@ export function apiMessage(message: ApiMessage): string {
 }
 import { currentLanguage } from './i18n';
 import { phoneSearchCandidates } from './phone';
+
 import type {
   ActivityEntry,
   Artist,
@@ -53,6 +54,20 @@ import type {
   StaffInviteResult,
 } from './types';
 import type { MfaAuth } from './mfa';
+
+/** Channels an operator can say a reply went out on when the CRM could not see it. */
+export type ReplyOutsideCrmChannel = 'whatsapp' | 'instagram' | 'email' | 'phone' | 'in_person' | 'other';
+
+/** Why an enquiry counts as answered (crm_private.enquiry_reply_state). */
+export interface EnquiryReplyState {
+  enquiry_id: string;
+  answered: boolean;
+  first_reply_at: string | null;
+  first_reply_source: 'communication_message' | 'crm_email' | 'gmail_mailbox' | null;
+  attestation_source: string | null;
+  outside_crm_channel: ReplyOutsideCrmChannel | null;
+  outside_crm_recorded_at: string | null;
+}
 
 /**
  * The slice of the Supabase client this application uses. Typing it this
@@ -434,6 +449,24 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       return unwrap(
         await client.rpc('transition_enquiry_status', { p_enquiry_id: enquiryId, p_to_status: to }),
         'change that status'
+      );
+    },
+
+    async getEnquiryReplyState(enquiryId: string): Promise<EnquiryReplyState> {
+      return unwrap<EnquiryReplyState>(
+        await client.rpc('get_enquiry_reply_state', { p_enquiry_id: enquiryId }),
+        'load whether this enquiry was answered'
+      );
+    },
+
+    async setEnquiryReplyOutsideCrm(enquiryId: string, channel: ReplyOutsideCrmChannel | null) {
+      return unwrap(
+        await client.rpc('set_enquiry_reply_outside_crm', {
+          p_enquiry_id: enquiryId,
+          p_channel: channel,
+          p_answered: channel !== null,
+        }),
+        'record that reply'
       );
     },
 
