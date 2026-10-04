@@ -111,5 +111,13 @@
         "timeoutMs": 60000
       }
     }
+  ],
+  "only": [
+    "tr-qwen-27b",
+    "tr-gemma-4-26b",
+    "tr-llama-3.3-70b",
+    "tr-gpt-oss-120b",
+    "tr-mistral-small-24b",
+    "tr-llama-3.1-8b-baseline"
   ]
 }
