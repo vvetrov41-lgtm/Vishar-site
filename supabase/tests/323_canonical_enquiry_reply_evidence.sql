@@ -292,10 +292,10 @@ select ok(exists (
   select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
   where c.enquiry_id = pg_temp.enq(1)),
   'an enquiry with no provider reply is a Gmail lookup candidate');
-select ok(not exists (
+select ok(exists (
   select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
   where c.enquiry_id = pg_temp.enq(9)),
-  'an answered enquiry is not looked up again');
+  'an enquiry answered elsewhere still gets one Gmail lookup, which could hold an earlier reply');
 
 select lives_ok(
   $$select public.service_record_gmail_enquiry_reply_check(

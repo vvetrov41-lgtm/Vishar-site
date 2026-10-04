@@ -80,14 +80,27 @@ insert into public.communication_messages (conversation_id, artist_id, channel, 
 values ('e3217333-3333-4333-8333-333333333333', 'a1111111-1111-4111-8111-111111111111',
   'whatsapp', 'outbound', 'crm', 'queued', 'Thanks, let us talk');
 select is((select status::text from public.enquiries where id = 'e3213333-3333-4333-8333-333333333333'),
-  'reviewing', 'writing to the client from the CRM moves the enquiry to reviewing');
+  'new', 'a CRM message still queued has not reached the client');
+update public.communication_messages set status = 'failed', error_code = 'provider_rejected'
+where conversation_id = 'e3217333-3333-4333-8333-333333333333' and direction = 'outbound';
+select is((select status::text from public.enquiries where id = 'e3213333-3333-4333-8333-333333333333'),
+  'new', 'a failed send does not move the enquiry');
+update public.communication_messages set status = 'sent', error_code = null, sent_at = now()
+where conversation_id = 'e3217333-3333-4333-8333-333333333333' and direction = 'outbound';
+select is((select status::text from public.enquiries where id = 'e3213333-3333-4333-8333-333333333333'),
+  'reviewing', 'once the provider accepted the CRM message the enquiry moves to reviewing');
 
--- Gmail shows the artist replied.
+-- Gmail's newest-message record alone (a scheduled mail looks the same) is
+-- not a reply; a SENT message is.
 insert into crm_private.gmail_client_email_activity (artist_id, client_id, last_message_at, last_direction, history_checked_at)
 values ('a1111111-1111-4111-8111-111111111111', 'f3214444-4444-4444-8444-444444444444',
   now() - interval '1 hour', 'outbound', now());
 select is((select status::text from public.enquiries where id = 'e3214444-4444-4444-8444-444444444444'),
-  'reviewing', 'a Gmail reply after the enquiry moves it to reviewing');
+  'new', 'an outbound newest-message record alone does not move the enquiry');
+select crm_private.note_gmail_client_outbound('a1111111-1111-4111-8111-111111111111',
+  'f3214444-4444-4444-8444-444444444444', now() - interval '1 hour');
+select is((select status::text from public.enquiries where id = 'e3214444-4444-4444-8444-444444444444'),
+  'reviewing', 'a SENT Gmail reply after the enquiry moves it to reviewing');
 
 -- Nothing but `new` ever moves.
 insert into public.sessions (id, artist_id, client_id, appointment_type, status, start_at, end_at, duration_hours)
@@ -141,7 +154,7 @@ insert into public.communication_conversations (
   'whatsapp', null, 'unmatched', 'vladimir-production', '447700932177');
 insert into public.communication_messages (conversation_id, artist_id, channel, direction, origin, status, body)
 values ('e3217778-7777-4777-8777-777777777777', 'a1111111-1111-4111-8111-111111111111',
-  'whatsapp', 'outbound', 'crm', 'queued', 'Replied before linking');
+  'whatsapp', 'outbound', 'provider_app', 'delivered', 'Replied before linking');
 select is((select status::text from public.enquiries where id = 'e3217777-7777-4777-8777-777777777777'),
   'new', 'an unmatched reply cannot move an enquiry yet');
 update public.communication_conversations

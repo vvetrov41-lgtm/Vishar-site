@@ -33,6 +33,7 @@ import { EnquiryArchiveAction, EnquiryEditPanel } from '../components/EnquiryEdi
 import { EnquiryReferenceActions } from '../components/EnquiryReferenceActions';
 import { BookingPanel } from '../components/BookingPanel';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
+import { EnquiryReplyEvidence } from '../components/EnquiryReplyEvidence';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -336,6 +337,8 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
             />
           </details>
         ) : null}
+
+        <EnquiryReplyEvidence enquiryId={enquiry.id} role={role} api={api} language={language} />
 
         {hasAdminActions ? (
           <details className="enquiry-admin">

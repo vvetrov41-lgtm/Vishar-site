@@ -167,7 +167,8 @@ test('a reply run stays inside the same subrequest limit', () => {
   const worstCase = 1 + 1 + 1 + 1 + __testing.METADATA_MESSAGES_PER_RUN + 1 + 2
     + 1 // outbound evidence
     + 1 // reply candidates
-    + __testing.REPLY_ENQUIRIES_PER_RUN * (1 + 1 + 1); // list, oldest message, record
+    + __testing.REPLY_ENQUIRIES_PER_RUN * (1 + 1 + 1) // list, oldest message, record
+    + __testing.REPLY_EXTRA_CALLS_PER_RUN; // extra pages or message reads, shared by the run
   assert.ok(worstCase <= __testing.SUBREQUEST_BUDGET, `worst case ${worstCase}`);
 });
 
@@ -219,12 +220,13 @@ test('reply lookup records the oldest SENT mail after the enquiry, a checked mis
         // Newest first: the last id is the first reply.
         return jsonResponse({ messages: [{ id: 'newest123' }, { id: 'oldest123' }] });
       }
-      assert.match(href, /oldest123/);
-      const to = gmailPaths.some((path) => path.includes('drafty')) ? 'drafty@example.com' : 'client@example.com';
+      const drafty = gmailPaths.some((path) => path.includes('drafty'));
+      const oldest = /oldest123/.test(href);
       return jsonResponse({
-        internalDate: String(Date.parse('2026-09-23T19:36:35.000Z')),
-        labelIds: to === 'drafty@example.com' ? ['DRAFT'] : ['SENT'],
-        payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: to }] },
+        internalDate: String(Date.parse(oldest ? '2026-09-23T19:36:35.000Z' : '2026-09-24T10:00:00.000Z')),
+        labelIds: drafty && oldest ? ['DRAFT'] : ['SENT'],
+        payload: { headers: [{ name: 'From', value: 'studio@example.com' },
+          { name: 'To', value: drafty ? 'drafty@example.com' : 'client@example.com' }] },
       });
     }
     throw new Error(`unexpected ${href}`);
@@ -232,9 +234,10 @@ test('reply lookup records the oldest SENT mail after the enquiry, a checked mis
   const checked = await __testing.backfillEnquiryReplies(ENV, ARTIST, 'token-value', 'studio@example.com', fetchImpl);
   assert.equal(checked, 3);
   assert.deepEqual(recorded, [
-    { p_artist_id: ARTIST, p_enquiry_id: ENQUIRY, p_first_sent_at: '2026-09-23T19:36:35.000Z' },
-    { p_artist_id: ARTIST, p_enquiry_id: QUIET, p_first_sent_at: null },
-    { p_artist_id: ARTIST, p_enquiry_id: DRAFTY, p_first_sent_at: null },
+    { p_artist_id: ARTIST, p_enquiry_id: ENQUIRY, p_first_sent_at: '2026-09-23T19:36:35.000Z', p_complete: true },
+    { p_artist_id: ARTIST, p_enquiry_id: QUIET, p_first_sent_at: null, p_complete: true },
+    // The oldest message is not SENT; the next one is read from the shared pool.
+    { p_artist_id: ARTIST, p_enquiry_id: DRAFTY, p_first_sent_at: '2026-09-24T10:00:00.000Z', p_complete: true },
   ]);
   assert.ok(gmailPaths.every((href) => !href.includes('/send')));
   assert.equal(
@@ -258,7 +261,7 @@ test('a reply after the client\'s next enquiry is never returned for the earlier
         payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: 'client@example.com' }] },
       });
     }, '2026-09-30T08:00:00.000Z');
-  assert.equal(sentAt, null);
+  assert.deepEqual(sentAt, { sentAt: null, complete: true });
 });
 
 test('a reply before the enquiry is never returned as its first reply', async () => {
@@ -272,7 +275,55 @@ test('a reply before the enquiry is never returned as its first reply', async ()
         payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: 'client@example.com' }] },
       });
     });
-  assert.equal(sentAt, null);
+  assert.deepEqual(sentAt, { sentAt: null, complete: true });
+});
+
+function pagedGmail(pages, times) {
+  const calls = [];
+  const fetchImpl = async (url) => {
+    const href = String(url);
+    calls.push(href);
+    if (href.includes('/messages?')) {
+      const token = new URL(href).searchParams.get('pageToken') || '0';
+      const index = Number(token);
+      return jsonResponse({
+        messages: pages[index].map((id) => ({ id })),
+        ...(index + 1 < pages.length ? { nextPageToken: String(index + 1) } : {}),
+      });
+    }
+    const id = /messages\/([A-Za-z0-9_-]+)\?/.exec(href)[1];
+    return jsonResponse({
+      internalDate: String(Date.parse(times[id])),
+      labelIds: ['SENT'],
+      payload: { headers: [{ name: 'From', value: 'studio@example.com' }, { name: 'To', value: 'client@example.com' }] },
+    });
+  };
+  return { calls, fetchImpl };
+}
+
+test('more than one page of sent mail: the earliest is on the last page and is returned', async () => {
+  const { calls, fetchImpl } = pagedGmail(
+    [['newest01', 'newer002'], ['older003', 'oldest04']],
+    { oldest04: '2026-09-23T15:00:00.000Z' },
+  );
+  const pool = { extra: __testing.REPLY_EXTRA_CALLS_PER_RUN };
+  const result = await __testing.firstSentAfter('token-value', 'studio@example.com', 'client@example.com',
+    '2026-09-23T14:10:23.732Z', fetchImpl, null, pool);
+  assert.deepEqual(result, { sentAt: '2026-09-23T15:00:00.000Z', complete: true });
+  assert.equal(calls.filter((href) => href.includes('/messages?')).length, 2, 'the second page was read');
+  assert.equal(new URL(calls[0]).searchParams.get('maxResults'), String(__testing.REPLY_LOOKUP_MAX_RESULTS));
+  assert.equal(pool.extra, __testing.REPLY_EXTRA_CALLS_PER_RUN - 1, 'the extra page came from the shared pool');
+});
+
+test('a window larger than the run can page through is answered without a first-reply time', async () => {
+  const { fetchImpl } = pagedGmail(
+    [['page0001'], ['page0002'], ['page0003'], ['page0004']],
+    { page0001: '2026-09-29T10:00:00.000Z', page0002: '2026-09-28T10:00:00.000Z', page0003: '2026-09-27T10:00:00.000Z' },
+  );
+  const result = await __testing.firstSentAfter('token-value', 'studio@example.com', 'client@example.com',
+    '2026-09-23T14:10:23.732Z', fetchImpl, null, { extra: 2 });
+  assert.equal(result.complete, false, 'an unread older page means this is not the first reply');
+  assert.equal(result.sentAt, '2026-09-27T10:00:00.000Z', 'but a SENT reply in the window is proven');
 });
 
 test('evidence recording is one bounded backend call and skipped when empty', async () => {
