@@ -165,6 +165,61 @@ select ok(not exists (
   where c.enquiry_id = 'e3242222-0000-4000-8000-000000000000'),
   'a complete lookup that found the first reply is not repeated');
 
+-- Found SENT mail, window not read in full: repeated the next day.
+select ok(not exists (
+  select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+  where c.enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  'an incomplete lookup is not repeated within the day');
+update crm_private.gmail_enquiry_reply_checks set checked_at = now() - interval '25 hours'
+where enquiry_id = 'e3244444-0000-4000-8000-000000000000';
+select ok(exists (
+  select 1 from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+  where c.enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  'an incomplete lookup that found SENT mail is repeated after a day');
+update crm_private.gmail_enquiry_reply_checks set checked_at = now()
+where enquiry_id = 'e3244444-0000-4000-8000-000000000000';
+
+-- The retry searches only before the oldest SENT mail already seen ...
+update crm_private.gmail_enquiry_reply_checks set checked_at = now() - interval '25 hours'
+where enquiry_id = 'e3244444-0000-4000-8000-000000000000';
+select is(
+  (select c.closed_at from public.service_list_gmail_reply_candidates('a1111111-1111-4111-8111-111111111111', 10) c
+   where c.enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  (select oldest_seen_at from crm_private.gmail_enquiry_reply_checks where enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  'an incomplete lookup is resumed before the oldest SENT mail it saw');
+select ok((select oldest_seen_at from crm_private.gmail_enquiry_reply_checks
+           where enquiry_id = 'e3244444-0000-4000-8000-000000000000') is not null,
+  'the incomplete lookup kept its oldest SENT time');
+-- ... another incomplete pass moves further back ...
+select public.service_record_gmail_enquiry_reply_check('a1111111-1111-4111-8111-111111111111',
+  'e3244444-0000-4000-8000-000000000000', now() - interval '3 days', false);
+select is((select oldest_seen_at from crm_private.gmail_enquiry_reply_checks
+           where enquiry_id = 'e3244444-0000-4000-8000-000000000000')::text,
+  (select (now() - interval '3 days')::text), 'each pass moves the resume point further back');
+-- ... and a pass that reads the rest in full with nothing earlier settles it.
+select public.service_record_gmail_enquiry_reply_check('a1111111-1111-4111-8111-111111111111',
+  'e3244444-0000-4000-8000-000000000000', null, true);
+select is((select first_reply_at from crm_private.enquiry_reply_state('e3244444-0000-4000-8000-000000000000'))::text,
+  (select (now() - interval '3 days')::text),
+  'nothing earlier: the oldest SENT mail seen is the first reply');
+select is((select complete and found from crm_private.gmail_enquiry_reply_checks
+           where enquiry_id = 'e3244444-0000-4000-8000-000000000000'),
+  true, 'and the lookup is complete');
+
+-- A positive recorded without a time (the one-page build) is never undone
+-- by a later complete lookup that finds nothing.
+select public.service_record_gmail_enquiry_reply_check('a1111111-1111-4111-8111-111111111111',
+  'e3243333-0000-4000-8000-000000000000', null, false);
+update crm_private.gmail_enquiry_reply_checks set found = true, oldest_seen_at = null
+where enquiry_id = 'e3243333-0000-4000-8000-000000000000';
+select public.service_record_gmail_enquiry_reply_check('a1111111-1111-4111-8111-111111111111',
+  'e3243333-0000-4000-8000-000000000000', null, true);
+select is((select found and not complete from crm_private.gmail_enquiry_reply_checks
+           where enquiry_id = 'e3243333-0000-4000-8000-000000000000'),
+  true, 'a prior positive stays answered when a complete retry finds nothing');
+update crm_private.gmail_enquiry_reply_checks set found = false, complete = false, checked_at = now()
+where enquiry_id = 'e3243333-0000-4000-8000-000000000000';
+
 -- A complete miss in a window the client's next enquiry has closed is final.
 insert into public.enquiries (
   id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
