@@ -123,8 +123,9 @@ jobs:
       - name: Install locked root dependencies
         run: npm ci
 
-      - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+      - name: Audit production dependencies
+        # Frontend/build tooling is dev-only; production gate audits runtime dependencies.
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
@@ -157,11 +158,11 @@ jobs:
         run: supabase migration list
 
       - name: Dry-run production migrations without seed
-        run: supabase db push --dry-run
+        run: supabase db push --dry-run --include-all
 
       - name: Apply production migrations without seed
         if: ${{ inputs.deploy }}
-        run: supabase db push
+        run: supabase db push --include-all
 
       - name: Show migration state after production deploy
         if: ${{ inputs.deploy }}
