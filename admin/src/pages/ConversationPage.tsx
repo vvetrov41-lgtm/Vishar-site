@@ -23,6 +23,7 @@ import { useLanguage } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
 import { ClientContextStrip } from '../components/ClientContextStrip';
+import { ConversationOperatorState } from '../components/ConversationOperatorState';
 import { can } from '../lib/permissions';
 import { useDebouncedValue } from '../lib/use-debounced-value';
 import {
@@ -299,6 +300,14 @@ export function ConversationPage({ conversationId }: { conversationId: string })
       </div>
 
       {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
+
+      <ConversationOperatorState
+        conversationId={conversationId}
+        linked={conversation.client_id !== null || conversation.enquiry_id !== null}
+        mayAct={mayReply}
+        api={api}
+        language={language}
+      />
 
       {conversation.link_state === 'unmatched' && mayReply ? (
         <section className="card">

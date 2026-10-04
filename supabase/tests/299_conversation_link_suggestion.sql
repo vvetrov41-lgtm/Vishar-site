@@ -54,19 +54,20 @@ grant execute on function pg_temp.triage_claims(uuid) to authenticated;
 set local role authenticated;
 select pg_temp.triage_claims('d5111111-1111-4111-8111-111111111111');
 
-select is(public.get_conversation_link_suggestion('d5400000-0000-4000-8000-000000000001') ->> 'client_id',
-  'd5200000-0000-4000-8000-000000000001', 'an exact phone match to one known client is suggested');
-select is(public.get_conversation_link_suggestion('d5400000-0000-4000-8000-000000000001') ->> 'match',
-  'phone', 'and the suggestion says why');
+-- The exact phone match no longer waits for a suggestion: the client-side
+-- relink (20261004180000) linked it once the client entered this artist's
+-- scope, so there is nothing left to suggest.
+select is(public.get_conversation_link_suggestion('d5400000-0000-4000-8000-000000000001') ->> 'status',
+  'linked', 'an exact unique phone match was linked from the client side');
 select is(public.get_conversation_link_suggestion('d5400000-0000-4000-8000-000000000002') ->> 'status',
   'none', 'an unknown number suggests nobody');
 select is(public.get_conversation_link_suggestion('d5400000-0000-4000-8000-000000000003') ->> 'client_id',
   'd5200000-0000-4000-8000-000000000001', 'an exact Instagram handle match is suggested regardless of case and @');
 
--- Nothing was written.
+-- Nothing was written by the suggestion itself.
 reset role;
 select is((select link_state::text from public.communication_conversations
-           where id = 'd5400000-0000-4000-8000-000000000001'), 'unmatched',
+           where id = 'd5400000-0000-4000-8000-000000000003'), 'unmatched',
   'a suggestion never links anything by itself');
 
 -- A second known client with the same number makes it ambiguous.
@@ -83,6 +84,14 @@ insert into public.enquiries (
   repeat('6', 64), 'reviewing', 'complete', 'Shared Phone Client', 'shared-phone@example.test', '2026-08-05', now()
 );
 update public.clients set phone = '+447700900991' where id = 'd5200000-0000-4000-8000-000000000002';
+-- With two clients on the number, an unlinked conversation stays unlinked
+-- (neither trigger guesses) and the suggestion reports the ambiguity.
+update public.communication_conversations
+set client_id = null, enquiry_id = null, link_state = 'unmatched'
+where id = 'd5400000-0000-4000-8000-000000000001';
+select is((select link_state::text from public.communication_conversations
+           where id = 'd5400000-0000-4000-8000-000000000001'), 'unmatched',
+  'an ambiguous number is never linked automatically');
 
 set local role authenticated;
 select pg_temp.triage_claims('d5111111-1111-4111-8111-111111111111');
