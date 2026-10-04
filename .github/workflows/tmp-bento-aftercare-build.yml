@@ -14,63 +14,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Assemble document JSON
+      - name: Collect source fragments
         shell: bash
         run: |
-          sha256sum tmp/bento-aftercare/doc.part*
-          python - <<'PY'
-          from pathlib import Path
-          import base64, gzip, json
+          mkdir -p export/parts
+          cp tmp/bento-aftercare/doc.part* export/parts/
+          cat tmp/bento-aftercare/doc.part* > export/combined.b64
+          wc -c export/parts/doc.part* export/combined.b64
+          sha256sum export/parts/doc.part* export/combined.b64
 
-          parts = sorted(Path('tmp/bento-aftercare').glob('doc.part*'))
-          text = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
-          print('parts:', [(p.name, p.stat().st_size) for p in parts])
-          print('base64 chars:', len(text))
-          bad = [(i, repr(ch)) for i, ch in enumerate(text) if not (ch.isalnum() or ch in '+/=')]
-          print('bad chars:', bad[:20])
-          raw = base64.b64decode(text, validate=True)
-          doc_bytes = gzip.decompress(raw)
-          doc = json.loads(doc_bytes)
-          assert doc.get('format') == 'bento/slides'
-          Path('/tmp/doc.json').write_bytes(doc_bytes)
-          print('document bytes:', len(doc_bytes), 'slides:', len(doc.get('slides', [])))
-          PY
-
-      - name: Download Bento Slides v1.2.5
+      - name: Download official Bento Slides v1.2.5 shell
         shell: bash
         run: |
           curl -fL --retry 3 --retry-delay 2 \
             https://github.com/nyblnet/bento/releases/download/v1.2.5/Bento_Slides.bento.html \
-            -o /tmp/Bento_Slides.bento.html
-          sha256sum /tmp/Bento_Slides.bento.html
+            -o export/Bento_Slides.bento.html
+          sha256sum export/Bento_Slides.bento.html
 
-      - name: Insert document into official Bento shell
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          shell = Path('/tmp/Bento_Slides.bento.html').read_text(encoding='utf-8')
-          doc = Path('/tmp/doc.json').read_text(encoding='utf-8').strip()
-          pattern = re.compile(r'(<script[^>]*id=["\']bento-doc["\'][^>]*>)(.*?)(</script>)', re.S)
-          out, count = pattern.subn(lambda m: m.group(1) + '\n' + doc + '\n' + m.group(3), shell, count=1)
-          if count != 1:
-              raise SystemExit('Could not locate #bento-doc block in Bento shell')
-          Path('Vladimir_Vishar_Tattoo_Aftercare.bento.html').write_text(out, encoding='utf-8')
-          print('Built bytes:', len(out.encode('utf-8')))
-          PY
-
-      - name: Sanity check final file
-        shell: bash
-        run: |
-          grep -q 'id="bento-doc"' Vladimir_Vishar_Tattoo_Aftercare.bento.html
-          grep -q '"format":"bento/slides"' Vladimir_Vishar_Tattoo_Aftercare.bento.html
-          test -s Vladimir_Vishar_Tattoo_Aftercare.bento.html
-
-      - name: Upload Bento artifact
+      - name: Upload repair bundle
         uses: actions/upload-artifact@v4
         with:
-          name: Vladimir_Vishar_Tattoo_Aftercare
-          path: Vladimir_Vishar_Tattoo_Aftercare.bento.html
+          name: bento-aftercare-repair-bundle
+          path: export/
           retention-days: 7
