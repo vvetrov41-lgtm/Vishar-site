@@ -94,6 +94,9 @@ export const EVAL_WORKERS_AI_MODELS = Object.freeze(new Set([
   '@cf/google/gemma-4-26b-a4b-it',
   '@cf/zai-org/glm-4.7-flash',
   '@cf/qwen/qwen3-30b-a3b-fp8',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/openai/gpt-oss-120b',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
 ]));
 
 export function normalizeExperiment(plan, experiment) {
@@ -266,6 +269,7 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
     .map((id) => {
       const provider = PROVIDERS[id];
       let config = provider ? provider.configure(env, plan.modality) : null;
+      if (config && id === 'workers_ai' && plan.workersAiModel) config = { ...config, model: plan.workersAiModel };
       if (config && experiment?.model && id === 'workers_ai') config = { ...config, model: experiment.model };
       return config ? { provider, config } : null;
     })

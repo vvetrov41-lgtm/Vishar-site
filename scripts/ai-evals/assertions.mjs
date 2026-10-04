@@ -1,3 +1,4 @@
+import { translationFidelityFailures } from '../../workers/lib/ai/translation.js';
 // Structural and semantic checks for CRM AI eval fixtures.
 //
 // A check never compares prose. It asks whether the answer respects facts the
@@ -157,7 +158,25 @@ export function checkVision(answer, expect = {}) {
   return { valid: true, failures };
 }
 
-export function checkAnswer(task, answer, expect) {
+/**
+ * Translation: the deterministic fidelity checks the Worker also applies, plus
+ * fixture-specific patterns. Russian stems are matched case-insensitively.
+ */
+export function checkTranslation(answer, expect = {}, source = '') {
+  const text = typeof answer?.translation === 'string' ? answer.translation : '';
+  if (!text) return { valid: false, failures: ['schema_invalid'] };
+  const failures = translationFidelityFailures(source, text).map((f) => `fidelity:${f}`);
+  for (const pattern of expect.must ?? []) {
+    if (!new RegExp(pattern, 'iu').test(text)) failures.push(`missing:${pattern}`);
+  }
+  for (const pattern of expect.mustNot ?? []) {
+    if (new RegExp(pattern, 'iu').test(text)) failures.push(`distortion:${pattern}`);
+  }
+  return { valid: true, failures };
+}
+
+export function checkAnswer(task, answer, expect, source) {
+  if (task === 'enquiry_translation') return checkTranslation(answer, expect, source);
   if (task === 'vision_reference_extraction') return checkVision(answer, expect);
   return task === 'enquiry_intake' ? checkEnquiry(answer, expect) : checkClientState(answer, expect);
 }

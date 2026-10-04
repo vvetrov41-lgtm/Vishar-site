@@ -64,6 +64,31 @@ insert into public.enquiries (
    repeat('d', 64), 'accepted', 'complete', 'Consult Kristina Client', 'kristina-1843@example.test', '2026-08-05', now(),
    now() - interval '3 days', null, null, 'Fine line', 'Ankle', 'Kristina fixture');
 
+-- One analysed reference image on the linked enquiry (20261004160000).
+insert into public.enquiry_files (
+  id, enquiry_id, ordinal, storage_path, mime_type, safe_extension, byte_size, upload_state, uploaded_at
+) values (
+  'dc55aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'dc531111-1111-4111-8111-111111111111', 0,
+  'clients/dc521111-1111-4111-8111-111111111111/enquiries/dc531111-1111-4111-8111-111111111111/references/dc55aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.png',
+  'image/png', 'png', 3900000, 'ready', now()
+);
+insert into public.enquiry_file_ai_analysis (
+  artist_id, workspace_id, client_id, enquiry_id, enquiry_file_id, source_checksum, analysis, summary, provider, model
+)
+select e.artist_id, a.workspace_id, e.client_id, e.id, 'dc55aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', repeat('e', 64),
+  jsonb_build_object(
+    'summary', 'Faded blue-grey tattoo on the outer forearm with a red marker sketch.',
+    'palette', 'Skin tones, faded blue-grey ink, red marker.',
+    'subjects', jsonb_build_array('faded old tattoo', 'red marker sketch'),
+    'body_area', 'forearm',
+    'image_kind', 'existing_tattoo',
+    'composition', 'Forearm photographed vertically.',
+    'quality_limitations', jsonb_build_array(),
+    'existing_tattoo_visible', true),
+  'Faded blue-grey tattoo on the outer forearm with a red marker sketch.', 'qwen', '@cf/qwen/qwen3.8-27b'
+from public.enquiries e join public.artists a on a.id = e.artist_id
+where e.id = 'dc531111-1111-4111-8111-111111111111';
+
 -- Unlinked consultation with one open enquiry, a linked consultation, an
 -- ambiguous one and a Kristina appointment.
 insert into public.sessions (id, artist_id, client_id, enquiry_id, appointment_type, status, start_at, end_at, duration_hours, notes)
@@ -191,6 +216,15 @@ create temporary table ctx_ambiguous as
 select public.gpt_get_consultation_context('dc543333-3333-4333-8333-333333333333') as r;
 
 -- ------------------------------------------------------------ link provenance
+-- Stored image analyses reach the plugin as the vision model wrote them.
+select is((select jsonb_array_length(r -> 'reference_analyses') from ctx_linked), 1,
+  'the linked enquiry carries its stored reference-image analysis');
+select is((select r -> 'reference_analyses' -> 0 ->> 'summary' from ctx_linked),
+  'Faded blue-grey tattoo on the outer forearm with a red marker sketch.',
+  'the analysis is passed through unchanged, not re-summarised');
+select is((select r -> 'reference_analyses' -> 0 ->> 'model' from ctx_linked), '@cf/qwen/qwen3.8-27b',
+  'the analysis names the vision model that wrote it');
+
 
 select is((select r -> 'enquiry_link' ->> 'status' from ctx_candidate), 'candidate',
   'one open enquiry for an unlinked consultation is a candidate, never a link');
@@ -317,6 +351,8 @@ select is((public.gpt_get_consultation_context('dc541111-1111-4111-8111-11111111
   'not_permitted', 'without enquiry reads candidates are not searched');
 select ok((public.gpt_get_consultation_context('dc542222-2222-4222-8222-222222222222') -> 'intake_ai_conflicts') = '[]'::jsonb,
   'no intake conflict leaks without enquiry reads');
+select ok(not (public.gpt_get_consultation_context('dc542222-2222-4222-8222-222222222222') ? 'reference_analyses'),
+  'no image analysis leaks without enquiry reads');
 
 reset role;
 select is((select enquiry_id from public.sessions where id = 'dc541111-1111-4111-8111-111111111111'), null::uuid,

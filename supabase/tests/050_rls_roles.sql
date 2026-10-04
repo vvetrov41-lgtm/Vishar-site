@@ -806,6 +806,13 @@ insert into expected_function_acl values
   -- AI run telemetry (20260924010000). Service-only write and aggregate read.
   ('public.service_record_ai_run(jsonb)', false, false, true),
   ('public.service_ai_run_summary(integer)', false, false, true),
+  -- Manual enquiry translation (20261004160000). The artist starts and reads
+  -- it; only the TattooAI Worker claims, completes or fails a job.
+  ('public.request_enquiry_translation(uuid,text)', false, true, false),
+  ('public.get_enquiry_translation(uuid,text)', false, true, false),
+  ('public.service_claim_enquiry_translation(uuid,text)', false, false, true),
+  ('public.service_complete_enquiry_translation(uuid,uuid,text,text,text)', false, false, true),
+  ('public.service_fail_enquiry_translation(uuid,uuid,text)', false, false, true),
   -- Deterministic attention shadow recording (20260924030000).
   ('public.service_record_attention_shadow()', false, false, true),
   -- Stale-brief convergence sweep (20260924036000). Backend only.

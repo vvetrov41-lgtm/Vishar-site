@@ -32,7 +32,8 @@ import {
   CLIENT_STATE_SYSTEM, CLIENT_STATE_V2_SYSTEM, diagnoseClientStateAnalysis, diagnoseClientStateV2, normalizeClientStateV2,
   validateClientStateAnalysis,
 } from '../lib/ai/client-state-schema.js';
-import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../lib/ai/eval-fixtures.js';
+import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, TRANSLATION_FIXTURES, VISION_FIXTURES } from '../lib/ai/eval-fixtures.js';
+import { TRANSLATION_SYSTEM, buildTranslationInput, diagnoseTranslation } from '../lib/ai/translation.js';
 import {
   REFERENCE_IMAGE_SYSTEM, diagnoseReferenceImageAnalysis, normalizeReferenceImageAnalysis,
   validateReferenceImageAnalysis,
@@ -152,7 +153,8 @@ async function runEvalProbe(env, body, fetchImpl) {
   const task = body?.task;
   const fixtures = task === 'crm_client_state' ? CLIENT_STATE_FIXTURES
     : task === 'enquiry_intake' ? ENQUIRY_FIXTURES
-      : task === 'vision_reference_extraction' ? VISION_FIXTURES : null;
+      : task === 'vision_reference_extraction' ? VISION_FIXTURES
+        : task === 'enquiry_translation' ? TRANSLATION_FIXTURES : null;
   const fixtureId = typeof body?.fixture === 'string' ? body.fixture : '';
   const fixture = fixtures && Object.prototype.hasOwnProperty.call(fixtures, fixtureId) ? fixtures[fixtureId] : null;
   if (!fixture) return json(400, { ok: false, error: 'fixture_unknown' });
@@ -166,6 +168,38 @@ async function runEvalProbe(env, body, fetchImpl) {
     maxOutputTokens: variant.maxOutputTokens,
     model: typeof variant.model === 'string' ? variant.model : undefined,
   };
+
+  if (task === 'enquiry_translation') {
+    // The eval measures the contract here and scores fidelity in the runner,
+    // so a model that translates badly still shows what it wrote. Production
+    // jobs validate fidelity inside the router as well.
+    const result = await runModelTask(
+      env,
+      task,
+      { system: TRANSLATION_SYSTEM, input: buildTranslationInput(fixture.source) },
+      {
+        fetchImpl,
+        logger: createLogger(newRequestId()),
+        validateJson: (value) => {
+          const failure = diagnoseTranslation(value, fixture.source);
+          return failure && !failure.startsWith('fidelity.') ? failure : true;
+        },
+        experiment,
+      },
+    );
+    return json(200, {
+      ok: result.ok,
+      task,
+      fixture: fixtureId,
+      provider: result.provider ?? null,
+      model: result.model ?? null,
+      fallbackUsed: result.fallbackUsed ?? false,
+      errorCode: result.errorCode ?? null,
+      durationMs: result.durationMs,
+      attempts: result.attempts,
+      answer: result.ok ? result.json : null,
+    });
+  }
 
   if (task === 'vision_reference_extraction') {
     // Same system prompt, instruction and validator as a real reference-image

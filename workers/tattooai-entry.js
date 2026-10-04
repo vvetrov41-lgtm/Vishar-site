@@ -28,6 +28,10 @@ import {
   handleAiRouterProbeRequest,
   isAiRouterProbePath,
 } from './routes/ai-router-probe.js';
+import {
+  handleEnquiryTranslationRequest,
+  isEnquiryTranslationPath,
+} from './routes/enquiry-translation.js';
 
 const SAFE_CODE = /^[a-z][a-z0-9_]{2,63}$/;
 
@@ -257,6 +261,12 @@ export default {
     // enabled and token-authenticated, and never emits CORS headers.
     const limited = await enforcePublicRateLimit(request, env, semanticPreflight);
     if (limited) return limited;
+
+    // Manual CRM translation: CORS for the CRM origin only, never the
+    // public booking origins. Rate-limited like every other public POST.
+    if (isEnquiryTranslationPath(request)) {
+      return handleEnquiryTranslationRequest(request, env);
+    }
 
     if (isAiRouterProbePath(request)) {
       return handleAiRouterProbeRequest(request, env, { fetchImpl: fetch });

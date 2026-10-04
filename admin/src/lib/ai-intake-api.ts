@@ -48,6 +48,40 @@ export type ClientAiState =
       is_stale: boolean;
     };
 
+/**
+ * Manual Russian translation of the client's enquiry text. The original text
+ * stays the source of truth; a translation is cached per exact source text.
+ */
+export type EnquiryTranslationStatus =
+  | 'none' | 'pending' | 'processing' | 'succeeded' | 'failed' | 'nothing_to_translate' | 'too_long';
+export interface EnquiryTranslation {
+  status: EnquiryTranslationStatus;
+  job_id?: string;
+  translation?: string | null;
+  model?: string | null;
+  translated_at?: string | null;
+  error_code?: string | null;
+}
+
+/** The TattooAI Worker that runs a translation job. It never returns text. */
+export const TRANSLATION_ORIGIN = 'https://api.vishartattoo.com';
+const TRANSLATION_STATUSES: EnquiryTranslationStatus[] = [
+  'none', 'pending', 'processing', 'succeeded', 'failed', 'nothing_to_translate', 'too_long',
+];
+
+function parseTranslation(value: unknown): EnquiryTranslation {
+  if (!isObject(value) || !TRANSLATION_STATUSES.includes(value.status as EnquiryTranslationStatus)) {
+    throw new Error('translation_unavailable');
+  }
+  if (value.status === 'succeeded' && (typeof value.translation !== 'string' || !value.translation.trim())) {
+    throw new Error('translation_unavailable');
+  }
+  if (value.job_id !== undefined && (typeof value.job_id !== 'string' || !/^[0-9a-f-]{36}$/.test(value.job_id))) {
+    throw new Error('translation_unavailable');
+  }
+  return value as unknown as EnquiryTranslation;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -119,6 +153,23 @@ export function createAiIntakeApi(client: CrmClient) {
       const response = await client.rpc('retry_enquiry_ai', { p_enquiry_id: enquiryId });
       if (response.error) throw new Error('ai_retry_unavailable');
       return parseResult(response.data);
+    },
+    async requestEnquiryTranslation(enquiryId: string): Promise<EnquiryTranslation> {
+      const response = await client.rpc('request_enquiry_translation', { p_enquiry_id: enquiryId, p_target_language: 'ru' });
+      if (response.error) throw new Error('translation_unavailable');
+      return parseTranslation(response.data);
+    },
+    async getEnquiryTranslation(enquiryId: string): Promise<EnquiryTranslation> {
+      const response = await client.rpc('get_enquiry_translation', { p_enquiry_id: enquiryId, p_target_language: 'ru' });
+      if (response.error) throw new Error('translation_unavailable');
+      return parseTranslation(response.data);
+    },
+    /** Asks the Worker to run one job. The text is read back through getEnquiryTranslation. */
+    async runEnquiryTranslation(jobId: string): Promise<void> {
+      if (!/^[0-9a-f-]{36}$/.test(jobId)) throw new Error('translation_unavailable');
+      await fetch(`${TRANSLATION_ORIGIN}/crm/enquiry-translations/${jobId}`, {
+        method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store',
+      });
     },
     async editEmailDraft(draft: Pick<AiReplyDraft, 'id' | 'updated_at'>, body: string): Promise<AiReplyDraft> {
       if (!body.trim() || body.length > 12000 || !draft.updated_at) throw new Error('ai_draft_invalid');

@@ -64,3 +64,25 @@ attempt; one alert per failed client-facing delivery with client, time,
 attempts, reason, retry state, action and a link to the client; no alert for
 deliveries sent or withdrawn before the sweep, Telegram's own jobs, contact
 sync, ad conversions or AI jobs.
+
+## Follow-up: manual translation, image analyses, vision cap
+
+- **Translation: ON-DEMAND.** The enquiry page has a "Перевести на русский"
+  button. Nothing runs on page load. The original text stays in full above the
+  translation, which is labelled as a machine translation and cached per exact
+  source text (`crm_private.enquiry_translations`, sha256); an edited message is
+  never shown with an old translation. Task `enquiry_translation` never uses
+  Llama 3.1 8B: Qwen 27B leads, the Workers AI tier pins its own model from a
+  closed list. Every answer passes deterministic fidelity checks (numbers,
+  left/right, inner/outer, upper/lower, body part, sleeve, cover-up, colour,
+  black and grey, negation, uncertainty, questions, length) or is refused. A
+  failure is shown on the button only and never notifies.
+- **Image analyses.** Unchanged and not shown in the CRM. The plugin's
+  consultation context now carries the stored vision-model descriptions as
+  written (`reference_analyses`), when the caller may read the enquiry.
+- **Vision 1.5 MB cap: already fixed on trunk.** Worker download, router,
+  table constraint, upload RPC and bucket all use 4 MiB; production analysed
+  images up to 3.54 MB. The seven failed analyses (2.0-2.8 MB, 2026-09-15..24)
+  were provider timeouts, rate limits and schema misses, not a size refusal.
+  `scripts/test-vision-upload-cap.mjs` pins the shared ceiling and pushes a
+  3.9 MB image through download and routing.

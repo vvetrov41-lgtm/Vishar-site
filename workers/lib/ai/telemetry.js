@@ -17,7 +17,7 @@ const MODEL_TOKEN_RE = /^[A-Za-z0-9_.:-]{1,60}$/;
 const FINISH_RE = /^[a-z][a-z0-9_]{0,31}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export const JOB_KINDS = Object.freeze(['enquiry_intake', 'client_state', 'reference_image']);
+export const JOB_KINDS = Object.freeze(['enquiry_intake', 'client_state', 'reference_image', 'enquiry_translation']);
 export const RUN_OUTCOMES = Object.freeze(['succeeded', 'failed', 'stale', 'not_applied']);
 const PROVIDERS = new Set(['qwen', 'workers_ai', 'openai', 'deepseek']);
 const MAX_ATTEMPTS = 4;

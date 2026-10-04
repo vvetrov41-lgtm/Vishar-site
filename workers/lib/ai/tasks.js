@@ -152,6 +152,22 @@ const TASKS = Object.freeze({
     structured: true,
   },
 
+  // Manual Russian translation of a client's enquiry, on the artist's click
+  // only. Never the incumbent Llama 8B: its Russian changed placements and
+  // subjects in production (2026-10-04 audit). Qwen 27B leads; the Workers AI
+  // tier runs the task's own model (workersAiModel), not the shared text model.
+  // Every answer must pass the deterministic fidelity checks in translation.js.
+  enquiry_translation: {
+    capability: 'translation',
+    modality: 'text',
+    chain: ['qwen', 'workers_ai'],
+    workersAiModel: '@cf/google/gemma-4-26b-a4b-it',
+    timeoutMs: 30_000,
+    maxOutputTokens: 2_000,
+    temperature: 0,
+    structured: true,
+  },
+
   // --- declared multimodal capabilities -------------------------------------
   // Structured description of one private client reference image. Separate
   // from `vision_reference_understanding` because that task is unstructured
@@ -188,6 +204,27 @@ const TASKS = Object.freeze({
 });
 
 export const TASK_NAMES = Object.freeze(Object.keys(TASKS));
+
+/**
+ * Models a task may pin on the Workers AI tier, overridable per task with
+ * `AI_MODEL_WORKERS_AI_<TASK>`. A closed list: configuration cannot name an
+ * arbitrary model, and the 8B Llama is deliberately absent.
+ */
+export const TASK_WORKERS_AI_MODELS = Object.freeze(new Set([
+  '@cf/google/gemma-4-26b-a4b-it',
+  '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+  '@cf/openai/gpt-oss-120b',
+  '@cf/mistralai/mistral-small-3.1-24b-instruct',
+  '@cf/qwen/qwen3-30b-a3b-fp8',
+]));
+
+/** The Workers AI model a task pins, or null when it uses the shared tier model. */
+export function workersAiModelFor(env, taskName, definition) {
+  if (!definition?.workersAiModel) return null;
+  const raw = env?.[`AI_MODEL_WORKERS_AI_${taskName.toUpperCase()}`];
+  const configured = typeof raw === 'string' ? raw.trim() : '';
+  return TASK_WORKERS_AI_MODELS.has(configured) ? configured : definition.workersAiModel;
+}
 
 const TASK_NAME_RE = /^[a-z][a-z0-9_]{2,63}$/;
 const PROVIDER_ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
@@ -246,6 +283,7 @@ export function resolveTask(env, taskName, knownProviderIds = new Set()) {
     maxOutputTokens: clampInteger(definition.maxOutputTokens, 16, MAX_OUTPUT_TOKENS, 512),
     temperature: definition.temperature,
     structured: definition.structured === true,
+    workersAiModel: workersAiModelFor(env, taskName, definition),
   });
 }
 
