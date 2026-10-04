@@ -156,7 +156,7 @@ await test('the v2 prompt never asks the model for stage, waiting side or a draf
 
 await test('v2 and draft prompt versions are pinned to the prompt text', () => {
   const sha = (t) => createHash('sha256').update(t).digest('hex');
-  assert.equal(sha(CLIENT_STATE_V2_SYSTEM), '2c76759e64247aea73a3f917740004e1f3a91c013c909a5f7b8f7d4f0d2e8883',
+  assert.equal(sha(CLIENT_STATE_V2_SYSTEM), 'fc3ffda7ac92800423fa361c6660856603fe9d98838c9789a24301f088d22c4a',
     `v2 prompt changed: bump CLIENT_STATE_V2_PROMPT_VERSION (${CLIENT_STATE_V2_PROMPT_VERSION})`);
   assert.equal(sha(CLIENT_DRAFT_SYSTEM), '3eef5743c982374f5a1b8619ae08c8caea199cf54661e62a7d14673790079e0b',
     `draft prompt changed: bump CLIENT_DRAFT_PROMPT_VERSION (${CLIENT_DRAFT_PROMPT_VERSION})`);

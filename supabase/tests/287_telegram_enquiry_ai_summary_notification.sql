@@ -113,24 +113,26 @@ select is(
      and entity_id='f7873000-0000-4000-8000-000000000001'
      and notification_type='enquiry.created'),
   E'Type: Tattoo\nPlacement: Left forearm\nSize: 20 cm\nReferences: 1\n\nIdea: Black and grey realism half sleeve with a compass',
-  'before the AI brief lands the card already carries every form fact'
+  'the card carries every form fact'
 );
 select ok(
-  (select scheduled_at >= now() + interval '4 minutes'
+  (select scheduled_at <= now()
    from public.notifications
    where entity_type='enquiry'
      and entity_id='f7873000-0000-4000-8000-000000000001'
      and notification_type='enquiry.created'),
-  'AI-enabled intake holds the fallback briefly instead of sending a duplicate first alert'
+  'the card is not held for an AI brief (2026-10-04)'
 );
 
 set local role service_role;
-select is(
-  (select count(*)::int
-   from public.service_claim_telegram_notifications('telegram-ai-summary-early',20,120)),
-  0,
-  'the held fallback is not claimable before its scheduled time'
-);
+create temporary table ai_summary_delivery as
+select * from public.service_claim_telegram_notifications('telegram-ai-summary-ready',20,120);
+select is((select count(*)::int from ai_summary_delivery),1,
+  'the enquiry alert is claimable at once');
+select is((select entity_type from ai_summary_delivery),'enquiry',
+  'Telegram delivery carries the enquiry entity type for deep-link rendering');
+select is((select entity_id from ai_summary_delivery),'f7873000-0000-4000-8000-000000000001'::uuid,
+  'Telegram delivery carries the exact enquiry id for the CRM deep link');
 reset role;
 
 insert into public.client_ai_state(
@@ -178,35 +180,16 @@ select is(
      and entity_id='f7873000-0000-4000-8000-000000000001'
      and notification_type='enquiry.created'),
   1,
-  'AI enrichment updates the existing notification rather than creating another one'
+  'a later AI brief creates no second notification'
 );
 select is(
   (select body from public.notifications
    where entity_type='enquiry'
      and entity_id='f7873000-0000-4000-8000-000000000001'
      and notification_type='enquiry.created'),
-  E'Type: Tattoo\nStyle: Black and grey realism\nPlacement: Left forearm\nSize: 20 cm\nColour: black_and_grey\nReferences: 1\n\nIdea: Black and grey realism half sleeve with a compass',
-  'the AI brief adds style and colour to the same card; the short idea stays in the client''s words'
+  E'Type: Tattoo\nPlacement: Left forearm\nSize: 20 cm\nReferences: 1\n\nIdea: Black and grey realism half sleeve with a compass',
+  'a later AI brief does not rewrite the card: no AI style, colour or paraphrase'
 );
-select ok(
-  (select scheduled_at <= now()
-   from public.notifications
-   where entity_type='enquiry'
-     and entity_id='f7873000-0000-4000-8000-000000000001'
-     and notification_type='enquiry.created'),
-  'the AI summary releases the same alert immediately'
-);
-
-set local role service_role;
-create temporary table ai_summary_delivery as
-select * from public.service_claim_telegram_notifications('telegram-ai-summary-ready',20,120);
-select is((select count(*)::int from ai_summary_delivery),1,
-  'the enriched enquiry alert is now claimable');
-select is((select entity_type from ai_summary_delivery),'enquiry',
-  'Telegram delivery carries the enquiry entity type for deep-link rendering');
-select is((select entity_id from ai_summary_delivery),'f7873000-0000-4000-8000-000000000001'::uuid,
-  'Telegram delivery carries the exact enquiry id for the CRM deep link');
-reset role;
 
 insert into public.client_ai_next_actions(
   artist_id,workspace_id,client_id,client_ai_state_id,
@@ -247,20 +230,20 @@ select is(
   crm_private.enquiry_telegram_card(
     'f7873000-0000-4000-8000-000000000001', 'ru', null,
     '{"style":"Black and grey realism","colour":"ч/б"}'::jsonb),
-  E'Тип: Tattoo\nСтиль: Black and grey realism\nМесто: Left forearm\nРазмер: 20 cm\nЦвет: ч/б\nРеференсы: 1\n\nИдея: Black and grey realism half sleeve with a compass',
-  'a Russian-speaking recipient gets Russian labels');
+  E'Тип: Tattoo\nМесто: Left forearm\nРазмер: 20 cm\nРеференсы: 1\n\nИдея: Black and grey realism half sleeve with a compass',
+  'a Russian-speaking recipient gets Russian labels and no AI lines');
 
 -- Known form options are translated and a style equal to the type is not repeated.
 update public.enquiries
 set project_type = 'Black and grey realism', cover_up = 'No', preferred_timing = 'November',
     idea = repeat('I love your realism work and want a large piece. ', 12)
 where id = 'f7873000-0000-4000-8000-000000000001';
-select is(
+select ok(
   crm_private.enquiry_telegram_card(
     'f7873000-0000-4000-8000-000000000001', 'ru', 'Long summary',
-    '{"style":"Black and grey realism","project_summary":"Large black and grey realism piece."}'::jsonb),
-  E'Тип: Ч/б реализм\nМесто: Left forearm\nРазмер: 20 cm\nКавер: нет\nСроки: November\nРеференсы: 1\n\nИдея: Large black and grey realism piece.',
-  'a wall of text is replaced by the AI project summary');
+    '{"style":"Black and grey realism","project_summary":"Large black and grey realism piece."}'::jsonb)
+  like E'Тип: Ч/б реализм\nМесто: Left forearm\nРазмер: 20 cm\nКавер: нет\nСроки: November\nРеференсы: 1\n\nИдея: I love your realism work and want a large piece.%',
+  'a wall of text stays in the client''s own words, cut, never replaced by an AI paraphrase');
 select ok(
   char_length(split_part(crm_private.enquiry_telegram_card(
     'f7873000-0000-4000-8000-000000000001', 'en', null, null), 'Idea: ', 2)) <= 280,

@@ -9,8 +9,10 @@
 // What changed:
 //
 //   - a summary card carries the whole recognisable enquiry - client name,
-//     status, how to reach them, what they want, when they are booked in and a
-//     derived Five Pillars summary when one already exists;
+//     status, how to reach them, what they want and when they are booked in.
+//     The client's own words are the only description: the AI summary that
+//     sat here was removed on 2026-10-04 after it misplaced tattoos and
+//     invented facts, so reading it never saved reading the original;
 //   - one "Next action" section holds the workflow, with the action the current
 //     state is actually waiting on marked as the one to press. Status changes,
 //     reassignment and closing stay, behind a disclosure, because they are
@@ -45,7 +47,6 @@ import { nextEnquiryAction, type EnquiryNextAction } from '../lib/enquiry-next-a
 import { formatDateTime, localiseKnownValue, localiseSystemSubject, relativeDue } from '../lib/format';
 import { formatPhoneForDisplay } from '../lib/phone';
 import { useLanguage } from '../lib/i18n';
-import type { ClientAiState } from '../lib/ai-intake-api';
 import type { Appointment } from '../lib/appointment-api';
 import type { ClientConversation } from '../lib/communications-api';
 import type {
@@ -55,7 +56,6 @@ import type {
 interface DetailData {
   enquiry: Enquiry | null;
   client: Client | null;
-  aiState: ClientAiState | null;
   files: EnquiryFile[];
   notes: InternalNote[];
   followUps: FollowUp[];
@@ -93,16 +93,13 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
     const enquiry = await api.getEnquiry(enquiryId);
     if (!enquiry) {
       return {
-        enquiry: null, client: null, aiState: null, files: [], notes: [], followUps: [],
+        enquiry: null, client: null, files: [], notes: [], followUps: [],
         transitions: [], colleagues: [], emailThread: null, appointments: [], conversations: [],
       };
     }
 
-    const [client, aiState, files, notes, followUps, transitions, colleagues, clientAppointments] = await Promise.all([
+    const [client, files, notes, followUps, transitions, colleagues, clientAppointments] = await Promise.all([
       api.getClient(enquiry.client_id),
-      // Five Pillars is a derived read. Failure or absence never blocks the
-      // enquiry page, and this call cannot schedule or retry model work.
-      api.getClientAiState(enquiry.artist_id, enquiry.client_id).catch(() => null),
       can(role, 'viewEnquiryFiles') ? api.listEnquiryFiles(enquiryId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ enquiryId }) : Promise.resolve([]),
       api.listFollowUps({ enquiryId }),
@@ -123,7 +120,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       : [];
 
     return {
-      enquiry, client, aiState, files, notes, followUps, transitions, colleagues, emailThread,
+      enquiry, client, files, notes, followUps, transitions, colleagues, emailThread,
       appointments: clientAppointments.filter((appointment) => appointment.enquiry_id === enquiryId),
       conversations,
     };
@@ -152,7 +149,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   }
 
   const {
-    enquiry, client, aiState, files, notes, followUps, transitions, colleagues,
+    enquiry, client, files, notes, followUps, transitions, colleagues,
     emailThread, appointments, conversations,
   } = data;
   const { transitionOptions, canConvert } = enquiryWorkflowActions(transitions, enquiry.status, role);
@@ -186,12 +183,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const clientDisplayName = client?.full_name
     ?? enquiry.submitted_full_name
     ?? t('enquiry.clientUnavailable');
-  // A stale brief is deliberately not shown as a current summary. The original
-  // enquiry remains visible below while the derived projection catches up.
-  const aiSummary = aiState?.status === 'ready' && aiState.is_stale === false
-    ? aiState.summary
-    : null;
-  const aiSummaryLabel = language === 'ru' ? 'AI-разбор' : 'AI summary';
   const clientBriefLabel = language === 'ru' ? 'Описание клиента' : 'Client brief';
 
   return (
@@ -272,12 +263,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           ) : null}
         </dl>
 
-        {aiSummary ? (
-          <div style={{ marginTop: 12 }}>
-            <div className="meta" style={{ fontWeight: 600 }}>{aiSummaryLabel}</div>
-            <p className="enquiry-summary-idea" style={{ marginTop: 4 }}>{aiSummary}</p>
-          </div>
-        ) : null}
       </section>
 
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
@@ -293,8 +278,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         <EnquiryContactConflict enquiry={enquiry} client={client} api={api} onSaved={reload} />
       ) : null}
 
-      {/* The paused enquiry assistant stays paused. The summary above reads the
-          independent Five Pillars projection and never retries model work. */}
       <Section title={t('enquiry.nextAction')}>
         <p className="meta" style={{ margin: '0 0 10px' }}>
           {t('enquiry.nextActionIs', { action: t(`enquiry.next.${recommended}`) })}
@@ -422,8 +405,8 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         ) : null}
       </Section>
 
-      {/* The original submission appears once, here, under the structured
-          tattoo facts. The summary above is derived and deliberately short. */}
+      {/* The original submission appears once, here, in full, under the
+          structured tattoo facts from the form. */}
       <Section title={t('enquiry.project')}>
         <dl className="definition">
           <dt>{t('enquiry.placement')}</dt><dd>{enquiry.placement ?? '—'}</dd>
@@ -433,7 +416,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </dl>
         <div style={{ marginTop: 12 }}>
           <div className="meta" style={{ fontWeight: 600 }}>{clientBriefLabel}</div>
-          <ClientBrief text={enquiry.idea} language={language} />
+          <ClientBrief text={enquiry.idea} />
         </div>
         <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
       </Section>
@@ -622,33 +605,15 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
 }
 
 /**
- * A long client message costs a whole phone screen, and the AI summary above
- * already carries the gist. Show the opening and let the reader ask for more.
+ * The client's message, in full and as written. It is the source of truth for
+ * the enquiry, so it is never clamped behind a toggle or replaced by a summary.
  */
-const BRIEF_PREVIEW_CHARS = 420;
-const BRIEF_PREVIEW_LINES = 8;
-
-function ClientBrief({ text, language }: { text: string | null; language: 'en' | 'ru' }) {
-  const [expanded, setExpanded] = useState(false);
+function ClientBrief({ text }: { text: string | null }) {
   if (!text) return <p style={{ margin: '4px 0 0' }}>—</p>;
-
-  const long = text.length > BRIEF_PREVIEW_CHARS || text.split('\n').length > BRIEF_PREVIEW_LINES;
   return (
-    <>
-      <p
-        className={long && !expanded ? 'client-brief clamped' : 'client-brief'}
-        style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}
-      >
-        {text}
-      </p>
-      {long ? (
-        <button type="button" className="link-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
-          {expanded
-            ? (language === 'ru' ? 'Свернуть' : 'Show less')
-            : (language === 'ru' ? 'Показать полностью' : 'Show full message')}
-        </button>
-      ) : null}
-    </>
+    <p className="client-brief" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>
+      {text}
+    </p>
   );
 }
 
