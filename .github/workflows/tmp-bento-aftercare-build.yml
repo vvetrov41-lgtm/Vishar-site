@@ -17,10 +17,24 @@ jobs:
       - name: Assemble document JSON
         shell: bash
         run: |
-          cat tmp/bento-aftercare/doc.part* > /tmp/doc.b64
-          base64 -d /tmp/doc.b64 > /tmp/doc.json.gz
-          gzip -dc /tmp/doc.json.gz > /tmp/doc.json
-          python -m json.tool /tmp/doc.json >/dev/null
+          sha256sum tmp/bento-aftercare/doc.part*
+          python - <<'PY'
+          from pathlib import Path
+          import base64, gzip, json
+
+          parts = sorted(Path('tmp/bento-aftercare').glob('doc.part*'))
+          text = ''.join(p.read_text(encoding='ascii').strip() for p in parts)
+          print('parts:', [(p.name, p.stat().st_size) for p in parts])
+          print('base64 chars:', len(text))
+          bad = [(i, repr(ch)) for i, ch in enumerate(text) if not (ch.isalnum() or ch in '+/=')]
+          print('bad chars:', bad[:20])
+          raw = base64.b64decode(text, validate=True)
+          doc_bytes = gzip.decompress(raw)
+          doc = json.loads(doc_bytes)
+          assert doc.get('format') == 'bento/slides'
+          Path('/tmp/doc.json').write_bytes(doc_bytes)
+          print('document bytes:', len(doc_bytes), 'slides:', len(doc.get('slides', [])))
+          PY
 
       - name: Download Bento Slides v1.2.5
         shell: bash
