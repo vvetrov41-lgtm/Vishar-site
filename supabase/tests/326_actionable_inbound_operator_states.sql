@@ -107,6 +107,13 @@ select is(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000
   'reaction, unsupported, edit and revoke alone wait for nothing');
 select is(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000c'), null::timestamptz,
   'a reply sent from the phone is the studio''s turn');
+-- F: the studio only reacted from the phone.
+select pg_temp.conv('d3260000-0000-4000-8000-00000000000f', '447700326006');
+select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'inbound', 'text', now() - interval '3 hours');
+select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'reaction', now() - interval '2 hours', 'sent');
+select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000f') is not null,
+  'a reaction from the studio is not a reply');
+select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'text', now() - interval '1 hour');
 select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000d') is not null,
   'a failed send and an automation are not a reply');
 select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000e') is not null,
@@ -287,12 +294,26 @@ insert into public.enquiries (
 -- The first client gets the same number only now: two exact matches.
 update public.clients set phone = '+447700326022' where id = 'c3263333-0000-4000-8000-000000000000';
 select is((select link_state::text from public.communication_conversations where id = 'd3260000-0000-4000-8000-0000000000b2'),
-  'linked', 'the number linked while it was unique');
-update public.communication_conversations set client_id = null, enquiry_id = null, link_state = 'unmatched'
-where id = 'd3260000-0000-4000-8000-0000000000b2';
+  'unmatched', 'an automatic link is withdrawn the moment its number stops being unique');
+select is((select auto_linked_at from public.communication_conversations where id = 'd3260000-0000-4000-8000-0000000000b2'),
+  null::timestamptz, 'and carries no automatic provenance any more');
 update public.clients set phone = '+447700326022' where id = 'c3264444-0000-4000-8000-000000000000';
 select is((select link_state::text from public.communication_conversations where id = 'd3260000-0000-4000-8000-0000000000b2'),
   'unmatched', 'two clients with one number are never guessed between');
+-- The number becomes unique again when one client changes phone.
+update public.clients set phone = '+447700326099' where id = 'c3263333-0000-4000-8000-000000000000';
+select is((select client_id from public.communication_conversations where id = 'd3260000-0000-4000-8000-0000000000b2'),
+  'c3264444-0000-4000-8000-000000000000'::uuid, 'and the unique match is linked again');
+
+-- An operator link is the operator's: an ambiguity later never withdraws it.
+set local role authenticated;
+select public.link_communication_conversation_client('d3260000-0000-4000-8000-0000000000b2', 'c3264444-0000-4000-8000-000000000000');
+reset role;
+select is((select auto_linked_at from public.communication_conversations where id = 'd3260000-0000-4000-8000-0000000000b2'),
+  null::timestamptz, 'an operator confirming the automatic match makes the link the operator''s');
+update public.clients set phone = '+447700326022' where id = 'c3263333-0000-4000-8000-000000000000';
+select is((select client_id from public.communication_conversations where id = 'd3260000-0000-4000-8000-0000000000b2'),
+  'c3264444-0000-4000-8000-000000000000'::uuid, 'an operator link survives a later ambiguity');
 
 -- Cross-artist: a client reached only through another artist.
 select pg_temp.conv('d3260000-0000-4000-8000-0000000000b3', '447700326023');

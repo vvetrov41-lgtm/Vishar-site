@@ -69,8 +69,9 @@ $$;
 
 -- The studio's turn: a message the provider accepted, sent from the CRM or by
 -- hand from the provider app. A queued or failed send never reached the
--- client, an automated message is not the studio answering, and an edit or
--- revoke of an earlier message is not a new reply. A reaction is.
+-- client, an automated message is not the studio answering, and the same
+-- classifier as inbound decides the rest: a reaction, an edit, a revoke or an
+-- unsupported event is not a reply.
 create function crm_private.conversation_last_studio_reply_at(p_conversation_id uuid)
 returns timestamptz
 language sql
@@ -84,7 +85,7 @@ as $$
     and m.direction = 'outbound'
     and m.origin in ('crm', 'provider_app')
     and m.status in ('sent', 'delivered', 'read')
-    and m.message_type not in ('edit', 'revoke');
+    and crm_private.communication_event_is_actionable(m.message_type);
 $$;
 
 create function crm_private.conversation_awaiting_reply_since(p_conversation_id uuid)
@@ -349,43 +350,127 @@ after insert on public.communication_messages
 for each row execute function crm_private.reopen_conversation_on_actionable_inbound();
 
 -- ---------------------------------------------------------------------------
--- 6. Exact WhatsApp linking from the client side
+-- 6. Exact WhatsApp linking from the client side, revocable while automatic
 -- ---------------------------------------------------------------------------
+-- An automatic link is only as good as the uniqueness that produced it, so it
+-- carries provenance. auto_linked_at is set by the automatic paths only; any
+-- other change of client or enquiry (an operator link, an enquiry created from
+-- the conversation) clears it and the link becomes the operator's. Whenever a
+-- client's phone or scope changes, every automatic link that number or client
+-- holds is revalidated: if the exact match is no longer that client, the link
+-- is withdrawn and the conversation is re-matched (or left unmatched).
+-- Links made before this migration have no provenance and are left alone.
 
-create function crm_private.link_whatsapp_conversations_for_client(p_client_id uuid)
+alter table public.communication_conversations
+  add column auto_linked_at timestamptz;
+
+comment on column public.communication_conversations.auto_linked_at is
+  'Set when the client link was made automatically from a unique exact WhatsApp phone match. Such a link is withdrawn when the match stops being unique; an operator link clears this column and is never withdrawn.';
+
+create or replace function crm_private.auto_link_whatsapp_conversation_client()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_client_id uuid;
+  v_enquiry_id uuid;
+begin
+  if new.channel <> 'whatsapp'::public.communication_channel
+     or new.client_id is not null then
+    return new;
+  end if;
+
+  v_client_id := crm_private.unique_whatsapp_client_match(
+    new.artist_id,
+    new.external_contact_id
+  );
+  if v_client_id is null then
+    return new;
+  end if;
+
+  select e.id into v_enquiry_id
+  from public.enquiries e
+  where e.artist_id = new.artist_id
+    and e.client_id = v_client_id
+    and e.archived_at is null
+  order by e.updated_at desc, e.created_at desc, e.id desc
+  limit 1;
+
+  new.client_id := v_client_id;
+  new.link_state := 'linked'::public.communication_link_state;
+  new.enquiry_id := coalesce(new.enquiry_id, v_enquiry_id);
+  new.auto_linked_at := clock_timestamp();
+  return new;
+end;
+$$;
+
+revoke execute on function crm_private.auto_link_whatsapp_conversation_client()
+  from public, anon, authenticated, service_role;
+
+-- Runs after the auto-link trigger (trigger names fire in order): a client or
+-- enquiry change that did not come with a fresh auto_linked_at is not
+-- automatic, so the link stops being revocable.
+create function crm_private.track_conversation_link_provenance()
+returns trigger
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+begin
+  if new.client_id is null then
+    new.auto_linked_at := null;
+  elsif (new.client_id is distinct from old.client_id or new.enquiry_id is distinct from old.enquiry_id)
+        and new.auto_linked_at is not distinct from old.auto_linked_at then
+    new.auto_linked_at := null;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function crm_private.track_conversation_link_provenance()
+  from public, anon, authenticated, service_role;
+
+create trigger communication_conversations_link_provenance
+before update of client_id, enquiry_id, auto_linked_at on public.communication_conversations
+for each row execute function crm_private.track_conversation_link_provenance();
+
+-- Every unlinked WhatsApp conversation on this exact number gets the unique
+-- client the number matches in its own artist scope, or stays unlinked.
+create function crm_private.link_whatsapp_conversations_for_number(p_phone text)
 returns integer
 language plpgsql
 security definer
 set search_path = pg_catalog, public, crm_private
 as $$
 declare
-  v_phone text;
   v_count integer := 0;
 begin
-  select crm_private.normalize_whatsapp_phone(cl.phone) into v_phone
-  from public.clients cl
-  where cl.id = p_client_id and cl.archived_at is null;
-  if v_phone is null then
+  if p_phone is null then
     return 0;
   end if;
 
   with targets as (
-    select c.id, c.artist_id
+    select c.id, c.artist_id, m.client_id
     from public.communication_conversations c
+    cross join lateral (
+      select crm_private.unique_whatsapp_client_match(c.artist_id, c.external_contact_id) as client_id
+    ) m
     where c.client_id is null
       and c.channel = 'whatsapp'
-      and crm_private.normalize_whatsapp_phone('+' || c.external_contact_id) = v_phone
-      -- Unique exact match inside this conversation's artist scope, or nothing.
-      and crm_private.unique_whatsapp_client_match(c.artist_id, c.external_contact_id) = p_client_id
+      and crm_private.normalize_whatsapp_phone('+' || c.external_contact_id) = p_phone
+      and m.client_id is not null
   ), linked as (
     update public.communication_conversations c
-    set client_id = p_client_id,
+    set client_id = t.client_id,
         link_state = 'linked',
         enquiry_id = coalesce(c.enquiry_id, (
           select e.id from public.enquiries e
-          where e.artist_id = t.artist_id and e.client_id = p_client_id and e.archived_at is null
+          where e.artist_id = t.artist_id and e.client_id = t.client_id and e.archived_at is null
           order by e.updated_at desc, e.created_at desc, e.id desc
           limit 1)),
+        auto_linked_at = clock_timestamp(),
         updated_at = now()
     from targets t
     where c.id = t.id and c.client_id is null
@@ -396,8 +481,224 @@ begin
 end;
 $$;
 
+revoke all on function crm_private.link_whatsapp_conversations_for_number(text)
+  from public, anon, authenticated, service_role;
+
+create function crm_private.link_whatsapp_conversations_for_client(p_client_id uuid)
+returns integer
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_phone text;
+  v_withdrawn integer := 0;
+  v_count integer := 0;
+begin
+  select crm_private.normalize_whatsapp_phone(cl.phone) into v_phone
+  from public.clients cl
+  where cl.id = p_client_id and cl.archived_at is null;
+
+  -- Withdraw automatic links this client or this number holds that the exact
+  -- match no longer supports. The auto-link trigger re-matches each one in
+  -- the same update: a new unique client, or nobody.
+  update public.communication_conversations c
+  set client_id = null,
+      enquiry_id = null,
+      link_state = 'unmatched',
+      auto_linked_at = null,
+      updated_at = now()
+  where c.channel = 'whatsapp'
+    and c.auto_linked_at is not null
+    and (c.client_id = p_client_id
+         or (v_phone is not null
+             and crm_private.normalize_whatsapp_phone('+' || c.external_contact_id) = v_phone))
+    and crm_private.unique_whatsapp_client_match(c.artist_id, c.external_contact_id)
+        is distinct from c.client_id;
+  get diagnostics v_withdrawn = row_count;
+
+  if v_phone is not null then
+    v_count := crm_private.link_whatsapp_conversations_for_number(v_phone);
+  end if;
+  return v_withdrawn + v_count;
+end;
+$$;
+
 revoke all on function crm_private.link_whatsapp_conversations_for_client(uuid)
   from public, anon, authenticated, service_role;
+
+-- An operator who links or promotes a conversation confirms the link, even
+-- when it names the client the automatic match had already chosen. Unchanged
+-- from 0072 except for clearing auto_linked_at.
+create or replace function public.link_communication_conversation_client(
+  p_conversation_id uuid,
+  p_client_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_conversation public.communication_conversations%rowtype;
+  v_client public.clients%rowtype;
+begin
+  if p_conversation_id is null then
+    raise exception 'a conversation id is required' using errcode = '22023';
+  end if;
+  if p_client_id is null then
+    raise exception 'a client id is required' using errcode = '22023';
+  end if;
+
+  perform crm_private.require_role('owner', 'booking_manager');
+
+  select c.* into v_conversation
+  from public.communication_conversations c
+  where c.id = p_conversation_id
+  for update;
+  if not found then
+    raise exception 'conversation was not found' using errcode = '23503';
+  end if;
+
+  perform crm_private.require_active_artist(v_conversation.artist_id);
+  perform crm_private.require_artist_access(v_conversation.artist_id, 'manage');
+
+  select cl.* into v_client
+  from public.clients cl
+  where cl.id = p_client_id
+    and cl.archived_at is null;
+  if not found then
+    raise exception 'active client was not found' using errcode = '23503';
+  end if;
+
+  if not crm_private.client_in_artist_scope(p_client_id, v_conversation.artist_id) then
+    raise exception 'that client is not in this artist scope' using errcode = '42501';
+  end if;
+
+  if v_conversation.client_id is not null and v_conversation.client_id <> p_client_id then
+    raise exception 'this conversation is already linked to a different client'
+      using errcode = '23514';
+  end if;
+
+  update public.communication_conversations c
+  set client_id = p_client_id,
+      link_state = 'linked'::public.communication_link_state,
+      auto_linked_at = null,
+      updated_at = now()
+  where c.id = v_conversation.id;
+
+  perform crm_private.log_artist_activity(
+    v_conversation.artist_id,
+    'communication.client_linked',
+    case when public.is_owner() then 'owner' else 'staff' end,
+    auth.uid(),
+    p_client_id,
+    v_conversation.enquiry_id,
+    null, null, null,
+    jsonb_build_object(
+      'channel', v_conversation.channel,
+      'conversation', v_conversation.id
+    )
+  );
+
+  return jsonb_build_object(
+    'conversation_id', v_conversation.id,
+    'client_id', p_client_id,
+    'link_state', 'linked'
+  );
+end;
+$$;
+
+create or replace function public.create_enquiry_from_communication(
+  p_conversation_id uuid,
+  p_idempotency_key uuid,
+  p_client jsonb,
+  p_enquiry jsonb,
+  p_privacy_acknowledged boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+declare
+  v_conversation public.communication_conversations%rowtype;
+  v_result jsonb;
+  v_enquiry_id uuid;
+  v_client_id uuid;
+begin
+  if p_conversation_id is null then
+    raise exception 'a conversation id is required' using errcode = '22023';
+  end if;
+
+  select c.* into v_conversation
+  from public.communication_conversations c
+  where c.id = p_conversation_id
+  for update;
+  if not found then
+    raise exception 'conversation was not found' using errcode = '23503';
+  end if;
+
+  perform crm_private.require_active_artist(v_conversation.artist_id);
+  perform crm_private.require_artist_access(v_conversation.artist_id, 'manage');
+
+  -- Intake re-checks the role, the artist and the privacy acknowledgement.
+  v_result := public.create_manual_enquiry(
+    p_idempotency_key,
+    v_conversation.artist_id,
+    p_client,
+    p_enquiry,
+    p_privacy_acknowledged
+  );
+
+  v_enquiry_id := (v_result ->> 'enquiry_id')::uuid;
+  v_client_id := (v_result ->> 'client_id')::uuid;
+
+  -- Intake matches clients on email and phone. If it resolved a different
+  -- person from the one this conversation is already linked to, that is a
+  -- genuine identity conflict and must be resolved by a human rather than
+  -- silently repointing either record.
+  if v_conversation.client_id is not null and v_conversation.client_id <> v_client_id then
+    raise exception 'the enquiry details match a different client than this conversation'
+      using errcode = '23514';
+  end if;
+
+  update public.enquiries e
+  set communication_conversation_id = v_conversation.id,
+      communication_channel = v_conversation.channel,
+      created_from_communication = true
+  where e.id = v_enquiry_id;
+
+  update public.communication_conversations c
+  set client_id = v_client_id,
+      link_state = 'linked'::public.communication_link_state,
+      enquiry_id = coalesce(c.enquiry_id, v_enquiry_id),
+      auto_linked_at = null,
+      updated_at = now()
+  where c.id = v_conversation.id;
+
+  perform crm_private.log_artist_activity(
+    v_conversation.artist_id,
+    'communication.enquiry_created',
+    case when public.is_owner() then 'owner' else 'staff' end,
+    auth.uid(),
+    v_client_id,
+    v_enquiry_id,
+    null, null, null,
+    jsonb_build_object(
+      'channel', v_conversation.channel,
+      'conversation', v_conversation.id
+    )
+  );
+
+  return v_result
+    || jsonb_build_object(
+      'conversation_id', v_conversation.id,
+      'channel', v_conversation.channel,
+      'created_from_communication', true
+    );
+end;
+$$;
 
 -- Linking is derived state. A failure here must never fail the client or
 -- enquiry write that triggered it; the conversation simply stays unlinked.
@@ -418,6 +719,11 @@ begin
   if v_client_id is not null then
     begin
       perform crm_private.link_whatsapp_conversations_for_client(v_client_id);
+      -- The number this client just left may now match somebody else uniquely.
+      if tg_table_name = 'clients' and tg_op = 'UPDATE' then
+        perform crm_private.link_whatsapp_conversations_for_number(
+          crm_private.normalize_whatsapp_phone((to_jsonb(old) ->> 'phone')));
+      end if;
     exception when others then
       raise warning 'whatsapp client relink skipped, sqlstate=%', sqlstate;
     end;
