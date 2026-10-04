@@ -154,13 +154,17 @@ const TASKS = Object.freeze({
 
   // Manual Russian translation of a client's enquiry, on the artist's click
   // only. Never the incumbent Llama 8B: its Russian changed placements and
-  // subjects in production (2026-10-04 audit). Qwen 27B leads; the Workers AI
-  // tier runs the task's own model (workersAiModel), not the shared text model.
-  // Every answer must pass the deterministic fidelity checks in translation.js.
+  // subjects in production (2026-10-04 audit). Live eval 2026-10-04 on 10
+  // sanitized enquiry fixtures x2 (fidelity + fixture checks): Gemma 4 26B
+  // 10/10 after a checker fix (lower back), p50 1.7 s; Qwen 27B 7/10, p50 9 s;
+  // Llama 3.3 70B 7/10; gpt-oss-120b 6/10; Mistral Small 24B 6/10; Llama 3.1
+  // 8B 5/10. Gemma leads on the Workers AI tier (workersAiModel, not the
+  // shared text model); Qwen is the fallback. Every answer must pass the
+  // deterministic fidelity checks in translation.js.
   enquiry_translation: {
     capability: 'translation',
     modality: 'text',
-    chain: ['qwen', 'workers_ai'],
+    chain: ['workers_ai', 'qwen'],
     workersAiModel: '@cf/google/gemma-4-26b-a4b-it',
     timeoutMs: 30_000,
     maxOutputTokens: 2_000,
