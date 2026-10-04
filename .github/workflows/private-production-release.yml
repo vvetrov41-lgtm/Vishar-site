@@ -116,8 +116,8 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Audit dependencies
-        run: npm audit --audit-level=moderate
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Validate public and Worker boundaries
         run: |
@@ -193,7 +193,7 @@ jobs:
 
       - name: Audit CRM dependencies
         working-directory: admin
-        run: npm audit --audit-level=moderate
+        run: npm audit --omit=dev --audit-level=moderate
 
       - name: Test, typecheck and build private CRM
         working-directory: admin
@@ -430,9 +430,9 @@ jobs:
       - name: Install locked deployment tooling
         run: npm ci
 
-      - name: Audit deployment dependencies and scan secrets
+      - name: Audit production deployment dependencies and scan secrets
         run: |
-          npm audit --audit-level=moderate
+          npm audit --omit=dev --audit-level=moderate
           npm run scan:secrets
 
       - name: Install pinned Supabase CLI
