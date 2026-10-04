@@ -61,6 +61,8 @@ export const PARITY_METADATA = Object.freeze({
     finalize_enquiry_reference_upload: 'Step of files.device_upload: seals bytes the browser just uploaded.',
     cancel_enquiry_reference_upload: 'Step of files.device_upload: abandons an unfinished browser upload.',
     bootstrap_artist_account: 'Step of signup.tenant.bootstrap, before any CRM profile exists.',
+    request_enquiry_translation: 'Reading aid on the enquiry page: a cached machine translation of the client text. The assistant translates itself and needs no CRM operation.',
+    get_enquiry_translation: 'Reading aid on the enquiry page: reads the cached translation back. The assistant translates itself and needs no CRM operation.',
   }),
   // Authenticated RPCs present in production that the CRM no longer calls.
   // They are not current operator actions, so parity neither exposes nor
