@@ -68,13 +68,13 @@ describe('the enquiry summary', () => {
     expect(nextSection).not.toBeNull();
     expect(within(nextSection!).getByText(/Waiting on:/)).toBeInTheDocument();
 
-    // The client's original words belong to Project only. The summary may show
-    // a derived AI brief, but never a second copy of this submission.
+    // The client's original words appear once, in Project, in full.
     expect(screen.getAllByText('A realistic raven with natural lighting.')).toHaveLength(1);
 
-    // The new summary reads the already-derived Five Pillars projection. The
-    // paused enquiry assistant remains paused: no old result read or retry.
-    expect(rpcCalls.some((entry) => entry.name === 'get_client_ai_state')).toBe(true);
+    // No AI text in the enquiry workflow (removed 2026-10-04): no brief, no
+    // intake result, no retry, and no label claiming an AI summary.
+    expect(rpcCalls.some((entry) => entry.name === 'get_client_ai_state')).toBe(false);
+    expect(screen.queryByText(/AI summary|AI-разбор/)).not.toBeInTheDocument();
     expect(rpcCalls.some((entry) => entry.name === 'get_enquiry_ai_result')).toBe(false);
     expect(rpcCalls.some((entry) => entry.name === 'retry_enquiry_ai')).toBe(false);
   });

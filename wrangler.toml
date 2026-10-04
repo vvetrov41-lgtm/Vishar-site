@@ -40,7 +40,10 @@ BOOKING_SOURCE_KEY = "vladimir-website"
 BOOKING_FORM_VERSION = "booking-v1"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 VISHAR_ENVIRONMENT = "production"
-CRM_AI_INTAKE_ENABLED = "true"
+# Intake extraction is off (2026-10-04): it duplicated the booking form, was
+# shown nowhere, and every automatic draft it produced was discarded. The
+# database switch crm_private.enquiry_ai_config is off as well.
+CRM_AI_INTAKE_ENABLED = "false"
 CRM_AI_IMAGES_ENABLED = "false"
 AI_ROUTE_ENQUIRY_INTAKE = "workers_ai,qwen"
 

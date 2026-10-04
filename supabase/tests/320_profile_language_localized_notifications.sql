@@ -55,8 +55,8 @@ select is((select ui_language from public.profiles where id = 'f3200000-0000-400
 select is((select ui_language from public.profiles where id = 'f3200000-0000-4000-8000-000000000002'), 'en',
   'other profiles keep English by default');
 
-select is(crm_private.artist_output_language('f3201000-0000-4000-8000-00000000000a'), 'ru',
-  'an artist whose artist-facing profile reads Russian gets Russian AI notes');
+select is(crm_private.artist_output_language('f3201000-0000-4000-8000-00000000000a'), 'en',
+  'the internal AI brief stays in the source language even for a Russian reader (no machine translation)');
 select is(crm_private.artist_output_language('f3201000-0000-4000-8000-00000000000b'), 'en',
   'an English artist keeps English AI notes');
 

@@ -19,7 +19,7 @@ import {
   CLIENT_STATE_PROMPT_VERSION, CLIENT_STATE_SCHEMA_VERSION, CLIENT_STATE_SYSTEM,
   CLIENT_STATE_V2_PROMPT_VERSION, CLIENT_STATE_V2_SCHEMA_VERSION, CLIENT_STATE_V2_SYSTEM,
   DRAFTABLE_ACTION_TYPES, diagnoseClientDraft, diagnoseClientStateAnalysis, diagnoseClientStateV2,
-  normalizeClientStateV2, toStoredClientState, validateClientStateAnalysis, validateClientStateV2,
+  groundClientStateV2, normalizeClientStateV2, toStoredClientState, validateClientStateAnalysis, validateClientStateV2,
 } from './ai/client-state-schema.js';
 import {
   REFERENCE_IMAGE_PROMPT_VERSION, REFERENCE_IMAGE_SCHEMA_VERSION, REFERENCE_IMAGE_SYSTEM,
@@ -280,8 +280,11 @@ async function processClientStateJobV2(env, job, supabase, runTask) {
     return { outcome: 'failed', errorCode: 'ai_unavailable',
       aiRun: record(model, 'failed', model?.errorCode ?? 'ai_unavailable', input.length) };
   }
-  const answer = validateClientStateV2(normalizeClientStateV2(model.json), allowed);
-  if (!answer) return { outcome: 'failed', errorCode: 'output_invalid', aiRun: record(model, 'failed', 'output_invalid', input.length) };
+  const valid = validateClientStateV2(normalizeClientStateV2(model.json), allowed);
+  if (!valid) return { outcome: 'failed', errorCode: 'output_invalid', aiRun: record(model, 'failed', 'output_invalid', input.length) };
+  const answer = groundClientStateV2(valid, input);
+  // The job keeps the existing output_invalid code; telemetry names the cause.
+  if (!answer) return { outcome: 'failed', errorCode: 'output_invalid', aiRun: record(model, 'failed', 'output_ungrounded', input.length) };
 
   const stored = toStoredClientState(answer, facts);
   const runs = [];

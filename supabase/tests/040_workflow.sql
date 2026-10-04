@@ -398,6 +398,15 @@ select is((select status::text from public.email_messages where id = (select id 
           'the approved draft is marked approved');
 select is((select count(*)::int from public.integration_outbox where kind = 'approved_email'), 1,
           'approval enqueues the send as an outbox job rather than sending inline');
+-- Regression 2026-10-04: the job lost the enquiry, so the Gmail resolver
+-- refused every attempt and no enquiry email was ever sent.
+select ok(
+  (select o.enquiry_id = m.enquiry_id and o.enquiry_id is not null
+          and o.project_id is not distinct from m.project_id
+   from public.integration_outbox o join public.email_messages m on m.id = o.email_message_id
+   where o.kind = 'approved_email' and m.id = (select id from draft)),
+  'the queued send carries the email''s own enquiry and project'
+);
 select ok(
   (select approved_by = '11111111-1111-4111-8111-111111111111'::uuid
    from public.email_messages where id = (select id from draft)),

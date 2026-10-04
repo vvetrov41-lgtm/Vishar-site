@@ -375,10 +375,12 @@ decisions_made, open_questions, promises_to_client, last_interaction, discussed.
 constraints, decisions_made, open_questions and promises_to_client are arrays of plain strings, max 10 each.
 Each item is one short sentence as a string, never an object. Use [] when there is nothing to record.
 project_summary, placement, style, colour, size, cover_up_context and last_interaction are each ONE
-plain string (for example "15 cm") or null. Never a number, an object, an array or an empty string.
-Record facts as stated. If two messages disagree (for example two different sizes), put the newest
-value in the field and add one string to open_questions naming both values and which is newer,
-for example "Size: 10 cm earlier, 15 cm in the newest message - confirm". Never pick one silently.
+plain string copied from the data, or null. Never a number, an object, an array or an empty string.
+Record facts as stated, including the client's own uncertainty ("around", "I think", "not sure").
+Never fill a field from an example or from what is typical: if the data does not say it, use null.
+Only when two DIFFERENT values for the same fact appear in the data, put the newest value in the field
+and add one string to open_questions naming both values exactly as written and which is newer.
+Never report a disagreement that is not in the data, and never pick one silently.
 discussed has exactly these keys: ${DISCUSSED_KEYS.join(', ')}.
 Each is {"value": ..., "status": "mentioned_by_client" or "mentioned_by_artist" or "not_discussed"}.
 "discussed" records only what was MENTIONED and by whom, never agreement.
@@ -403,7 +405,7 @@ missing_information is an array of short field names, max 12, only for informati
 Only the artist decides feasibility, price, session count, duration, dates, deposits and bookings.
 No identifiers, tool calls, SQL or extra keys.`;
 
-export const CLIENT_STATE_V2_PROMPT_VERSION = 'client-state.2026-09-26c';
+export const CLIENT_STATE_V2_PROMPT_VERSION = 'client-state.2026-10-04';
 export const CLIENT_STATE_V2_SCHEMA_VERSION = 'client-state.v2';
 
 // Short, purpose-specific draft for a draftable action. Generated separately.
@@ -422,4 +424,38 @@ export function diagnoseClientDraft(value) {
   if (!text(value.draft_reply, 600)) return 'draft_reply';
   if (!isSafeClientDraft(value.draft_reply)) return 'draft_unsafe';
   return null;
+}
+
+const NUMBER_TOKEN = /\d+(?:[.,]\d+)?/g;
+const numberTokens = (value) => (typeof value === 'string' ? value.match(NUMBER_TOKEN) ?? [] : []);
+
+/**
+ * Removes model statements that carry a number the source data never contains.
+ *
+ * Production briefs (2026-09-26..10-02) reported size disagreements such as
+ * "10 cm earlier, 15 cm in the newest message" for clients who never wrote
+ * either number: the model copied the prompt's own example. Sizes, dates,
+ * prices and session counts are exactly the facts that must never be invented,
+ * and every one of them is written with digits, so a digit that is absent from
+ * the data is proof of invention. A text field with one becomes null, an array
+ * item with one is dropped, and a summary sentence with one is removed. Returns
+ * null when nothing of the summary survives. Words are not checked here; the
+ * brief is internal and the client's original text stays the source of truth.
+ */
+export function groundClientStateV2(value, sourceText) {
+  if (!plain(value) || !plain(value.brief) || typeof sourceText !== 'string') return null;
+  const known = new Set(numberTokens(sourceText).map((token) => token.replace(',', '.')));
+  const grounded = (text) => numberTokens(text).every((token) => known.has(token.replace(',', '.')));
+  const brief = { ...value.brief };
+  for (const key of Object.keys(NULLABLE_TEXT)) {
+    if (typeof brief[key] === 'string' && !grounded(brief[key])) brief[key] = null;
+  }
+  for (const key of BRIEF_ARRAY_KEYS) {
+    if (Array.isArray(brief[key])) brief[key] = brief[key].filter((item) => grounded(item));
+  }
+  const summary = typeof value.summary === 'string'
+    ? value.summary.split(/(?<=[.!?])\s+|\n+/).filter((sentence) => sentence.trim() && grounded(sentence)).join(' ').trim()
+    : '';
+  if (!summary) return null;
+  return { ...value, summary, brief };
 }
