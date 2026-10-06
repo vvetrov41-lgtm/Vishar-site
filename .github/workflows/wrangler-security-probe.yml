@@ -23,13 +23,31 @@ jobs:
           node-version: 22
           cache: npm
       - name: Generate candidate lockfile
-        run: npm install --package-lock-only --ignore-scripts --save-dev wrangler@4.132.0
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          p.devDependencies.wrangler = '4.132.0';
+          p.devDependencies.sharp = '0.35.5';
+          p.overrides.sharp = '0.35.5';
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          npm install --package-lock-only --ignore-scripts
       - name: Verify candidate dependency graph
         run: |
           node -e "const l=require('./package-lock.json'); const p=l.packages; console.log({wrangler:p['node_modules/wrangler']?.version,miniflare:p['node_modules/miniflare']?.version,sharp:p['node_modules/sharp']?.version,miniflareSharp:p['node_modules/miniflare']?.dependencies?.sharp,undici:p['node_modules/undici']?.version,workerd:p['node_modules/workerd']?.version});"
           npm ci
           node scripts/audit-root-dependencies.mjs --self-test
-          node scripts/audit-root-dependencies.mjs --audit-level=moderate
+          if ! node scripts/audit-root-dependencies.mjs --audit-level=moderate; then
+            npm audit --json > /tmp/audit.json || true
+            node - <<'NODE'
+            const a = require('/tmp/audit.json');
+            for (const name of ['sharp','miniflare','wrangler']) {
+              if (a.vulnerabilities?.[name]) console.log(name, JSON.stringify(a.vulnerabilities[name], null, 2));
+            }
+            NODE
+            exit 1
+          fi
       - name: Test Worker compatibility
         run: |
           npm run test:booking
@@ -43,7 +61,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: wrangler-4.132.0-candidate
+          name: wrangler-4.132.0-sharp-0.35.5-candidate
           path: |
             package.json
             package-lock.json
