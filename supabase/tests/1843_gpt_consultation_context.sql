@@ -217,12 +217,12 @@ select public.gpt_get_consultation_context('dc543333-3333-4333-8333-333333333333
 
 -- ------------------------------------------------------------ link provenance
 -- Stored image analyses reach the plugin as the vision model wrote them.
-select is((select jsonb_array_length(r -> 'reference_analyses') from ctx_linked), 1,
+select is((select jsonb_array_length(r -> 'reference_analyses' -> 'images') from ctx_linked), 1,
   'the linked enquiry carries its stored reference-image analysis');
-select is((select r -> 'reference_analyses' -> 0 ->> 'summary' from ctx_linked),
+select is((select r -> 'reference_analyses' -> 'images' -> 0 ->> 'summary' from ctx_linked),
   'Faded blue-grey tattoo on the outer forearm with a red marker sketch.',
   'the analysis is passed through unchanged, not re-summarised');
-select is((select r -> 'reference_analyses' -> 0 ->> 'model' from ctx_linked), '@cf/qwen/qwen3.8-27b',
+select is((select r -> 'reference_analyses' -> 'images' -> 0 ->> 'model' from ctx_linked), '@cf/qwen/qwen3.8-27b',
   'the analysis names the vision model that wrote it');
 
 
