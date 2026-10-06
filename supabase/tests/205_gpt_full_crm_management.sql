@@ -117,7 +117,7 @@ select is(
 
 -- Stored vision analyses come with the enquiry (20261004170000).
 select is(
-  (select reference_analyses from public.gpt_get_enquiry_full(
+  (select reference_analyses -> 'images' from public.gpt_get_enquiry_full(
     (select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry))),
   '[]'::jsonb,
   'an enquiry without analysed images returns an empty reference_analyses list');
@@ -152,15 +152,43 @@ select pg_temp.gpt_full_claims(
 );
 create temporary table full_with_images as
 select * from public.gpt_get_enquiry_full((select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry));
-select is((select jsonb_array_length(reference_analyses) from full_with_images), 1,
+select is((select jsonb_array_length(reference_analyses -> 'images') from full_with_images), 1,
   'reviewing the enquiry returns its analysed image without a separate request');
-select is((select reference_analyses -> 0 ->> 'summary' from full_with_images),
+select is((select reference_analyses -> 'images' -> 0 ->> 'summary' from full_with_images),
   'Faded blue-grey old tattoo on the upper forearm next to a red marker sketch of two flowers.',
   'the stored vision summary is returned exactly as written');
-select is((select reference_analyses -> 0 -> 'analysis' ->> 'existing_tattoo_visible' from full_with_images), 'true',
+select is((select reference_analyses -> 'images' -> 0 ->> 'existing_tattoo_visible' from full_with_images), 'true',
   'the full stored analysis object (existing tattoo, body area, subjects) comes with it');
-select is((select reference_analyses -> 0 ->> 'model' from full_with_images), '@cf/qwen/qwen3.8-27b',
+select is((select reference_analyses -> 'images' -> 0 ->> 'model' from full_with_images), '@cf/qwen/qwen3.8-27b',
   'the item names the vision model that wrote it');
+-- Readable shape (20261006090000): numbered as in the CRM, described once,
+-- one note for all photos, unanalysed photos named, no internal ids.
+select is((select reference_analyses -> 'images' -> 0 ->> 'image' from full_with_images), '1 of 1',
+  'each photo carries its CRM position');
+select ok((select not (reference_analyses -> 'images' -> 0 ? 'analysis')
+              and not (reference_analyses -> 'images' -> 0 ? 'enquiry_file_id')
+              and not (reference_analyses -> 'images' -> 0 ? 'source') from full_with_images),
+  'the description appears once and internal ids and repeated notes are gone');
+select ok((select reference_analyses ->> 'note' like 'Stored vision-model analysis of the client''s attached photos, not re-summarised.%' from full_with_images),
+  'one note explains how to use all photos');
+reset role;
+insert into public.enquiry_files (
+  id, enquiry_id, ordinal, storage_path, mime_type, safe_extension, byte_size, upload_state, uploaded_at
+)
+select 'db0fa222-2222-4222-8222-222222222222', e.id, 1,
+  'clients/' || e.client_id || '/enquiries/' || e.id || '/references/db0fa222-2222-4222-8222-222222222222.png',
+  'image/png', 'png', 2000000, 'ready', now()
+from public.enquiries e where e.id = (select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry);
+set local role authenticated;
+select pg_temp.gpt_full_claims(
+  '{"sub":"db011111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-vladimir-full-test"}'
+);
+create temporary table full_with_unanalysed as
+select * from public.gpt_get_enquiry_full((select (result ->> 'enquiry_id')::uuid from vladimir_full_enquiry));
+select is((select reference_analyses -> 'images' -> 0 ->> 'image' from full_with_unanalysed), '1 of 2',
+  'numbering counts every ready photo the CRM shows');
+select is((select reference_analyses -> 'not_analysed' from full_with_unanalysed), '["2 of 2"]'::jsonb,
+  'a photo without analysis is named, so silence is not read as nothing there');
 select ok((select idea is not null from full_with_images),
   'the client''s original text arrives in the same read');
 select is(

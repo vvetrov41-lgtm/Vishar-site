@@ -5,14 +5,13 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const ALLOWED_ADVISORY_URL = 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm';
-// Build-time only advisories reached through Tailwind 3, each pinned to the
-// exact advisory and package. braces has no patched release; the
-// postcss-selector-parser fix (7.1.6) is a major the Tailwind 3 CSS build does
-// not produce identically with (checked 2026-10-06), and the parser only reads
-// this repository's own stylesheets.
-const ALLOWED_ADVISORIES = new Map([
-  [ALLOWED_ADVISORY_URL.toLowerCase(), 'braces'],
-  ['https://github.com/advisories/ghsa-rj75-hqrm-r3gf', 'postcss-selector-parser'],
+// Tailwind 3 parses only the repository's own CSS at build time. Each entry is
+// one advisory with no patched version inside Tailwind 3's dependency range:
+// braces <=3.0.3, and postcss-selector-parser <7.1.6 (Tailwind 3 needs 6.x;
+// 7.x changes the generated CSS). Exact URL and package, never a pattern.
+const ALLOWED_ADVISORIES = Object.freeze([
+  { url: ALLOWED_ADVISORY_URL, name: 'braces' },
+  { url: 'https://github.com/advisories/GHSA-rj75-hqrm-r3gf', name: 'postcss-selector-parser' },
 ]);
 const ALLOWED_DIRECT_ROOTS = new Set(['tailwindcss']);
 const SEVERITY_RANK = new Map([
@@ -34,7 +33,7 @@ function isAllowedAdvisory(via) {
   if (!via || typeof via !== 'object') return false;
   const url = String(via.url || '').toLowerCase();
   const name = String(via.name || via.dependency || '').toLowerCase();
-  return ALLOWED_ADVISORIES.get(url) === name;
+  return ALLOWED_ADVISORIES.some((allowed) => url === allowed.url.toLowerCase() && name === allowed.name);
 }
 
 export function evaluateAudit(report, packageJson, threshold = 'moderate') {
@@ -129,22 +128,23 @@ function runSelfTest() {
   };
   assert.equal(evaluateAudit(mixed, packageJson).ok, false, 'a second vulnerability still blocks CI');
 
-  const selector = structuredClone(allowedReport);
-  selector.vulnerabilities['postcss-selector-parser'] = {
-    name: 'postcss-selector-parser', severity: 'moderate', isDirect: false,
-    via: [{ source: 1002, name: 'postcss-selector-parser', dependency: 'postcss-selector-parser',
-      url: 'https://github.com/advisories/GHSA-rj75-hqrm-r3gf', severity: 'moderate', range: '<7.1.6' }],
+  const selectorParser = {
+    source: 1002,
+    name: 'postcss-selector-parser',
+    dependency: 'postcss-selector-parser',
+    url: 'https://github.com/advisories/GHSA-rj75-hqrm-r3gf',
+    severity: 'moderate',
+    range: '<7.1.6',
   };
-  selector.vulnerabilities['postcss-nested'] = {
-    name: 'postcss-nested', severity: 'moderate', isDirect: false, via: ['postcss-selector-parser'],
-  };
-  selector.vulnerabilities.tailwindcss.via.push('postcss-nested', 'postcss-selector-parser');
-  assert.equal(evaluateAudit(selector, packageJson).ok, true, 'the pinned postcss-selector-parser advisory through Tailwind is allowed');
+  const withSelectorParser = structuredClone(allowedReport);
+  withSelectorParser.vulnerabilities['postcss-selector-parser'] = { name: 'postcss-selector-parser', severity: 'moderate', isDirect: false, via: [selectorParser] };
+  withSelectorParser.vulnerabilities['postcss-nested'] = { name: 'postcss-nested', severity: 'moderate', isDirect: false, via: ['postcss-selector-parser'] };
+  withSelectorParser.vulnerabilities.tailwindcss.via.push('postcss-nested', 'postcss-selector-parser');
+  assert.equal(evaluateAudit(withSelectorParser, packageJson).ok, true, 'the selector parser advisory through Tailwind 3 is allowed');
 
-  const wrongPackage = structuredClone(selector);
-  wrongPackage.vulnerabilities['postcss-selector-parser'].via[0].name = 'other-parser';
-  wrongPackage.vulnerabilities['postcss-selector-parser'].via[0].dependency = 'other-parser';
-  assert.equal(evaluateAudit(wrongPackage, packageJson).ok, false, 'an allowed advisory on another package still blocks');
+  const swapped = structuredClone(withSelectorParser);
+  swapped.vulnerabilities['postcss-selector-parser'].via = [{ ...selectorParser, name: 'braces' }];
+  assert.equal(evaluateAudit(swapped, packageJson).ok, false, 'an advisory is allowed only for its own package');
 
   console.log('npm audit allowlist self-test passed');
 }
@@ -192,8 +192,8 @@ function main() {
 
   if (evaluation.allowed.length > 0) {
     console.warn(
-      `npm audit found only the approved dev-build advisories ${[...ALLOWED_ADVISORIES.keys()].join(', ')} `
-      + `through Tailwind 3 (${evaluation.allowed.join(', ')}). CI remains fail-closed for every other advisory.`,
+      `npm audit found only the approved dev-build advisories ${ALLOWED_ADVISORIES.map((a) => a.url).join(', ')} `
+      + `through Tailwind 3 (${evaluation.allowed.join(', ')}). No patched version fits Tailwind 3 yet; CI remains fail-closed for every other advisory.`,
     );
   } else {
     console.log(`npm audit: no ${auditLevel}+ vulnerabilities`);

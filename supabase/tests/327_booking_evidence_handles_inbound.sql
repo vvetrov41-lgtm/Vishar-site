@@ -1,7 +1,7 @@
 -- 327_booking_evidence_handles_inbound.sql
 --
 -- A confirmed booking is evidence the studio dealt with a client's message
--- (20261006090000): crm_private.inbound_message_handled_by_booking, applied by
+-- (20261006120000): crm_private.inbound_message_handled_by_booking, applied by
 -- conversation_awaiting_reply_since (Today, reminders, Inbox) and by
 -- attention_comm_facts. Everything is rolled back.
 

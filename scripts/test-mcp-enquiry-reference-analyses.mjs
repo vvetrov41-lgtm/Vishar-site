@@ -13,22 +13,21 @@ import { callPluginMcpTool } from '../workers/lib/mcp-plugin-actions.js';
 import { handleGptActionsRequest } from '../workers/lib/gpt-actions-combined.js';
 
 const ENQUIRY = '33333333-3333-4333-8333-333333333333';
-const ANALYSIS = Object.freeze({
-  enquiry_file_id: '44444444-4444-4444-8444-444444444444',
-  category: 'reference',
-  analysed_at: '2026-10-02T17:00:56Z',
-  model: '@cf/qwen/qwen3.8-27b',
-  summary: 'Faded blue-grey old tattoo on the upper forearm next to a red marker sketch of two flowers.',
-  analysis: {
+const ANALYSES = Object.freeze({
+  note: 'Stored vision-model analysis of the client\'s attached photos, not re-summarised. Photos are numbered as in the CRM.',
+  images: [{
+    image: '1 of 2',
     summary: 'Faded blue-grey old tattoo on the upper forearm next to a red marker sketch of two flowers.',
-    subjects: ['faded old tattoo', 'red marker flower sketch'],
-    body_area: 'forearm',
     image_kind: 'existing_tattoo',
     existing_tattoo_visible: true,
-  },
-  source: 'Stored vision-model analysis of this attached image, not re-summarised.',
+    body_area: 'forearm',
+    subjects: ['faded old tattoo', 'red marker flower sketch'],
+    model: '@cf/qwen/qwen3.8-27b',
+    analysed_at: '2026-10-02T17:00:56Z',
+  }],
+  not_analysed: ['2 of 2'],
 });
-const ROW = { enquiry_id: ENQUIRY, idea: 'Cover up half arms just front', cover_up: 'Yes', placement: 'Forearm', reference_analyses: [ANALYSIS] };
+const ROW = { enquiry_id: ENQUIRY, idea: 'Cover up half arms just front', cover_up: 'Yes', placement: 'Forearm', reference_analyses: ANALYSES };
 
 let passes = 0;
 async function test(name, fn) {
@@ -56,7 +55,8 @@ await test('reviewing an enquiry returns its image analyses in the same tool res
 
   assert.equal(rpcCalls.length, 1, 'one read, no extra tool or RPC call');
   assert.equal(rpcCalls[0].url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_get_enquiry_full');
-  assert.deepEqual(result.reference_analyses, [ANALYSIS], 'the stored analysis reaches the model exactly as stored');
+  assert.deepEqual(result.reference_analyses, ANALYSES, 'the stored analysis reaches the model exactly as stored');
+  assert.equal(result.reference_analyses.images[0].image, '1 of 2', 'photos keep their CRM numbering');
   assert.equal(result.idea, 'Cover up half arms just front', 'together with the client\'s original text');
 });
 
@@ -64,23 +64,28 @@ await test('the tool description tells the model to use the analyses with the cl
   const description = enquiryFull.definition.description;
   assert.equal(enquiryFull.name, 'crm_get_enquiry_full');
   assert.match(description, /The read for reviewing one enquiry/);
-  assert.match(description, /reference_analyses lists the stored vision-model analysis of each attached image/);
+  assert.match(description, /reference_analyses\.images holds the stored vision-model analysis of each attached photo, numbered as in the CRM/);
+  assert.match(description, /refer to photos by their number/);
+  assert.match(description, /reference_analyses\.not_analysed names photos without an analysis/);
   assert.match(description, /use these together with the client's own text without being asked/);
   assert.match(description, /references, a cover-up or placement/);
-  assert.match(description, /the image and the client's words stay authoritative/);
+  assert.match(description, /the photos and the client's words stay authoritative/);
   const consultation = tools.find((tool) => tool.operationId === 'getConsultationContext').definition.description;
-  assert.match(consultation, /reference_analyses lists the stored vision-model analysis/);
+  assert.match(consultation, /reference_analyses\.images holds the stored vision-model analysis/);
   const files = tools.find((tool) => tool.operationId === 'listEnquiryFiles').definition.description;
   assert.match(files, /already in crm_get_enquiry_full and crm_get_consultation_context as reference_analyses/);
 });
 
-await test('the guidance travels with the data: each stored analysis says how to use it', () => {
+await test('the guidance travels with the data: one note explains every photo', () => {
   // Server instructions are capped (test-mcp-plugin-tools), so the note is
-  // part of every reference_analyses item the database returns.
-  const sql = readFileSync('supabase/migrations/20261004170000_enquiry_full_reference_analyses.sql', 'utf8');
-  assert.match(sql, /'source', 'Stored vision-model analysis of this attached image, not re-summarised\. Use it with the client''s own text when reviewing the request, references, cover-up and placement\./);
-  assert.match(sql, /crm_private\.enquiry_reference_analyses\(e\.id\)/, 'gpt_get_enquiry_full uses the shared helper');
-  assert.match(sql, /'reference_analyses', crm_private\.enquiry_reference_analyses\(v_enquiry_id\)/, 'the consultation context uses the same helper');
+  // in one note on top of the photo list the database returns.
+  const sql = readFileSync('supabase/migrations/20261006090000_readable_reference_analyses.sql', 'utf8');
+  assert.match(sql, /'note', 'Stored vision-model analysis of the client''s attached photos, not re-summarised\. Photos are numbered as in the CRM\./);
+  assert.match(sql, /'image', p\.position \|\| ' of ' \|\| p\.total/, 'photos are numbered as in the CRM');
+  assert.match(sql, /'not_analysed'/, 'photos without analysis are named');
+  const helperUse = readFileSync('supabase/migrations/20261004170000_enquiry_full_reference_analyses.sql', 'utf8');
+  assert.match(helperUse, /crm_private\.enquiry_reference_analyses\(e\.id\)/, 'gpt_get_enquiry_full uses the shared helper');
+  assert.match(helperUse, /'reference_analyses', crm_private\.enquiry_reference_analyses\(v_enquiry_id\)/, 'the consultation context uses the same helper');
 });
 
 console.log(`MCP enquiry reference analyses: ${passes} passed`);
