@@ -4,6 +4,7 @@
 // Nothing here runs on page load, and a failure is shown here only.
 
 import { useState } from 'react';
+import { ClientBrief } from './ClientBrief';
 import type { AiIntakeApi, EnquiryTranslation as Translation } from '../lib/ai-intake-api';
 
 const POLL_INTERVAL_MS = 2500;
@@ -78,7 +79,7 @@ export function EnquiryTranslation({
           <div className="meta" style={{ fontWeight: 600 }}>
             {ru ? 'Машинный перевод — сверяйте с оригиналом' : 'Machine translation — check against the original'}
           </div>
-          <p lang="ru" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>{text}</p>
+          <ClientBrief text={text} language={language} lang="ru" />
         </div>
       ) : null}
     </div>

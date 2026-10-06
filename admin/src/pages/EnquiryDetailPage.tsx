@@ -37,6 +37,7 @@ import { BookingPanel } from '../components/BookingPanel';
 import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
 import { EnquiryReplyEvidence } from '../components/EnquiryReplyEvidence';
 import { EnquiryTranslation } from '../components/EnquiryTranslation';
+import { ClientBrief } from '../components/ClientBrief';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -406,8 +407,8 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         ) : null}
       </Section>
 
-      {/* The original submission appears once, here, in full, under the
-          structured tattoo facts from the form. */}
+      {/* The original submission appears once, here, under the structured
+          tattoo facts from the form; a long one opens on request. */}
       <Section title={t('enquiry.project')}>
         <dl className="definition">
           <dt>{t('enquiry.placement')}</dt><dd>{enquiry.placement ?? '—'}</dd>
@@ -417,7 +418,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </dl>
         <div style={{ marginTop: 12 }}>
           <div className="meta" style={{ fontWeight: 600 }}>{clientBriefLabel}</div>
-          <ClientBrief text={enquiry.idea} />
+          <ClientBrief text={enquiry.idea} language={language} />
           {enquiry.idea ? <EnquiryTranslation enquiryId={enquiry.id} api={api} language={language} /> : null}
         </div>
         <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
@@ -603,19 +604,6 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
         </CollapsedSection>
       ) : null}
     </>
-  );
-}
-
-/**
- * The client's message, in full and as written. It is the source of truth for
- * the enquiry, so it is never clamped behind a toggle or replaced by a summary.
- */
-function ClientBrief({ text }: { text: string | null }) {
-  if (!text) return <p style={{ margin: '4px 0 0' }}>—</p>;
-  return (
-    <p className="client-brief" style={{ whiteSpace: 'pre-wrap', margin: '4px 0 0' }}>
-      {text}
-    </p>
   );
 }
 

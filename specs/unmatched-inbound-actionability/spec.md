@@ -19,3 +19,12 @@ Today showed 20 "messages from unknown senders" (Vladimir 19, Kristina 1). None 
 - Automatic links carry provenance (`auto_linked_at`). When the exact match stops being unique, or the client changes phone or is archived, the automatic link is withdrawn and re-matched. An operator link or promotion clears the provenance and is never withdrawn. Links made before this change have no provenance and are left alone.
 - The studio's turn is a provider-accepted message or reaction sent after the client's newest actionable message (20261004190000). An edit, a revoke or an unsupported echo is not a turn. Production readback showed 5 of 5 studio reactions acknowledging a client's closing line.
 - No history is deleted. The backfill touches only derived links and reopens archived conversations when the order is proven by the activity log. Nothing is auto-marked `not_crm`.
+
+## Booking evidence (20261006090000)
+
+The CRM sees phone replies only from the first captured `provider_app` echo on each artist and channel. For WhatsApp Vladimir that is 2026-09-28 19:09. Before then, "no reply visible" proves nothing. `crm_private.inbound_message_handled_by_booking` treats a client's actionable inbound as handled when a confirmed, not cancelled appointment exists for the same client and the same enquiry (directly or through that enquiry's project), and either:
+
+- the appointment was confirmed at or after the message, or
+- the message predates the studio's outbound capture on that channel.
+
+A newer message on a captured channel waits again. Cancelled appointments, other enquiries, other clients, and channels that never captured studio replies prove nothing. `conversation_awaiting_reply_since` (Today, reminders, Inbox) and `attention_comm_facts` (`reply_state` = `handled`, source `booking_evidence`) apply the same rule.
