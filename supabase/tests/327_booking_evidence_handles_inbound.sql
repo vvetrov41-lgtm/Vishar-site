@@ -194,6 +194,12 @@ values ('a1111111-1111-4111-8111-111111111111', pg_temp.client(1),
         'reply_required', 'classifier');
 select is((select reply_state from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', pg_temp.client(1))),
   'reply_required', 'without a booking the classifier mark still applies');
+insert into public.attention_acknowledgements (artist_id, item_kind, entity_id, observed_at, acknowledged_at)
+values ('a1111111-1111-4111-8111-111111111111', 'conversation_reply', 'd3270000-0000-4000-8000-000000000001',
+        (select max(provider_timestamp) from public.communication_messages where conversation_id = 'd3270000-0000-4000-8000-000000000001'),
+        clock_timestamp());
+select is((select reply_state || '/' || reply_state_source from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', pg_temp.client(1))),
+  'handled/operator_ack', 'clearing the Today item outweighs the classifier mark');
 insert into crm_private.client_reply_marks (artist_id, client_id, message_at, reply_state, source, created_at)
 values ('a1111111-1111-4111-8111-111111111111', pg_temp.client(3),
         (select max(provider_timestamp) from public.communication_messages where conversation_id = 'd3270000-0000-4000-8000-000000000003'),

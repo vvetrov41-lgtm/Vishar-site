@@ -5,8 +5,10 @@
 -- marked his 2026-09-14 "I'll write if anything" reply_required on
 -- 2026-10-04, and in crm_private.attention_comm_facts any reply mark took
 -- precedence over everything else, including the booking evidence of
--- 20261006120000. The classifier reads only the text; a confirmed
--- consultation for the same enquiry is a business fact. Precedence is now:
+-- 20261006120000 and over the operator's own Today acknowledgement. The
+-- classifier reads only the text; an acknowledgement is the operator's
+-- statement and a confirmed consultation for the same enquiry is a business
+-- fact. Precedence is now:
 -- operator mark > Today acknowledgement > booking evidence > classifier
 -- reply_required. A classifier no_reply_needed already agrees and stands.
 
@@ -108,12 +110,17 @@ as $$
       (select source from inbound) as last_inbound_source,
       (select at from outbound) as last_outbound_at,
       -- An operator's mark always stands. A classifier's reply_required,
-      -- read from the text alone, does not outweigh a confirmed booking of
-      -- the same client and enquiry (20261006130000).
+      -- read from the text alone, does not outweigh the operator clearing the
+      -- Today item for that message, nor a confirmed booking of the same
+      -- client and enquiry (20261006130000).
       (select m.reply_state from mark m
-       where m.source = 'operator' or m.reply_state <> 'reply_required' or (select at from booked) is null) as mark_state,
+       where m.source = 'operator' or m.reply_state <> 'reply_required'
+          or ((select at from booked) is null
+              and not coalesce((select at from ack) >= (select occurred_at from inbound), false))) as mark_state,
       (select m.source from mark m
-       where m.source = 'operator' or m.reply_state <> 'reply_required' or (select at from booked) is null) as mark_source,
+       where m.source = 'operator' or m.reply_state <> 'reply_required'
+          or ((select at from booked) is null
+              and not coalesce((select at from ack) >= (select occurred_at from inbound), false))) as mark_source,
       (select at from ack) as ack_at,
       (select at from handled) as ack_clicked_at
   )
