@@ -165,8 +165,8 @@ insert into public.sessions (
   'd4740000-0000-4000-8000-000000000001',
   'a1111111-1111-4111-8111-111111111111',
   'd4700000-0000-4000-8000-000000000001',
-  'in_person_consultation', 'confirmed', now() + interval '10 days',
-  now() + interval '10 days 30 minutes', 0.5
+  'in_person_consultation', 'confirmed', date_trunc('hour', now()) + interval '10 days',
+  date_trunc('hour', now()) + interval '10 days 30 minutes', 0.5
 );
 
 select is(
