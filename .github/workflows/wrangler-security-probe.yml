@@ -1,0 +1,50 @@
+name: Wrangler security probe
+
+on:
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    paths:
+      - .github/workflows/wrangler-security-probe.yml
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Generate candidate lockfile
+        run: npm install --package-lock-only --ignore-scripts --save-dev wrangler@4.132.0
+      - name: Verify candidate dependency graph
+        run: |
+          node -e "const l=require('./package-lock.json'); const p=l.packages; console.log({wrangler:p['node_modules/wrangler']?.version,miniflare:p['node_modules/miniflare']?.version,sharp:p['node_modules/sharp']?.version,miniflareSharp:p['node_modules/miniflare']?.dependencies?.sharp,undici:p['node_modules/undici']?.version,workerd:p['node_modules/workerd']?.version});"
+          npm ci
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
+      - name: Test Worker compatibility
+        run: |
+          npm run test:booking
+          node scripts/test-worker-modules.mjs
+          npm run check:worker-bundle
+          npm run check:telegram-production-bundle
+          npm run check:calendar-production-bundle
+          npm run check:whatsapp-production-bundle
+          npm run check:gpt-production-bundle
+      - name: Upload generated dependency files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrangler-4.132.0-candidate
+          path: |
+            package.json
+            package-lock.json
+          if-no-files-found: error
