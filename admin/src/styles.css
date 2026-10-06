@@ -996,6 +996,16 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
 .enquiry-channel-name { font-weight: 600; }
 .enquiry-channel.disclosure > summary .collapsed-section-count { margin-left: auto; }
 
+/* The client's own message, clamped until asked for in full. */
+.client-brief { overflow-wrap: anywhere; }
+.client-brief.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+  line-clamp: 8;
+  overflow: hidden;
+}
+
 .link-button {
   background: none;
   border: 0;
