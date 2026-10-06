@@ -49,7 +49,9 @@ as $$
 $$;
 
 -- When an appointment became confirmed: the audit trail, or its creation
--- when the trail is silent (never later than the real confirmation).
+-- when the trail is silent (never later than the real confirmation). Both
+-- the appointment RPCs (appointment.*) and the still-active project session
+-- path (legacy_set_session_status / schedule_session: session.*) count.
 create function crm_private.appointment_confirmed_at(p_session_id uuid)
 returns timestamptz
 language sql
@@ -60,8 +62,10 @@ as $$
   select coalesce(
     (select min(l.occurred_at) from public.activity_log l
      where l.session_id = p_session_id
-       and ((l.event_type = 'appointment.status_changed' and l.metadata ->> 'to_status' = 'confirmed')
-            or (l.event_type = 'appointment.scheduled' and l.metadata ->> 'status' = 'confirmed'))),
+       and ((l.event_type in ('appointment.status_changed', 'session.status_changed')
+             and l.metadata ->> 'to_status' = 'confirmed')
+            or (l.event_type in ('appointment.scheduled', 'session.scheduled')
+             and l.metadata ->> 'status' = 'confirmed'))),
     (select s.created_at from public.sessions s where s.id = p_session_id));
 $$;
 

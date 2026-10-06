@@ -162,6 +162,15 @@ select 'a1111111-1111-4111-8111-111111111111', 'appointment.status_changed', 'ow
 select ok(not pg_temp.waiting('d3270000-0000-4000-8000-000000000010'),
   'an appointment proposed earlier and confirmed after the message handles it');
 
+-- ... and so does the project session path's own event.
+select pg_temp.inbound(pg_temp.conv(11), now() - interval '2 days');
+insert into public.activity_log (artist_id, event_type, actor_kind, session_id, client_id, metadata, occurred_at)
+select 'a1111111-1111-4111-8111-111111111111', 'session.status_changed', 'owner',
+  pg_temp.appointment(11, 'tattoo_session', now() - interval '3 days'), pg_temp.client(11),
+  '{"from_status":"proposed","to_status":"confirmed"}'::jsonb, now() - interval '1 day';
+select ok(not pg_temp.waiting('d3270000-0000-4000-8000-000000000011'),
+  'a project session confirmed after the message through session.status_changed handles it');
+
 -- The client attention facts read the same evidence.
 select is((select reply_state from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', pg_temp.client(3))),
   'handled', 'attention facts: the booked client''s message is handled');
@@ -170,7 +179,7 @@ select is((select reply_state_source from crm_private.attention_comm_facts('a111
 select is((select reply_state from crm_private.attention_comm_facts('a1111111-1111-4111-8111-111111111111', pg_temp.client(1))),
   'unknown', 'attention facts: an unbooked client''s message is not');
 
-select is((select count(*)::int from public.communication_messages where conversation_id::text like 'd3270000-%'), 11,
+select is((select count(*)::int from public.communication_messages where conversation_id::text like 'd3270000-%'), 12,
   'no message was deleted');
 
 select * from finish(true);
