@@ -210,5 +210,27 @@ select is((select reply_state || '/' || reply_state_source from crm_private.atte
 select is((select count(*)::int from public.communication_messages where conversation_id::text like 'd3270000-%'), 12,
   'no message was deleted');
 
+-- No "went quiet" nudge while a confirmed appointment is ahead (20261006140000).
+select pg_temp.conv(12);
+select pg_temp.appointment(12, 'in_person_consultation', now() - interval '31 days');
+select pg_temp.inbound('d3270000-0000-4000-8000-000000000012', now() - interval '30 days');
+select is(crm_private.client_attention('a1111111-1111-4111-8111-111111111111', pg_temp.client(12)) ->> 'sla_reason',
+  'nothing_pending', 'a handled client with a confirmed consultation ahead is not "gone quiet"');
+select ok(not exists (
+  select 1 from jsonb_array_elements(crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', false, false)) i
+  where i ->> 'client_id' = pg_temp.client(12)::text), 'and has nothing in Today');
+
+-- A proposed appointment still waits on the client.
+select pg_temp.conv(13, 'instagram');
+select pg_temp.appointment(13, 'in_person_consultation', now() - interval '41 days', 'proposed');
+select pg_temp.inbound('d3270000-0000-4000-8000-000000000013', now() - interval '40 days');
+insert into public.communication_messages (
+  conversation_id, artist_id, channel, direction, origin, status, message_type, body, provider_timestamp, sent_at, created_at)
+values ('d3270000-0000-4000-8000-000000000013', 'a1111111-1111-4111-8111-111111111111', 'instagram',
+  'outbound', 'provider_app', 'read', 'text', 'Does Friday work?', now() - interval '30 days', now() - interval '30 days',
+  now() - interval '30 days');
+select is(crm_private.client_attention('a1111111-1111-4111-8111-111111111111', pg_temp.client(13)) ->> 'sla_reason',
+  'client_silent', 'with only a proposed appointment the client is still awaited');
+
 select * from finish(true);
 rollback;
