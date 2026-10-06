@@ -10,19 +10,23 @@ on:
       - package-lock.json
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   probe:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'security/wrangler-sharp-20261006'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Generate candidate lockfile
+      - name: Generate validated dependency update
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
@@ -33,16 +37,12 @@ jobs:
           fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
           NODE
           npm install --package-lock-only --ignore-scripts
-      - name: Verify candidate dependency graph
+      - name: Verify dependency graph and audit
         run: |
           node -e "const l=require('./package-lock.json'); const p=l.packages; console.log({wrangler:p['node_modules/wrangler']?.version,miniflare:p['node_modules/miniflare']?.version,sharp:p['node_modules/sharp']?.version,miniflareSharp:p['node_modules/miniflare']?.dependencies?.sharp,undici:p['node_modules/undici']?.version,workerd:p['node_modules/workerd']?.version});"
           npm ci
           node scripts/audit-root-dependencies.mjs --self-test
-          if ! node scripts/audit-root-dependencies.mjs --audit-level=moderate; then
-            npm audit --json > /tmp/audit.json || true
-            node -e "const a=require('/tmp/audit.json'); for (const n of ['sharp','miniflare','wrangler']) if (a.vulnerabilities?.[n]) console.log(n, JSON.stringify(a.vulnerabilities[n], null, 2));"
-            exit 1
-          fi
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
       - name: Test Worker compatibility
         run: |
           npm run test:booking
@@ -52,12 +52,11 @@ jobs:
           npm run check:calendar-production-bundle
           npm run check:whatsapp-production-bundle
           npm run check:gpt-production-bundle
-      - name: Upload generated dependency files
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: wrangler-4.132.0-sharp-0.35.5-candidate
-          path: |
-            package.json
-            package-lock.json
-          if-no-files-found: error
+      - name: Commit validated dependency files and remove probe
+        run: |
+          git config user.name 'vvetrov41-lgtm'
+          git config user.email 'vvetrov41@gmail.com'
+          git add package.json package-lock.json
+          git rm .github/workflows/wrangler-security-probe.yml
+          git commit -m 'Patch Wrangler and Sharp security dependencies'
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
