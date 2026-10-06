@@ -40,12 +40,7 @@ jobs:
           node scripts/audit-root-dependencies.mjs --self-test
           if ! node scripts/audit-root-dependencies.mjs --audit-level=moderate; then
             npm audit --json > /tmp/audit.json || true
-            node - <<'NODE'
-            const a = require('/tmp/audit.json');
-            for (const name of ['sharp','miniflare','wrangler']) {
-              if (a.vulnerabilities?.[name]) console.log(name, JSON.stringify(a.vulnerabilities[name], null, 2));
-            }
-            NODE
+            node -e "const a=require('/tmp/audit.json'); for (const n of ['sharp','miniflare','wrangler']) if (a.vulnerabilities?.[n]) console.log(n, JSON.stringify(a.vulnerabilities[n], null, 2));"
             exit 1
           fi
       - name: Test Worker compatibility
