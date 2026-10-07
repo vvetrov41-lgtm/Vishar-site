@@ -45,6 +45,18 @@ describe('Today snapshots', () => {
     await act(async () => newAuth.resolve('new auth'));
   });
 
+  it('reloads after an auth reset even when API identity and scope stay the same', async () => {
+    const api = {}; const response = deferred<string>();
+    const loader = vi.fn().mockResolvedValueOnce('old auth').mockImplementationOnce(() => response.promise);
+    const hook = renderHook(() => useTodayResource(api, 'owner:a', 'pulse', loader));
+    await waitFor(() => expect(hook.result.current.data).toBe('old auth'));
+    clearTodayCache(); hook.rerender();
+    expect(hook.result.current.data).toBeNull();
+    await waitFor(() => expect(loader).toHaveBeenCalledTimes(2));
+    await act(async () => response.resolve('new auth'));
+    expect(hook.result.current.data).toBe('new auth');
+  });
+
   it('expires snapshots on a later open, without erasing a continuously mounted page', async () => {
     const api = {}; const response = deferred<string>(); const loader = vi.fn().mockResolvedValueOnce('previous').mockImplementationOnce(() => response.promise);
     const first = renderHook(() => useTodayResource(api, 'owner:a', 'pulse', loader));
