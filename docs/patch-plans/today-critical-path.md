@@ -48,3 +48,24 @@ refresh failure. Compare old/new attention JSON at fixed time and test denied ro
 Read back exact Pages SHA on both hosts and retain Access on the operator host.
 Record real DB timings separately from local rendered tests; browser production
 paint timings require a usable authenticated browser or actual timing telemetry.
+
+## Follow-up: telemetry transport CSP, 7 October evening
+
+Fresh canonical remains 42fa4c3f205eda5921b029d879f8666c7dd2b0f6;
+production DB head remains 20261007093649. Connected PostHog project 262602
+reports zero Today timing events in the last day. The deployed CRM header
+omits both ingestion hosts already approved by product-analytics.ts, so
+browser fetch is blocked before analytics transport can measure acceptance.
+
+Bounded repair: permit only the existing HTTPS /i/v0/e/ capture path prefixes
+on the two approved ingestion hosts in connect-src. Do not allow PostHog
+scripts, replay, configuration, wildcards, new event fields or identities.
+Regression must bind CSP sources to the analytics host allow-list and keep
+script-src/frame-ancestors unchanged. The test fails against the current header.
+
+Validate tests, typecheck, build, secret scan and exact-head CI; recheck the
+canonical base before merge. Release both CRM Pages builds through existing
+exact-SHA workflows; no DB, Worker, Telegram, Access or DNS mutation. Read back
+exact deployments and the live public CSP. Actual content/pulse/return latency
+still requires genuine authenticated browser events; a synthetic event is not
+acceptance and must not be inserted into production analytics.
