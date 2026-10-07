@@ -202,5 +202,19 @@ describe('today workspace', () => {
       // The browser list is replaced, not merged.
       expect(within(needsYou).queryByText('Waiting for your reply')).not.toBeInTheDocument();
     });
+
+    it('renders an enabled server pulse even when a supplemental read fails', async () => {
+      renderWithSession(<App />, {
+        role: 'owner',
+        path: '/',
+        todayPulse: pulse(true),
+        failTable: 'activity_log',
+      });
+
+      const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+        .closest('section') as HTMLElement;
+      expect(await within(needsYou).findByText('Server Pulse Client')).toBeInTheDocument();
+      expect(within(needsYou).getByText('Deposit paid, no session booked')).toBeInTheDocument();
+    });
   });
 });
