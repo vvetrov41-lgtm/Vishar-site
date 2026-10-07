@@ -17,7 +17,9 @@ starts with all artists and can issue a second full load after selection resolve
 
 Fresh production EXPLAIN: items 858 ms; summary 263 ms. Inlined items plan:
 695 ms execution, 42 ms planning; attention assembly 516 ms and conversation
-attention 98 ms. 51 active clients cause 51 communication/stage fact reads.
+attention 98 ms. 51 active clients cause 51 communication/stage fact reads. The complete owner
+all-active-artist items plus summaries probe takes 1520 ms, so a single-artist
+items-only benchmark understates actual RPC work.
 
 ## Changes and boundaries
 
