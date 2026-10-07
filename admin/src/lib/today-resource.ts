@@ -65,6 +65,6 @@ export function useTodayResource<T>(
     load();
     // Scope and API identity are the ownership boundary, not the inline loader.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [api, scope, resource]);
+  }, [api, scope, resource, current]);
   return { ...snapshot, reload: () => load(true) };
 }
