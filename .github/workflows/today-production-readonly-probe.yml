@@ -1,4 +1,4 @@
-# Fresh Today CSP and production SHA preflight, 7 October evening
+# Read live deployments and CSP after Today follow-up 5359fa7ce2b48f67ab1a2bf754232e4da6629d73
 name: Today production read-only probe
 on:
   push:
@@ -29,4 +29,7 @@ jobs:
             const response=await fetch('https://' + host, {redirect:'manual'});
             console.log(JSON.stringify({host,status:response.status,ms:Math.round(performance.now()-start),access_redirect:(response.headers.get('location')||'').includes('cloudflareaccess.com'),posthog_capture_csp:(response.headers.get('content-security-policy')||'').includes('https://eu.i.posthog.com/i/v0/e/'),posthog_any_csp:(response.headers.get('content-security-policy')||'').includes('posthog')}));
           }
+          const origin='https://crm.vishartattoo.com';
+          const cors=await fetch('https://eu.i.posthog.com/i/v0/e/', {method:'OPTIONS',redirect:'manual',headers:{Origin:origin,'Access-Control-Request-Method':'POST','Access-Control-Request-Headers':'content-type'}});
+          console.log(JSON.stringify({analytics_preflight_status:cors.status,origin_allowed:['*',origin].includes(cors.headers.get('access-control-allow-origin')),post_allowed:(cors.headers.get('access-control-allow-methods')||'').toUpperCase().includes('POST'),content_type_allowed:(cors.headers.get('access-control-allow-headers')||'').toLowerCase().includes('content-type')}));
           NODE
