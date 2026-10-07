@@ -19,3 +19,7 @@ for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNE
 assert.ok(!workflow.includes('--include-all'));
 assert.ok(!workflow.includes('wrangler'));
 console.log('Today database-only lineage and release boundaries passed');
+
+const operator = readFileSync('.github/workflows/crm-host-split-operator.yml','utf8');
+assert.ok(operator.includes('VITE_POSTHOG_HOST: eu.i.posthog.com'));
+assert.ok(!operator.includes('vars.CRM_PRODUCTION_POSTHOG_HOST'));
