@@ -1,4 +1,4 @@
-# Readback after Today release dafad8eab6f18a15059be58a1c4be6ce831fb81a
+# Readback after final Today release 42fa4c3f205eda5921b029d879f8666c7dd2b0f6
 name: Today production read-only probe
 on:
   push:
