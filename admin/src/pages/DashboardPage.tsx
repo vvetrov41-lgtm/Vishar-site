@@ -9,8 +9,9 @@
 // Every row names a person and opens the place the work is done. Nothing above
 // the schedule is a counter, a form or an instruction.
 
-import { useEffect, useState } from 'react';
-import { useAsync } from '../components/AsyncData';
+import { useEffect, useRef, useState } from 'react';
+import { useTodayResource } from '../lib/today-resource';
+import { todayNavigationStart, todayRequest, todayTiming } from '../lib/today-performance';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatDate, formatDateTime, relativeDue } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
@@ -48,12 +49,10 @@ interface TodayData {
 }
 
 interface TodayCoreData {
-  appointments: Appointment[];
   enquiries: Enquiry[];
   conversations: ConversationSummary[];
   emailThreads: EmailThread[];
   clientNames: Map<string, string>;
-  pulse: TodayPulse | null;
 }
 
 interface TodaySupplementalData {
@@ -76,70 +75,71 @@ const EMPTY_SUPPLEMENTAL_DATA: TodaySupplementalData = {
   clientNames: new Map(),
 };
 
-interface GmailDiscoveryState {
-  scopeKey: string;
-  rows: GmailAwaitingReply[];
-}
-
 export function DashboardPage() {
   const api = useApi();
   const { profile, memberships } = useSession();
   const { t, label, language } = useLanguage();
   const role = profile?.role;
-  const { selectedArtistId } = useArtistScope();
+  const { selectedArtistId, loading: scopeLoading } = useArtistScope();
   const mayManageFinance = canAccess(role, 'manageFinance', memberships);
   const mayDismissAttention = can(role, 'manageNotifications');
   const mayViewEnquiries = can(role, 'viewEnquiries');
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-  const gmailScopeKey = `${profile?.id ?? 'anonymous'}:${selectedArtistId ?? 'all'}:${mayViewEnquiries ? '1' : '0'}`;
-  const [gmailDiscovery, setGmailDiscovery] = useState<GmailDiscoveryState>({ scopeKey: '', rows: [] });
 
-  // The visible Today shell has two data lanes:
-  //
-  // 1. Core: server pulse + schedule + the navigation records those rows need.
-  //    This is the critical path. When the server pulse is enabled it may render
-  //    as soon as these reads finish.
-  // 2. Supplemental: browser-fallback rules, finance, integration health and
-  //    recent activity. These continue in parallel but cannot hold an enabled
-  //    server pulse hostage.
-  //
-  // If the server pulse is unavailable or switched off we still wait for the
-  // supplemental lane, preserving the old fail-closed browser calculation.
-  const coreState = useAsync<TodayCoreData>(async () => {
+  // Every cache key includes the authenticated profile, capabilities, artist
+  // and calendar day. Customer data stays in memory, never browser storage.
+  const scopeKey = JSON.stringify([profile?.id, role, memberships, selectedArtistId, new Date().toDateString()]);
+  const readyKey = scopeLoading ? null : scopeKey;
+  const mountedAt = useRef(todayNavigationStart());
+  const contentMeasured = useRef(false);
+  useEffect(() => {
+    mountedAt.current = todayNavigationStart();
+    contentMeasured.current = false;
+    todayTiming('mounted', performance.now() - mountedAt.current);
+    todayTiming('skeleton', performance.now() - mountedAt.current);
+  }, [scopeKey]);
+
+  // Pulse already contains client names. It must not wait for navigation,
+  // email grouping, the schedule, or a second name-resolution request.
+  const pulseState = useTodayResource<TodayPulse | null>(api, readyKey, 'pulse', () =>
+    api.getTodayPulse(selectedArtistId ?? undefined).catch(() => null), 1000);
+  const scheduleState = useTodayResource<{ appointments: Appointment[]; clientNames: Map<string, string> }>(
+    api, readyKey, 'schedule', async () => {
+      const appointments = can(role, 'viewSessions')
+        ? await todayRequest('appointments', () => api.listAppointments({ artistId: selectedArtistId ?? undefined, from: daysAgoIso(90) })) : [];
+      const clients = await todayRequest('names', () => api.listClientsByIds(appointments.map((row) => row.client_id)));
+      return { appointments, clientNames: new Map(clients.map((row) => [row.id, row.full_name])) };
+    }, 1000);
+
+  // These records enrich reply links and power the browser fallback. Their
+  // errors cannot hide an enabled server pulse or a completed schedule.
+  const coreState = useTodayResource<TodayCoreData>(api, readyKey, 'navigation', async () => {
     const artistId = selectedArtistId ?? undefined;
-
-    const [appointments, enquiries, conversations, emailMessages, pulse] = await Promise.all([
-      can(role, 'viewSessions') ? api.listAppointments({ artistId, from: daysAgoIso(90) }) : Promise.resolve([]),
-      mayViewEnquiries ? api.listEnquiries({ artistId }) : Promise.resolve([]),
-      mayViewEnquiries ? api.listConversations({ limit: 50 }) : Promise.resolve([]),
-      mayViewEnquiries ? api.listEmailMessages({ artistId, limit: 200 }).catch(() => []) : Promise.resolve([]),
-      // The server pulse is additive: if it cannot be read, Today falls back to
-      // the complete browser lane below.
-      api.getTodayPulse(artistId).catch(() => null),
+    const [enquiries, conversations, emailMessages] = await Promise.all([
+      mayViewEnquiries ? todayRequest('enquiries', () => api.listEnquiries({ artistId })) : Promise.resolve([]),
+      mayViewEnquiries ? todayRequest('conversations', () => api.listConversations({ limit: 50 })) : Promise.resolve([]),
+      mayViewEnquiries ? todayRequest('email', () => api.listEmailMessages({ artistId, limit: 200 })).catch(() => []) : Promise.resolve([]),
     ]);
 
     const emailThreads = groupEmailThreads(emailMessages);
 
     // Resolve only names needed by the critical path. Project/follow-up-only
     // clients are resolved in the supplemental lane and merged later.
-    const clients = await api.listClientsByIds([
-      ...appointments.map((appointment) => appointment.client_id),
+    const clients = await todayRequest('names', () => api.listClientsByIds([
       ...enquiries.map((enquiry) => enquiry.client_id),
       ...emailThreads.map((thread) => thread.client_id ?? ''),
-    ]);
+    ]));
 
     return {
-      appointments,
       enquiries,
       conversations,
       emailThreads,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
-      pulse,
     };
-  }, [api, role, selectedArtistId, mayViewEnquiries]);
+  });
 
-  const supplementalState = useAsync<TodaySupplementalData>(async () => {
+  const supplementalState = useTodayResource<TodaySupplementalData>(api, readyKey, 'supplemental', async () => {
     const artistId = selectedArtistId ?? undefined;
 
     const candidatesPromise: Promise<MonzoReconciliationCandidate[]> = mayManageFinance
@@ -178,87 +178,65 @@ export function DashboardPage() {
       acknowledgements,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
     };
-  }, [api, role, selectedArtistId, mayManageFinance]);
+  });
 
-  // Gmail attention is CRM-owned snapshot state. This read goes directly to
-  // Supabase under RLS and never contacts the Gmail Worker or Google, so Today
-  // remains independent of provider latency and outages.
-  useEffect(() => {
-    let cancelled = false;
-
-    if (!mayViewEnquiries) {
-      setGmailDiscovery({ scopeKey: gmailScopeKey, rows: [] });
-      return () => { cancelled = true; };
-    }
-
-    void api.listGmailMetadataSnapshots(selectedArtistId ?? undefined)
+  const gmailState = useTodayResource<GmailAwaitingReply[]>(api, readyKey, 'gmail', async () => {
+    if (!mayViewEnquiries) return [];
+    return api.listGmailMetadataSnapshots(selectedArtistId ?? undefined)
       .then((snapshots) => snapshots.map((entry) => ({
-        artist_id: entry.artist_id,
-        client_id: entry.client_id,
-        client_name: null,
-        subject: entry.subject,
-        last_message_at: entry.last_message_at,
-        direction: entry.direction,
-      })))
-      .catch(() => [])
-      .then((rows) => {
-        if (!cancelled) setGmailDiscovery({ scopeKey: gmailScopeKey, rows });
-      });
+        artist_id: entry.artist_id, client_id: entry.client_id, client_name: null,
+        subject: entry.subject, last_message_at: entry.last_message_at, direction: entry.direction,
+      }))).catch(() => []);
+  });
 
-    return () => { cancelled = true; };
-  }, [api, gmailScopeKey, mayViewEnquiries, selectedArtistId]);
-
-  const coreData = coreState.data;
-  const enabledServerPulse = coreData?.pulse?.enabled ? coreData.pulse : null;
-  const requiresBrowserFallback = Boolean(coreData && !enabledServerPulse);
+  const serverPulse = pulseState.data?.enabled ? pulseState.data : null;
+  const fallbackReady = !scopeLoading && !pulseState.loading && !serverPulse
+    && coreState.data !== null && scheduleState.data !== null && supplementalState.data !== null;
+  const meaningful = Boolean(serverPulse || scheduleState.data || fallbackReady);
+  useEffect(() => {
+    if (!meaningful || contentMeasured.current) return;
+    const frame = requestAnimationFrame(() => {
+      contentMeasured.current = true;
+      todayTiming('content', performance.now() - mountedAt.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [meaningful, scopeKey]);
   const reload = () => {
-    coreState.reload();
-    supplementalState.reload();
+    pulseState.reload(); scheduleState.reload(); coreState.reload();
+    supplementalState.reload(); gmailState.reload();
   };
-
-  if (coreState.loading && !coreData) return <LoadingState label={t('today.loading')} />;
-  if (coreState.error) return <ErrorState message={coreState.error} onRetry={reload} />;
-  if (!coreData) return <EmptyState title={t('today.allClear')} />;
-
-  // The browser engine is still the source of truth whenever the server pulse
-  // is disabled/unavailable, so never render it from partial supplemental data.
-  if (requiresBrowserFallback && supplementalState.loading && !supplementalState.data) {
-    return <LoadingState label={t('today.loading')} />;
-  }
-  if (requiresBrowserFallback && supplementalState.error) {
-    return <ErrorState message={supplementalState.error} onRetry={reload} />;
-  }
-
+  const coreData = coreState.data;
   const supplementalData = supplementalState.data ?? EMPTY_SUPPLEMENTAL_DATA;
-  const clientNames = new Map([
-    ...coreData.clientNames,
-    ...supplementalData.clientNames,
-  ]);
   const data: TodayData = {
-    ...coreData,
+    appointments: scheduleState.data?.appointments ?? [],
+    enquiries: coreData?.enquiries ?? [],
+    conversations: coreData?.conversations ?? [],
+    emailThreads: coreData?.emailThreads ?? [],
     ...supplementalData,
-    clientNames,
+    clientNames: new Map([
+      ...(coreData?.clientNames ?? []), ...supplementalData.clientNames,
+      ...(scheduleState.data?.clientNames ?? []),
+    ]),
+    pulse: pulseState.data,
   };
 
   const now = new Date();
   const conversations = data.conversations.filter(
     (conversation) => !selectedArtistId || conversation.artist_id === selectedArtistId,
   );
-  const gmailAwaitingReply = gmailDiscovery.scopeKey === gmailScopeKey
-    ? gmailDiscovery.rows
-    : [];
+  const gmailAwaitingReply = gmailState.data ?? [];
 
   const snapshot = summariseToday({
     now,
     appointments: data.appointments,
     enquiries: data.enquiries,
-    projects: data.projects,
-    followUps: data.followUps,
-    conversations,
-    emailThreads: data.emailThreads.filter(
+    projects: serverPulse ? [] : data.projects,
+    followUps: serverPulse ? [] : data.followUps,
+    conversations: serverPulse ? [] : conversations,
+    emailThreads: (serverPulse ? [] : data.emailThreads).filter(
       (thread) => !selectedArtistId || thread.artist_id === selectedArtistId,
     ),
-    gmailAwaitingReply,
+    gmailAwaitingReply: serverPulse ? [] : gmailAwaitingReply,
     acknowledgements: data.acknowledgements,
     reconciliationCandidates: data.candidates,
     failedJobCount: data.failedJobCount,
@@ -266,9 +244,8 @@ export function DashboardPage() {
   });
   // One engine for Today and Telegram once the server pulse is switched on.
   // The schedule below still comes from the appointments read here.
-  const serverPulse = data.pulse?.enabled ? data.pulse : null;
   const needsYou = enquiryTargetsForToday(
-    serverPulse ? pulseToTodayItems(serverPulse) : snapshot.needsYou,
+    serverPulse ? pulseToTodayItems(serverPulse) : fallbackReady ? snapshot.needsYou : [],
     data.enquiries,
     conversations,
     data.emailThreads,
@@ -296,7 +273,12 @@ export function DashboardPage() {
       <Section title={t('today.needsYou')}>
         {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
         {serverPulse ? <PulseSummary pulse={serverPulse} /> : null}
-        {needsYou.length === 0 ? (
+        {serverPulse && coreState.error ? <ErrorState message={coreState.error} onRetry={coreState.reload} /> : null}
+        {!serverPulse && !fallbackReady ? (
+          coreState.error || supplementalState.error || pulseState.error ?
+            <ErrorState message={coreState.error ?? supplementalState.error ?? pulseState.error!} onRetry={reload} /> :
+            <LoadingState label={t('today.loading')} />
+        ) : needsYou.length === 0 ? (
           <EmptyState compact title={t('today.allClear')} hint={t('today.allClearHint')} />
         ) : (
           <div className="list">
@@ -305,6 +287,7 @@ export function DashboardPage() {
                 key={item.key}
                 item={item}
                 now={now}
+                navigationPending={!coreData && ['reply', 'email_send_failed', 'email_draft_to_approve'].includes(item.kind)}
                 canDismiss={mayDismissAttention}
                 dismissing={dismissing === item.key}
                 onDismiss={(target) => { void dismissAttention(target, item.key); }}
@@ -318,7 +301,10 @@ export function DashboardPage() {
         title={t('today.schedule')}
         action={<Link to="/appointments" className="badge today-link">{t('today.openCalendar')}</Link>}
       >
-        {snapshot.today.length === 0 ? (
+        {!scheduleState.data ? (
+          scheduleState.error ? <ErrorState message={scheduleState.error} onRetry={scheduleState.reload} /> :
+            <LoadingState label={t('today.loading')} />
+        ) : snapshot.today.length === 0 ? (
           <EmptyState compact title={t('today.noSchedule')} hint={t('today.noScheduleHint')} />
         ) : (
           <div className="list">
@@ -341,7 +327,10 @@ export function DashboardPage() {
       </Section>
 
       <Section title={t('today.ahead')}>
-        {snapshot.ahead.length === 0 ? (
+        {!scheduleState.data ? (
+          scheduleState.error ? <ErrorState message={scheduleState.error} onRetry={scheduleState.reload} /> :
+            <LoadingState label={t('today.loading')} />
+        ) : snapshot.ahead.length === 0 ? (
           <EmptyState compact title={t('today.noAhead')} />
         ) : (
           <div className="list">
@@ -397,12 +386,14 @@ function NeedsYouRow({
   item,
   now,
   canDismiss,
+  navigationPending,
   dismissing,
   onDismiss,
 }: {
   item: TodayItem;
   now: Date;
   canDismiss: boolean;
+  navigationPending?: boolean;
   dismissing: boolean;
   onDismiss: (target: AttentionItemRef) => void;
 }) {
@@ -453,7 +444,7 @@ function NeedsYouRow({
     </>
   );
 
-  if (!item.href) return <div className="row">{content}</div>;
+  if (!item.href || navigationPending) return <div className="row" aria-busy={navigationPending}>{content}</div>;
 
   return (
     <div className="row today-attention-row">

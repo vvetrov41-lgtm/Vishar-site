@@ -159,6 +159,13 @@ select is(
   'the fast path preserves the waiting-on-client SLA'
 );
 
+select is(
+  (select a from crm_private.pulse_attention_batch('a1111111-1111-4111-8111-111111111111', now())
+   where client_id='d4700000-0000-4000-8000-000000000001'),
+  crm_private.pulse_client_attention('a1111111-1111-4111-8111-111111111111',
+    'd4700000-0000-4000-8000-000000000001', now()),
+  'batch attention preserves the per-client result in this booking state');
+
 insert into public.sessions (
   id, artist_id, client_id, appointment_type, status, start_at, end_at, duration_hours
 ) values (
@@ -179,6 +186,13 @@ select is(
   'a confirmed future consultation still suppresses the went-quiet nudge'
 );
 
+select is(
+  (select a from crm_private.pulse_attention_batch('a1111111-1111-4111-8111-111111111111', now())
+   where client_id='d4700000-0000-4000-8000-000000000001'),
+  crm_private.pulse_client_attention('a1111111-1111-4111-8111-111111111111',
+    'd4700000-0000-4000-8000-000000000001', now()),
+  'batch attention preserves the per-client result in this booking state');
+
 update public.sessions
 set status = 'proposed'
 where id = 'd4740000-0000-4000-8000-000000000001';
@@ -193,9 +207,16 @@ select is(
   'a merely proposed consultation still waits on the client'
 );
 
+select is(
+  (select a from crm_private.pulse_attention_batch('a1111111-1111-4111-8111-111111111111', now())
+   where client_id='d4700000-0000-4000-8000-000000000001'),
+  crm_private.pulse_client_attention('a1111111-1111-4111-8111-111111111111',
+    'd4700000-0000-4000-8000-000000000001', now()),
+  'batch attention preserves the per-client result in this booking state');
+
 select ok(
   position(
-    'crm_private.pulse_client_attention(p_artist_id, ac.client_id, (select t from now_))'
+    'crm_private.pulse_attention_batch(p_artist_id, (select t from now_))'
     in pg_get_functiondef('crm_private.pulse_items(uuid,boolean,boolean,timestamptz)'::regprocedure)
   ) > 0,
   'pulse_items is routed through the narrow attention projection'
@@ -218,6 +239,46 @@ select ok(not has_function_privilege(
   'crm_private.pulse_fact_conflicts(uuid,uuid)',
   'execute'
 ), 'the optimized fact-conflict helper remains private');
+
+select ok(not has_function_privilege('authenticated', 'crm_private.pulse_attention_batch(uuid,timestamptz)', 'execute'),
+  'the artist batch remains inaccessible to browser roles');
+select ok(not has_function_privilege('service_role', 'crm_private.pulse_attention_batch(uuid,timestamptz)', 'execute'),
+  'the batch is not an alternative service-role RPC');
+select is((select count(*) from crm_private.pulse_attention_batch('a2222222-2222-4222-8222-222222222222', now())
+  where client_id='d4700000-0000-4000-8000-000000000001'), 0::bigint,
+  'the batch does not cross artist boundaries');
+
+-- Ack covers the observed message, never a later inbound; operator marks stand.
+insert into public.communication_messages (
+  id,conversation_id,artist_id,channel,direction,origin,status,message_type,body,provider_timestamp,created_at
+) values ('d4730000-0000-4000-8000-000000000002',
+  'd4720000-0000-4000-8000-000000000001','a1111111-1111-4111-8111-111111111111',
+  'whatsapp','inbound','contact','received','text','Synthetic question',now()-interval '5 days',now()-interval '5 days');
+insert into crm_private.client_reply_marks(artist_id,client_id,message_at,reply_state,source)
+values('a1111111-1111-4111-8111-111111111111','d4700000-0000-4000-8000-000000000001',
+  now()-interval '5 days','reply_required','classifier');
+insert into public.attention_acknowledgements(artist_id,item_kind,entity_id,observed_at,acknowledged_at)
+values('a1111111-1111-4111-8111-111111111111','conversation_reply','d4720000-0000-4000-8000-000000000001',
+  now()-interval '5 days',now()-interval '1 day');
+select is((select a from crm_private.pulse_attention_batch('a1111111-1111-4111-8111-111111111111',now())
+  where client_id='d4700000-0000-4000-8000-000000000001'),
+  crm_private.pulse_client_attention('a1111111-1111-4111-8111-111111111111','d4700000-0000-4000-8000-000000000001',now()),
+  'batch acknowledgement overrides classifier reply-required identically');
+insert into public.communication_messages (
+  id,conversation_id,artist_id,channel,direction,origin,status,message_type,body,provider_timestamp,created_at
+) values ('d4730000-0000-4000-8000-000000000003',
+  'd4720000-0000-4000-8000-000000000001','a1111111-1111-4111-8111-111111111111',
+  'whatsapp','inbound','contact','received','text','Synthetic newer question',now()-interval '2 days',now()-interval '2 days');
+select is((select a from crm_private.pulse_attention_batch('a1111111-1111-4111-8111-111111111111',now())
+  where client_id='d4700000-0000-4000-8000-000000000001'),
+  crm_private.pulse_client_attention('a1111111-1111-4111-8111-111111111111','d4700000-0000-4000-8000-000000000001',now()),
+  'a late acknowledgement cannot cover newer inbound in the batch');
+insert into crm_private.client_reply_marks(artist_id,client_id,message_at,reply_state,source)
+values('a1111111-1111-4111-8111-111111111111','d4700000-0000-4000-8000-000000000001',
+  now()-interval '2 days','no_reply_needed','operator');
+select ok((select bool_and(b.a=crm_private.pulse_client_attention(a.id,b.client_id,now()))
+  from public.artists a cross join lateral crm_private.pulse_attention_batch(a.id,now()) b),
+  'batch and per-client results match all active clients, including operator overrides');
 
 select * from finish(true);
 rollback;

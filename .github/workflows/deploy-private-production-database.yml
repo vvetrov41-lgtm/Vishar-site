@@ -1,6 +1,9 @@
 name: Deploy private production CRM database
 
 on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-today-database-only'
   workflow_dispatch:
     inputs:
       approved_sha:
@@ -20,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: deploy-private-production-crm-database
@@ -41,12 +45,17 @@ jobs:
       - name: Verify exact release branch and explicit production gate
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
-          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
+          APPROVAL_PHRASE: ${{ github.event_name == 'push' && 'DEPLOY_PRIVATE_CRM_DATABASE' || inputs.approval_phrase }}
           DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DB_DEPLOY_ENABLED }}
         run: |
           set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = 'push' ]; then
+            [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-today-database-only$ ]]
+            [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          fi
 
           case "$GITHUB_REF_NAME" in
             release/private-crm-rc*) ;;
@@ -102,17 +111,52 @@ jobs:
       - name: Checkout exact approved SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.approved_sha }}
+          ref: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
+          fetch-depth: 0
 
       - name: Verify checkout SHA
         shell: bash
         env:
-          APPROVED_SHA: ${{ inputs.approved_sha }}
+          APPROVED_SHA: ${{ github.event_name == 'push' && github.sha || inputs.approved_sha }}
         run: |
           set -euo pipefail
           actual="$(git rev-parse HEAD)"
           test "$actual" = "$APPROVED_SHA"
           test -z "$(git status --short)"
+
+      - name: Verify automatic database-only exact canonical source and CI
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          canonical_sha="$(git ls-remote origin "refs/heads/agent/platform-telegram-self-service" | awk 'NR == 1 {print $1}')"
+          operator_sha="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')"
+          [ "$canonical_sha" = "$GITHUB_SHA" ] || {
+            echo 'Canonical CRM branch moved or does not match this release SHA.' >&2
+            exit 1
+          }
+          [ "$operator_sha" = "$GITHUB_SHA" ] || {
+            echo 'Database-only release ref moved after the workflow started.' >&2
+            exit 1
+          }
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/database-only-ci.json"
+          for workflow in \
+            'Static Validation' \
+            'CRM and booking validation' \
+            'Gmail production validation' \
+            'Booking host validation' \
+            'WhatsApp production onboarding validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/database-only-ci.json" >/dev/null || {
+                echo "Required exact-head workflow is not green: $workflow" >&2
+                exit 1
+              }
+          done
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -124,7 +168,9 @@ jobs:
         run: npm ci
 
       - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+        run: |
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
@@ -156,22 +202,44 @@ jobs:
       - name: Show migration state before production dry-run
         run: supabase migration list
 
+      - name: Verify Today production lineage and sole pending migration
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
+          supabase migration list > "$RUNNER_TEMP/today-migrations.txt"
+          node scripts/verify-today-db-release.mjs "$RUNNER_TEMP/today-migrations.txt"
+
       - name: Dry-run production migrations without seed
         run: supabase db push --dry-run
 
       - name: Apply production migrations without seed
-        if: ${{ inputs.deploy }}
-        run: supabase db push
+        if: github.event_name == 'push' || inputs.deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin "refs/heads/agent/platform-telegram-self-service" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR == 1 {print $1}')" = "$GITHUB_SHA" ]
+          supabase db push
 
       - name: Show migration state after production deploy
-        if: ${{ inputs.deploy }}
+        if: github.event_name == 'push' || inputs.deploy
         run: supabase migration list
+
+      - name: Verify no production migrations remain
+        if: github.event_name == 'push' || inputs.deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db push --dry-run | tee "$RUNNER_TEMP/database-after.txt"
+          grep -Fq 'Remote database is up to date.' "$RUNNER_TEMP/database-after.txt"
 
       - name: Production database boundary summary
         if: always()
         shell: bash
         env:
-          DEPLOY_REQUESTED: ${{ inputs.deploy }}
+          DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
         run: |
           {
             echo '### Private CRM production database gate'

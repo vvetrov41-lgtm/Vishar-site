@@ -6,7 +6,7 @@
 // PostHog capture endpoint with a fixed property allow-list.
 //
 // Hard boundaries, enforced by the registry below rather than by convention:
-//   * only the four registered events may be sent;
+//   * only registered events may be sent;
 //   * every property is a bounded enum or small integer, never free text;
 //   * no CRM record ID, client name, email, phone, message body or raw URL;
 //   * no operator or customer identity, and no reusable distinct ID;
@@ -47,6 +47,10 @@ type Enumerated = readonly string[];
  */
 const EVENT_REGISTRY: Readonly<Record<string, Readonly<Record<string, Enumerated | 'small_int'>>>> = Object.freeze({
   crm_screen_viewed: Object.freeze({ screen: SCREENS }),
+  crm_today_timing: Object.freeze({
+    stage: ['navigation', 'mounted', 'auth_ready', 'skeleton', 'content', 'pulse_start', 'pulse', 'schedule_start', 'schedule', 'navigation_start', 'navigation_data', 'supplemental_start', 'supplemental', 'gmail_start', 'gmail', 'appointments_start', 'appointments', 'enquiries_start', 'enquiries', 'conversations_start', 'conversations', 'email_start', 'email', 'names_start', 'names'],
+    duration_100ms: 'small_int',
+  }),
   crm_enquiry_converted: Object.freeze({ outcome: ENQUIRY_OUTCOMES }),
   crm_appointment_booked: Object.freeze({
     appointment_kind: APPOINTMENT_KINDS,

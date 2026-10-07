@@ -435,6 +435,9 @@ export interface FakeClientOptions {
   queryCalls?: { table: string; method: string; args: unknown[] }[];
   /** Force an error from one table, to exercise the error state. */
   failTable?: string;
+  /** Controlled pending reads for critical-path regression tests. */
+  tableBarrier?: Record<string, Promise<void>>;
+  rpcBarrier?: Record<string, Promise<void>>;
   /**
    * An RPC the database refuses. Used to exercise a fail-closed path that the
    * database owns - a booking whose slot went stale under the schedule lock,
@@ -916,7 +919,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         });
       },
       then: (resolve: (value: unknown) => unknown) =>
-        Promise.resolve({ data: applyFilters(result.data), error: result.error }).then(resolve),
+        Promise.resolve(options.tableBarrier?.[table]).then(() => ({ data: applyFilters(result.data), error: result.error })).then(resolve),
     };
 
     /**
@@ -960,6 +963,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     from: builder,
     rpc: async (name, args) => {
       rpcCalls.push({ name, args });
+      await options.rpcBarrier?.[name];
 
       if (options.failRpc === name) {
         return {
