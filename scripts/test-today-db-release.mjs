@@ -3,6 +3,12 @@ import { readFileSync } from 'node:fs';
 import { verifyTodayLineage } from './verify-today-db-release.mjs';
 const valid = ' Local | Remote | Time\n 20261006150000 | 20261006150000 | t\n 20261007093649 | | t';
 assert.equal(verifyTodayLineage(valid), '20261007093649');
+// Captured format from the pinned CLI 2.110.0 in the production runner.
+const markdown = ' Local | Remote | Time (UTC)\n `20261006150000` | `20261006150000` | `2026-10-06 15:00:00`\n `20261007093649` | ` ` | `2026-10-07 09:36:49`';
+assert.equal(verifyTodayLineage(markdown), '20261007093649');
+assert.throws(() => verifyTodayLineage(markdown.replaceAll('20261006150000', '20261006160000')));
+assert.throws(() => verifyTodayLineage(markdown+'\n `20261007100000` | ` ` | time'));
+
 for (const invalid of ['', valid.replaceAll('20261006150000','20261006160000'), valid+'\n 20261007094000 | | t', valid+'\n | 20261006140000 | t', valid.replace('20261007093649','20261005093649')]) {
   assert.throws(() => verifyTodayLineage(invalid));
 }
@@ -13,3 +19,7 @@ for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNE
 assert.ok(!workflow.includes('--include-all'));
 assert.ok(!workflow.includes('wrangler'));
 console.log('Today database-only lineage and release boundaries passed');
+
+const operator = readFileSync('.github/workflows/crm-host-split-operator.yml','utf8');
+assert.ok(operator.includes('VITE_POSTHOG_HOST: eu.i.posthog.com'));
+assert.ok(!operator.includes('vars.CRM_PRODUCTION_POSTHOG_HOST'));
