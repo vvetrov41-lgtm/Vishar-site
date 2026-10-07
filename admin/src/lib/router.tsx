@@ -5,6 +5,7 @@
 // its authorization server redirects the browser to the configured consent UI
 // as a normal pathname, so that exact owned path must reach the consent page.
 
+import { beginTodayNavigation } from './today-performance';
 import {
   createContext,
   useCallback,
@@ -185,6 +186,7 @@ export function RouterProvider({ children, initialPath }: { children: ReactNode;
         setIndex(next);
         setKind('push');
       }
+      if (!pendingPush.current && splitRoutePath(currentPath()).pathname === '/') beginTodayNavigation();
       pendingPush.current = false;
       setFullPath(currentPath());
     };
@@ -202,6 +204,7 @@ export function RouterProvider({ children, initialPath }: { children: ReactNode;
 
   const navigate = useCallback((next: string) => {
     if (next === fullPathRef.current) return;
+    if (splitRoutePath(next).pathname === '/') beginTodayNavigation();
     if (initialPath) {
       rememberScroll(fullPathRef.current, typeof window !== 'undefined' ? window.scrollY : 0);
       setMemoryStack((stack) => [...stack.slice(0, indexRef.current + 1), next]);
@@ -224,6 +227,7 @@ export function RouterProvider({ children, initialPath }: { children: ReactNode;
     const text = search.toString();
     const next = text ? `${pathname}?${text}` : pathname;
     if (next === fullPathRef.current) return;
+    if (splitRoutePath(next).pathname === '/') beginTodayNavigation();
     if (!initialPath) {
       try {
         window.history.replaceState(window.history.state, '', `#${next}`);
@@ -241,6 +245,7 @@ export function RouterProvider({ children, initialPath }: { children: ReactNode;
       if (initialPath) {
         rememberScroll(fullPathRef.current, typeof window !== 'undefined' ? window.scrollY : 0);
         const target = memoryStack[indexRef.current - 1] ?? fallback;
+        if (splitRoutePath(target).pathname === '/') beginTodayNavigation();
         setIndex((value) => value - 1);
         setKind('pop');
         setFullPath(target);

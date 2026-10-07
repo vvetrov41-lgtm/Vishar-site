@@ -33,7 +33,7 @@ export function ArtistScopeProvider({children}:{children:ReactNode}) {
   const {state,api}=useSession();
   const [artists,setArtists]=useState<Artist[]>([]);
   const [selectedArtistId,setSelected]=useState<string|null>(null);
-  const [loading,setLoading]=useState(false);
+  const [loading,setLoading]=useState(state === 'active');
   const [error,setError]=useState(false);
 
   useEffect(()=>{

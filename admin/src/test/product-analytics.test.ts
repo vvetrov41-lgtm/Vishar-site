@@ -173,12 +173,13 @@ describe('fail-open transport', () => {
 });
 
 describe('registry shape', () => {
-  it('registers exactly the four approved events', () => {
+  it('registers only the approved events and bounded Today timing', () => {
     expect(Object.keys(__testing.EVENT_REGISTRY).sort()).toEqual([
       'crm_appointment_booked',
       'crm_conversation_reply_outcome',
       'crm_enquiry_converted',
       'crm_screen_viewed',
+      'crm_today_timing',
     ]);
   });
 

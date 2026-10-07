@@ -46,6 +46,7 @@ describe('today workspace', () => {
 
     const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
       .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
 
     const reply = within(needsYou).getByText('Waiting for your reply').closest('a') as HTMLElement;
     expect(reply).toHaveAttribute('href', `#/clients/${SECOND_CLIENT_ID}`);
@@ -57,6 +58,7 @@ describe('today workspace', () => {
 
     const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
       .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
     const replyRow = within(needsYou).getByText('Waiting for your reply').closest('.row') as HTMLElement;
     fireEvent.click(within(replyRow).getByRole('button', { name: 'Remove' }));
 
@@ -75,6 +77,7 @@ describe('today workspace', () => {
 
     const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
       .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
 
     expect(within(needsYou).queryByRole('link', { name: /Unknown sender/ })).not.toBeInTheDocument();
     expect(within(needsYou).getAllByText('Waiting for your reply')).toHaveLength(1);
@@ -89,6 +92,7 @@ describe('today workspace', () => {
 
     const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
       .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
 
     expect(within(needsYou).getByText('Booking not confirmed yet').closest('a'))
       .toHaveAttribute('href', `#/appointments/${SESSION_ID}`);
@@ -103,6 +107,7 @@ describe('today workspace', () => {
 
     const today = (await screen.findByRole('heading', { level: 2, name: 'Today' }))
       .closest('section') as HTMLElement;
+    await within(today).findByText('Fixture Client');
 
     const row = within(today).getByText('Fixture Client').closest('a') as HTMLElement;
     expect(row).toHaveAttribute('href', `#/appointments/${SESSION.id}`);
@@ -118,6 +123,7 @@ describe('today workspace', () => {
 
     const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
       .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
 
     expect(within(needsYou).getByText('Waiting for your reply')).toBeInTheDocument();
     expect(within(needsYou).queryByText('Integration jobs failed')).not.toBeInTheDocument();
@@ -183,6 +189,7 @@ describe('today workspace', () => {
       renderWithSession(<App />, { role: 'owner', path: '/', todayPulse: pulse(false) });
       const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
         .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
       expect(within(needsYou).getByText('Waiting for your reply')).toBeInTheDocument();
       expect(within(needsYou).queryByText('Server Pulse Client')).not.toBeInTheDocument();
     });
@@ -191,6 +198,7 @@ describe('today workspace', () => {
       renderWithSession(<App />, { role: 'owner', path: '/', todayPulse: pulse(true) });
       const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
         .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
       await within(needsYou).findByText('Server Pulse Client');
       expect(within(needsYou).getByText('Deposit paid, no session booked')).toBeInTheDocument();
       expect(within(needsYou).getByText('AI suggestion: offer dates')).toBeInTheDocument();
@@ -213,6 +221,7 @@ describe('today workspace', () => {
 
       const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
         .closest('section') as HTMLElement;
+    await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
       expect(await within(needsYou).findByText('Server Pulse Client')).toBeInTheDocument();
       expect(within(needsYou).getByText('Deposit paid, no session booked')).toBeInTheDocument();
     });

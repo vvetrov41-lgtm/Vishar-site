@@ -15,6 +15,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { clearTodayCache } from './today-resource';
+import { todayTiming } from './today-performance';
 import { apiMessage, createApi, type Api, type CrmClient } from './api';
 import { createAccountApi, type AccountApi, type AccountOverview } from './account-api';
 import { createAppointmentApi, type AppointmentApi } from './appointment-api';
@@ -284,6 +286,7 @@ export function SessionProvider({
         }
       }
 
+      todayTiming('auth_ready', performance.now());
       setState(inviteMode ? 'password_setup' : 'active');
     } catch {
       // A profile that cannot be read is treated as no access rather than as a
@@ -299,7 +302,10 @@ export function SessionProvider({
   useEffect(() => {
     void load();
     if (!client) return undefined;
-    const { data } = client.auth.onAuthStateChange(() => { void load(); });
+    const { data } = client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_OUT' || event === 'SIGNED_IN' || event === 'USER_UPDATED') clearTodayCache();
+      void load();
+    });
     return () => data.subscription.unsubscribe();
   }, [client, load]);
 
@@ -323,6 +329,7 @@ export function SessionProvider({
   }, [mfa, load]);
 
   const signOut = useCallback(async () => {
+    clearTodayCache();
     if (!client) return;
     await client.auth.signOut();
     if (inviteMode) {
