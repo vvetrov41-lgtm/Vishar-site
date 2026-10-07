@@ -302,8 +302,12 @@ select is(
    where n.notification_type = 'client.reply_overdue'),
   -- The enquiry's reminder is no longer current: the Instagram chat above
   -- with the same client counts as engagement with that enquiry.
-  case when crm_private.unanswered_reminder_quiet(now()) then 0 else 1 end,
-  'only the still-current final reminder is claimed, and none during London quiet hours');
+  -- The fixed 4 October message also expires at the real claim clock. Keep
+  -- the integration assertion valid after its 72-hour window has elapsed.
+  case when crm_private.unanswered_reminder_quiet(now())
+    or '2026-10-04 09:00:00+01'::timestamptz <= now() - interval '72 hours'
+    then 0 else 1 end,
+  'only the still-current final reminder is claimed, and none while quiet or expired');
 select is(
   (select count(*)::int from reminder_claim c
    join public.notifications n on n.id = c.notification_id
