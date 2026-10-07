@@ -47,6 +47,35 @@ interface TodayData {
   pulse: TodayPulse | null;
 }
 
+interface TodayCoreData {
+  appointments: Appointment[];
+  enquiries: Enquiry[];
+  conversations: ConversationSummary[];
+  emailThreads: EmailThread[];
+  clientNames: Map<string, string>;
+  pulse: TodayPulse | null;
+}
+
+interface TodaySupplementalData {
+  projects: Project[];
+  followUps: FollowUp[];
+  candidates: MonzoReconciliationCandidate[];
+  failedJobCount: number;
+  activity: ActivityEntry[];
+  acknowledgements: AttentionAcknowledgement[];
+  clientNames: Map<string, string>;
+}
+
+const EMPTY_SUPPLEMENTAL_DATA: TodaySupplementalData = {
+  projects: [],
+  followUps: [],
+  candidates: [],
+  failedJobCount: 0,
+  activity: [],
+  acknowledgements: [],
+  clientNames: new Map(),
+};
+
 interface GmailDiscoveryState {
   scopeKey: string;
   rows: GmailAwaitingReply[];
@@ -66,78 +95,90 @@ export function DashboardPage() {
   const gmailScopeKey = `${profile?.id ?? 'anonymous'}:${selectedArtistId ?? 'all'}:${mayViewEnquiries ? '1' : '0'}`;
   const [gmailDiscovery, setGmailDiscovery] = useState<GmailDiscoveryState>({ scopeKey: '', rows: [] });
 
-  const { data, loading, error, reload } = useAsync<TodayData>(async () => {
+  // The visible Today shell has two data lanes:
+  //
+  // 1. Core: server pulse + schedule + the navigation records those rows need.
+  //    This is the critical path. When the server pulse is enabled it may render
+  //    as soon as these reads finish.
+  // 2. Supplemental: browser-fallback rules, finance, integration health and
+  //    recent activity. These continue in parallel but cannot hold an enabled
+  //    server pulse hostage.
+  //
+  // If the server pulse is unavailable or switched off we still wait for the
+  // supplemental lane, preserving the old fail-closed browser calculation.
+  const coreState = useAsync<TodayCoreData>(async () => {
     const artistId = selectedArtistId ?? undefined;
 
-    // Each read is asked for only where the role could hold the capability.
-    // The database still decides what comes back.
-    const [appointments, enquiries, projects, followUps, conversations, failedJobs, activity, acknowledgements, pulse] = await Promise.all([
-      // Audit M-5: Today reads current and upcoming sessions (plus recent history
-      // for engagement checks), never the earliest 300 ever booked.
+    const [appointments, enquiries, conversations, emailMessages, pulse] = await Promise.all([
       can(role, 'viewSessions') ? api.listAppointments({ artistId, from: daysAgoIso(90) }) : Promise.resolve([]),
       mayViewEnquiries ? api.listEnquiries({ artistId }) : Promise.resolve([]),
-      can(role, 'viewProjects') ? api.listProjects(undefined, artistId) : Promise.resolve([]),
-      can(role, 'viewFollowUps') ? api.listFollowUps({ open: true, artistId }) : Promise.resolve([]),
       mayViewEnquiries ? api.listConversations({ limit: 50 }) : Promise.resolve([]),
-      can(role, 'viewIntegrationJobs') ? api.listFailedJobs(artistId) : Promise.resolve([]),
-      can(role, 'viewActivity') ? api.listActivity({ artistId }) : Promise.resolve([]),
-      can(role, 'viewNotifications')
-        ? api.listAttentionAcknowledgements(artistId).catch(() => [])
-        : Promise.resolve([]),
-      // The server pulse is additive: if it cannot be read, Today keeps the
-      // list it computes here, exactly as before.
+      mayViewEnquiries ? api.listEmailMessages({ artistId, limit: 200 }).catch(() => []) : Promise.resolve([]),
+      // The server pulse is additive: if it cannot be read, Today falls back to
+      // the complete browser lane below.
       api.getTodayPulse(artistId).catch(() => null),
     ]);
 
-    // The finance RPC is per artist. When no artist is chosen, ask for every
-    // artist this operator can reach rather than showing nothing: the Payments
-    // screen used to demand a selection it gave no way to make, and a landing
-    // screen repeating that would be the same defect in a new place. The artist
-    // list is resolved here rather than taken from the scope context so this
-    // read does not restart every time that context finishes loading.
-    const candidates = mayManageFinance
-      ? (await Promise.all(
-        (selectedArtistId
-          ? [selectedArtistId]
-          : (await api.listAccessibleArtists()).filter((artist) => artist.is_active).map((artist) => artist.id)
-        ).map((id) => api.listMonzoReconciliationCandidates(id).catch(() => [])),
-      )).flat()
-      : [];
+    const emailThreads = groupEmailThreads(emailMessages);
 
-    // Email the CRM drafted or failed to send. Nothing showed these before, so
-    // a lifecycle draft could sit unapproved indefinitely. Email is additive
-    // here exactly as it is in the Inbox: if it cannot be read, Today still
-    // renders everything else.
-    const emailThreads = mayViewEnquiries
-      ? groupEmailThreads(
-        await api.listEmailMessages({ artistId, limit: 200 }).catch(() => []),
-      )
-      : [];
-
-    // "Who am I seeing?" is the question. A date and a duration badge is not an
-    // answer, so every id that reaches a row is resolved to a name first.
+    // Resolve only names needed by the critical path. Project/follow-up-only
+    // clients are resolved in the supplemental lane and merged later.
     const clients = await api.listClientsByIds([
       ...appointments.map((appointment) => appointment.client_id),
       ...enquiries.map((enquiry) => enquiry.client_id),
-      ...projects.map((project) => project.client_id),
       ...emailThreads.map((thread) => thread.client_id ?? ''),
     ]);
 
     return {
       appointments,
       enquiries,
-      projects,
-      followUps,
       conversations,
       emailThreads,
+      clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
+      pulse,
+    };
+  }, [api, role, selectedArtistId, mayViewEnquiries]);
+
+  const supplementalState = useAsync<TodaySupplementalData>(async () => {
+    const artistId = selectedArtistId ?? undefined;
+
+    const candidatesPromise: Promise<MonzoReconciliationCandidate[]> = mayManageFinance
+      ? (async () => {
+        const artistIds = selectedArtistId
+          ? [selectedArtistId]
+          : (await api.listAccessibleArtists()).filter((artist) => artist.is_active).map((artist) => artist.id);
+        return (await Promise.all(
+          artistIds.map((id) => api.listMonzoReconciliationCandidates(id).catch(() => [])),
+        )).flat();
+      })()
+      : Promise.resolve([]);
+
+    const [projects, followUps, failedJobs, activity, acknowledgements, candidates] = await Promise.all([
+      can(role, 'viewProjects') ? api.listProjects(undefined, artistId) : Promise.resolve([]),
+      can(role, 'viewFollowUps') ? api.listFollowUps({ open: true, artistId }) : Promise.resolve([]),
+      can(role, 'viewIntegrationJobs') ? api.listFailedJobs(artistId) : Promise.resolve([]),
+      can(role, 'viewActivity') ? api.listActivity({ artistId }) : Promise.resolve([]),
+      can(role, 'viewNotifications')
+        ? api.listAttentionAcknowledgements(artistId).catch(() => [])
+        : Promise.resolve([]),
+      candidatesPromise,
+    ]);
+
+    const clients = await api.listClientsByIds([
+      ...projects.map((project) => project.client_id),
+      ...followUps.map((followUp) => followUp.client_id ?? ''),
+    ]);
+
+    return {
+      projects,
+      followUps,
       candidates,
       failedJobCount: failedJobs.length,
       activity,
       acknowledgements,
       clientNames: new Map(clients.map((entry) => [entry.id, entry.full_name])),
-      pulse,
     };
-  }, [api, role, selectedArtistId, mayManageFinance, mayViewEnquiries]);
+  }, [api, role, selectedArtistId, mayManageFinance]);
 
   // Gmail attention is CRM-owned snapshot state. This read goes directly to
   // Supabase under RLS and never contacts the Gmail Worker or Google, so Today
@@ -167,9 +208,37 @@ export function DashboardPage() {
     return () => { cancelled = true; };
   }, [api, gmailScopeKey, mayViewEnquiries, selectedArtistId]);
 
-  if (loading && !data) return <LoadingState label={t('today.loading')} />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!data) return <EmptyState title={t('today.allClear')} />;
+  const coreData = coreState.data;
+  const enabledServerPulse = coreData?.pulse?.enabled ? coreData.pulse : null;
+  const requiresBrowserFallback = Boolean(coreData && !enabledServerPulse);
+  const reload = () => {
+    coreState.reload();
+    supplementalState.reload();
+  };
+
+  if (coreState.loading && !coreData) return <LoadingState label={t('today.loading')} />;
+  if (coreState.error) return <ErrorState message={coreState.error} onRetry={reload} />;
+  if (!coreData) return <EmptyState title={t('today.allClear')} />;
+
+  // The browser engine is still the source of truth whenever the server pulse
+  // is disabled/unavailable, so never render it from partial supplemental data.
+  if (requiresBrowserFallback && supplementalState.loading && !supplementalState.data) {
+    return <LoadingState label={t('today.loading')} />;
+  }
+  if (requiresBrowserFallback && supplementalState.error) {
+    return <ErrorState message={supplementalState.error} onRetry={reload} />;
+  }
+
+  const supplementalData = supplementalState.data ?? EMPTY_SUPPLEMENTAL_DATA;
+  const clientNames = new Map([
+    ...coreData.clientNames,
+    ...supplementalData.clientNames,
+  ]);
+  const data: TodayData = {
+    ...coreData,
+    ...supplementalData,
+    clientNames,
+  };
 
   const now = new Date();
   const conversations = data.conversations.filter(
@@ -293,7 +362,11 @@ export function DashboardPage() {
 
       {can(role, 'viewActivity') ? (
         <Section title={t('dashboard.recentActivity')}>
-          {data.activity.length === 0 ? (
+          {supplementalState.loading && !supplementalState.data ? (
+            <LoadingState label={t('today.loading')} />
+          ) : supplementalState.error ? (
+            <ErrorState message={supplementalState.error} onRetry={supplementalState.reload} />
+          ) : data.activity.length === 0 ? (
             <EmptyState compact title={t('dashboard.noActivity')} />
           ) : (
             <ul className="timeline">
