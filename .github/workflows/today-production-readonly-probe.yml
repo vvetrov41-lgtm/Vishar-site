@@ -1,4 +1,4 @@
-# Readback after final Today release 42fa4c3f205eda5921b029d879f8666c7dd2b0f6
+# Fresh Today CSP and production SHA preflight, 7 October evening
 name: Today production read-only probe
 on:
   push:
@@ -27,6 +27,6 @@ jobs:
           for (const host of ['crm.vishartattoo.com', 'app.vishartattoo.com']) {
             const start=performance.now();
             const response=await fetch('https://' + host, {redirect:'manual'});
-            console.log(JSON.stringify({host,status:response.status,ms:Math.round(performance.now()-start),access_redirect:(response.headers.get('location')||'').includes('cloudflareaccess.com')}));
+            console.log(JSON.stringify({host,status:response.status,ms:Math.round(performance.now()-start),access_redirect:(response.headers.get('location')||'').includes('cloudflareaccess.com'),posthog_capture_csp:(response.headers.get('content-security-policy')||'').includes('https://eu.i.posthog.com/i/v0/e/'),posthog_any_csp:(response.headers.get('content-security-policy')||'').includes('posthog')}));
           }
           NODE
