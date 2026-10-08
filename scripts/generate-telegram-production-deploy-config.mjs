@@ -4,10 +4,11 @@ import path from 'node:path';
 const source = new URL('../wrangler.telegram-drain.production.toml', import.meta.url);
 const args = process.argv.slice(2);
 const enableLinking = args.includes('--enable-linking');
+const enableMetaAds = args.includes('--enable-meta-ads');
 const outputArg = args.find((arg) => !arg.startsWith('--'));
 if (!outputArg) throw new Error('output path is required');
 for (const arg of args) {
-  if (arg.startsWith('--') && arg !== '--enable-linking') {
+  if (arg.startsWith('--') && arg !== '--enable-linking' && arg !== '--enable-meta-ads') {
     throw new Error(`unknown option: ${arg}`);
   }
 }
@@ -44,6 +45,7 @@ const required = [
   'CRM_AGENT_SHARED_DRAIN_ENABLED = "false"',
   'WHATSAPP_SHARED_DRAIN_ENABLED = "false"',
   'INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "false"',
+  'META_ADS_DRAIN_ENABLED = "false"',
   'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"',
   'CRM_TODAY_PULSE_ENABLED = "false"',
   'TELEGRAM_LINKING_ENABLED = "false"',
@@ -92,6 +94,9 @@ text = text.replace('ENQUIRY_AI_SHARED_DRAIN_ENABLED = "false"', 'ENQUIRY_AI_SHA
 text = text.replace('CRM_AGENT_SHARED_DRAIN_ENABLED = "false"', 'CRM_AGENT_SHARED_DRAIN_ENABLED = "true"');
 text = text.replace('WHATSAPP_SHARED_DRAIN_ENABLED = "false"', 'WHATSAPP_SHARED_DRAIN_ENABLED = "true"');
 text = text.replace('INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "false"', 'INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "true"');
+if (enableMetaAds) {
+  text = text.replace('META_ADS_DRAIN_ENABLED = "false"', 'META_ADS_DRAIN_ENABLED = "true"');
+}
 text = text.replace('CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "false"', 'CRM_AGENT_TELEGRAM_DIGEST_ENABLED = "true"');
 if (enableLinking) {
   text = text.replace('TELEGRAM_LINKING_ENABLED = "false"', 'TELEGRAM_LINKING_ENABLED = "true"');
@@ -111,6 +116,10 @@ for (const needle of [
   'INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "true"',
 ]) {
   if (!text.includes(needle)) throw new Error(`failed to generate ${needle}`);
+}
+const expectedMetaAds = enableMetaAds ? 'true' : 'false';
+if (!text.includes(`META_ADS_DRAIN_ENABLED = "${expectedMetaAds}"`)) {
+  throw new Error(`failed to generate Meta CAPI drain=${expectedMetaAds}`);
 }
 const expectedLinking = enableLinking ? 'true' : 'false';
 if (!text.includes(`TELEGRAM_LINKING_ENABLED = "${expectedLinking}"`)) {
