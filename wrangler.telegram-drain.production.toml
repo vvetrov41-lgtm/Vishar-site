@@ -69,6 +69,10 @@ WHATSAPP_SHARED_DRAIN_ENABLED = "false"
 # Instagram webhook subscription + token renewal, dispatched on this cron
 # through INSTAGRAM_SERVICE (the Instagram Worker has no cron trigger).
 INSTAGRAM_SHARED_MAINTENANCE_ENABLED = "false"
+# Explicitly opt in to the separate Meta Ads CAPI outbox drain only after
+# provisioning the artist-scoped production token and validating consent.
+# This is not related to WhatsApp's meta_cloud_api integration.
+META_ADS_DRAIN_ENABLED = "false"
 # The read-only /needsme and /today digest. It sends nothing to a client, holds
 # no date and moves no money; it requires TELEGRAM_LINKING_ENABLED as well,
 # because it answers on the same webhook.
