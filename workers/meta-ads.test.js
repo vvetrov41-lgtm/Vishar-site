@@ -127,3 +127,38 @@ test('claimed jobs fail closed on artist/config/event mismatch', () => {
 test('Graph API version remains pinned to audited production contract', () => {
   assert.equal(META_ADS_CONFIG.graphApiVersion, 'v26.0');
 });
+
+
+test('booking-host relay accepts only the owned booking landing page', () => {
+  const form = {
+    metaAdsMeasurementConsent: 'granted',
+    metaAdsSourceUrl: 'https://booking.vishartattoo.com/?utm_source=ig#form',
+    metaAdsFbp: 'fb.1.1789400000000.1234567890',
+  };
+  assert.deepEqual(
+    readMetaAdsMeasurementContext(
+      { get: (name) => form[name] ?? null },
+      'https://vishartattoo.com',
+    ),
+    {
+      sourceUrl: 'https://booking.vishartattoo.com/',
+      fbp: 'fb.1.1789400000000.1234567890',
+      fbc: null,
+    },
+  );
+  assert.equal(
+    readMetaAdsMeasurementContext(
+      { get: (name) => ({ ...form, metaAdsSourceUrl: 'https://booking.vishartattoo.com/another-path' })[name] ?? null },
+      'https://vishartattoo.com',
+    ),
+    null,
+  );
+  assert.equal(
+    readMetaAdsMeasurementContext({ get: (name) => form[name] ?? null }, 'https://www.vishartattoo.com'),
+    null,
+  );
+  assert.equal(
+    readMetaAdsMeasurementContext({ get: (name) => form[name] ?? null }, 'https://evil.example'),
+    null,
+  );
+});
