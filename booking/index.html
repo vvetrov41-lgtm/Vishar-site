@@ -361,6 +361,10 @@
     const IDEMPOTENCY_STORAGE_KEY = 'vishar.enquiry.idempotencyKey';
     const OPENAI_ADS_CONSENT_KEY = 'vishar-openai-ads-consent';
     const META_ADS_CONSENT_KEY = 'vishar-meta-ads-consent';
+    // Meta CAPI adds hashed contact matching and downstream CRM events.
+    // An older Pixel-only grant must not silently authorize that expanded purpose.
+    const META_ADS_CONSENT_VERSION_KEY = 'vishar-meta-ads-consent-version';
+    const META_ADS_CONSENT_VERSION = '2026-10-08-capi';
     const GENERIC_CONSENT_KEY = 'vishar-cookie-consent';
     const META_PIXEL_ID = '1729215778134902';
     const PRIVACY_NOTICE_VERSION = '2026-09-09';
@@ -368,7 +372,14 @@
     let metaPageViewQueued = false;
 
     function storedConsent(key) {
-      try { return localStorage.getItem(key); } catch (error) { return null; }
+      try {
+        const value = localStorage.getItem(key);
+        if (key === META_ADS_CONSENT_KEY && value === 'granted'
+            && localStorage.getItem(META_ADS_CONSENT_VERSION_KEY) !== META_ADS_CONSENT_VERSION) {
+          return null; // Require fresh agreement to the expanded Meta CAPI disclosure.
+        }
+        return value;
+      } catch (error) { return null; }
     }
 
     function setOpenAiAdsConsent(value) {
@@ -419,7 +430,10 @@
     }
 
     function setMetaAdsConsent(value) {
-      try { localStorage.setItem(META_ADS_CONSENT_KEY, value); } catch (error) { /* private browsing */ }
+      try {
+        localStorage.setItem(META_ADS_CONSENT_KEY, value);
+        localStorage.setItem(META_ADS_CONSENT_VERSION_KEY, META_ADS_CONSENT_VERSION);
+      } catch (error) { /* private browsing */ }
       if (value === 'granted') {
         ensureMetaPixel();
       } else if (typeof window.fbq === 'function') {
@@ -460,7 +474,7 @@
       banner.setAttribute('role', 'region');
       banner.setAttribute('aria-label', 'Advertising measurement consent');
       banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
-      banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional advertising measurement can tell me whether an ad on Meta or ChatGPT resulted in an enquiry. It stays off unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="advertising-measurement-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button><button type="button" id="advertising-measurement-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button></div>';
+      banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional advertising measurement can show whether a Meta or ChatGPT ad resulted in an enquiry. With your consent, Meta can also receive securely hashed email/phone matching data and later booking-status events. It stays off unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="advertising-measurement-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button><button type="button" id="advertising-measurement-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button></div>';
       document.body.appendChild(banner);
 
       banner.querySelector('#advertising-measurement-accept').addEventListener('click', function () {
@@ -559,6 +573,22 @@
       return {
         sourceUrl,
         oppref: queryOppref || cookieValue('__oppref')
+      };
+    }
+
+    // This handoff is separate from OpenAI Ads and is only emitted after the
+    // refreshed, explicit Meta measurement consent. Never pass raw contact
+    // details or the tattoo idea through these Meta-specific fields.
+    function metaAdsServerContext() {
+      if (storedConsent(META_ADS_CONSENT_KEY) !== 'granted') return null;
+      let sourceUrl = '';
+      try { sourceUrl = window.location.origin + window.location.pathname; }
+      catch (error) { return null; }
+      if (!sourceUrl || !sourceUrl.startsWith('https://')) return null;
+      return {
+        sourceUrl,
+        fbp: cookieValue('_fbp'),
+        fbc: cookieValue('_fbc')
       };
     }
 
@@ -703,6 +733,14 @@
           payload.append('openaiAdsMeasurementConsent', 'granted');
           payload.append('openaiAdsSourceUrl', adsContext.sourceUrl);
           if (adsContext.oppref) payload.append('openaiAdsOppref', adsContext.oppref);
+        }
+
+        const metaContext = metaAdsServerContext();
+        if (metaContext) {
+          payload.append('metaAdsMeasurementConsent', 'granted');
+          payload.append('metaAdsSourceUrl', metaContext.sourceUrl);
+          if (metaContext.fbp) payload.append('metaAdsFbp', metaContext.fbp);
+          if (metaContext.fbc) payload.append('metaAdsFbc', metaContext.fbc);
         }
 
         files.forEach(function (file) { payload.append('references', file, file.name); });

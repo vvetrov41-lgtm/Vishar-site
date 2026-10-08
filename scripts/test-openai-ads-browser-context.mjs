@@ -42,7 +42,8 @@ assert.ok(!booking.includes("payload.append('openaiAdsObref'"),
 
 assert.match(privacy, /server-to-server through the OpenAI Ads Conversions API/);
 assert.match(privacy, /<code>__obref<\/code>/);
-assert.match(privacy, /does not manually send your name, email, phone number, Instagram username, reference images or tattoo description/);
+assert.match(privacy, /OpenAI Ads measurement does not manually transmit your contact details/);
+assert.match(privacy, /Meta's optional, separately consented Conversions API may use SHA-256-hashed email and phone number/);
 
 // The pixel is loaded by booking/index.html and disclosed in the privacy
 // notice; the site-wide CSP must let it load and report, or it silently
@@ -63,4 +64,21 @@ assert.ok(directive('script-src').includes('https://bzrcdn.openai.com'), 'CSP sc
 assert.ok(directive('connect-src').includes('https://bzr.openai.com'), 'CSP connect-src must allow the OpenAI Ads pixel event endpoint');
 assert.ok(directive('connect-src').includes('https://bzrcdn.openai.com'), 'CSP connect-src must allow the OpenAI Ads pixel configuration fetch');
 
-console.log('OpenAI Ads browser context checks passed.');
+// Meta's server handoff was missing even though the browser Pixel fired Lead.
+assert.match(booking, /const META_ADS_CONSENT_VERSION = '2026-10-08-capi'/);
+assert.match(booking, /key === META_ADS_CONSENT_KEY && value === 'granted'/);
+assert.match(booking, /localStorage.getItem\(META_ADS_CONSENT_VERSION_KEY\) !== META_ADS_CONSENT_VERSION/);
+assert.match(booking, /function metaAdsServerContext\(\)/);
+assert.match(booking, /storedConsent\(META_ADS_CONSENT_KEY\) !== 'granted'/);
+for (const field of ['metaAdsMeasurementConsent', 'metaAdsSourceUrl', 'metaAdsFbp', 'metaAdsFbc']) {
+  assert.ok(booking.includes(`payload.append('${field}'`), `Meta ${field} must reach the intake Worker`);
+}
+const metaContextStart = booking.indexOf('const metaContext = metaAdsServerContext();');
+const metaPixelStart = booking.indexOf('trackMetaLead(enquiryKey);');
+assert.ok(metaContextStart > 0 && metaContextStart < fetchStart);
+assert.ok(fetchStart > 0 && fetchStart < metaPixelStart);
+assert.match(booking, /window\.fbq\('track', 'Lead', \{\}, \{ eventID: eventId \}\)/);
+assert.match(privacy, /Meta Conversions API/);
+assert.match(privacy, /SHA-256-hashed email and phone number/);
+assert.match(privacy, /Previously saved Pixel-only consent does not authorize this expanded processing/);
+console.log('OpenAI and Meta Ads browser-to-server context checks passed.');
