@@ -42,7 +42,8 @@ assert.ok(!booking.includes("payload.append('openaiAdsObref'"),
 
 assert.match(privacy, /server-to-server through the OpenAI Ads Conversions API/);
 assert.match(privacy, /<code>__obref<\/code>/);
-assert.match(privacy, /does not manually send your name, email, phone number, Instagram username, reference images or tattoo description/);
+assert.match(privacy, /OpenAI Ads measurement does not manually transmit your contact details/);
+assert.match(privacy, /Meta's optional, separately consented Conversions API may use SHA-256-hashed email and phone number/);
 
 // The pixel is loaded by booking/index.html and disclosed in the privacy
 // notice; the site-wide CSP must let it load and report, or it silently
