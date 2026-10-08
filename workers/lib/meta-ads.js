@@ -49,7 +49,15 @@ function sanitizeSourceUrl(value, observedOrigin) {
   try {
     const parsed = new URL(value);
     if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return '';
-    if (parsed.origin !== observedOrigin) return '';
+    // The owned booking.vishartattoo.com host proxies multipart intake to the
+    // canonical Worker with a fixed https://vishartattoo.com Origin, so the
+    // observed server-to-server Origin differs from the real page URL.
+    // Allow only this exact first-party relay landing page, never a general
+    // cross-origin source URL or an arbitrary booking-host path.
+    const canonicalBookingRelay = observedOrigin === 'https://vishartattoo.com'
+      && parsed.origin === 'https://booking.vishartattoo.com'
+      && parsed.pathname === '/';
+    if (parsed.origin !== observedOrigin && !canonicalBookingRelay) return '';
     parsed.search = '';
     parsed.hash = '';
     return parsed.toString();
