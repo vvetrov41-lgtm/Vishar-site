@@ -1,0 +1,95 @@
+name: Provision Vladimir Meta CAPI token
+
+on:
+  workflow_dispatch:
+    inputs:
+      approved_sha:
+        description: Exact approved release/private-crm-rc HEAD SHA
+        required: true
+        type: string
+      provision:
+        description: Add the one missing Meta secret; false only validates
+        required: true
+        default: false
+        type: boolean
+      approval_phrase:
+        description: PROVISION_VLADIMIR_META_CAPI_TOKEN required for provisioning
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-private-production-telegram
+  cancel-in-progress: false
+
+jobs:
+  token:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: crm-production
+    steps:
+      - name: Verify exact approved release and explicit single-secret gate
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+          PROVISION: ${{ inputs.provision }}
+          APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in
+            release/private-crm-rc*) ;;
+            *) echo 'Provisioning requires an approved release branch.' >&2; exit 1 ;;
+          esac
+          [ "$APPROVED_SHA" = "$GITHUB_SHA" ]
+          if [ "$PROVISION" = 'true' ]; then
+            [ "$APPROVAL_PHRASE" = 'PROVISION_VLADIMIR_META_CAPI_TOKEN' ]
+          fi
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.approved_sha }}
+          fetch-depth: 0
+      - name: Verify immutable checkout and existing backend lineage
+        env:
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$(git rev-parse HEAD)" = "$APPROVED_SHA" ]
+          [ -z "$(git status --short)" ]
+          git merge-base --is-ancestor 5dcf71eee4fa1de296058bd080275e403ddf5e82 HEAD
+      - name: Require successful validation for the exact source SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APPROVED_SHA: ${{ inputs.approved_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" \
+            --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/meta-source-checks.json"
+          for name in 'Static Validation' 'CRM and booking validation'; do
+            jq -e --arg name "$name" --arg sha "$APPROVED_SHA" \
+              'any(.[]; .name == $name and .head_sha == $sha and .status == "completed" and .conclusion == "success")' \
+              "$RUNNER_TEMP/meta-source-checks.json" >/dev/null
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Validate token custody boundaries without live credentials
+        run: node --test scripts/test-meta-capi-production-token.mjs
+      - name: Validate or provision the fixed production secret
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          META_ADS_VLADIMIR_ACCESS_TOKEN: ${{ secrets.META_ADS_VLADIMIR_ACCESS_TOKEN }}
+          PROVISION: ${{ inputs.provision }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "$PROVISION" = 'true' ]; then args+=(--provision); fi
+          node scripts/provision-meta-capi-production-token.mjs "${args[@]}" >> "$GITHUB_STEP_SUMMARY"

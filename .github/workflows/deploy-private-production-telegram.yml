@@ -37,6 +37,21 @@ on:
         required: false
         default: ''
         type: string
+      enable_meta_ads:
+        description: Enable Meta CAPI after the Vladimir token is pre-provisioned
+        required: true
+        default: false
+        type: boolean
+      disable_meta_ads:
+        description: Explicit rollback of already-live Meta CAPI
+        required: true
+        default: false
+        type: boolean
+      meta_ads_approval_phrase:
+        description: ENABLE_META_ADS_CAPI or DISABLE_META_ADS_CAPI for the requested transition
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -55,6 +70,8 @@ jobs:
       WORKER_NAME: vishar-telegram-drain-production
       ENABLE_LINKING: ${{ inputs.enable_linking }}
       DISABLE_LINKING: ${{ inputs.disable_linking }}
+      ENABLE_META_ADS: ${{ inputs.enable_meta_ads }}
+      DISABLE_META_ADS: ${{ inputs.disable_meta_ads }}
 
     steps:
       - name: Verify exact release branch and explicit production gates
@@ -65,6 +82,7 @@ jobs:
           APPROVAL_PHRASE: ${{ inputs.approval_phrase }}
           LINKING_APPROVAL_PHRASE: ${{ inputs.linking_approval_phrase }}
           LINKING_ROLLBACK_PHRASE: ${{ inputs.linking_rollback_phrase }}
+          META_ADS_APPROVAL_PHRASE: ${{ inputs.meta_ads_approval_phrase }}
         run: |
           set -euo pipefail
           case "$GITHUB_REF_NAME" in
@@ -99,6 +117,17 @@ jobs:
             echo 'The separate Telegram linking rollback phrase is required for disable_linking=true.' >&2
             exit 1
           fi
+          if [ "$ENABLE_META_ADS" = 'true' ] && [ "$DISABLE_META_ADS" = 'true' ]; then
+            echo 'Meta CAPI enable and disable are mutually exclusive.' >&2; exit 1
+          fi
+          if [ "$ENABLE_META_ADS" = 'true' ] || [ "$DISABLE_META_ADS" = 'true' ]; then
+            [ "$DEPLOY_REQUESTED" = 'true' ] || { echo 'Meta CAPI transitions require deploy=true.' >&2; exit 1; }
+          fi
+          if [ "$ENABLE_META_ADS" = 'true' ]; then
+            [ "$META_ADS_APPROVAL_PHRASE" = 'ENABLE_META_ADS_CAPI' ] || { echo 'Explicit Meta CAPI enable approval is required.' >&2; exit 1; }
+          elif [ "$DISABLE_META_ADS" = 'true' ]; then
+            [ "$META_ADS_APPROVAL_PHRASE" = 'DISABLE_META_ADS_CAPI' ] || { echo 'Explicit Meta CAPI rollback approval is required.' >&2; exit 1; }
+          fi
 
       - name: Checkout exact approved SHA
         uses: actions/checkout@v4
@@ -126,8 +155,10 @@ jobs:
       - name: Install locked root dependencies
         run: npm ci
 
-      - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+      - name: Audit root dependencies with bounded Tailwind dev-only exceptions
+        run: |
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Re-run focused Telegram production boundaries
         run: |
@@ -162,15 +193,18 @@ jobs:
           SECRET_LIST="$secrets_json" node <<'NODE'
           const values = JSON.parse(process.env.SECRET_LIST || '[]');
           const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
-          const expected = [
+          const required = [
             'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
             'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
             'SUPABASE_SECRET_KEY',
             'TELEGRAM_BOT_TOKEN',
             'TELEGRAM_WEBHOOK_SECRET',
           ].sort();
-          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`Production Telegram Worker secret-name set is not exact; expected ${expected.join(', ')}`);
+          const metaToken = 'META_ADS_VLADIMIR_ACCESS_TOKEN';
+          if (process.env.ENABLE_META_ADS === 'true') required.push(metaToken);
+          const allowed = new Set([...required, metaToken]);
+          if (required.some(name => !actual.includes(name)) || actual.some(name => !allowed.has(name))) {
+            throw new Error('Production Worker secret-name set has missing required or unexpected names');
           }
           NODE
 
@@ -197,11 +231,20 @@ jobs:
           elif [ "$DISABLE_LINKING" = 'true' ]; then
             preflight_args+=(--allow-linking-disable)
           fi
+          expected_meta_ads='false'
+          if [ "$ENABLE_META_ADS" = 'true' ]; then
+            generator_args+=(--enable-meta-ads)
+            preflight_args+=(--allow-meta-ads)
+            expected_meta_ads='true'
+          elif [ "$DISABLE_META_ADS" = 'true' ]; then
+            preflight_args+=(--allow-meta-ads-disable)
+          fi
 
           node scripts/generate-telegram-production-deploy-config.mjs "${generator_args[@]}"
           grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
           grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
           grep -Fq "TELEGRAM_LINKING_ENABLED = \"$expected_linking\"" "$deploy_config"
+          grep -Fq "META_ADS_DRAIN_ENABLED = \"$expected_meta_ads\"" "$deploy_config"
           grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
           grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
           grep -Fq 'telegram.vishartattoo.com' "$deploy_config"
@@ -280,6 +323,8 @@ jobs:
             webhook_path: '/webhook',
             linking_enabled: process.env.ENABLE_LINKING === 'true',
             linking_rollback_requested: process.env.DISABLE_LINKING === 'true',
+            meta_ads_enabled: process.env.ENABLE_META_ADS === 'true',
+            meta_ads_rollback_requested: process.env.DISABLE_META_ADS === 'true',
             cron: '*/5 * * * *',
             gmail_shared_drain_enabled: true,
             gmail_service: 'vishar-gmail-production',
