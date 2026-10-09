@@ -28,6 +28,7 @@
   var stage = section.querySelector('.machine-stage');
   var canvasHost = section.querySelector('.machine-canvas');
   var poster = section.querySelector('.machine-poster');
+  var skipLink = section.querySelector('.machine-skip');
   var docEl = document.documentElement;
 
   var base = new URL('.', document.currentScript.src).href;
@@ -216,7 +217,15 @@
     var e = clamp(s + 1, 0, 1);
     var p = clamp(s, 0, 1);
     section.style.setProperty('--entry-shade', (1 - smooth(e / 0.85)).toFixed(3));
-    section.style.setProperty('--skip-opacity', (p > 0.02 && p < 0.9 ? 1 : 0).toString());
+    // Offer a visible escape as soon as the machine enters the viewport,
+    // then remove it before the photographic handoff. An invisible skip link
+    // must not intercept taps or remain in keyboard tab order.
+    var showSkip = s > -0.65 && s < 0.94;
+    section.style.setProperty('--skip-opacity', showSkip ? '1' : '0');
+    if (skipLink) {
+      skipLink.style.pointerEvents = showSkip ? 'auto' : 'none';
+      skipLink.tabIndex = showSkip ? 0 : -1;
+    }
     section.style.setProperty('--glow', ((1 - smooth((p - 0.86) / 0.1)) * smooth(e / 0.9)).toFixed(3));
     // Fast flings past the end of the stage: black the stage out first, so
     // the order stays machine → black → tattoo even if the damped 3D lags.

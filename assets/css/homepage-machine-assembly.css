@@ -290,20 +290,44 @@
   opacity: var(--entry-shade, 1);
 }
 
+/* Subtle original text-only skip link, restored at the bottom of the
+   cinematic stage. The control still clears the cookie-consent banner. */
 .machine-skip {
   position: absolute;
-  right: 16px;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  pointer-events: auto;
+  z-index: 5;
+  top: auto;
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: max(20px, calc(12px + env(safe-area-inset-bottom, 0px)));
+  pointer-events: none;
   font-size: 12px;
+  font-weight: 400;
+  line-height: 1.25;
   letter-spacing: .14em;
   text-transform: uppercase;
   color: rgba(255, 255, 255, .45);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   padding: 10px 12px;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   opacity: var(--skip-opacity, 0);
-  transition: color .2s ease;
+  transition: opacity .2s ease, color .2s ease;
 }
-.machine-skip:hover, .machine-skip:focus-visible { color: #fff; }
+.machine-skip:hover, .machine-skip:focus-visible {
+  color: #fff;
+  opacity: 1 !important;
+}
+.machine-skip:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, .86);
+  outline-offset: 3px;
+}
+@media (max-width: 767px) {
+  /* Keep the link above cookie preferences until a choice is made. */
+  body:has(#cookie-consent) .machine-skip {
+    bottom: clamp(216px, 33svh, 310px);
+  }
+}
 
 /* Static mode: reduced motion, no WebGL, weak device, load failure.
    The section keeps one screen, without the extra scroll distance or overlap. */
