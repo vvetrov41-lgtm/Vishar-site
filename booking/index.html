@@ -707,37 +707,6 @@
       ? window.VisharIntakePreflight.create({ form: form, endpoint: endpoint, enabled: true, submitButton: button })
       : null;
 
-    // Shared with assets/js/enquiry-form-v2.js so both forms use the same
-    // endpoint, consent-gated advertising handoff, attribution, idempotency
-    // and conversion-after-save rules.
-    window.VisharBooking = {
-      useV2: document.documentElement.getAttribute('data-enquiry-form') === 'v2',
-      endpoint: endpoint,
-      preflightEnabled: preflightEnabled,
-      privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
-      startedAt: startedAt,
-      attribution: attribution,
-      idempotencyKey: idempotencyKey,
-      clearIdempotencyKey: clearIdempotencyKey,
-      openAiAdsServerContext: openAiAdsServerContext,
-      metaAdsServerContext: metaAdsServerContext,
-      onSuccess: function (enquiryKey, result) {
-        // Only called after the server confirmed the enquiry and its images
-        // are saved, so only now is a lead conversion counted.
-        successMessage.textContent = result && result.reference
-          ? 'Your enquiry is saved as ' + result.reference + '. Vladimir will review it personally.'
-          : 'Your enquiry has been sent directly to Vladimir.';
-        var v2Root = document.getElementById('enquiry-v2');
-        if (v2Root) v2Root.classList.add('hidden');
-        form.classList.add('hidden');
-        successPanel.classList.remove('hidden');
-        successPanel.focus();
-        trackOpenAiLead(enquiryKey);
-        trackMetaLead(enquiryKey);
-        clearIdempotencyKey();
-      }
-    };
-
     form.addEventListener('submit', async function (event) {
       event.preventDefault();
       status.className = 'status-box mt-4 text-sm text-white/50';
@@ -850,6 +819,37 @@
         button.textContent = 'Try again';
       }
     });
+
+    // Shared with assets/js/enquiry-form-v2.js so both forms use the same
+    // endpoint, consent-gated advertising handoff, attribution, idempotency
+    // and conversion-after-save rules.
+    window.VisharBooking = {
+      useV2: document.documentElement.getAttribute('data-enquiry-form') === 'v2',
+      endpoint: endpoint,
+      preflightEnabled: preflightEnabled,
+      privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+      startedAt: startedAt,
+      attribution: attribution,
+      idempotencyKey: idempotencyKey,
+      clearIdempotencyKey: clearIdempotencyKey,
+      openAiAdsServerContext: openAiAdsServerContext,
+      metaAdsServerContext: metaAdsServerContext,
+      onSuccess: function (enquiryKey, result) {
+        // Only called after the server confirmed the enquiry and its images
+        // are saved, so only now is a lead conversion counted.
+        successMessage.textContent = result && result.reference
+          ? 'Your enquiry is saved as ' + result.reference + '. Vladimir will review it personally.'
+          : 'Your enquiry has been sent directly to Vladimir.';
+        var v2Root = document.getElementById('enquiry-v2');
+        if (v2Root) v2Root.classList.add('hidden');
+        form.classList.add('hidden');
+        successPanel.classList.remove('hidden');
+        successPanel.focus();
+        trackOpenAiLead(enquiryKey);
+        trackMetaLead(enquiryKey);
+        clearIdempotencyKey();
+      }
+    };
   })();
   </script>
 </body>
