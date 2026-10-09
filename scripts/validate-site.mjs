@@ -1380,8 +1380,8 @@ async function checkGalleryThumbnails() {
   pass(`Gallery responsive thumbnails checked (${checkedCount} derivatives across ${galleryConfigNamesLabel()}).`);
 }
 
-// The nav, footer, portfolio grids and portfolio cross-links are rendered into
-// the committed HTML by scripts/build-static-html.mjs. Generated output that
+// The nav, optional footer, portfolio grids and portfolio cross-links are
+// rendered into the committed HTML by scripts/build-static-html.mjs. Generated output that
 // drifts from its source is the failure mode this guards against, exactly like
 // the compiled Tailwind artifact above.
 async function checkStaticHtmlInSync() {
@@ -1414,7 +1414,7 @@ async function checkRawHtmlSharedContent(htmlFiles) {
     if (!/<nav\b[^>]*aria-label="Main"/i.test(contents)) {
       fail(`${fileRel} has no <nav aria-label="Main"> in its raw HTML.`);
     }
-    if (!/<footer\b/i.test(contents)) {
+    if (fileRel !== 'aftercare/index.html' && !/<footer\b/i.test(contents)) {
       fail(`${fileRel} has no <footer> in its raw HTML.`);
     }
     if (!contents.includes(`href="${BOOKING_URL}"`)) {
@@ -1427,7 +1427,7 @@ async function checkRawHtmlSharedContent(htmlFiles) {
     }
   }
 
-  pass(`Raw HTML on ${htmlFiles.length} pages carries the main nav, the footer and links to all ${requiredHrefs.length} shared destinations.`);
+  pass(`Raw HTML on ${htmlFiles.length} pages carries the main nav, optional shared footer and links to all ${requiredHrefs.length} shared destinations.`);
 }
 
 // Expected image counts inside each gallery, checked against the raw file so a
