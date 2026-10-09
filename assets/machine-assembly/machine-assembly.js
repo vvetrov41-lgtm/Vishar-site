@@ -68,13 +68,14 @@
     return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   }
   function isWeakDevice() {
+    // Only explicit data-saver / extremely slow connections skip the cinematic
+    // download. Safari and privacy-protecting browsers may report just two
+    // logical cores or very little device memory even on capable iPhones.
+    // Do not treat those coarse values as proof that WebGL cannot run:
+    // hasWebGL(), the renderer, and the load-failure fallback provide the
+    // actual capability gate.
     var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    if (c && (c.saveData === true || c.effectiveType === 'slow-2g' || c.effectiveType === '2g')) return true;
-    var mobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
-    if (!mobile) return false;
-    if (typeof navigator.hardwareConcurrency === 'number' && navigator.hardwareConcurrency <= 2) return true;
-    if (typeof navigator.deviceMemory === 'number' && navigator.deviceMemory <= 2) return true;
-    return false;
+    return !!(c && (c.saveData === true || c.effectiveType === 'slow-2g' || c.effectiveType === '2g'));
   }
   function hasWebGL() {
     try {
@@ -96,6 +97,7 @@
   // Static fallback: reduced motion, no WebGL, weak device, load or GPU failure.
   function enterStaticMode(reason) {
     staticReason = reason || 'unknown';
+    section.dataset.staticReason = staticReason;
     if (reason) console.warn('[machine] static mode: ' + reason);
     stopLoop();
     section.classList.remove('is-live');
@@ -942,6 +944,7 @@
         state.current = FORCED_S !== null || covered ? state.target : (state.target > 0 ? 0 : state.target);
         renderAt(state.current);
         section.classList.add('is-live');
+        delete section.dataset.staticReason;
         window.__machine.mode = 'live';
         window.__machine.ready = true;
         window.__machine.loadMs = Math.round(performance.now() - t0);
