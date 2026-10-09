@@ -366,7 +366,9 @@
     const META_ADS_CONSENT_VERSION_KEY = 'vishar-meta-ads-consent-version';
     const META_ADS_CONSENT_VERSION = '2026-10-08-capi';
     const GENERIC_CONSENT_KEY = 'vishar-cookie-consent';
-    const META_PIXEL_ID = '1729215778134902';
+    // Keep the original campaign Pixel collecting events during the parallel validation phase.
+    // The new company Dataset receives the same consented browser event for CAPI deduplication.
+    const META_PIXEL_IDS = ['1729215778134902', '2163876287819749'];
     const PRIVACY_NOTICE_VERSION = '2026-09-09';
     let metaPixelInitialised = false;
     let metaPageViewQueued = false;
@@ -409,7 +411,7 @@
       }
 
       if (!metaPixelInitialised) {
-        window.fbq('init', META_PIXEL_ID);
+        META_PIXEL_IDS.forEach(function (pixelId) { window.fbq('init', pixelId); });
         metaPixelInitialised = true;
       }
 
@@ -423,7 +425,9 @@
       }
 
       if (!metaPageViewQueued) {
-        window.fbq('track', 'PageView');
+        META_PIXEL_IDS.forEach(function (pixelId) {
+          window.fbq('trackSingle', pixelId, 'PageView');
+        });
         metaPageViewQueued = true;
       }
       return true;
@@ -537,7 +541,9 @@
       try {
         if (storedConsent(META_ADS_CONSENT_KEY) !== 'granted') return;
         if (!ensureMetaPixel()) return;
-        window.fbq('track', 'Lead', {}, { eventID: eventId });
+        META_PIXEL_IDS.forEach(function (pixelId) {
+          window.fbq('trackSingle', pixelId, 'Lead', {}, { eventID: eventId });
+        });
       } catch (error) {
         console.warn('Meta Pixel conversion tracking failed', error);
       }
