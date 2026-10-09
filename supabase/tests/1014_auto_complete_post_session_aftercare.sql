@@ -128,5 +128,15 @@ select ok(
   'no public CRM role can invoke the completion helper');
 
 reset role;
+select is(
+  (select count(*)::int
+   from public.message_templates mt
+   join public.artists a on a.id=mt.artist_id
+   where a.slug='kristina'
+     and mt.purpose='post_session_aftercare'
+     and mt.status='active'
+     and position('https://www.kristinavishar.com/aftercare/' in mt.body)>0),1,
+  'Kristina aftercare uses her own artist-scoped URL rather than Vladimir site');
+
 select * from finish();
 rollback;
