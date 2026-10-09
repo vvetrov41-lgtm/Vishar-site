@@ -173,33 +173,42 @@
     return Math.max(fromSequence, pastStage);
   }
 
+  // Scroll may arrive at irregular intervals during iOS inertial scrolling.
+  // Apply both photo zooms at most once per paint: no CSS transform transition
+  // chasing an endless stream of scroll-driven inline transform updates.
+  var portfolioMotionRaf = null;
   function updatePortfolioMotion() {
     if (!portfolioIntro || !leadFeatureImg || !followFeatureImg) return;
+    if (portfolioMotionRaf !== null) return;
+    portfolioMotionRaf = requestAnimationFrame(function () {
+      portfolioMotionRaf = null;
+      var desktop = window.matchMedia && window.matchMedia('(min-width: 900px)').matches;
+      var leadBase = desktop ? 1.12 : 1.18;
+      var followBase = desktop ? 1.03 : 1.06;
+      var leadProgress = 0, followProgress = 0;
 
-    var desktop = window.matchMedia && window.matchMedia('(min-width: 900px)').matches;
-    var leadBase = desktop ? 1.12 : 1.18;
-    var followBase = desktop ? 1.03 : 1.06;
+      if (!prefersReducedMotion()) {
+        // The CSS machine stage uses 100vh (stable large viewport in iOS
+        // Safari). innerHeight fluctuates as browser bars retract and can
+        // produce jumps in the zoom progress during a single swipe.
+        var vh = Math.max(1, stage.clientHeight || window.innerHeight || 1);
+        function viewProgress(el) {
+          var rect = el.getBoundingClientRect();
+          return smooth(clamp((vh - rect.top) / Math.max(1, vh + rect.height), 0, 1));
+        }
+        leadProgress = viewProgress(leadFeature);
+        followProgress = viewProgress(followFeature);
+      }
 
-    if (prefersReducedMotion()) {
-      leadFeatureImg.style.transform = 'scale(' + leadBase.toFixed(3) + ')';
-      followFeatureImg.style.transform = 'scale(' + followBase.toFixed(3) + ')';
-      return;
-    }
-
-    var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
-    function viewProgress(el) {
-      if (!el) return 0;
-      var rect = el.getBoundingClientRect();
-      return smooth(clamp((vh - rect.top) / Math.max(1, vh + rect.height), 0, 1));
-    }
-
-    // Direct image transforms are more reliable on Safari than inherited
-    // custom properties inside scale(calc()). The change remains restrained
-    // but is intentionally visible during the viewport pass.
-    var leadScale = leadBase + 0.12 * viewProgress(leadFeature);
-    var followScale = followBase + 0.10 * viewProgress(followFeature);
-    leadFeatureImg.style.transform = 'scale(' + leadScale.toFixed(4) + ')';
-    followFeatureImg.style.transform = 'scale(' + followScale.toFixed(4) + ')';
+      var leadTransform = 'scale(' + (leadBase + .12 * leadProgress).toFixed(4) + ')';
+      var followTransform = 'scale(' + (followBase + .10 * followProgress).toFixed(4) + ')';
+      if (leadFeatureImg.style.transform !== leadTransform) {
+        leadFeatureImg.style.transform = leadTransform;
+      }
+      if (followFeatureImg.style.transform !== followTransform) {
+        followFeatureImg.style.transform = followTransform;
+      }
+    });
   }
 
   function updateCssState(s) {
@@ -210,9 +219,13 @@
     section.style.setProperty('--glow', ((1 - smooth((p - 0.86) / 0.1)) * smooth(e / 0.9)).toFixed(3));
     // Fast flings past the end of the stage: black the stage out first, so
     // the order stays machine → black → tattoo even if the damped 3D lags.
-    section.style.setProperty('--stage-blackout', blackoutAmount(p).toFixed(3));
+    // Photo handoff follows scroll, not the deliberately delayed 3D pose.
+    // Otherwise onScroll(target) and renderAt(easedCurrent) fight over the
+    // first photo's opacity, causing visible flicker while scrolling.
+    var handoffP = Math.max(p, clamp(state.target, 0, 1));
+    section.style.setProperty('--stage-blackout', blackoutAmount(handoffP).toFixed(3));
     if (portfolioIntro && !section.classList.contains('is-static')) {
-      var handoff = handoffAmount(p);
+      var handoff = handoffAmount(handoffP);
       portfolioIntro.style.setProperty('--handoff', handoff.toFixed(3));
       portfolioIntro.style.setProperty('--handoff-scale', (1.006 - 0.006 * handoff).toFixed(4));
     }
