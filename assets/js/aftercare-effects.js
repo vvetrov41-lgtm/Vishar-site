@@ -7,7 +7,7 @@
   const reduced=window.matchMedia('(prefers-reduced-motion: reduce)');
   if(reduced.matches) return;
   const sections=Array.from(root.querySelectorAll('.mf-section'));
-  const childSelectors=':scope > h2,:scope > .lead,:scope > h3,:scope > .grid2,:scope > .tiles,:scope > .rule,:scope > .stat,:scope > .photo,:scope > .product,:scope > ol,:scope > ul,:scope > .timeline,:scope > .warning,:scope > .review';
+  const childSelectors=':scope > h2,:scope > .lead,:scope > h3,:scope > .grid2,:scope > .tiles,:scope > .rule,:scope > .stat,:scope > .product,:scope > ol,:scope > ul,:scope > .timeline,:scope > .warning,:scope > .review';
   const io=new IntersectionObserver(entries=>{
     for(const entry of entries){
       if(!entry.isIntersecting || entry.target.closest('[hidden]')) continue;
