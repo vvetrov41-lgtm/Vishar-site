@@ -1,0 +1,142 @@
+name: Operator-only enquiry photo slots rollout
+
+# Intentionally scoped to one release branch. No DB, Worker, public website,
+# Meta Pixel or advertising-measurement jobs in this workflow.
+on:
+  push:
+    branches:
+      - release/private-crm-rc1066-inventory-host-split-operator-only
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vishar-operator-photo-six-prod-only
+  cancel-in-progress: false
+
+jobs:
+  deploy-internal:
+    name: Validate and deploy Access-gated operator CRM only
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment: crm-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ZONE: vishartattoo.com
+      PUBLIC_HOST: crm.vishartattoo.com
+      PUBLIC_PAGES_PROJECT: vishar-crm-production
+      PUBLIC_PAGES_SUBDOMAIN: vishar-crm-production.pages.dev
+      INTERNAL_HOST: app.vishartattoo.com
+      INTERNAL_PAGES_PROJECT: vishar-crm-internal
+      INTERNAL_PAGES_SUBDOMAIN: vishar-crm-internal.pages.dev
+      VITE_CRM_SURFACE: internal
+      VITE_SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      VITE_TEAM_INVITE_URL: ${{ vars.CRM_PRODUCTION_TEAM_INVITE_URL }}
+      VITE_CALENDAR_CONNECTOR_ORIGIN: https://calendar.vishartattoo.com
+      VITE_MONZO_CONNECTOR_ORIGIN: https://monzo.vishartattoo.com
+      VITE_INSTAGRAM_CONNECTOR_ORIGIN: https://instagram.vishartattoo.com
+    steps:
+      - name: Checkout immutable release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact branch, lineage and pixel-safe change boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc1066-inventory-host-split-operator-only' ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ -z "$(git status --porcelain)" ]
+          git merge-base --is-ancestor d5b84360e5532fff329167047f3c8cad5afac25d "$GITHUB_SHA"
+          latest="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1 {print $1}')"
+          [ "$latest" = "$GITHUB_SHA" ]
+          changed="$(git diff --name-only d5b84360e5532fff329167047f3c8cad5afac25d "$GITHUB_SHA")"
+          [ -n "$changed" ]
+          while IFS= read -r path; do
+            case "$path" in
+              admin/src/components/EnquiryReferenceActions.tsx|admin/src/test/enquiry-reference-actions.test.tsx|.github/workflows/operator-photo-six-internal-only.yml) ;;
+              *) echo "Unexpected change $path. Production rollout refused." >&2; exit 1 ;;
+            esac
+          done <<< "$changed"
+          [ "$VITE_CRM_SURFACE" = 'internal' ]
+          [ "$INTERNAL_HOST" = 'app.vishartattoo.com' ]
+          [ "$INTERNAL_PAGES_PROJECT" = 'vishar-crm-internal' ]
+          [ "$PUBLIC_PAGES_PROJECT" != "$INTERNAL_PAGES_PROJECT" ]
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [[ "$CLOUDFLARE_ACCOUNT_ID" =~ ^[a-f0-9]{32}$ ]]
+          [[ "$VITE_SUPABASE_URL" == https://*.supabase.co ]]
+          [[ "$VITE_SUPABASE_PUBLISHABLE_KEY" == sb_publishable_* ]]
+          echo 'Operator-only scope verified. No public booking, pixel, Worker or DB mutations.'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install pinned deployment tools
+        run: npm ci
+
+      - name: Verify existing Cloudflare Access protection and internal-only Pages target
+        run: node scripts/crm-host-split.mjs deploy-internal
+
+      - name: Install locked operator CRM dependencies
+        working-directory: admin
+        run: npm ci
+
+      - name: Test, typecheck and build operator CRM
+        working-directory: admin
+        run: |
+          set -euo pipefail
+          npm test
+          npm run typecheck
+          npm run build
+
+      - name: Verify exact internal-only artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f admin/dist/index.html
+          test -f admin/dist/_headers
+          grep -Fq 'noindex' admin/dist/index.html
+          grep -R -Fq "$VITE_SUPABASE_URL" admin/dist
+          grep -R -Fq "$VITE_SUPABASE_PUBLISHABLE_KEY" admin/dist
+          grep -R -Fq 'VITE_CRM_SURFACE:"internal"' admin/dist
+          node scripts/check-private-crm-artifact.mjs admin/dist
+
+      - name: Revalidate release HEAD and Cloudflare Access immediately before deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1 {print $1}')"
+          [ "$latest" = "$GITHUB_SHA" ]
+          node scripts/crm-host-split.mjs deploy-internal
+
+      - name: Deploy only internal operator Pages
+        working-directory: admin
+        run: >-
+          ../node_modules/.bin/wrangler pages deploy dist
+          --project-name vishar-crm-internal
+          --branch production
+          --commit-hash "$GITHUB_SHA"
+          --commit-dirty=false
+
+      - name: Read back exact production commit and Access gates
+        run: node scripts/crm-host-split.mjs deploy-internal-readback
+
+      - name: Verify operator Access and public-host boundary remain intact
+        run: node scripts/crm-host-split.mjs verify-internal
+
+      - name: Release summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### Enquiry reference slots (operator-only)'
+            echo "Exact SHA: \`$GITHUB_SHA\`"
+            echo 'Target: app.vishartattoo.com / vishar-crm-internal only'
+            echo 'No public site, Worker, Meta Pixel, advertising CAPI, DNS, secrets or DB deployment actions'
+          } >> "$GITHUB_STEP_SUMMARY"
