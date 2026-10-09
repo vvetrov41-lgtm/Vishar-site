@@ -634,15 +634,15 @@ await test('13 UTM attribution and Meta/OpenAI consent handoff; Lead only after 
   await declined.context.close();
 });
 
-await test('14 legacy form remains the default and the flag switches forms', async () => {
+await test('14 v2 is the default and ?enquiry_form=legacy is the rollback', async () => {
   const context = await browser.newContext({ ...devices['iPhone 13'], ignoreHTTPSErrors: true });
   const page = await context.newPage();
   await page.goto(`${BASE}/booking/`);
-  assert.equal(await page.locator('#tattoo-enquiry-form').isVisible(), true, 'legacy visible by default');
-  assert.equal(await page.locator('#enquiry-v2').isVisible(), false);
-  await page.goto(`${BASE}/booking/?enquiry_form=v2`);
   await page.waitForSelector('.ef-choice');
-  assert.equal(await page.locator('#tattoo-enquiry-form').isVisible(), false, 'legacy hidden for v2');
+  assert.equal(await page.locator('#tattoo-enquiry-form').isVisible(), false, 'legacy hidden by default');
+  await page.goto(`${BASE}/booking/?enquiry_form=legacy`);
+  assert.equal(await page.locator('#tattoo-enquiry-form').isVisible(), true, 'legacy visible with the override');
+  assert.equal(await page.locator('#enquiry-v2').isVisible(), false);
   await context.close();
 });
 
