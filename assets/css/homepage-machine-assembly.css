@@ -1,0 +1,311 @@
+/* Production homepage machine and cinematic transitions. */
+/* "Featured in" lives inside the hero content column, as its last line. */
+.hero-featured { margin-top: 2.5rem; font-size: .75rem; line-height: 1.4; }
+@media (min-width: 640px) { .hero-featured { font-size: .875rem; } }
+@media (min-width: 768px) { .hero-featured { margin-top: 3.5rem; } }
+
+:root { --seq-overlap: 22vh; --seq-distance: 110vh; }
+@media (max-width: 767px) { :root { --seq-overlap: 14vh; --seq-distance: 80vh; } }
+
+.machine-seq {
+  position: relative;
+  z-index: 1; /* above the hero background (z-0), below hero content (z-10) */
+  margin-top: calc(-1 * var(--seq-overlap));
+  height: calc(100vh + var(--seq-distance));
+  pointer-events: none;
+}
+.machine-stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+}
+/* Black-out used when a fast fling leaves the end of the stage before the
+   damped 3D reaches its black close-up (see machine-assembly.js). */
+.machine-stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #000;
+  opacity: var(--stage-blackout, 0);
+  pointer-events: none;
+}
+.machine-seq.is-background .machine-stage::after { opacity: 0; }
+
+/* Soft studio glow behind the machine so dark parts separate from the black
+   page. Fades out before the upright wipe so the stage ends on pure black. */
+.machine-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 55% 50% at 50% 48%, rgba(58, 56, 54, .55) 0%, rgba(20, 20, 20, .35) 45%, rgba(0, 0, 0, 0) 75%);
+  opacity: var(--glow, 1);
+}
+.machine-canvas, .machine-poster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.machine-canvas canvas { display: block; width: 100%; height: 100%; }
+.machine-canvas { opacity: 0; transition: opacity .5s ease; }
+.machine-seq.is-live .machine-canvas { opacity: 1; }
+.machine-poster { object-fit: cover; opacity: 0; transition: opacity .5s ease; }
+.machine-poster.is-shown { opacity: 1; }
+.machine-seq.is-live .machine-poster { opacity: 0; }
+
+/* Background machine behind the Portfolio grid (old homepage behaviour). It
+   is enabled only while the grid is on screen and fades in with the grid
+   (--bg-reveal), so it never shows between the close-up and the tattoos. */
+.machine-seq.is-background {
+  z-index: 0;
+  --glow: .48 !important;
+  --entry-shade: 0 !important;
+}
+.machine-seq.is-background .machine-stage {
+  position: fixed;
+  inset: 0;
+  top: 0;
+  height: 100vh;
+  opacity: calc(.44 * var(--bg-reveal, 0));
+}
+.machine-seq.is-background .machine-entry-shade,
+.machine-seq.is-background .machine-skip {
+  display: none;
+}
+
+/* Cinematic tattoo intro: two large works in normal document flow, no
+   sticky panels, no snapping. The intro starts over the last viewport of the
+   machine section (negative margin = stage height), so the first work fades in
+   out of the black close-up (--handoff, set by machine-assembly.js) and then
+   scrolls away with the page. It is transparent until the handoff and above
+   the stage (z-index 2); once opaque it also hides the background machine. */
+.portfolio-intro {
+  position: relative;
+  z-index: 2;
+  margin-top: -90vh;
+  margin-top: -90svh;
+  pointer-events: none;
+}
+:root.machine-static .portfolio-intro { margin-top: 0; }
+
+#portfolio {
+  position: relative;
+  z-index: 1;
+}
+
+.portfolio-feature { margin: 0; }
+.portfolio-feature img {
+  display: block;
+  object-fit: cover;
+  filter: saturate(.94) contrast(1.03);
+}
+
+/* Work 1: tighter full-screen close-up with a clearer bottom falloff. */
+.portfolio-feature--lead {
+  position: relative;
+  height: calc(100vh + 2.5rem);
+  height: calc(100svh + 2.5rem);
+  overflow: hidden;
+  background: transparent;
+}
+.portfolio-feature--lead img {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 52% 40%;
+  opacity: calc(var(--handoff, 0) * .98);
+  transform: scale(1.18);
+  will-change: opacity, transform;
+  transition: opacity .18s linear, transform .08s linear;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, .18) 4%,
+    rgba(0, 0, 0, .68) 9%,
+    rgba(0, 0, 0, .96) 14%,
+    #000 20%,
+    #000 64%,
+    rgba(0, 0, 0, .96) 70%,
+    rgba(0, 0, 0, .78) 78%,
+    rgba(0, 0, 0, .46) 86%,
+    rgba(0, 0, 0, .16) 94%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0, 0, 0, .18) 4%,
+    rgba(0, 0, 0, .68) 9%,
+    rgba(0, 0, 0, .96) 14%,
+    #000 20%,
+    #000 64%,
+    rgba(0, 0, 0, .96) 70%,
+    rgba(0, 0, 0, .78) 78%,
+    rgba(0, 0, 0, .46) 86%,
+    rgba(0, 0, 0, .16) 94%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.portfolio-feature--lead::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--handoff, 0);
+  background:
+    linear-gradient(
+      to right,
+      rgba(0,0,0,.80) 0%,
+      rgba(0,0,0,.26) 5%,
+      transparent 12%,
+      transparent 88%,
+      rgba(0,0,0,.26) 95%,
+      rgba(0,0,0,.80) 100%
+    ),
+    linear-gradient(
+      to bottom,
+      rgba(0,0,0,.72) 0%,
+      rgba(0,0,0,.18) 6%,
+      transparent 14%,
+      transparent 72%,
+      rgba(0,0,0,.18) 80%,
+      rgba(0,0,0,.42) 89%,
+      rgba(0,0,0,.78) 100%
+    );
+}
+:root.machine-static .portfolio-feature--lead { --handoff: 1; --handoff-scale: 1; }
+
+/* Work 2: reduce the overlap and add a soft dark separator between frames. */
+.portfolio-feature--follow {
+  position: relative;
+  z-index: 1;
+  margin-top: -8vh;
+  margin-top: -8svh;
+  height: 98vh;
+  height: 98svh;
+  overflow: hidden;
+  background: transparent;
+}
+.portfolio-feature--follow::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 18svh;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,.92) 0%,
+    rgba(0,0,0,.68) 26%,
+    rgba(0,0,0,.28) 62%,
+    rgba(0,0,0,0) 100%
+  );
+}
+.portfolio-feature--follow img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  object-fit: cover;
+  object-position: 50% 50%;
+  margin: 0;
+  transform: scale(1.06);
+  will-change: transform;
+  transition: transform .08s linear;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0,0,0,.10) 7%,
+    rgba(0,0,0,.52) 14%,
+    rgba(0,0,0,.88) 22%,
+    #000 30%,
+    #000 74%,
+    rgba(0,0,0,.94) 81%,
+    rgba(0,0,0,.68) 88%,
+    rgba(0,0,0,.24) 95%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(0,0,0,.10) 7%,
+    rgba(0,0,0,.52) 14%,
+    rgba(0,0,0,.88) 22%,
+    #000 30%,
+    #000 74%,
+    rgba(0,0,0,.94) 81%,
+    rgba(0,0,0,.68) 88%,
+    rgba(0,0,0,.24) 95%,
+    transparent 100%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+@media (min-width: 900px) {
+  .portfolio-feature--lead img {
+    object-position: 51% 40%;
+    transform: scale(1.12);
+  }
+  .portfolio-feature--follow {
+    margin-top: -6vh;
+    margin-top: -6svh;
+    height: 94vh;
+    height: 94svh;
+  }
+  .portfolio-feature--follow::before {
+    height: 14svh;
+  }
+  .portfolio-feature--follow img {
+    object-position: 50% 48%;
+    transform: scale(1.03);
+  }
+}
+
+/* Black shade over the top of the stage while it is still inside the hero, so
+   the parts rise out of the gradient instead of appearing with a hard edge. */
+.machine-entry-shade {
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 45vh;
+  background: linear-gradient(to bottom, #000 0%, #000 30%, rgba(0, 0, 0, 0) 100%);
+  opacity: var(--entry-shade, 1);
+}
+
+.machine-skip {
+  position: absolute;
+  right: 16px;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  pointer-events: auto;
+  font-size: 12px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .45);
+  padding: 10px 12px;
+  opacity: var(--skip-opacity, 0);
+  transition: color .2s ease;
+}
+.machine-skip:hover, .machine-skip:focus-visible { color: #fff; }
+
+/* Static mode: reduced motion, no WebGL, weak device, load failure.
+   The section keeps one screen, without the extra scroll distance or overlap. */
+:root.machine-static { --seq-overlap: 0px; }
+.machine-seq.is-static { height: 100vh; }
+.machine-seq.is-static .machine-stage { position: relative; }
+.machine-seq.is-static .machine-entry-shade,
+.machine-seq.is-static .machine-skip { display: none; }
+
+/* Debug panel (?debug=1). */
+#machine-debug {
+  position: fixed; left: 12px; bottom: 12px; z-index: 200;
+  width: min(360px, calc(100vw - 24px));
+  padding: 10px 12px; border-radius: 10px;
+  background: rgba(20, 20, 22, .88); border: 1px solid rgba(255, 255, 255, .12);
+  font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: #ddd;
+}
+#machine-debug input[type=range] { width: 100%; }
+#machine-debug label { display: flex; gap: 6px; align-items: center; }
