@@ -290,20 +290,40 @@
   opacity: var(--entry-shade, 1);
 }
 
+/* Visible on the machine sequence, above the sticky mobile booking CTA
+   and consent banner. Keep away from the machine's central focal point. */
 .machine-skip {
   position: absolute;
-  right: 16px;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  pointer-events: auto;
-  font-size: 12px;
-  letter-spacing: .14em;
+  z-index: 5;
+  top: calc(78px + env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: auto;
+  pointer-events: none;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: .10em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, .45);
-  padding: 10px 12px;
+  color: rgba(255, 255, 255, .94);
+  background: rgba(10, 10, 12, .78);
+  border: 1px solid rgba(255, 255, 255, .36);
+  border-radius: 9999px;
+  padding: 12px 14px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
   opacity: var(--skip-opacity, 0);
-  transition: color .2s ease;
+  transition: opacity .2s ease, color .2s ease, background-color .2s ease;
 }
-.machine-skip:hover, .machine-skip:focus-visible { color: #fff; }
+.machine-skip:hover, .machine-skip:focus-visible {
+  color: #fff;
+  background: rgba(26, 26, 30, .94);
+  outline: 2px solid rgba(255, 255, 255, .86);
+  outline-offset: 3px;
+  opacity: 1 !important;
+}
+@media (max-width: 767px) {
+  .machine-skip { top: calc(72px + env(safe-area-inset-top, 0px)); }
+}
 
 /* Static mode: reduced motion, no WebGL, weak device, load failure.
    The section keeps one screen, without the extra scroll distance or overlap. */
