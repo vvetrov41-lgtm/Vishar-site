@@ -4,6 +4,16 @@
 @media (min-width: 640px) { .hero-featured { font-size: .875rem; } }
 @media (min-width: 768px) { .hero-featured { margin-top: 3.5rem; } }
 
+/* components.js adds .reveal to homepage sections. Its transform would
+ * create a containing block for the fixed, rotating portfolio background,
+ * so the machine and cinematic intro must not participate in that reveal. */
+#machine-seq.reveal,
+#portfolio-intro.reveal {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
 :root { --seq-overlap: 22vh; --seq-distance: 110vh; }
 @media (max-width: 767px) { :root { --seq-overlap: 14vh; --seq-distance: 80vh; } }
 
