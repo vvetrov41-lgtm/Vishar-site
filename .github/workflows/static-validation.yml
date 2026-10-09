@@ -44,7 +44,7 @@ jobs:
         run: npm run validate:site
 
       - name: Test Meta Ads measurement boundary
-        run: node --test workers/meta-ads.test.js
+        run: node --test workers/meta-ads.test.js scripts/test-meta-capi-production-token.mjs
 
       - name: Compile GEO runtime and launcher
         run: python -m compileall .geo-topic-agent-runtime scripts
