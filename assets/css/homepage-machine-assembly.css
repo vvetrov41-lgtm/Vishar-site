@@ -290,14 +290,14 @@
   opacity: var(--entry-shade, 1);
 }
 
-/* Visible on the machine sequence, above the sticky mobile booking CTA
-   and consent banner. Keep away from the machine's central focal point. */
+/* Keep the escape link low in the machine stage without a persistent
+   booking bar. Lift it above consent controls on a visitor's first visit. */
 .machine-skip {
   position: absolute;
   z-index: 5;
-  top: calc(78px + env(safe-area-inset-top, 0px));
+  top: auto;
   right: max(16px, env(safe-area-inset-right, 0px));
-  bottom: auto;
+  bottom: max(20px, calc(12px + env(safe-area-inset-bottom, 0px)));
   pointer-events: none;
   font-size: 11px;
   font-weight: 600;
@@ -322,7 +322,11 @@
   opacity: 1 !important;
 }
 @media (max-width: 767px) {
-  .machine-skip { top: calc(72px + env(safe-area-inset-top, 0px)); }
+  /* The analytics consent banner appears only until a choice is made and
+     occupies the lower part of the viewport. Keep Skip above it. */
+  body:has(#cookie-consent) .machine-skip {
+    bottom: clamp(216px, 33svh, 310px);
+  }
 }
 
 /* Static mode: reduced motion, no WebGL, weak device, load failure.
