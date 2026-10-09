@@ -30,7 +30,8 @@ const only = argValue('--only');
 const fixturesDir = argValue('--fixtures') || process.env.ENQUIRY_FIXTURES || '';
 
 const { chromium, devices } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const axeSource = await readFile(process.env.AXE_PATH || path.join(rootDir, 'node_modules/axe-core/axe.min.js'), 'utf8').catch(() => '');
+// axe is required: a missing bundle must fail setup, not skip the WCAG checks.
+const axeSource = await readFile(process.env.AXE_PATH || path.join(rootDir, 'node_modules/axe-core/axe.min.js'), 'utf8');
 
 
 // ---------------------------------------------------------------------------
@@ -307,6 +308,12 @@ await test('1 new tattoo with one design reference (iPhone)', async () => {
   assert.equal(submission.files.designReferences.length, 1);
   assert.equal(submission.files.existingTattooPhotos, undefined);
   assert.match(await page.locator('#enquiry-success-message').textContent(), /ENQ-2026-0420/);
+  // Leaving or reloading after success must not recreate the draft.
+  await page.reload();
+  await page.waitForSelector('.ef-choice');
+  assert.equal(await page.evaluate(() => localStorage.getItem('vishar.enquiry.v2.draft')), null, 'no draft after success and pagehide');
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('vishar.enquiry.v2.contact')), null, 'no contact copy after success and pagehide');
+  assert.equal(await page.locator('.ef-notice:not([hidden])').count(), 0, 'nothing restored');
   if (crmDir) {
     const args = intake(log);
     assert.equal(args.p_enquiry.placement, 'Arm: Forearm');
@@ -480,6 +487,10 @@ await test('10 back navigation keeps answers and photos; reload keeps text only'
   assert.match(stored.session, /vera@example\.test/);
   await page.locator('#enquiry-v2').getByRole('button', { name: 'Back', exact: true }).click();
   assert.equal(await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).inputValue(), 'Keep me');
+  await page.evaluate(() => sessionStorage.setItem('vishar.enquiry.idempotencyKey', '11111111-2222-4333-8444-555555555555'));
+  await page.getByRole('button', { name: 'Start over' }).click();
+  await expectSection(page, 'Placement');
+  assert.equal(await page.evaluate(() => sessionStorage.getItem('vishar.enquiry.idempotencyKey')), null, 'Start over clears the retry key');
   await context.close();
 });
 
@@ -664,8 +675,8 @@ await test('16 accessibility (axe) and layout on every step, iPhone SE and iPhon
       const small = await page.evaluate(() => Array.from(document.querySelectorAll('#enquiry-v2 button:not([hidden]), #enquiry-v2 label.ef-choice'))
         .filter((n) => n.offsetParent).map((n) => n.getBoundingClientRect()).filter((r) => r.height < 44 && r.width > 0).length);
       assert.equal(small, 0, `${device} ${label}: touch targets under 44px`);
-      if (axeSource) {
-        await page.addScriptTag({ content: axeSource }).catch(() => {});
+      {
+        await page.addScriptTag({ content: axeSource });
         const violations = await page.evaluate(async () => (await window.axe.run('#enquiry-v2', { runOnly: ['wcag2a', 'wcag2aa'] })).violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ') + ' ' + (n.failureSummary || '').replace(/\s+/g, ' ').slice(0, 160)).join(' | ')}`));
         if (violations.length) console.log(JSON.stringify(violations, null, 1));
         assert.deepEqual(violations, [], `${device} ${label}: axe`);

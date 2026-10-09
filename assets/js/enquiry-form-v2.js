@@ -99,6 +99,7 @@
   var current = 'placement';
   var returnToReview = false;
   var submitting = false;
+  var submitted = false; // once saved, nothing is persisted again
   var preflightState = { stage: 'none', id: '', snapshot: '' };
 
   function hasExistingWork() {
@@ -130,6 +131,7 @@
   var session = storage('sessionStorage');
 
   function saveDraft() {
+    if (submitted) return;
     var project = {
       savedAt: Date.now(), step: current,
       regions: state.regions, otherRegionText: state.otherRegionText, placements: state.placements,
@@ -1103,7 +1105,10 @@
   }
 
   function succeed(key, result) {
+    submitted = true;
+    clearTimeout(saveTimer);
     clearDraft();
+    state = emptyState();
     files.design.concat(files.existing).forEach(function (item) { URL.revokeObjectURL(item.url); });
     files = { design: [], existing: [] };
     shared.onSuccess(key, result);
@@ -1122,6 +1127,9 @@
     notice.appendChild(el('span', { text: 'Your previous answers were restored. ' }));
     notice.appendChild(el('button', { type: 'button', className: 'ef-link-button', text: 'Start over', onclick: function () {
       clearDraft();
+      // A key left by an ambiguous failure belongs to the abandoned enquiry.
+      shared.clearIdempotencyKey();
+      preflightState = { stage: 'none', id: '', snapshot: '' };
       state = emptyState();
       files.design.concat(files.existing).forEach(function (item) { URL.revokeObjectURL(item.url); });
       files = { design: [], existing: [] };
