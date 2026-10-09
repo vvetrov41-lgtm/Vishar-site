@@ -1,0 +1,42 @@
+name: Verify deployed Meta CAPI Worker code read only
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc1048-inventory-capi-auth-20261009'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.actor == github.repository_owner
+    environment: crm-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Inspect current Worker source markers by GET only
+        env:
+          CF_ACCOUNT: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const account=process.env.CF_ACCOUNT,token=process.env.CF_TOKEN;
+          if(account!=='787a19ac4890ba7a114d44cabf085588'||!token)throw Error('Production account mismatch');
+          const url='https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/vishar-telegram-drain-production';
+          const res=await fetch(url,{headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(30000)});
+          if(!res.ok)throw Error('Cloudflare script GET rejected HTTP '+res.status);
+          const code=await res.text();
+          const checks={
+            active_code_contains_meta_drain_gate:code.includes('META_ADS_DRAIN_ENABLED'),
+            active_code_contains_graph_events:code.includes('/events')&&code.includes('graph.facebook.com'),
+            active_code_contains_conversion_outbox:code.includes('meta_conversion')||code.includes('claim_meta_conversion_outbox'),
+            active_code_contains_named_token:code.includes('META_ADS_VLADIMIR_ACCESS_TOKEN')||code.includes('META_ADS_'),
+          };
+          const fs=await import('node:fs');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Deployed Worker CAPI code markers (read only)\n'+Object.entries(checks).map(([k,v])=>'- '+k+': '+v).join('\n')+'\n');
+          console.log(JSON.stringify(checks));
+          if(!Object.values(checks).every(Boolean))throw Error('Current deployed Worker is missing one or more CAPI code markers');
+          NODE
