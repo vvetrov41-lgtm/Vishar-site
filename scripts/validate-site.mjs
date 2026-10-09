@@ -573,6 +573,47 @@ async function checkHomepageReferencesLocalVendorPaths() {
   }
 
   const contents = await readFile(homepagePath, 'utf8');
+  const cinematicScript = '/assets/machine-assembly/machine-assembly.js';
+
+  if (contents.includes(cinematicScript)) {
+    const runtimePath = path.join(rootDir, cinematicScript.slice(1));
+    if (!await pathExists(runtimePath)) {
+      fail('Homepage cinematic machine runtime is missing.');
+      return;
+    }
+
+    const runtime = await readFile(runtimePath, 'utf8');
+    if (!runtime.includes(VENDOR_3D_FILES[0].homepageReference)) {
+      fail('Cinematic machine runtime does not load the pinned local Three.js build.');
+    }
+    for (const reference of [
+      'id="machine-seq"',
+      'id="portfolio-intro"',
+      '/assets/portfolio/cinematic/mask-hand.webp',
+      '/assets/portfolio/cinematic/black-grey-portrait.webp',
+      '/assets/css/homepage-machine-assembly.css',
+    ]) {
+      if (!contents.includes(reference)) {
+        fail(`Cinematic homepage missing required reference: ${reference}.`);
+      }
+    }
+    if (contents.includes('id="machine-section"') || contents.includes('id="machine-bg"')) {
+      fail('Legacy machine renderer markup remains alongside the cinematic runtime.');
+    }
+    for (const asset of [
+      'assets/machine-assembly/timeline.js',
+      'assets/machine-assembly/assets/tattoo-machine.glb',
+      'assets/machine-assembly/lib/GLTFLoader.js',
+      'assets/machine-assembly/lib/RoomEnvironment.js',
+    ]) {
+      if (!await pathExists(path.join(rootDir, asset))) {
+        fail(`Cinematic runtime dependency is missing: ${asset}.`);
+      }
+    }
+    pass('Cinematic homepage loads local Three.js, model, timeline, and image assets; legacy GSAP runtime is not loaded.');
+    return;
+  }
+
   const expectedReferences = VENDOR_3D_FILES
     .map((file) => file.homepageReference)
     .filter(Boolean);
