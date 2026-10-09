@@ -238,7 +238,7 @@
             <ul class="space-y-3 text-sm leading-relaxed text-white/50">
               <li>My rate is £140 per hour. A standard full-day session is up to 7 hours.</li>
               <li>I focus on medium and large colour or black-and-grey realism projects.</li>
-              <li>Cover-ups need clear close-up and wider placement photos.</li>
+              <li>For cover-ups, please attach at least one clear photo of the existing tattoo. A close-up and a wider placement photo are recommended.</li>
               <li>The London studio address will be confirmed with your appointment.</li>
             </ul>
           </div>
@@ -556,6 +556,21 @@
       }
     }
 
+    // GA4 uses the site's existing analytics consent. Count only saved leads.
+    // No contact details or photo metadata are sent to Google Analytics.
+    function trackGa4Lead() {
+      try {
+        if (storedConsent(GENERIC_CONSENT_KEY) !== 'granted') return;
+        if (typeof window.gtag !== 'function' || !document.getElementById('ga4-script')) return;
+        window.gtag('event', 'generate_lead', {
+          method: 'booking_form',
+          form_version: document.documentElement.getAttribute('data-enquiry-form') === 'v2' ? 'v2' : 'legacy'
+        });
+      } catch (error) {
+        console.warn('GA4 lead conversion tracking failed', error);
+      }
+    }
+
     function trackMetaLead(eventId) {
       try {
         if (storedConsent(META_ADS_CONSENT_KEY) !== 'granted') return;
@@ -804,6 +819,7 @@
         successPanel.focus();
         trackOpenAiLead(enquiryKey);
         trackMetaLead(enquiryKey);
+        trackGa4Lead();
         clearIdempotencyKey();
       } catch (error) {
         console.error('Tattoo enquiry failed', error);
@@ -847,6 +863,7 @@
         successPanel.focus();
         trackOpenAiLead(enquiryKey);
         trackMetaLead(enquiryKey);
+        trackGa4Lead();
         clearIdempotencyKey();
       }
     };
