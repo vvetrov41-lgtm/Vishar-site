@@ -19,6 +19,7 @@
   var section = document.getElementById('machine-seq');
   if (!section) return;
   var portfolio = document.getElementById('portfolio');
+  var footer = document.getElementById('site-footer');
   var portfolioIntro = document.getElementById('portfolio-intro');
   var leadFeature = portfolioIntro ? portfolioIntro.querySelector('.portfolio-feature--lead') : null;
   var followFeature = portfolioIntro ? portfolioIntro.querySelector('.portfolio-feature--follow') : null;
@@ -983,16 +984,25 @@
   var backgroundRaf = null;
   var backgroundLast = 0;
   var backgroundAngle = 0;
+  // The assembled machine turns slowly; 30 actual WebGL renders per second
+  // look smooth while reducing continuous GPU cost on iPhones and desktops.
+  var BACKGROUND_FRAME_INTERVAL = 1000 / 30;
 
   function renderBackground(now) {
     if (!backgroundActive || !renderer || document.hidden) {
       backgroundRaf = null;
       return;
     }
+    // Keep requesting frames to stay synchronized with the browser, but
+    // skip GPU draws until another frame interval has elapsed.
+    if (backgroundLast && now - backgroundLast < BACKGROUND_FRAME_INTERVAL) {
+      backgroundRaf = requestAnimationFrame(renderBackground);
+      return;
+    }
     if (!backgroundLast) backgroundLast = now;
     var dt = Math.min(0.1, (now - backgroundLast) / 1000);
     backgroundLast = now;
-    backgroundAngle = (backgroundAngle + dt * 0.048) % (Math.PI * 2); // old scene ≈0.0008 rad/frame at 60 fps
+    backgroundAngle = (backgroundAngle + dt * 0.048) % (Math.PI * 2); // same time-based rotation speed
 
     // Hero-pose camera/light, fully assembled geometry.
     applyGroups(0.78);
@@ -1037,21 +1047,30 @@
     }
   }
 
-  // The background machine belongs to the grid only. During the cinematic
-  // tattoo intro (opaque, full screen) it is not active, so it can never show
-  // between the close-up and the tattoos. It fades in with the grid.
+  // Keep the assembled machine behind the entire rest of the homepage,
+  // not just the Portfolio grid. The old rect.bottom > 0 check disabled it
+  // halfway down the page as soon as Portfolio scrolled past.
+  // It still stays hidden under the cinematic tattoo intro, fades in with
+  // Portfolio, then gradually fades out before the footer.
   function updateBackgroundMode(s) {
     if (!renderer) return;
     var vh = window.innerHeight || document.documentElement.clientHeight || 1;
-    var gridVisible = false;
-    var reveal = 0;
+    var enteredPortfolio = false;
+    var fadeIn = 0;
     if (portfolio) {
       var rect = portfolio.getBoundingClientRect();
-      gridVisible = rect.top < vh && rect.bottom > 0;
-      reveal = smooth((vh - rect.top) / (vh * 0.6));
+      enteredPortfolio = rect.top < vh;
+      fadeIn = smooth((vh - rect.top) / (vh * 0.6));
     }
+    var fadeOut = 1;
+    if (footer) {
+      // 1 while the footer is below the viewport; 0 once it reaches the
+      // top. No abrupt disappearance when intermediate sections enter view.
+      fadeOut = smooth(clamp(footer.getBoundingClientRect().top / vh, 0, 1));
+    }
+    var reveal = fadeIn * fadeOut;
     section.style.setProperty('--bg-reveal', reveal.toFixed(3));
-    setBackgroundActive(gridVisible && s >= 0.995);
+    setBackgroundActive(enteredPortfolio && fadeOut > 0 && s >= 0.995);
   }
 
   function observeVisibility() {
