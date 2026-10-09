@@ -166,7 +166,7 @@ export async function renderSpecialityGallery(name) {
       : img;
 
     return `        <figure class="overflow-hidden bg-white/5 rounded-2xl">
-          <a href="${source}" target="_blank" rel="noopener" class="group block aspect-[3/4] overflow-hidden" aria-label="Open ${esc(alt)}">
+          <a href="${source}" data-speciality-lightbox data-lightbox-alt="${esc(alt)}" class="group block aspect-[3/4] overflow-hidden" aria-label="Open ${esc(alt)}">
             ${media}
           </a>${caption ? `
           <figcaption class="p-4 text-sm text-white/50">${esc(caption)}</figcaption>` : ''}
