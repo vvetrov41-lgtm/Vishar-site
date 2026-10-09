@@ -1,0 +1,56 @@
+name: Verify Meta Dataset advertising account association
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc1048-inventory-capi-auth-20261009'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.actor == github.repository_owner && github.event.head_commit.message == 'Verify Meta Dataset ad account association read only'
+    environment: crm-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect the two Meta Graph listing edges without changes
+        env:
+          META_TOKEN: ${{ secrets.META_ADS_VLADIMIR_ACCESS_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc1048-inventory-capi-auth-20261009' ]
+          [ "$(git log -1 --format=%s)" = 'Verify Meta Dataset ad account association read only' ]
+          node --input-type=module <<'NODE'
+          const token=process.env.META_TOKEN;
+          if(!token||token.length<20)throw Error('Protected Meta token unavailable');
+          const endpoints=[
+            {label:'ad_account_pixels',path:'act_2128002004809955/adspixels?fields=id&limit=100',target:'2163876287819749'},
+            {label:'pixel_ad_accounts',path:'2163876287819749/adaccounts?fields=id&limit=100',target:'act_2128002004809955'}
+          ];
+          const results={};
+          for(const item of endpoints){
+            let status='unavailable',targetPresent=false,count=0;
+            try{
+              const response=await fetch('https://graph.facebook.com/v26.0/'+item.path,{
+                headers:{Authorization:'Bearer '+token},
+                redirect:'error',signal:AbortSignal.timeout(15000)
+              });
+              status=response.status;
+              if(response.ok){
+                const obj=await response.json();
+                if(Array.isArray(obj.data)){
+                  count=obj.data.length;
+                  targetPresent=obj.data.some(x=>String(x.id)===item.target||String(x.id)===item.target.replace(/^act_/,''));
+                }
+              }
+            }catch{}
+            results[item.label]={http_status:status,target_present:targetPresent,returned_count:count};
+          }
+          const fs=await import('node:fs');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Meta ad account / new Dataset association (read only)\n'+Object.entries(results).map(([name,r])=>'- '+name+': HTTP '+r.http_status+', linked_target_visible='+r.target_present+', count='+r.returned_count).join('\n')+'\n');
+          console.log(JSON.stringify(results));
+          NODE
