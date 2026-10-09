@@ -33,6 +33,15 @@ from (values
   ('fa000000-0000-4000-8000-000000000004'::uuid,'tattoo_session','confirmed',interval '24 hours',interval '4 hours')
 ) v(id,appointment_type,status,lead,duration);
 
+select crm_private.log_artist_activity(
+  (select id from t_aftercare_artist),
+  'appointment.scheduled','system',null,
+  'fa111111-1111-4111-8111-111111111111',null,
+  'fa222222-2222-4222-8222-222222222222',
+  'fa000000-0000-4000-8000-000000000001',null,
+  jsonb_build_object('appointment_type','tattoo_session')
+);
+
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
 
@@ -47,14 +56,7 @@ select lives_ok(
   'synthetic Gmail route is set for a rollback-only test'
 );
 
-select crm_private.log_artist_activity(
-  (select id from t_aftercare_artist),
-  'appointment.scheduled','system',null,
-  'fa111111-1111-4111-8111-111111111111',null,
-  'fa222222-2222-4222-8222-222222222222',
-  'fa000000-0000-4000-8000-000000000001',null,
-  jsonb_build_object('appointment_type','tattoo_session')
-);
+
 
 select lives_ok(
   $$select * from public.service_run_automation_tick(100)$$,
