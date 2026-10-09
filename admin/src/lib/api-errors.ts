@@ -154,6 +154,7 @@ export const API_OPERATIONS = {
   'schedule that session': { kind: 'write', ru: 'назначить этот сеанс' },
   'update that client': { kind: 'write', ru: 'сохранить карточку клиента' },
   'update that enquiry': { kind: 'write', ru: 'сохранить заявку' },
+  'update the body areas': { kind: 'write', ru: 'сохранить зоны тела' },
   'update that project estimate': { kind: 'write', ru: 'сохранить оценку по проекту' },
   'update that session price': { kind: 'write', ru: 'сохранить стоимость сеанса' },
   'load the session rates': { kind: 'read', ru: 'загрузить ставки сеансов' },
@@ -328,6 +329,9 @@ export const API_MESSAGES = {
   'Your CRM session expired. Sign in again before connecting WhatsApp.': 'Сеанс CRM истёк. Войдите снова, прежде чем подключать WhatsApp.',
   'Your CRM session has expired. Sign in again.': 'Сеанс CRM истёк. Войдите снова.',
   'Your session has expired. Sign in again.': 'Сеанс истёк. Войдите снова.',
+  'Someone else changed this enquiry since you opened it. Reload the page and make your change again.': 'Заявку изменил кто-то другой, пока она была открыта. Обновите страницу и внесите изменение заново.',
+  'Type, placement, size and cover-up of this enquiry come from its body areas. Edit the body areas instead.': 'Тип, расположение, размер и перекрытие этой заявки берутся из зон тела. Измените зоны тела.',
+  'This enquiry was saved with a body area the form no longer offers. Use the standard edit form.': 'В заявке сохранена зона тела, которой больше нет в форме. Используйте обычное редактирование.',
 } as const satisfies Record<string, string>;
 
 export type ApiMessage = keyof typeof API_MESSAGES;

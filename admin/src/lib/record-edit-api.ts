@@ -1,5 +1,6 @@
 import { apiMessage, ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
-import type { EnquiryFile } from './types';
+import type { EnquiryFile, EnquiryProjectDetails } from './types';
+import type { ProjectInput } from './enquiry-v2-catalogue';
 
 export interface ClientDetailsUpdate {
   fullName: string;
@@ -105,20 +106,63 @@ export function createRecordEditApi(client: CrmClient) {
     },
 
     async updateEnquiryDetails(enquiryId: string, input: EnquiryDetailsUpdate) {
+      const result = await client.rpc('update_enquiry_details', {
+        p_enquiry_id: enquiryId,
+        p_enquiry: {
+          project_type: trimOrNull(input.projectType),
+          placement: trimOrNull(input.placement),
+          approximate_size: trimOrNull(input.approximateSize),
+          cover_up: trimOrNull(input.coverUp),
+          preferred_timing: trimOrNull(input.preferredTiming),
+          idea: trimOrNull(input.idea),
+        },
+      });
+      if (result.error?.hint === 'ENQUIRY_STRUCTURED_FIELDS') {
+        throw new ApiError(
+          apiMessage('Type, placement, size and cover-up of this enquiry come from its body areas. Edit the body areas instead.'),
+          result.error
+        );
+      }
+      return rpcResult(result, 'update that enquiry');
+    },
+
+    /** Operator correction of the description only; other columns are not sent. */
+    async updateEnquiryIdea(enquiryId: string, idea: string | null) {
       return rpcResult(
         await client.rpc('update_enquiry_details', {
           p_enquiry_id: enquiryId,
-          p_enquiry: {
-            project_type: trimOrNull(input.projectType),
-            placement: trimOrNull(input.placement),
-            approximate_size: trimOrNull(input.approximateSize),
-            cover_up: trimOrNull(input.coverUp),
-            preferred_timing: trimOrNull(input.preferredTiming),
-            idea: trimOrNull(input.idea),
-          },
+          p_enquiry: { idea: trimOrNull(idea) },
         }),
         'update that enquiry'
       );
+    },
+
+    /**
+     * Structured edit of a booking form v2 enquiry. `loaded` is what the
+     * operator opened; the server refuses the save if someone changed the
+     * enquiry in between, and recomputes the legacy columns itself.
+     */
+    async updateEnquiryProjectDetails(
+      enquiryId: string,
+      input: ProjectInput,
+      preferredTiming: string | null,
+      loaded: { projectDetails: EnquiryProjectDetails; preferredTiming: string | null }
+    ) {
+      const result = await client.rpc('update_enquiry_project_details', {
+        p_enquiry_id: enquiryId,
+        p_project: { ...input, preferred_timing: trimOrNull(preferredTiming) },
+        p_expected: {
+          project_details: loaded.projectDetails,
+          preferred_timing: loaded.preferredTiming,
+        },
+      });
+      if (result.error?.hint === 'ENQUIRY_EDIT_CONFLICT') {
+        throw new ApiError(
+          apiMessage('Someone else changed this enquiry since you opened it. Reload the page and make your change again.'),
+          result.error
+        );
+      }
+      return rpcResult<{ changed_fields: string[] }>(result, 'update the body areas');
     },
 
     async archiveEnquiry(enquiryId: string) {

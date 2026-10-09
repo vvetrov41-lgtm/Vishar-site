@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { verifyTodayLineage } from './verify-today-db-release.mjs';
-const valid = ' Local | Remote | Time\n 20261009184414 | 20261009184414 | t\n 20261009200000 | | t';
-assert.equal(verifyTodayLineage(valid), '20261009200000');
+const valid = ' Local | Remote | Time\n 20261009200000 | 20261009200000 | t\n 20261009210000 | | t';
+assert.equal(verifyTodayLineage(valid), '20261009210000');
 // Captured format from the pinned CLI 2.110.0 in the production runner.
-const markdown = ' Local | Remote | Time (UTC)\n `20261009184414` | `20261009184414` | `2026-10-09 18:44:14`\n `20261009200000` | ` ` | `2026-10-09 20:00:00`';
-assert.equal(verifyTodayLineage(markdown), '20261009200000');
-assert.throws(() => verifyTodayLineage(markdown.replaceAll('20261009184414', '20261009171143')));
-assert.throws(() => verifyTodayLineage(markdown+'\n `20261009210000` | ` ` | time'));
+const markdown = ' Local | Remote | Time (UTC)\n `20261009200000` | `20261009200000` | `2026-10-09 20:00:00`\n `20261009210000` | ` ` | `2026-10-09 21:00:00`';
+assert.equal(verifyTodayLineage(markdown), '20261009210000');
+assert.throws(() => verifyTodayLineage(markdown.replaceAll('20261009200000', '20261009184414')));
+assert.throws(() => verifyTodayLineage(markdown+'\n `20261009220000` | ` ` | time'));
 
-for (const invalid of ['', valid.replaceAll('20261009184414','20261009171143'), valid+'\n 20261009210000 | | t', valid+'\n | 20261006140000 | t', valid.replace('20261009200000','20261005093649')]) {
+for (const invalid of ['', valid.replaceAll('20261009200000','20261009184414'), valid+'\n 20261009220000 | | t', valid+'\n | 20261006140000 | t', valid.replace('20261009210000','20261005093649')]) {
   assert.throws(() => verifyTodayLineage(invalid));
 }
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
