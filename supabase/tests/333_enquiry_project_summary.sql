@@ -57,7 +57,7 @@ select is(
   (select project_summary from public.enquiries where id = (select (r ->> 'enquiry_id')::uuid from t_v2)),
   'Leg tattoo', 'the summary is recomputed when project_details changes');
 select ok(
-  (select bool_and(project_summary is null) from public.enquiries where project_details is null),
+  not exists (select 1 from public.enquiries where project_details is null and project_summary is not null),
   'legacy rows stay without a summary');
 
 -- Read contract.
