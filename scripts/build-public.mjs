@@ -77,6 +77,7 @@ export const PUBLIC_ASSET_DIRS = [
   'assets/healed',
   'assets/hero',
   'assets/js',
+  'assets/machine-assembly',
   'assets/large-scale',
   'assets/og',
   'assets/portfolio',
@@ -87,7 +88,8 @@ const PUBLIC_ASSET_EXTENSIONS = new Set([
   '.avif', '.css', '.gif', '.ico', '.jpeg', '.jpg', '.js', '.mp4', '.png', '.svg', '.webm', '.webp', '.woff', '.woff2',
 ]);
 // Licence texts of vendored libraries and fonts are public on purpose.
-const PUBLIC_ASSET_FILE_NAMES = new Set(['LICENSE']);
+// Explicit binary model exception; arbitrary JSON or future GLB files stay private.
+const PUBLIC_ASSET_FILE_NAMES = new Set(['LICENSE', 'tattoo-machine.glb']);
 
 // Defence in depth: the build fails if any output path matches one of these,
 // whatever the allowlist says. prototypes/ is never published (production or
