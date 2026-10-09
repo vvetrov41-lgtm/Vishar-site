@@ -1,0 +1,56 @@
+name: Verify Meta CAPI Cloudflare Worker metadata read only
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc1048-inventory-capi-auth-20261009'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.actor == github.repository_owner
+    environment: crm-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read only Worker bindings and secret names
+        env:
+          CF_ACCOUNT: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          const account = process.env.CF_ACCOUNT;
+          const token = process.env.CF_TOKEN;
+          if (account !== '787a19ac4890ba7a114d44cabf085588' || !token) throw new Error('Unexpected account or missing authorization');
+          const base = 'https://api.cloudflare.com/client/v4/accounts/'+account+'/workers/scripts/vishar-telegram-drain-production';
+          const read = async p => {
+            const res = await fetch(base+p,{headers:{Authorization:'Bearer '+token},redirect:'error',signal:AbortSignal.timeout(25000)});
+            if(!res.ok)throw new Error('Cloudflare rejected GET '+p+', status='+res.status);
+            const json=await res.json(); if(!json.success) throw new Error('Cloudflare returned unsuccessful GET '+p);
+            return json.result;
+          };
+          const settings=await read('/settings');
+          const secrets=await read('/secrets');
+          if(!Array.isArray(secrets)||!Array.isArray(settings?.bindings))throw new Error('Cloudflare returned invalid metadata');
+          const names=secrets.map(x=>x.name);
+          const required=['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION','ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION','SUPABASE_SECRET_KEY','TELEGRAM_BOT_TOKEN','TELEGRAM_WEBHOOK_SECRET'];
+          const missing=required.filter(name=>!names.includes(name));
+          const vars=Object.fromEntries(settings.bindings.filter(b=>b.type==='plain_text').map(x=>[x.name,x.text]));
+          const info={
+            meta_secret_present:names.includes('META_ADS_VLADIMIR_ACCESS_TOKEN'),
+            old_secrets_present:missing.length===0,
+            missing_old_secret_count:missing.length,
+            meta_drain_flag:vars.META_ADS_DRAIN_ENABLED??'absent',
+            environment_correct:vars.VISHAR_ENVIRONMENT==='production'&&vars.SUPABASE_URL==='https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+            service_bindings:settings.bindings.filter(b=>b.type==='service').map(x=>x.name+':'+x.service).sort().join(', '),
+            binding_name_type:settings.bindings.map(b=>b.name+' ('+b.type+')').sort().join(', '),
+            secret_count:names.length
+          };
+          const fs=await import('node:fs');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Meta CAPI Worker metadata check\n'+Object.entries(info).map(([k,v])=>'- '+k+': '+String(v)).join('\n')+'\n');
+          if(!info.meta_secret_present||!info.old_secrets_present||!info.environment_correct||info.meta_drain_flag==='true')throw new Error('Worker metadata did not satisfy mandatory safety conditions');
+          console.log('Worker metadata verified with read-only Cloudflare GET calls');
+          NODE
