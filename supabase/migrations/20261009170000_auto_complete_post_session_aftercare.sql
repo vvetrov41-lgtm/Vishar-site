@@ -68,11 +68,17 @@ where not exists (
 create or replace function crm_private.decorate_post_session_aftercare_email()
 returns trigger language plpgsql security definer
 set search_path=pg_catalog,public,crm_private as $fn$
+declare
+  v_aftercare_url text;
 begin
   if new.created_by_kind='system'
     and new.automation_job_id is not null
     and new.template_key='post_session_aftercare' then
-    new.html_body := $html$
+    v_aftercare_url := substring(new.body from 'https://[a-z0-9.-]+/aftercare/');
+    if v_aftercare_url is null then
+      raise exception 'approved aftercare link is missing' using errcode='23514';
+    end if;
+    new.html_body := replace($html$
 <!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background-color:#101318;color:#ecf1f5;font-family:Arial,Helvetica,sans-serif;">
 <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#101318;padding:38px 14px"><tr><td align="center">
@@ -84,15 +90,15 @@ begin
 <p style="font-size:16px;line-height:1.65;color:#d3dce4;margin:0 0 16px">I hope your tattoo session went well. Your fresh tattoo deserves the right care from day one.</p>
 <p style="font-size:15px;line-height:1.65;color:#bec9d2;margin:0 0 27px">Open your aftercare guide and follow the healing method we discussed in the studio.</p>
 <table role="presentation" cellpadding="0" cellspacing="0"><tr><td align="center" bgcolor="#a6d5ed" style="border-radius:9px">
-<a href="https://vishartattoo.com/aftercare/" target="_blank" style="display:inline-block;padding:17px 26px;color:#0e1a24;font-size:15px;font-weight:700;text-decoration:none;border-radius:9px">OPEN AFTERCARE GUIDE &nbsp;&#8599;</a>
+<a href="__AFTERCARE_URL__" target="_blank" style="display:inline-block;padding:17px 26px;color:#0e1a24;font-size:15px;font-weight:700;text-decoration:none;border-radius:9px">OPEN AFTERCARE GUIDE &nbsp;&#8599;</a>
 </td></tr></table>
 <p style="font-size:13px;line-height:1.6;color:#9aabb8;margin:25px 0 2px">Questions while healing? Just reply to this email.</p>
 </td></tr>
 <tr><td style="border-top:1px solid #35414b;padding:17px 30px;color:#91a5b6;font-size:12px;letter-spacing:1px">VISHAR TATTOO &middot; AFTERCARE</td></tr>
 </table>
-<p style="font-size:12px;line-height:1.5;color:#9eacb9;max-width:520px;margin:19px 0">If the button does not work, open https://vishartattoo.com/aftercare/</p>
+<p style="font-size:12px;line-height:1.5;color:#9eacb9;max-width:520px;margin:19px 0">If the button does not work, open __AFTERCARE_URL__</p>
 </td></tr></table></body></html>
-$html$;
+$html$, '__AFTERCARE_URL__', v_aftercare_url);
   end if;
   return new;
 end;
