@@ -583,6 +583,18 @@ async function checkHomepageReferencesLocalVendorPaths() {
     }
 
     const runtime = await readFile(runtimePath, 'utf8');
+    // GLTFLoader turns embedded GLB textures into <img src="blob:…">.
+    // Without blob: in img-src, the model fails on real WebGL devices
+    // although the loader and GLB both return HTTP 200.
+    const headers = await readFile(path.join(rootDir, '_headers'), 'utf8');
+    const csp = headers.split(/\r?\n/).find((line) => /^\s*Content-Security-Policy\s*:/i.test(line)) || '';
+    const imageDirective = csp.match(/(?:^|;)\s*img-src\s+([^;]+)/i);
+    if (!imageDirective || !imageDirective[1].trim().split(/\s+/).includes('blob:')) {
+      fail('Cinematic GLB requires blob: in _headers CSP img-src for embedded textures.');
+    } else {
+      pass('Cinematic GLB embedded texture blob: URLs are permitted by CSP img-src.');
+    }
+
     if (!runtime.includes(VENDOR_3D_FILES[0].homepageReference)) {
       fail('Cinematic machine runtime does not load the pinned local Three.js build.');
     }
