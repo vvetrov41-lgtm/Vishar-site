@@ -4,13 +4,17 @@
 @media (min-width: 640px) { .hero-featured { font-size: .875rem; } }
 @media (min-width: 768px) { .hero-featured { margin-top: 3.5rem; } }
 
-/* components.js adds .reveal to homepage sections. Its transform would
- * create a containing block for the fixed, rotating portfolio background,
- * so the machine and cinematic intro must not participate in that reveal. */
+/* The global .reveal effect applies transform AND filter, including
+ * filter: blur(0px) brightness(1). A non-none filter establishes a fixed-
+ * positioning containing block even when its visible effect is neutral.
+ * Without this override, the machine's fixed background scrolls offscreen
+ * with #machine-seq instead of staying behind the portfolio grid. */
 #machine-seq.reveal,
 #portfolio-intro.reveal {
   opacity: 1;
   transform: none;
+  filter: none !important;
+  -webkit-filter: none !important;
   transition: none;
 }
 
