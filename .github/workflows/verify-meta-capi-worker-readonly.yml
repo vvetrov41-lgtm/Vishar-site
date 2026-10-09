@@ -52,6 +52,6 @@ jobs:
           };
           const fs=await import('node:fs');
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Meta CAPI Worker metadata check\n'+Object.entries(info).map(([k,v])=>'- '+k+': '+String(v)).join('\n')+'\n');
-          if(!info.meta_secret_present||!info.old_secrets_present||!info.environment_correct||info.meta_drain_flag==='true')throw new Error('Worker metadata did not satisfy mandatory safety conditions');
+          if(!info.meta_secret_present||!info.old_secrets_present||!info.environment_correct||info.meta_drain_flag!=='true'||info.telegram_linking_flag!=='true')throw new Error('Worker metadata did not satisfy mandatory safety conditions');
           console.log(JSON.stringify({meta_drain_flag:info.meta_drain_flag,telegram_linking_flag:info.telegram_linking_flag,old_secrets_present:info.old_secrets_present,meta_secret_present:info.meta_secret_present,environment_correct:info.environment_correct,service_bindings:info.service_bindings}));
           NODE
