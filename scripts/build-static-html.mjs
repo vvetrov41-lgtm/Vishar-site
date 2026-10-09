@@ -35,11 +35,12 @@ import {
 } from './lib/site-galleries.mjs';
 
 // Every public HTML page, its PAGE_ID, and the generated blocks it carries.
-// `nav` and `footer` are implicit on every page.
+// The shared nav is implicit on every page. Pages may opt out of the shared
+// footer when their own reading experience already provides the final action.
 const PAGES = [
   { file: 'index.html', pageId: 'home', blocks: ['portfolio-grid', 'portfolio-collections'] },
   { file: 'about/index.html', pageId: 'about' },
-  { file: 'aftercare/index.html', pageId: 'aftercare' },
+  { file: 'aftercare/index.html', pageId: 'aftercare', footer: false },
   { file: 'ai-tools/index.html', pageId: 'ai-tools' },
   { file: 'book/index.html', pageId: 'book' },
   { file: 'booking/index.html', pageId: 'booking' },
@@ -56,7 +57,8 @@ const PAGES = [
 ];
 
 async function blocksFor(page) {
-  const blocks = { nav: renderNav(page.pageId), footer: renderFooter() };
+  const blocks = { nav: renderNav(page.pageId) };
+  if (page.footer !== false) blocks.footer = renderFooter();
 
   for (const key of page.blocks || []) {
     switch (key) {
