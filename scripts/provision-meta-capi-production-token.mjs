@@ -49,8 +49,13 @@ export async function provisionMetaToken({ env, provision = false, fetchImpl = f
     return payload.result;
   };
   const graph = path => read(`https://graph.facebook.com/v26.0/${path}`, metaToken);
-  const me = await graph('me?fields=id');
-  if (me?.id !== TARGET.systemUser) throw new Error('Token system user does not match the approved user');
+  // Business Settings shows a canonical ID while Graph /me can return an app-scoped ID.
+  // Prove the token's user is the uniquely named system user listed by the fixed owner business.
+  const me = await graph('me?fields=id,name');
+  if (!me?.id || me.name !== 'Vishar CRM Integration') throw new Error('Token identity does not match the approved system user');
+  const directory = await graph('692776505711216/system_users?fields=id,name&limit=100');
+  const matches = directory?.data?.filter(u => u?.name === 'Vishar CRM Integration') || [];
+  if (matches.length !== 1 || matches[0].id !== me.id) throw new Error('Token user is not the uniquely listed business system user');
   const permissions = await graph('me/permissions');
   if (!permissions?.data?.some(p => p.permission === 'ads_read' && p.status === 'granted')) {
     throw new Error('Token does not grant the approved ads_read permission');

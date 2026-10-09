@@ -18,7 +18,8 @@ function harness({ identity = TARGET.systemUser, permission = true, pixel = TARG
     assert.equal(init.redirect, 'error');
     let payload;
     if (reject) payload = { success: false, errors: [{ message: 'mock-meta' }] };
-    else if (url.endsWith('/me?fields=id')) payload = { id: identity };
+    else if (url.endsWith('/me?fields=id,name')) payload = { id: identity, name: identity === 'other-user' ? 'Other User' : 'Vishar CRM Integration' };
+    else if (url.endsWith('/692776505711216/system_users?fields=id,name&limit=100')) payload = { data: [{ id: identity === 'foreign-user' ? 'not-matching' : identity, name: 'Vishar CRM Integration' }] };
     else if (url.endsWith('/me/permissions')) payload = { data: [{ permission: 'ads_read', status: permission ? 'granted' : 'declined' }] };
     else if (url.includes(`/${TARGET.pixel}?fields=id`)) payload = { id: pixel };
     else if (url.endsWith('/settings')) payload = { success: true, result: patched ? postSettings : initial };
@@ -48,7 +49,7 @@ test('provisioning sends exactly one fixed secret in a merge patch and preserves
 });
 test('wrong identity, permission, Pixel, backend or enabled drain fails before a write', async () => {
   for (const options of [
-    { identity: 'other-user' }, { permission: false }, { pixel: 'old-pixel' },
+    { identity: 'other-user' }, { identity: 'foreign-user' }, { permission: false }, { pixel: 'old-pixel' },
     { initial: { bindings: [] } },
     { initial: { ...settings, bindings: [...settings.bindings, { name: 'META_ADS_DRAIN_ENABLED', type: 'plain_text', text: 'true' }] } },
     { secretNames: [...existing, TARGET.secret] }, { secretNames: existing.slice(1) },
@@ -72,4 +73,11 @@ test('post-provision loss of old secrets or change of service bindings is reject
 test('provider error contents and credentials are suppressed', async () => {
   const h = harness({ reject: true });
   await assert.rejects(provisionMetaToken({ env, provision: true, fetchImpl: h.fetchImpl }), e => !e.message.includes('mock-meta') && e.message.includes('HTTP 403'));
+});
+
+test('app-scoped system-user ID is accepted only with business directory identity proof', async () => {
+  const h = harness({ identity: 'app-scoped-vishar-user' });
+  const result = await provisionMetaToken({ env, fetchImpl: h.fetchImpl });
+  assert.equal(result.token_read_access_verified, true);
+  assert.ok(h.requests.every(r => r.method === 'GET'));
 });
