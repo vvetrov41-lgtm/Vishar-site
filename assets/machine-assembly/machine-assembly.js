@@ -222,7 +222,7 @@
     // Photo handoff follows scroll, not the deliberately delayed 3D pose.
     // Otherwise onScroll(target) and renderAt(easedCurrent) fight over the
     // first photo's opacity, causing visible flicker while scrolling.
-    var handoffP = Math.max(p, clamp(state.target, 0, 1));
+    var handoffP = clamp(state.target, 0, 1);
     section.style.setProperty('--stage-blackout', blackoutAmount(handoffP).toFixed(3));
     if (portfolioIntro && !section.classList.contains('is-static')) {
       var handoff = handoffAmount(handoffP);
