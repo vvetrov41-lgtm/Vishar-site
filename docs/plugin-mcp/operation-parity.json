@@ -9,7 +9,7 @@
     "requiringSchemaChange": 0,
     "uiOnly": 16,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 4,
+    "excludedStage2Candidates": 5,
     "unresolved": 0
   },
   "operations": [
@@ -9085,6 +9085,11 @@
     }
   ],
   "stage2": [
+    {
+      "operationId": "updateEnquiryProjectDetails",
+      "status": "excluded_initial_release",
+      "reason": "Booking form v2 body areas, work types and styles. The server re-normalises and recomputes the legacy columns; a GPT tool must send the loaded state for conflict detection. Not in the current 13 OpenAPI schemas."
+    },
     {
       "operationId": "setEnquiryReplyOutsideCrm",
       "status": "excluded_initial_release",
