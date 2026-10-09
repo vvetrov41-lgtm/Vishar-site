@@ -76,8 +76,9 @@ export const COLLECTION_LINKS = [
     label: 'Large Scale',
     href: '/large-scale-realism-tattoo-london/',
     description: 'Sleeves and multi-session realism projects.',
-    image: '/assets/large-scale/02.jpg',
-    alt: 'Large-scale black and grey realism arm tattoo by Vladimir Vishar'
+    image: '/assets/large-scale/04.jpg',
+    alt: 'Large-scale black and grey realism back piece by Vladimir Vishar',
+    objectPosition: '50% 29%'
   },
   {
     id: 'healed',
@@ -311,7 +312,7 @@ ${cards}
 export function renderHomepagePortfolioCollections() {
   const cards = COLLECTION_LINKS.map((item) => `      <a href="${item.href}" class="group overflow-hidden rounded-3xl border border-white/10 bg-white/[0.03] transition-colors hover:bg-white/[0.06]">
         <div class="aspect-[16/10] overflow-hidden bg-white/5">
-          <img src="${item.image}" alt="${esc(item.alt)}" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105">
+          <img src="${item.image}" alt="${esc(item.alt)}" loading="lazy" decoding="async" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"${item.objectPosition ? ` style="object-position:${item.objectPosition}"` : ''}>
         </div>
         <div class="p-5 text-left">
           <h3 class="text-lg font-semibold text-white">${esc(item.label)}</h3>
