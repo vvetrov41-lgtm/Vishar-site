@@ -78,7 +78,8 @@ select set_eq(
     cross join lateral (values
       ('session_reminder_72h', s.start_at - interval '72 hours'),
       ('session_reminder_24h', s.start_at - interval '24 hours'),
-      ('post_session_checkin', s.end_at + interval '24 hours')
+      ('post_session_checkin', s.end_at + interval '24 hours'),
+      ('post_session_aftercare', s.end_at)
     ) as v(purpose, at)
     where s.id = 'fb000000-0000-4000-8000-000000000001'$$,
   'the normal lifecycle jobs materialise once, pending, anchored to the session');
