@@ -77,7 +77,12 @@ const metaContextStart = booking.indexOf('const metaContext = metaAdsServerConte
 const metaPixelStart = booking.indexOf('trackMetaLead(enquiryKey);');
 assert.ok(metaContextStart > 0 && metaContextStart < fetchStart);
 assert.ok(fetchStart > 0 && fetchStart < metaPixelStart);
-assert.match(booking, /window\.fbq\('track', 'Lead', \{\}, \{ eventID: eventId \}\)/);
+assert.match(booking, /const META_PIXEL_IDS = \['1729215778134902', '2163876287819749'\]/);
+assert.match(booking, /META_PIXEL_IDS\.forEach\(function \(pixelId\) \{ window\.fbq\('init', pixelId\); \}\)/);
+assert.match(booking, /window\.fbq\('trackSingle', pixelId, 'PageView'\)/);
+assert.match(booking, /window\.fbq\('trackSingle', pixelId, 'Lead', \{\}, \{ eventID: eventId \}\)/);
+assert.ok(!booking.includes("window.fbq('track', 'Lead'"), 'Never broadcast one Lead to both Pixels with track');
+assert.ok(!booking.includes("window.fbq('track', 'PageView'"), 'Never broadcast PageView with track');
 assert.match(privacy, /Meta Conversions API/);
 assert.match(privacy, /SHA-256-hashed email and phone number/);
 assert.match(privacy, /Previously saved Pixel-only consent does not authorize this expanded processing/);
