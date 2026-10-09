@@ -132,7 +132,7 @@
   opacity: calc(var(--handoff, 0) * .98);
   transform: scale(1.18);
   will-change: opacity, transform;
-  transition: opacity .18s linear, transform .08s linear;
+  transition: opacity .18s linear; /* Scroll-driven zoom is frame-synchronized. */
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
@@ -229,7 +229,7 @@
   margin: 0;
   transform: scale(1.06);
   will-change: transform;
-  transition: transform .08s linear;
+  transition: none; /* Scroll-driven zoom is frame-synchronized. */
   -webkit-mask-image: linear-gradient(
     to bottom,
     transparent 0%,
