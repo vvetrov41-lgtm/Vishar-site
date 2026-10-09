@@ -62,6 +62,8 @@ select lives_ok(
   $$select * from public.service_run_automation_tick(100)$$,
   'scheduler auto-completes a past confirmed tattoo and processes its aftercare email'
 );
+reset role;
+
 select is(
   (select status::text from public.sessions where id='fa000000-0000-4000-8000-000000000001'),
   'completed','ended confirmed tattoo is automatically completed');
@@ -108,9 +110,11 @@ select is(
      and status='pending'),1,
   'existing 24-hour healing follow-up stays pending');
 
+set local role service_role;
 select lives_ok(
-  $$select * from public.service_run_automation_tick(100)$$,
+  $select * from public.service_run_automation_tick(100)$,
   'second scheduler tick is safe and idempotent');
+reset role;
 select is(
   (select count(*)::int from public.email_messages
    where template_key='post_session_aftercare'
