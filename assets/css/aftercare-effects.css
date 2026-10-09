@@ -1,0 +1,157 @@
+/* Aftercare cinematic restoration: scoped to this page; source: original Bento
+   mobile fallback + its motion rules. Never mount the Bento editing runtime. */
+#mobile-fallback.mf {
+  --ac-blue:#9cc9ee;
+  --ac-blue-light:#b8d8f2;
+  --ac-line:rgba(156,201,238,.21);
+}
+
+/* Film / no-film must retain separate surfaces even after site skin overrides. */
+#mobile-fallback .mf-section.route-film {
+  background:
+    radial-gradient(ellipse at 83% 19%,rgba(115,177,227,.16),transparent 39%),
+    radial-gradient(ellipse at 12% 72%,rgba(99,154,200,.07),transparent 48%),
+    linear-gradient(153deg,#0d1118 0%,#101721 52%,#080a0e 100%)!important;
+}
+#mobile-fallback .mf-section.route-nofilm {
+  background:
+    radial-gradient(ellipse at 4% 19%,rgba(140,163,177,.065),transparent 43%),
+    linear-gradient(155deg,#0b0e11 0%,#101318 51%,#080a0c 100%)!important;
+}
+/* Behind-content liquid and film sweep are the original animated layers. */
+#mobile-fallback .route-film:before {
+  background:radial-gradient(circle at 30% 28%,rgba(225,243,255,.14),rgba(113,177,228,.12) 37%,transparent 69%);
+}
+#mobile-fallback .route-film:after {
+  background:linear-gradient(105deg,transparent 37%,rgba(210,235,255,.075) 51%,transparent 64%);
+}
+#mobile-fallback .route-film .mf-step,
+#mobile-fallback .route-film .stat,
+#mobile-fallback .route-film li::marker {color:var(--ac-blue-light)!important;}
+#mobile-fallback .route-nofilm .mf-step,
+#mobile-fallback .route-nofilm .stat,
+#mobile-fallback .route-nofilm li::marker {color:#b3c0cb!important;}
+#mobile-fallback .route-nofilm:before {
+  background:repeating-linear-gradient(to bottom,rgba(155,178,196,.42) 0 8px,transparent 8px 18px);
+}
+#mobile-fallback .route-nofilm:after {
+  background:#a1bacd;
+  box-shadow:0 0 0 5px rgba(135,172,204,.07),0 0 20px rgba(133,172,204,.22);
+}
+/* The site-wide neutral-card !important declaration had flattened both
+   materials. These rules are deliberately more specific. */
+#mobile-fallback .route-film .grid2 article,
+#mobile-fallback .route-film .tiles article,
+#mobile-fallback .route-film .rule,
+#mobile-fallback .route-film .warning {
+  background:linear-gradient(144deg,rgba(36,49,64,.81),rgba(16,22,30,.90))!important;
+  border-color:rgba(151,201,238,.24)!important;
+  box-shadow:inset 0 1px 0 rgba(231,244,255,.12),0 16px 50px rgba(0,0,0,.24),0 0 35px rgba(106,167,210,.035)!important;
+  -webkit-backdrop-filter:blur(12px);
+  backdrop-filter:blur(12px);
+}
+#mobile-fallback .route-film .warning {
+  background:linear-gradient(145deg,rgba(50,25,34,.9),rgba(27,15,21,.95))!important;
+  border-color:rgba(255,112,136,.35)!important;
+}
+#mobile-fallback .route-nofilm .grid2 article,
+#mobile-fallback .route-nofilm .tiles article,
+#mobile-fallback .route-nofilm .rule,
+#mobile-fallback .route-nofilm .timeline>div {
+  background:linear-gradient(145deg,#15191d,#0d1013)!important;
+  border-color:rgba(154,174,188,.18)!important;
+  box-shadow:inset 3px 0 0 rgba(154,178,194,.10),inset 0 1px 0 rgba(255,255,255,.018),0 12px 28px rgba(0,0,0,.16)!important;
+}
+#mobile-fallback .route-film .photo {
+  border-color:rgba(150,203,242,.22);
+  box-shadow:0 24px 78px rgba(0,0,0,.37),0 0 0 1px rgba(156,201,238,.17),0 0 50px rgba(156,201,238,.055)!important;
+}
+#mobile-fallback .route-nofilm .photo {
+  border-color:rgba(166,184,198,.13);
+  box-shadow:0 24px 58px rgba(0,0,0,.4),0 0 0 1px rgba(166,184,198,.07)!important;
+}
+/* The original animated sheen targeted anchors, but route choices became
+   <label> elements. Reattach only to film, never over warning text. */
+#mobile-fallback .vv-film-choice::after {
+  content:"";position:absolute;top:-40%;bottom:-40%;left:-45%;width:32%;
+  background:linear-gradient(104deg,transparent,rgba(213,239,255,.19),transparent);
+  transform:skewX(-14deg);pointer-events:none;
+  animation:acChoiceSheen 5.6s ease-in-out infinite;
+}
+@keyframes acChoiceSheen {
+  0%,27% {transform:translateX(-30%) skewX(-14deg);opacity:0}
+  48% {opacity:.8}
+  73%,100% {transform:translateX(470%) skewX(-14deg);opacity:0}
+}
+#mobile-fallback .vv-nofilm-choice {
+  background:linear-gradient(145deg,rgba(26,31,35,.92),rgba(15,18,21,.98))!important;
+  border-color:rgba(162,183,196,.24)!important;
+}
+#vv-route-film:checked ~ #mobile-fallback .vv-film-choice {
+  background:linear-gradient(146deg,rgba(57,97,129,.36),rgba(20,42,62,.78))!important;
+  color:#e7f3fc!important;
+  border-color:rgba(156,201,238,.55)!important;
+  box-shadow:inset 0 1px 0 rgba(230,246,255,.12),0 10px 34px rgba(110,175,225,.11)!important;
+}
+#vv-route-nofilm:checked ~ #mobile-fallback .vv-nofilm-choice {
+  background:linear-gradient(145deg,#26313a,#13191f)!important;
+  color:#e3edf5!important;
+  border-color:rgba(171,194,207,.43)!important;
+  box-shadow:inset 0 1px 0 rgba(240,248,255,.06),0 9px 28px rgba(12,19,28,.28)!important;
+}
+/* Morph-inspired scroll entrances: each section's content slides into place
+   in staggered order. The readable content is never pre-hidden. */
+@keyframes acScrollMorph {
+  0% {transform:translate3d(0,22px,0) scale(.985)}
+  65% {transform:translate3d(0,-2px,0) scale(1.002)}
+  100% {transform:none}
+}
+#mobile-fallback .mf-section > .ac-morph-in {
+  animation:acScrollMorph .72s cubic-bezier(.22,.8,.24,1) both!important;
+  animation-delay:var(--ac-delay,0ms)!important;
+  animation-timeline:auto!important;
+  animation-range:normal!important;
+}
+/* Morph the section's slim chapter line, not the whole background. */
+@keyframes acLineTrace {from{transform:scaleX(.08);opacity:.2}to{transform:scaleX(1);opacity:1}}
+#mobile-fallback .mf-section.ac-section-in:not(.route):before{
+  transform-origin:left center;
+  animation:acLineTrace .85s cubic-bezier(.22,.8,.24,1) both;
+}
+@keyframes acKenBurns {
+  from {transform:translate3d(0,4px,0) scale(1.005)}
+  to {transform:translate3d(0,-5px,0) scale(1.033)}
+}
+/* Keep the film's source 14s filmBreath animation untouched. */
+#mobile-fallback .mf-section.ac-section-in:not(.route-film) > .photo {
+  animation:acKenBurns 16s ease-in-out infinite alternate!important;
+  animation-timeline:auto!important;
+}
+/* Subtle tactile depth, mouse-only; touch does not get hover effects. */
+@media (hover:hover) and (pointer:fine) {
+  #mobile-fallback .grid2 article:hover,
+  #mobile-fallback .tiles article:hover,
+  #mobile-fallback .rule:hover{
+    transform:translate3d(0,-3px,0);
+    border-color:rgba(156,201,238,.33)!important;
+  }
+}
+@media(max-width:680px){
+  #mobile-fallback .route-film:before {width:85vw;right:-49vw}
+  #mobile-fallback .route-nofilm:before {right:12px}
+  #mobile-fallback .route-nofilm:after {right:8px}
+}
+@media (prefers-reduced-motion:reduce){
+  #mobile-fallback .vv-film-choice::after,
+  #mobile-fallback .mf-section.ac-section-in:before,
+  #mobile-fallback .mf-section > .ac-morph-in,
+  #mobile-fallback .mf-section.ac-section-in > .photo{
+    animation:none!important;transform:none!important;
+  }
+  #mobile-fallback .route-film:before,
+  #mobile-fallback .route-film:after,
+  #mobile-fallback .route-nofilm:before,
+  #mobile-fallback .route-nofilm:after,
+  #mobile-fallback.mf:before,
+  #mobile-fallback.mf:after {animation:none!important}
+}
