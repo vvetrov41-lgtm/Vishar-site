@@ -74,7 +74,20 @@ begin
   if new.created_by_kind='system'
     and new.automation_job_id is not null
     and new.template_key='post_session_aftercare' then
-    v_aftercare_url := substring(new.body from 'https://[a-z0-9.-]+/aftercare/');
+    -- Read the URL from the approved versioned template, never from the
+    -- interpolated email body: an untrusted client name must not steer the CTA.
+    select substring(t.body from 'https://[a-z0-9.-]+/aftercare/')
+      into v_aftercare_url
+    from public.message_templates t
+    join public.artists a on a.id=new.artist_id and a.workspace_id=t.workspace_id
+    where t.purpose='post_session_aftercare'
+      and t.channel='email'
+      and t.locale='en'
+      and t.status='active'
+      and t.version=new.template_version
+      and (t.artist_id is null or t.artist_id=new.artist_id)
+    order by (t.artist_id is not null) desc,t.id
+    limit 1;
     if v_aftercare_url is null then
       raise exception 'approved aftercare link is missing' using errcode='23514';
     end if;
