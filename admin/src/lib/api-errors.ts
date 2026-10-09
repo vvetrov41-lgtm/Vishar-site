@@ -127,6 +127,7 @@ export const API_OPERATIONS = {
   'link that payment to the invoice': { kind: 'write', ru: 'привязать этот платёж к счёту' },
   'match that Monzo payment': { kind: 'write', ru: 'сопоставить этот платёж Monzo' },
   'prepare that reference image': { kind: 'write', ru: 'подготовить загрузку референса' },
+  'classify that reference image': { kind: 'write', ru: 'сохранить категорию изображения' },
   'preview lifecycle rule': { kind: 'read', ru: 'показать предпросмотр правила' },
   'queue that WhatsApp message': { kind: 'write', ru: 'поставить сообщение WhatsApp в очередь' },
   'record that invoice payment': { kind: 'write', ru: 'записать оплату по счёту' },

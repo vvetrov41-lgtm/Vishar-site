@@ -9,7 +9,7 @@
     "requiringSchemaChange": 0,
     "uiOnly": 16,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 5,
+    "excludedStage2Candidates": 6,
     "unresolved": 0
   },
   "operations": [
@@ -9085,6 +9085,11 @@
     }
   ],
   "stage2": [
+    {
+      "operationId": "setEnquiryFileClassification",
+      "status": "excluded_initial_release",
+      "reason": "Staff category (design reference / existing tattoo) and body areas of one enquiry image. Storage and stored analyses are unchanged. Not in the current 13 OpenAPI schemas."
+    },
     {
       "operationId": "updateEnquiryProjectDetails",
       "status": "excluded_initial_release",
