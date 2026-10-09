@@ -13,6 +13,7 @@ import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectInvoicesPanel } from '../components/ProjectInvoicesPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
 import { ProjectEstimatePanel } from '../components/ProjectEstimatePanel';
+import { ProjectSourceEnquiry } from '../components/ProjectSourceEnquiry';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { calendarSyncLabel } from '../lib/calendar-sync';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
@@ -221,6 +222,8 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         showNotes={can(role, 'viewNotes')}
         showActivity={can(role, 'viewActivity')}
       />
+
+      {project.enquiry_id ? <ProjectSourceEnquiry enquiryId={project.enquiry_id} role={role} /> : null}
 
       <Section title={copy.appointments} id="project-sessions">
         {mayManageFinance ? (
