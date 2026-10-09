@@ -179,7 +179,7 @@ async function handleEnquiryIntakeInternal(
       throw new RequestError('malformed_multipart', 'That submission could not be read. Please try again.');
     }
 
-    const { honeypot, idempotencyKey, enquiry } = parseEnquiryFields(form);
+    const { honeypot, idempotencyKey, enquiry, project } = parseEnquiryFields(form);
     if (honeypot) {
       // Answer exactly as a success would, so a bot learns nothing, and record
       // nothing. Source resolution may already have performed a read-only
@@ -227,7 +227,7 @@ async function handleEnquiryIntakeInternal(
 
     const openAiAdsContext = readOpenAiAdsMeasurementContext(form, origin);
     const metaAdsContext = readMetaAdsMeasurementContext(form, origin);
-    const files = await parseEnquiryFiles(form);
+    const files = await parseEnquiryFiles(form, { project });
 
     if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
     const storage = createStorageClient(supabase, fetchImpl);
@@ -243,7 +243,7 @@ async function handleEnquiryIntakeInternal(
       p_idempotency_key: idempotencyKey,
       p_client: {
         full_name: enquiry.name,
-        email: enquiry.email,
+        email: enquiry.email || null,
         phone: enquiry.phone || null,
         instagram: enquiry.instagram || null,
         preferred_contact: enquiry.preferredReply,
@@ -268,6 +268,9 @@ async function handleEnquiryIntakeInternal(
         utm_term: enquiry.utmTerm || null,
         privacy_acknowledged: enquiry.privacyAcknowledged,
         privacy_notice_version: enquiry.privacyNoticeVersion,
+        // Present only for booking form v2, so a legacy payload keeps the
+        // exact intake fingerprint it had before this field existed.
+        ...(enquiry.projectDetails ? { project_details: enquiry.projectDetails } : {}),
       },
       p_files: files.map((file) => ({
         mime_type: file.mime_type,
@@ -275,6 +278,7 @@ async function handleEnquiryIntakeInternal(
         byte_size: file.byte_size,
         checksum: file.checksum,
         original_filename: file.original_filename,
+        ...(file.intake_role ? { intake_role: file.intake_role } : {}),
       })),
     };
 

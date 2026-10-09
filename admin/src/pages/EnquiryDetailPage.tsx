@@ -38,6 +38,7 @@ import { EnquiryWhatsAppPanel } from '../components/EnquiryWhatsAppPanel';
 import { EnquiryReplyEvidence } from '../components/EnquiryReplyEvidence';
 import { EnquiryTranslation } from '../components/EnquiryTranslation';
 import { ClientBrief } from '../components/ClientBrief';
+import { EnquiryProjectDetails, isStructuredProjectDetails } from '../components/EnquiryProjectDetails';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -410,12 +411,23 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
       {/* The original submission appears once, here, under the structured
           tattoo facts from the form; a long one opens on request. */}
       <Section title={t('enquiry.project')}>
-        <dl className="definition">
-          <dt>{t('enquiry.placement')}</dt><dd>{enquiry.placement ?? '—'}</dd>
-          <dt>{t('enquiry.size')}</dt><dd>{enquiry.approximate_size ?? '—'}</dd>
-          <dt>{t('enquiry.coverUp')}</dt><dd>{localiseKnownValue(enquiry.cover_up, language)}</dd>
-          <dt>{t('enquiry.timing')}</dt><dd>{enquiry.preferred_timing ?? '—'}</dd>
-        </dl>
+        {/* Booking form v2 answers replace the derived one-line summaries;
+            legacy enquiries keep the original four facts. */}
+        {isStructuredProjectDetails(enquiry.project_details) ? (
+          <>
+            <EnquiryProjectDetails details={enquiry.project_details} language={language} />
+            <dl className="definition">
+              <dt>{t('enquiry.timing')}</dt><dd>{enquiry.preferred_timing ?? '—'}</dd>
+            </dl>
+          </>
+        ) : (
+          <dl className="definition">
+            <dt>{t('enquiry.placement')}</dt><dd>{enquiry.placement ?? '—'}</dd>
+            <dt>{t('enquiry.size')}</dt><dd>{enquiry.approximate_size ?? '—'}</dd>
+            <dt>{t('enquiry.coverUp')}</dt><dd>{localiseKnownValue(enquiry.cover_up, language)}</dd>
+            <dt>{t('enquiry.timing')}</dt><dd>{enquiry.preferred_timing ?? '—'}</dd>
+          </dl>
+        )}
         <div style={{ marginTop: 12 }}>
           <div className="meta" style={{ fontWeight: 600 }}>{clientBriefLabel}</div>
           <ClientBrief text={enquiry.idea} language={language} />
@@ -429,18 +441,29 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           {readyFiles.length === 0 ? (
             <EmptyState title={t('enquiry.noReferenceImages')} />
           ) : (
-            <div className="thumbs">
-              {readyFiles.map((file) => (
-                <SignedImage
-                  key={file.id}
-                  file={file}
-                  removeDisabled={busy}
-                  onRemove={can(role, 'removeEnquiryFiles')
-                    ? () => { void run(() => api.removeEnquiryReference(file)); }
-                    : undefined}
-                />
-              ))}
-            </div>
+            // v2 intake images carry a role; legacy and staff uploads do not
+            // and stay in one unlabelled group, exactly as before.
+            imageGroups(readyFiles).map((group) => (
+              <div key={group.key} data-testid={`enquiry-images-${group.key}`}>
+                {group.titleKey ? (
+                  <div className="meta" style={{ fontWeight: 600, margin: '8px 0 4px' }}>
+                    {t(group.titleKey)} ({group.files.length})
+                  </div>
+                ) : null}
+                <div className="thumbs">
+                  {group.files.map((file) => (
+                    <SignedImage
+                      key={file.id}
+                      file={file}
+                      removeDisabled={busy}
+                      onRemove={can(role, 'removeEnquiryFiles')
+                        ? () => { void run(() => api.removeEnquiryReference(file)); }
+                        : undefined}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))
           )}
           {/* No standing notice about expiring links: a thumbnail that fails
               to load or open says so itself, with the same advice. */}
@@ -672,4 +695,22 @@ function ReplyFallback({
       </div>
     </div>
   );
+}
+
+type ImageGroupKey = 'design' | 'existing' | 'other';
+
+function imageGroups(files: EnquiryFile[]): Array<{
+  key: ImageGroupKey;
+  titleKey: 'enquiry.designReferences' | 'enquiry.existingTattooPhotos' | 'enquiry.otherImages' | null;
+  files: EnquiryFile[];
+}> {
+  const design = files.filter((file) => file.intake_role === 'design_reference');
+  const existing = files.filter((file) => file.intake_role === 'existing_tattoo');
+  const other = files.filter((file) => !file.intake_role);
+  if (design.length === 0 && existing.length === 0) return [{ key: 'other', titleKey: null, files: other }];
+  return [
+    { key: 'existing' as const, titleKey: 'enquiry.existingTattooPhotos' as const, files: existing },
+    { key: 'design' as const, titleKey: 'enquiry.designReferences' as const, files: design },
+    { key: 'other' as const, titleKey: 'enquiry.otherImages' as const, files: other },
+  ].filter((group) => group.files.length > 0);
 }

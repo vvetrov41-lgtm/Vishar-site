@@ -420,7 +420,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     async getEnquiry(id: string): Promise<Enquiry | null> {
       const result = await client
         .from('enquiries')
-        .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, submitted_full_name, submitted_email, submitted_phone, submitted_instagram, submitted_preferred_contact, submitted_travelling_from, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, discovery_source, discovery_source_detail, utm_source, created_at, last_action_at, archived_at')
+        .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, submitted_full_name, submitted_email, submitted_phone, submitted_instagram, submitted_preferred_contact, submitted_travelling_from, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, discovery_source, discovery_source_detail, project_details, utm_source, created_at, last_action_at, archived_at')
         .eq('id', id)
         .maybeSingle();
       if (result.error) throw new ApiError(friendlyMessage(result.error, 'load that enquiry'), result.error);
@@ -431,7 +431,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       return unwrap<EnquiryFile[]>(
         await client
           .from('enquiry_files')
-          .select('id, enquiry_id, ordinal, storage_path, original_filename, mime_type, byte_size, upload_state, created_at')
+          .select('id, enquiry_id, ordinal, intake_role, storage_path, original_filename, mime_type, byte_size, upload_state, created_at')
           .eq('enquiry_id', enquiryId)
           .order('ordinal', { ascending: true }),
         'load reference images'

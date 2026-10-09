@@ -332,9 +332,9 @@ select throws_ok(
 select throws_ok(
   $$select public.create_enquiry_intake(gen_random_uuid(),
       jsonb_build_object('full_name', 'Too Many', 'email', 'many@example.test'),
-      pg_temp.enquiry_meta(), pg_temp.files(4))$$,
+      pg_temp.enquiry_meta(), pg_temp.files(7))$$,
   '22023', null,
-  'more than three reference files is refused'
+  'more than six intake files is refused'
 );
 
 select throws_ok(

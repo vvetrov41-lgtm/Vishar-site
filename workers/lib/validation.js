@@ -10,8 +10,20 @@ import {
   DISCOVERY_SOURCE_DETAIL_KEYS,
   DISCOVERY_SOURCE_REQUIRED_DETAIL_KEYS,
 } from './discovery-sources.js';
+import {
+  ENQUIRY_V2_LIMITS,
+  ENQUIRY_V2_SCHEMA,
+  INTAKE_ROLES,
+  deriveLegacyFields,
+  parseProjectDetails,
+} from './enquiry-v2.js';
 
+// Legacy single-step form. Booking form v2 sends design references and
+// existing-tattoo photos separately and may send up to MAX_FILES_V2 images;
+// the 13 MB request bound in http.js still applies to both.
 export const MAX_FILES = 3;
+export const MAX_FILES_V2 = ENQUIRY_V2_LIMITS.maxFilesTotal;
+export const MAX_FILES_PER_ROLE_V2 = ENQUIRY_V2_LIMITS.maxFilesPerRole;
 export const MIN_FILES = 1;
 export const MAX_FILE_BYTES = 4 * 1024 * 1024;
 // Keep the previously exported value stable for rolling clients and downstream
@@ -168,12 +180,32 @@ export function parseEnquiryFields(form) {
 
   const privacyAcknowledged = field(form, 'privacyAcknowledged') === 'true';
 
-  const required = ['name', 'email', 'preferredReply', 'projectType', 'placement', 'size', 'coverUp', 'idea'];
+  // Booking form v2 sends structured answers. The legacy text columns are
+  // derived here from the validated structure, never taken from the client.
+  const v2 = field(form, 'formSchema') === ENQUIRY_V2_SCHEMA;
+  let project = null;
+  if (v2) {
+    project = parseProjectDetails(field(form, 'projectDetails'));
+    const legacy = deriveLegacyFields(project);
+    enquiry.projectType = legacy.projectType;
+    enquiry.placement = legacy.placement;
+    enquiry.size = legacy.size;
+    enquiry.coverUp = legacy.coverUp;
+    // v2 has no Instagram or travelling-from question.
+    enquiry.instagram = '';
+    enquiry.travellingFrom = '';
+  }
+
+  const required = v2
+    ? ['name', 'preferredReply', 'idea']
+    : ['name', 'email', 'preferredReply', 'projectType', 'placement', 'size', 'coverUp', 'idea'];
   if (required.some((key) => !enquiry[key])) {
     throw new RequestError('missing_required_field', 'Please complete all required fields.');
   }
 
-  if (!EMAIL_PATTERN.test(enquiry.email)) {
+  // A v2 WhatsApp-first client may leave email out; any email given must be valid.
+  const emailOptional = v2 && enquiry.preferredReply === 'WhatsApp';
+  if (!(emailOptional && !enquiry.email) && !EMAIL_PATTERN.test(enquiry.email)) {
     throw new RequestError('invalid_email', 'A valid email is required.');
   }
 
@@ -216,6 +248,19 @@ export function parseEnquiryFields(form) {
     );
   }
 
+  // Without an email the phone is the only way to match and reach the client,
+  // so it must be unambiguous: international form after UK 07 conversion.
+  if (emailOptional && !enquiry.email && !/^\+[1-9][0-9]{6,14}$/.test(enquiry.phone)) {
+    throw new RequestError(
+      'invalid_whatsapp_number',
+      'Please enter your WhatsApp number with the country code, for example +44 7700 900123.'
+    );
+  }
+
+  if (v2 && enquiry.preferredReply === 'Instagram') {
+    throw new RequestError('invalid_preferred_reply', 'Please choose Email or WhatsApp as the preferred reply.');
+  }
+
   if (enquiry.preferredReply === 'Instagram' && !enquiry.instagram) {
     throw new RequestError(
       'missing_instagram_username',
@@ -226,7 +271,12 @@ export function parseEnquiryFields(form) {
   return {
     honeypot: false,
     idempotencyKey,
-    enquiry: { ...enquiry, privacyAcknowledged },
+    enquiry: {
+      ...enquiry,
+      privacyAcknowledged,
+      ...(project ? { formSchema: ENQUIRY_V2_SCHEMA, projectDetails: project.details } : {}),
+    },
+    project,
   };
 }
 
@@ -275,16 +325,56 @@ async function sha256Hex(bytes) {
  * server-generated UUIDs. The original filename is carried through for the CRM
  * to display but never influences where anything is stored.
  */
-export async function parseEnquiryFiles(form) {
-  const entries = form.getAll('references').filter((entry) => entry && typeof entry === 'object' && 'arrayBuffer' in entry);
+function fileEntries(form, name) {
+  return form.getAll(name).filter((entry) => entry && typeof entry === 'object' && 'arrayBuffer' in entry);
+}
 
-  if (entries.length < MIN_FILES || entries.length > MAX_FILES) {
-    throw new RequestError('invalid_file_count', 'Please attach 1–3 reference images.');
+/**
+ * v2 image selection: design references first, then existing-tattoo photos,
+ * each tagged with its role. Requirements come from the validated project.
+ */
+function v2FileEntries(form, project) {
+  const design = fileEntries(form, 'designReferences');
+  const existing = fileEntries(form, 'existingTattooPhotos');
+
+  if (fileEntries(form, 'references').length > 0) {
+    throw new RequestError('invalid_file_count', 'Please attach images in the design or existing tattoo sections.');
+  }
+  if (design.length > MAX_FILES_PER_ROLE_V2 || existing.length > MAX_FILES_PER_ROLE_V2) {
+    throw new RequestError('invalid_file_count', `Please attach up to ${MAX_FILES_PER_ROLE_V2} images in each section.`);
+  }
+  if (project.requiresExistingPhoto && existing.length < 1) {
+    throw new RequestError('missing_existing_tattoo_photo', 'Please add at least one photo of your existing tattoo.');
+  }
+  if (project.requiresDesignReference && design.length < 1) {
+    throw new RequestError('missing_design_reference', 'Please add at least one design reference image.');
+  }
+  const total = design.length + existing.length;
+  if (total < MIN_FILES || total > MAX_FILES_V2) {
+    throw new RequestError('invalid_file_count', `Please attach 1–${MAX_FILES_V2} images.`);
+  }
+
+  return [
+    ...design.map((entry) => ({ entry, role: INTAKE_ROLES.design })),
+    ...existing.map((entry) => ({ entry, role: INTAKE_ROLES.existing })),
+  ];
+}
+
+export async function parseEnquiryFiles(form, { project = null } = {}) {
+  let selected;
+  if (project) {
+    selected = v2FileEntries(form, project);
+  } else {
+    const entries = fileEntries(form, 'references');
+    if (entries.length < MIN_FILES || entries.length > MAX_FILES) {
+      throw new RequestError('invalid_file_count', 'Please attach 1–3 reference images.');
+    }
+    selected = entries.map((entry) => ({ entry, role: null }));
   }
 
   const descriptors = [];
 
-  for (const entry of entries) {
+  for (const { entry, role } of selected) {
     if (typeof entry.size === 'number' && entry.size > MAX_FILE_BYTES) {
       throw new RequestError('file_too_large', 'Each reference image must be 4 MB or smaller.');
     }
@@ -331,6 +421,7 @@ export async function parseEnquiryFiles(form) {
       byte_size: buffer.byteLength,
       checksum: await sha256Hex(buffer),
       original_filename: cleanText(entry.name, 255) || null,
+      ...(role ? { intake_role: role } : {}),
     });
   }
 

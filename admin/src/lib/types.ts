@@ -142,7 +142,8 @@ export interface Enquiry {
   assigned_to: string | null;
   /** Present on detail reads; list reads deliberately omit contact PII. */
   submitted_full_name?: string;
-  submitted_email?: string;
+  /** Null when a WhatsApp-first client left email out (booking form v2). */
+  submitted_email?: string | null;
   submitted_phone?: string | null;
   submitted_instagram?: string | null;
   submitted_preferred_contact?: string | null;
@@ -157,16 +158,32 @@ export interface Enquiry {
   /** Normalised client-reported acquisition source, present on detail reads. */
   discovery_source?: string | null;
   discovery_source_detail?: string | null;
+  /** Booking form v2 answers; absent on list reads, null for legacy enquiries. */
+  project_details?: EnquiryProjectDetails | null;
   utm_source: string | null;
   created_at: string;
   last_action_at: string;
   archived_at: string | null;
 }
 
+/** Structured booking form v2 answers, stored with English catalogue labels. */
+export interface EnquiryProjectDetails {
+  schema: string;
+  areas: Array<{ region: string; placements: string[]; otherPlacement?: string; work: string[] }>;
+  styles: string[];
+  sizeNotes?: string;
+  existingDetails?: string;
+  imageRequirements?: { designReference: boolean; existingTattooPhoto: boolean };
+}
+
+export type EnquiryFileIntakeRole = 'design_reference' | 'existing_tattoo';
+
 export interface EnquiryFile {
   id: string;
   enquiry_id: string;
   ordinal: number;
+  /** What the client said the intake image shows; null for legacy and staff uploads. */
+  intake_role?: EnquiryFileIntakeRole | null;
   storage_path: string;
   original_filename: string | null;
   mime_type: string;

@@ -1058,6 +1058,232 @@ await test('malformed JSON is still rejected', async () => {
 });
 
 // ---------------------------------------------------------------------------
+// Booking form v2: structured details, image roles, WhatsApp-first contact
+// ---------------------------------------------------------------------------
+
+const V2_FILE_IDS = [1, 2, 3, 4, 5, 6].map((n) => `f${String(n).repeat(7)}-${String(n).repeat(4)}-4${String(n).repeat(3)}-8${String(n).repeat(3)}-${String(n).repeat(12)}`);
+
+function v2Details(overrides = {}) {
+  return {
+    areas: [{ region: 'arm', placements: ['forearm'], work: ['new'] }],
+    styles: ['black_grey'],
+    sizeNotes: 'Outer forearm, about 18 cm',
+    ...overrides,
+  };
+}
+
+function v2Form({ details = v2Details(), fields = {}, design = 1, existing = 0, extraFiles = [] } = {}) {
+  const form = new FormData();
+  const values = {
+    idempotencyKey: '22222222-3333-4444-8555-666666666666',
+    formSchema: 'enquiry-v2',
+    projectDetails: JSON.stringify(details),
+    name: 'Vera Client',
+    email: 'vera@example.test',
+    phone: '',
+    preferredReply: 'Email',
+    timing: 'Spring',
+    idea: 'A realistic owl in soft light.',
+    discoverySource: 'instagram',
+    website: '',
+    source: '/booking/',
+    privacyAcknowledged: 'true',
+    privacyNoticeVersion: '2026-09-09',
+    ...fields,
+  };
+  for (const [key, value] of Object.entries(values)) form.append(key, value);
+  for (let i = 0; i < design; i += 1) form.append('designReferences', imageFile(JPEG, 'image/jpeg', `design-${i}.jpg`), `design-${i}.jpg`);
+  for (let i = 0; i < existing; i += 1) form.append('existingTattooPhotos', imageFile(PNG, 'image/png', `existing-${i}.png`), `existing-${i}.png`);
+  for (const [name, file] of extraFiles) form.append(name, file, file.name);
+  return form;
+}
+
+function intakeArgs(calls) {
+  return calls.rpc.find((call) => call.name === 'create_trusted_enquiry_intake')?.args;
+}
+
+await test('v2: a new tattoo with one design reference is stored with structured details', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const { response, payload } = await send(v2Form());
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.ok, true);
+  const args = intakeArgs(calls);
+  assert.deepEqual(args.p_enquiry.project_details.areas, [
+    { region: 'Arm', placements: ['Forearm'], work: ['New tattoo'] },
+  ]);
+  assert.deepEqual(args.p_enquiry.project_details.styles, ['Black & Grey realism']);
+  assert.equal(args.p_enquiry.project_details.schema, 'enquiry-v2');
+  assert.equal(args.p_enquiry.project_type, 'Black and grey realism');
+  assert.equal(args.p_enquiry.placement, 'Arm: Forearm');
+  assert.equal(args.p_enquiry.approximate_size, 'Outer forearm, about 18 cm');
+  assert.equal(args.p_enquiry.cover_up, 'No');
+  assert.equal(args.p_enquiry.idea, 'A realistic owl in soft light.');
+  assert.deepEqual(args.p_files.map((file) => file.intake_role), ['design_reference']);
+  assert.equal(calls.uploads.length, 1);
+});
+
+await test('v2: a plain cover-up needs only an existing tattoo photo', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: ['cover_up'] }], existingDetails: 'Faded name on forearm' });
+  const { response, payload } = await send(v2Form({ details, design: 0, existing: 1 }));
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const args = intakeArgs(calls);
+  assert.equal(args.p_enquiry.project_type, 'Cover-up');
+  assert.equal(args.p_enquiry.cover_up, 'Yes');
+  assert.equal(args.p_enquiry.project_details.existingDetails, 'Faded name on forearm');
+  assert.deepEqual(args.p_enquiry.project_details.imageRequirements, { designReference: false, existingTattooPhoto: true });
+  assert.deepEqual(args.p_files.map((file) => file.intake_role), ['existing_tattoo']);
+});
+
+await test('v2: full sleeve with a cover-up requires both image categories', async () => {
+  stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({ areas: [{ region: 'arm', placements: ['full_sleeve', 'forearm'], work: ['cover_up'] }] });
+  let result = await send(v2Form({ details, design: 0, existing: 1 }));
+  assert.equal(result.response.status, 400);
+  assert.equal(result.payload.code, 'missing_design_reference');
+  result = await send(v2Form({ details, design: 1, existing: 0 }));
+  assert.equal(result.payload.code, 'missing_existing_tattoo_photo');
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  result = await send(v2Form({ details, design: 1, existing: 2 }));
+  assert.equal(result.response.status, 200, JSON.stringify(result.payload));
+  const args = intakeArgs(calls);
+  assert.equal(args.p_enquiry.placement, 'Arm: Full sleeve, Forearm');
+  assert.deepEqual(args.p_files.map((file) => file.intake_role), ['design_reference', 'existing_tattoo', 'existing_tattoo']);
+});
+
+await test('v2: full sleeve with rework and extension keeps every work type', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({ areas: [{ region: 'arm', placements: ['full_sleeve'], work: ['rework', 'extension'] }] });
+  const { response, payload } = await send(v2Form({ details, design: 2, existing: 2 }));
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const args = intakeArgs(calls);
+  assert.deepEqual(args.p_enquiry.project_details.areas[0].work, ['Rework', 'Extension']);
+  assert.equal(args.p_enquiry.cover_up, 'Existing tattoo');
+  assert.equal(args.p_enquiry.project_type, 'Large-scale project / sleeve');
+});
+
+await test('v2: arm and leg keep separate work types in one enquiry', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({
+    areas: [
+      { region: 'arm', placements: ['upper_arm'], work: ['new'] },
+      { region: 'leg', placements: ['calf'], work: ['cover_up'] },
+    ],
+    styles: ['black_grey', 'colour'],
+  });
+  const { response, payload } = await send(v2Form({ details, design: 1, existing: 1 }));
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const args = intakeArgs(calls);
+  assert.equal(calls.rpc.filter((call) => call.name === 'create_trusted_enquiry_intake').length, 1);
+  assert.deepEqual(args.p_enquiry.project_details.areas.map((area) => area.work), [['New tattoo'], ['Cover-up']]);
+  assert.deepEqual(args.p_enquiry.project_details.styles, ['Black & Grey realism', 'Colour realism']);
+  assert.equal(args.p_enquiry.placement, 'Arm: Upper arm; Leg: Calf');
+});
+
+await test('v2: a new tattoo without a design reference is rejected before any write', async () => {
+  const calls = stubBackend();
+  const { response, payload } = await send(v2Form({ design: 0, existing: 1 }));
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, 'missing_design_reference');
+  assert.equal(calls.rpc.length, 0);
+  assert.equal(calls.uploads.length, 0);
+});
+
+await test('v2: exclusive and unknown choices are refused', async () => {
+  stubBackend();
+  for (const details of [
+    v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: ['new', 'cover_up'] }] }),
+    v2Details({ styles: ['not_sure', 'colour'] }),
+    v2Details({ areas: [{ region: 'arm', placements: ['half_sleeve', 'full_sleeve'], work: ['new'] }] }),
+    v2Details({ areas: [{ region: 'arm', placements: ['calf'], work: ['new'] }] }),
+    v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: ['new'] }, { region: 'arm', placements: ['wrist'], work: ['new'] }] }),
+    v2Details({ areas: [] }),
+    v2Details({ areas: [{ region: 'other', placements: [], work: ['new'] }] }),
+  ]) {
+    const { response, payload } = await send(v2Form({ details }));
+    assert.equal(response.status, 400, JSON.stringify(details));
+    assert.ok(payload.code, JSON.stringify(payload));
+  }
+  const { response } = await send(v2Form({ fields: { projectDetails: '{not json' } }));
+  assert.equal(response.status, 400);
+});
+
+await test('v2: WhatsApp-first enquiry may omit email but needs an international number', async () => {
+  let calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  let result = await send(v2Form({ fields: { preferredReply: 'WhatsApp', email: '', phone: '07700 900123' } }));
+  assert.equal(result.response.status, 200, JSON.stringify(result.payload));
+  let args = intakeArgs(calls);
+  assert.equal(args.p_client.email, null);
+  assert.equal(args.p_client.phone, '+447700900123');
+  assert.equal(args.p_client.preferred_contact, 'WhatsApp');
+
+  calls = stubBackend();
+  result = await send(v2Form({ fields: { preferredReply: 'WhatsApp', email: '', phone: '612 345 678' } }));
+  assert.equal(result.payload.code, 'invalid_whatsapp_number');
+  assert.equal(calls.rpc.length, 0);
+
+  result = await send(v2Form({ fields: { preferredReply: 'WhatsApp', email: 'broken', phone: '+34612345678' } }));
+  assert.equal(result.payload.code, 'invalid_email');
+
+  result = await send(v2Form({ fields: { preferredReply: 'Email', email: '', phone: '+34612345678' } }));
+  assert.equal(result.payload.code, 'invalid_email');
+});
+
+await test('v2: email first with a backup WhatsApp keeps both contacts', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const { response } = await send(v2Form({ fields: { preferredReply: 'Email', phone: '+34 612 345 678' } }));
+  assert.equal(response.status, 200);
+  const args = intakeArgs(calls);
+  assert.equal(args.p_client.email, 'vera@example.test');
+  assert.equal(args.p_client.phone, '+34612345678');
+});
+
+await test('v2: image counts are capped per section and in total', async () => {
+  stubBackend();
+  let result = await send(v2Form({ design: 5 }));
+  assert.equal(result.payload.code, 'invalid_file_count');
+  const details = v2Details({ areas: [{ region: 'arm', placements: ['full_sleeve'], work: ['cover_up'] }] });
+  result = await send(v2Form({ details, design: 4, existing: 3 }));
+  assert.equal(result.payload.code, 'invalid_file_count');
+  result = await send(v2Form({ extraFiles: [['references', imageFile(JPEG, 'image/jpeg', 'legacy.jpg')]] }));
+  assert.equal(result.payload.code, 'invalid_file_count');
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  result = await send(v2Form({ details, design: 3, existing: 3 }));
+  assert.equal(result.response.status, 200, JSON.stringify(result.payload));
+  assert.equal(calls.uploads.length, 6);
+});
+
+await test('v2: a legacy payload sends no project_details or intake_role keys', async () => {
+  const calls = stubBackend();
+  const { response } = await send(enquiryForm());
+  assert.equal(response.status, 200);
+  const args = intakeArgs(calls);
+  assert.equal('project_details' in args.p_enquiry, false);
+  assert.equal(args.p_files.some((file) => 'intake_role' in file), false);
+  assert.equal(args.p_client.email, 'client@example.test');
+});
+
+await test('v2: client-supplied legacy fields are ignored in favour of derived values', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  await send(v2Form({ fields: { projectType: 'Portrait', placement: 'Moon', size: '1 km', coverUp: 'No' } }));
+  const args = intakeArgs(calls);
+  assert.equal(args.p_enquiry.project_type, 'Black and grey realism');
+  assert.equal(args.p_enquiry.placement, 'Arm: Forearm');
+});
+
+await test('v2: the preflight path accepts a structured payload without files', async () => {
+  const calls = stubBackend();
+  const form = v2Form({ design: 0, fields: { preflight: '1', referenceCount: '1' } });
+  const request = new Request(`${ENDPOINT}?preflight=1`, { method: 'POST', headers: { Origin: ORIGIN }, body: form });
+  const response = await worker.fetch(request, env);
+  const payload = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  assert.equal(payload.ok, true);
+  assert.ok(payload.preflight);
+  assert.equal(calls.rpc.some((call) => call.name === 'create_trusted_enquiry_intake'), false);
+});
+
+// ---------------------------------------------------------------------------
 
 if (failures > 0) {
   realConsole.error(`\n${failures} booking flow test(s) failed, ${passes} passed.`);
