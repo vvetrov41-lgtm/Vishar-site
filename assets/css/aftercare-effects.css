@@ -114,7 +114,7 @@
 }
 /* Morph the section's slim chapter line, not the whole background. */
 @keyframes acLineTrace {from{transform:scaleX(.08);opacity:.2}to{transform:scaleX(1);opacity:1}}
-#mobile-fallback .mf-section.ac-section-in:before{
+#mobile-fallback .mf-section.ac-section-in:not(.route):before{
   transform-origin:left center;
   animation:acLineTrace .85s cubic-bezier(.22,.8,.24,1) both;
 }
