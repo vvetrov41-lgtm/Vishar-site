@@ -7,6 +7,7 @@ create temporary table t_aftercare_artist as
 select a.id from public.artists a
 join crm_private.artist_state st on st.artist_id=a.id and st.is_active
 where a.slug='vladimir';
+grant select on t_aftercare_artist to public;
 
 insert into public.clients(id,full_name,email)
 values ('fa111111-1111-4111-8111-111111111111','Aftercare Test','aftercare-client@example.test');
