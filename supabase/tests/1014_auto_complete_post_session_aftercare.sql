@@ -27,7 +27,7 @@ select v.id,(select id from t_aftercare_artist),'fa111111-1111-4111-8111-1111111
        extract(epoch from v.duration)/3600
 from (values
   ('fa000000-0000-4000-8000-000000000001'::uuid,'tattoo_session','confirmed',interval '-4 hours',interval '3 hours'),
-  ('fa000000-0000-4000-8000-000000000002'::uuid,'in_person_consultation','confirmed',interval '-7 hours',interval '1 hour'),
+  ('fa000000-0000-4000-8000-000000000002'::uuid,'in_person_consultation','confirmed',interval '-7 hours',interval '30 minutes'),
   ('fa000000-0000-4000-8000-000000000003'::uuid,'tattoo_session','no_show',interval '-10 hours',interval '1 hour'),
   ('fa000000-0000-4000-8000-000000000004'::uuid,'tattoo_session','confirmed',interval '24 hours',interval '4 hours')
 ) v(id,appointment_type,status,lead,duration);
