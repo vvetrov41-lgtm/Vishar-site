@@ -155,7 +155,7 @@ export function createRecordEditApi(client: CrmClient) {
       });
 
       if (uploaded.error) {
-        // Upload failure should not consume one of the three manifest slots.
+        // Upload failure should not consume one of the six manifest slots.
         // This cleanup is deliberately best-effort: if Storage actually wrote
         // the object, the RPC refuses to erase its manifest and leaves a
         // reconcilable pending row instead of creating an orphan.
