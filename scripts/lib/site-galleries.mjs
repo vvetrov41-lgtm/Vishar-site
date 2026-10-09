@@ -22,9 +22,9 @@ async function readGalleryMetadata(dirRel) {
   return JSON.parse(raw);
 }
 
-/* ── Homepage: 20-image portfolio grid ── */
+/* ── Homepage: 12 selected tattoo images; full galleries are on their speciality pages ── */
 export function renderHomepagePortfolioGrid() {
-  const files = Array.from({ length: 20 }, (_, i) => `${String(i + 1).padStart(2, '0')}.jpg`);
+  const files = Array.from({ length: 12 }, (_, i) => `${String(i + 1).padStart(2, '0')}.jpg`);
   const sizes = '(min-width: 768px) min(calc((100vw - 56px) / 4), 344px), calc((100vw - 40px) / 2)';
 
   return files.map((file, i) => {
