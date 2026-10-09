@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   dispatch:
-    if: github.actor == github.repository_owner && github.event.head_commit.message == 'Dispatch Meta CAPI validation only, approved'
+    if: github.actor == github.repository_owner && github.event.head_commit.message == 'Dispatch audited Meta CAPI validation only, approved'
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -23,7 +23,7 @@ jobs:
         run: |
           set -euo pipefail
           [ "$GITHUB_REF_NAME" = 'release/private-crm-rc1048-inventory-capi-auth-20261009' ]
-          [ "$(git log -1 --format=%s)" = 'Dispatch Meta CAPI validation only, approved' ]
+          [ "$(git log -1 --format=%s)" = 'Dispatch audited Meta CAPI validation only, approved' ]
           gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-private-production-telegram.yml/dispatches" \
             -f ref="$GITHUB_REF_NAME" \
             -f "inputs[approved_sha]=$GITHUB_SHA" \
