@@ -1,0 +1,90 @@
+{
+  "schema": "enquiry-v2",
+  "note": "Booking form v2 catalogue. The public form on main embeds the same keys in assets/js/enquiry-form-v2.js; keep both in step. Labels are stored in enquiries.project_details.",
+  "regions": [
+    { "key": "arm", "label": "Arm", "placements": [
+      { "key": "shoulder", "label": "Shoulder" },
+      { "key": "upper_arm", "label": "Upper arm" },
+      { "key": "inner_bicep", "label": "Inner bicep" },
+      { "key": "elbow", "label": "Elbow" },
+      { "key": "forearm", "label": "Forearm" },
+      { "key": "wrist", "label": "Wrist" },
+      { "key": "half_sleeve", "label": "Half sleeve", "large": true, "group": "arm_sleeve" },
+      { "key": "three_quarter_sleeve", "label": "3/4 sleeve", "large": true, "group": "arm_sleeve" },
+      { "key": "full_sleeve", "label": "Full sleeve", "large": true, "group": "arm_sleeve" },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "leg", "label": "Leg", "placements": [
+      { "key": "thigh", "label": "Thigh" },
+      { "key": "knee", "label": "Knee" },
+      { "key": "calf", "label": "Calf" },
+      { "key": "shin", "label": "Shin" },
+      { "key": "ankle", "label": "Ankle" },
+      { "key": "half_leg_sleeve", "label": "Half leg sleeve", "large": true, "group": "leg_sleeve" },
+      { "key": "full_leg_sleeve", "label": "Full leg sleeve", "large": true, "group": "leg_sleeve" },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "chest_ribs", "label": "Chest & Ribs", "placements": [
+      { "key": "sternum", "label": "Sternum" },
+      { "key": "one_side_chest", "label": "One side of chest" },
+      { "key": "collarbone", "label": "Collarbone" },
+      { "key": "ribs", "label": "Ribs" },
+      { "key": "full_chest", "label": "Full chest", "large": true },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "back", "label": "Back", "placements": [
+      { "key": "upper_back", "label": "Upper back" },
+      { "key": "shoulder_blade", "label": "Shoulder blade" },
+      { "key": "spine", "label": "Spine" },
+      { "key": "lower_back", "label": "Lower back" },
+      { "key": "full_back", "label": "Full back", "large": true },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "stomach_sides", "label": "Stomach & Sides", "placements": [
+      { "key": "stomach", "label": "Stomach" },
+      { "key": "side", "label": "Side" },
+      { "key": "hip", "label": "Hip" },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "neck_head", "label": "Neck & Head", "placements": [
+      { "key": "front_neck", "label": "Front of neck" },
+      { "key": "side_neck", "label": "Side of neck" },
+      { "key": "back_neck", "label": "Back of neck" },
+      { "key": "behind_ear", "label": "Behind the ear" },
+      { "key": "head", "label": "Head" },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "hand", "label": "Hand", "placements": [
+      { "key": "back_of_hand", "label": "Back of hand" },
+      { "key": "fingers", "label": "Fingers" },
+      { "key": "side_of_hand", "label": "Side of hand" },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "foot", "label": "Foot", "placements": [
+      { "key": "top_of_foot", "label": "Top of foot" },
+      { "key": "side_of_foot", "label": "Side of foot" },
+      { "key": "toes", "label": "Toes" },
+      { "key": "other", "label": "Other" }
+    ] },
+    { "key": "other", "label": "Other", "placements": [] }
+  ],
+  "work": [
+    { "key": "new", "label": "New tattoo", "exclusive": true },
+    { "key": "extension", "label": "Extension" },
+    { "key": "cover_up", "label": "Cover-up" },
+    { "key": "rework", "label": "Rework" }
+  ],
+  "styles": [
+    { "key": "black_grey", "label": "Black & Grey realism" },
+    { "key": "colour", "label": "Colour realism" },
+    { "key": "not_sure", "label": "Not sure yet", "exclusive": true }
+  ],
+  "limits": {
+    "maxAreas": 9,
+    "otherText": 120,
+    "sizeNotes": 160,
+    "existingDetails": 1000,
+    "maxFilesPerRole": 4,
+    "maxFilesTotal": 6
+  }
+}
