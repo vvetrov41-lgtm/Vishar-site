@@ -45,7 +45,7 @@ async function checkViewport(width,height,mobile=false){
     const selectedCard=await page.locator('#film .rule').first().evaluate(el=>getComputedStyle(el).backgroundImage);
     assert.match(selectedCard,/linear-gradient/,'film card depth');
     const imgCount=await page.locator('.photo').evaluateAll(els=>els.filter(e=>e.naturalWidth>0).length);
-    assert(imgCount>=3,'aftercare photography loaded');
+    assert.equal(imgCount,2,'both healing-route photographs loaded');
     await page.locator('.mf-dock a[href="#nofilm"]').click();
     assert(await page.locator('#nofilm').isVisible(),'No-film selected from dock');
     assert(!(await page.locator('#film').isVisible()),'Film hidden from dock');
