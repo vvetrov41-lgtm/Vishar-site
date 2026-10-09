@@ -112,7 +112,7 @@ select is(
 
 set local role service_role;
 select lives_ok(
-  $select * from public.service_run_automation_tick(100)$,
+  $$select * from public.service_run_automation_tick(100)$$,
   'second scheduler tick is safe and idempotent');
 reset role;
 select is(
