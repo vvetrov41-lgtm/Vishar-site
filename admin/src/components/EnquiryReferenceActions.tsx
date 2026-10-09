@@ -21,17 +21,18 @@ export function EnquiryReferenceActions({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const canAdd = can(role, 'manageEnquiryFiles') && files.length < 3;
+  const MAX_REFERENCE_IMAGES = 6;
+  const canAdd = can(role, 'manageEnquiryFiles') && files.length < MAX_REFERENCE_IMAGES;
 
   const copy = language === 'ru' ? {
     add: 'Добавить референсы',
     retry: 'Завершить загрузку',
-    hint: 'До 3 изображений, JPG/PNG/WebP, максимум 4 MB каждое.',
+    hint: 'До 6 изображений, JPG/PNG/WebP, максимум 4 MB каждое.',
     failed: 'Не удалось изменить референсы.',
   } : {
     add: 'Add references',
     retry: 'Finish upload',
-    hint: 'Up to 3 images, JPG/PNG/WebP, maximum 4 MB each.',
+    hint: 'Up to 6 images, JPG/PNG/WebP, maximum 4 MB each.',
     failed: 'Could not change the reference images.',
   };
 
@@ -39,7 +40,7 @@ export function EnquiryReferenceActions({
 
   async function add(filesToAdd: FileList | null) {
     if (!filesToAdd || filesToAdd.length === 0) return;
-    const remaining = Math.max(0, 3 - files.length);
+    const remaining = Math.max(0, MAX_REFERENCE_IMAGES - files.length);
     const selected = Array.from(filesToAdd).slice(0, remaining);
     setBusy(true);
     setError(null);
