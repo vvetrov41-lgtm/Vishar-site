@@ -1,0 +1,59 @@
+name: One time Meta CAPI transport diagnostic
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc1048-inventory-capi-auth-20261009'
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    if: github.actor == github.repository_owner && github.event.head_commit.message == 'Verify one Meta CAPI transport diagnostic, approved'
+    environment: crm-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Send exactly one clearly named synthetic CAPI transport event
+        env:
+          META_TOKEN: ${{ secrets.META_ADS_VLADIMIR_ACCESS_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc1048-inventory-capi-auth-20261009' ]
+          [ "$(git log -1 --format=%s)" = 'Verify one Meta CAPI transport diagnostic, approved' ]
+          node --input-type=module <<'NODE'
+          import { createHash } from 'node:crypto';
+          const token=process.env.META_TOKEN;
+          if(!token||token.length<20||/\\s/.test(token))throw Error('Missing or malformed token');
+          const pixel='2163876287819749';
+          const event_id='capi-transport-diagnostic-'+process.env.GITHUB_SHA;
+          const hashed=createHash('sha256').update('capi-transport-diagnostic@vishar.invalid').digest('hex');
+          const body={
+            data:[{
+              event_name:'CAPITransportDiagnostic',
+              event_time:Math.floor(Date.now()/1000),
+              event_id,
+              action_source:'website',
+              event_source_url:'https://vishartattoo.com/booking/',
+              user_data:{em:[hashed]},
+              custom_data:{synthetic_diagnostic:true}
+            }]
+          };
+          const res=await fetch('https://graph.facebook.com/v26.0/'+pixel+'/events',{
+            method:'POST',
+            headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+            body:JSON.stringify(body),
+            redirect:'error',
+            signal:AbortSignal.timeout(30000)
+          });
+          let data={};try{data=await res.json();}catch{}
+          const events=Number.isInteger(data?.events_received)?data.events_received:0;
+          const record={pixel,event_name:'CAPITransportDiagnostic',synthetic:true,status:res.status,events_received:events};
+          const fs=await import('node:fs');
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY,'## Synthetic CAPI transport diagnostic\n'+Object.entries(record).map(([k,v])=>'- '+k+': '+v).join('\n')+'\n');
+          console.log(JSON.stringify(record));
+          if(!res.ok||events!==1)throw Error('Meta did not confirm receipt of diagnostic event; provider details suppressed');
+          NODE
