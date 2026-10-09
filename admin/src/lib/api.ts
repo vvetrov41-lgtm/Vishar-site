@@ -384,7 +384,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     } = {}): Promise<Enquiry[]> {
       let query = client
         .from('enquiries')
-        .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
+        .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, project_type, project_summary, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
         .is('archived_at', null)
         // Only completed intakes belong in the working queue. The database
         // keeps incomplete rows for reconciliation, but staff must not start
@@ -420,7 +420,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     async getEnquiry(id: string): Promise<Enquiry | null> {
       const result = await client
         .from('enquiries')
-        .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, submitted_full_name, submitted_email, submitted_phone, submitted_instagram, submitted_preferred_contact, submitted_travelling_from, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, discovery_source, discovery_source_detail, project_details, utm_source, created_at, last_action_at, archived_at')
+        .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, submitted_full_name, submitted_email, submitted_phone, submitted_instagram, submitted_preferred_contact, submitted_travelling_from, project_type, placement, approximate_size, cover_up, preferred_timing, idea, source, discovery_source, discovery_source_detail, project_details, project_summary, utm_source, created_at, last_action_at, archived_at')
         .eq('id', id)
         .maybeSingle();
       if (result.error) throw new ApiError(friendlyMessage(result.error, 'load that enquiry'), result.error);

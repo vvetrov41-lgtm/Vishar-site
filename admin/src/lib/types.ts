@@ -160,6 +160,8 @@ export interface Enquiry {
   discovery_source_detail?: string | null;
   /** Booking form v2 answers; absent on list reads, null for legacy enquiries. */
   project_details?: EnquiryProjectDetails | null;
+  /** Generated from project_details ("Full sleeve + Forearm cover-up + Leg tattoo"); null for legacy enquiries. */
+  project_summary?: string | null;
   utm_source: string | null;
   created_at: string;
   last_action_at: string;
