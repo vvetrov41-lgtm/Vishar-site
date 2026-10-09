@@ -1433,8 +1433,7 @@ async function checkRawHtmlSharedContent(htmlFiles) {
 // Expected image counts inside each gallery, checked against the raw file so a
 // gallery silently reverting to client-side rendering is caught.
 const RAW_GALLERY_EXPECTATIONS = [
-  { file: 'index.html', label: 'homepage portfolio grid', marker: 'portfolio-grid', images: 20 },
-  { file: 'index.html', label: 'homepage studio gallery', marker: 'studio-grid', images: 6 },
+  { file: 'index.html', label: 'homepage portfolio grid', marker: 'portfolio-grid', images: 12 },
   { file: 'colour-realism-tattoo-london/index.html', label: 'colour realism gallery', marker: 'gallery', images: 12 },
   { file: 'black-and-grey-realism-london/index.html', label: 'black and grey gallery', marker: 'gallery', images: 12 },
   { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 12 },

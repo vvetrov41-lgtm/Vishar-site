@@ -24,13 +24,11 @@ import {
   renderNav,
   renderFooter,
   renderPortfolioCrosslinks,
-  renderHomepagePortfolioCollections,
-  renderHomepageApproach
+  renderHomepagePortfolioCollections
 } from './lib/site-content.mjs';
 
 import {
   renderHomepagePortfolioGrid,
-  renderHomepageStudioGrid,
   renderSimpleGallery,
   renderCoverUpPairs,
   renderSpecialityGallery
@@ -39,7 +37,7 @@ import {
 // Every public HTML page, its PAGE_ID, and the generated blocks it carries.
 // `nav` and `footer` are implicit on every page.
 const PAGES = [
-  { file: 'index.html', pageId: 'home', blocks: ['portfolio-grid', 'portfolio-collections', 'studio-grid', 'homepage-approach'] },
+  { file: 'index.html', pageId: 'home', blocks: ['portfolio-grid', 'portfolio-collections'] },
   { file: 'about/index.html', pageId: 'about' },
   { file: 'aftercare/index.html', pageId: 'aftercare' },
   { file: 'ai-tools/index.html', pageId: 'ai-tools' },
@@ -65,14 +63,9 @@ async function blocksFor(page) {
       case 'portfolio-grid':
         blocks[key] = renderHomepagePortfolioGrid();
         break;
-      case 'studio-grid':
-        blocks[key] = renderHomepageStudioGrid();
-        break;
+
       case 'portfolio-collections':
         blocks[key] = renderHomepagePortfolioCollections();
-        break;
-      case 'homepage-approach':
-        blocks[key] = renderHomepageApproach();
         break;
       case 'crosslinks':
         blocks[key] = renderPortfolioCrosslinks(page.pageId);
