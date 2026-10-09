@@ -327,28 +327,6 @@ body.bento-ready #mobile-fallback{display:none!important;}
 @media(max-width:430px){#mobile-fallback .vv-unsure-panel>div{grid-template-columns:96px 1fr}}
 </style>
 
-<style id="vishar-custom-scrollbar-style">
-/* iPhone-safe custom reading rail: enabled only by JS after successful boot. */
-html{scrollbar-width:thin;scrollbar-color:#949494 transparent;}
-#vv-scrollbar{display:none;position:fixed;z-index:95;right:max(7px,env(safe-area-inset-right));top:22vh;height:56vh;width:20px;pointer-events:none;opacity:.62;transition:opacity .28s ease,transform .28s ease;transform:translateX(1px)}
-html.vv-custom-scrollbar #vv-scrollbar{display:block}
-body.bento-ready #vv-scrollbar{display:none!important}
-#vv-scrollbar.vv-active{opacity:1;transform:translateX(0)}
-#vv-scrollbar .vv-rail{position:absolute;right:7px;top:0;bottom:0;width:4px;border-radius:99px;background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.12),rgba(255,255,255,.045));border:1px solid rgba(255,255,255,.055);box-shadow:inset 0 0 0 1px rgba(0,0,0,.16),0 12px 32px rgba(0,0,0,.22);overflow:hidden;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-#vv-scrollbar .vv-fill{position:absolute;inset:0 0 auto 0;height:100%;transform:scaleY(0);transform-origin:top;border-radius:99px;background:linear-gradient(180deg,#b1b1b1 0%,#989898 48%,#a3a3a3 100%);box-shadow:0 0 12px rgba(177,177,177,.42);will-change:transform}
-#vv-scrollbar .vv-thumb{position:absolute;right:3px;top:0;width:12px;height:12px;margin-top:0;border-radius:50%;background:#dedede;border:2px solid rgba(18,18,18,.88);box-shadow:0 0 0 2px rgba(177,177,177,.16),0 0 18px rgba(177,177,177,.62),0 4px 12px rgba(0,0,0,.35);will-change:transform}
-#vv-scrollbar .vv-thumb:after{content:"";position:absolute;inset:2px;border-radius:50%;background:#fff;opacity:.72}
-#vv-scrollbar .vv-marks{position:absolute;inset:0;right:7px}
-#vv-scrollbar .vv-mark{position:absolute;right:-3px;width:10px;height:1px;background:rgba(213,213,213,.26);border-radius:1px;transform:translateY(-.5px);transition:width .2s ease,background .2s ease,box-shadow .2s ease}
-#vv-scrollbar .vv-mark.vv-current{width:13px;background:#cccccc;box-shadow:0 0 10px rgba(177,177,177,.45)}
-#vv-scrollbar .vv-label{position:absolute;right:19px;top:6px;transform:translateY(-50%) translateX(4px);opacity:0;padding:5px 8px;border-radius:9px;background:rgba(13,11,16,.84);border:1px solid rgba(255,255,255,.08);color:#d7d7d7;font:700 9px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:opacity .18s ease,transform .18s ease}
-#vv-scrollbar.vv-active .vv-label{opacity:.82;transform:translateY(-50%) translateX(0)}
-/* Hide the browser scrollbar only when our custom one actually booted. */
-html.vv-custom-scrollbar,html.vv-custom-scrollbar body{scrollbar-width:none!important;-ms-overflow-style:none!important}
-html.vv-custom-scrollbar::-webkit-scrollbar,html.vv-custom-scrollbar body::-webkit-scrollbar{width:0!important;height:0!important;display:none!important;background:transparent!important}
-@media(max-width:430px){#vv-scrollbar{right:max(5px,env(safe-area-inset-right));top:20vh;height:60vh}}
-@media(prefers-reduced-motion:reduce){#vv-scrollbar{transition:none}#vv-scrollbar .vv-mark,#vv-scrollbar .vv-label{transition:none}}
-</style>
 
 
 <noscript><style>
@@ -569,8 +547,7 @@ html.vv-custom-scrollbar::-webkit-scrollbar,html.vv-custom-scrollbar body::-webk
   <a href="#normal"><span>05</span>Help</a>
 </nav>
 </div>
-<div class="mf-read-progress" aria-hidden="true"><i></i></div>
-<div id="vv-scrollbar" aria-hidden="true"><div class="vv-rail"><i class="vv-fill"></i></div><div class="vv-marks"></div><i class="vv-thumb"></i><span class="vv-label">Start</span></div><div id="app"></div><style id="mobile-fallback-style">
+<div id="app"></div><style id="mobile-fallback-style">
 :root{--bg:#09090b;--bg2:#0e0d11;--panel:#141218;--panel2:#18151f;--ink:#f2eef5;--muted:#9f9f9f;--line:#2b2731;--purple:#9d9d9d;--purple2:#b9b9b9;--red:#ff7088;--green:#73d69a;--shadow:0 24px 80px rgba(0,0,0,.38)}
 *{box-sizing:border-box}html{scroll-behavior:smooth;background:var(--bg);scroll-snap-type:y proximity}body{margin:0;background:var(--bg);color:var(--ink);overscroll-behavior-y:none}.mf{display:block;max-width:760px;margin:auto;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.5;overflow:hidden;position:relative}.mf:before{content:"";position:fixed;inset:-20vh -55vw auto auto;width:130vw;height:70vh;background:radial-gradient(circle at center,rgba(157,157,157,.14),transparent 62%);pointer-events:none;z-index:0;animation:ambient 9s ease-in-out infinite alternate}.mf>*{position:relative;z-index:1}
 .mf-hero{min-height:100svh;padding:56px 24px 106px;background:radial-gradient(circle at 82% 15%,rgba(157,157,157,.20),transparent 32%),linear-gradient(155deg,#0b0a0d 0%,#100d15 58%,#09090b 100%);color:#fff;display:flex;flex-direction:column;justify-content:center;scroll-snap-align:start;position:relative}.mf-hero:after{content:"";position:absolute;left:24px;right:24px;bottom:92px;height:1px;background:linear-gradient(90deg,var(--purple),rgba(157,157,157,0))}.mf-kicker,.mf-step,.mf-route-label{font-size:10px;letter-spacing:.21em;font-weight:800;color:var(--purple2);text-transform:uppercase}.mf-route-label{margin-top:28px;color:#757575}.mf h1{font-size:clamp(42px,11vw,64px);line-height:.91;letter-spacing:-.055em;margin:14px 0 18px;font-weight:730}.mf h1 span{color:var(--purple2);text-shadow:0 0 34px rgba(157,157,157,.24)}.mf-hero>p{font-size:16px;line-height:1.45;color:#c6c6c6;max-width:390px;margin:0}.mf-hero small{font-size:12px;color:#777777;max-width:360px}.mf-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 24px}.mf-actions a,.mf .review a{display:flex;align-items:center;justify-content:center;min-height:68px;text-decoration:none;text-align:left;padding:14px 14px;border-radius:18px;background:linear-gradient(145deg,#222222,#17131d);border:1px solid #343434;color:#fff;font-size:13px;font-weight:700;box-shadow:inset 0 1px 0 rgba(255,255,255,.04);transition:transform .25s ease,border-color .25s ease,background .25s ease}.mf-actions a:first-child{background:linear-gradient(145deg,#7d7d7d,#9d9d9d);border-color:#b1b1b1;box-shadow:0 12px 34px rgba(157,157,157,.22)}.mf-actions a:active,.mf .review a:active{transform:scale(.97)}.mf-actions a.alt{background:linear-gradient(145deg,#1b191f,#121116)}
@@ -693,11 +670,26 @@ html,body{background:#000!important;color:#f5f5f7;-webkit-font-smoothing:antiali
 #mobile-fallback .stat{color:#f5f5f7!important}
 #mobile-fallback .product-amazon:after{color:#f5f5f7;border-color:rgba(255,255,255,.2);background:rgba(0,0,0,.8)}
 #mobile-fallback .amazon-inline{color:#f5f5f7}
-#vv-scrollbar .vv-fill{background:linear-gradient(180deg,#f5f5f7,#a1a1a6);box-shadow:0 0 12px rgba(255,255,255,.18)}
-#vv-scrollbar .vv-thumb{background:#d2d2d7;border-color:#1d1d1f;box-shadow:0 0 0 2px rgba(255,255,255,.1),0 0 14px rgba(255,255,255,.25)}
-#vv-scrollbar .vv-mark.vv-current{background:#f5f5f7;box-shadow:0 0 8px rgba(255,255,255,.2)}
 #site-footer{background:#000}
 @media(min-width:768px){#mobile-fallback .mf-hero{padding-left:48px;padding-right:48px}#mobile-fallback .mf-section{padding-left:48px;padding-right:48px}#mobile-fallback .mf-actions{max-width:690px}#mobile-fallback .photo{max-width:880px}#mobile-fallback .product{max-width:880px}}
+</style>
+
+<style id="aftercare-blue-accents">
+/* Restore the original site's thin native scrollbar. */
+html{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:10px}
+#mobile-fallback.mf{--purple:#9cc9ee;--purple2:#b8d8f2;--violet:#9cc9ee;--violet2:#77acd6}
+#mobile-fallback .mf-hero h1 span{color:#b8d8f2!important}
+#mobile-fallback .mf-route-label,#mobile-fallback .route-film .mf-step{color:#9cc9ee!important}
+#mobile-fallback .mf-hero{background:radial-gradient(ellipse at 80% 15%,rgba(110,175,225,.07),transparent 52%),#000}
+#mobile-fallback.mf:before{background:radial-gradient(circle at var(--px) var(--py),rgba(110,175,225,.1),transparent 23%),radial-gradient(circle at 62% 45%,rgba(110,175,225,.035),transparent 50%)}
+#vv-route-film:checked ~ #mobile-fallback .vv-film-choice,#vv-route-nofilm:checked ~ #mobile-fallback .vv-nofilm-choice{background:rgba(100,165,215,.13)!important;color:#e7f3fc!important;border-color:rgba(156,201,238,.5)!important;box-shadow:0 8px 28px rgba(110,175,225,.07)!important}
+#mobile-fallback .route-film:before{background:radial-gradient(circle at 30% 28%,rgba(255,255,255,.07),rgba(110,175,225,.08) 34%,transparent 66%)}
+#mobile-fallback .route-film .photo{box-shadow:0 24px 80px rgba(0,0,0,.38),0 0 0 1px rgba(156,201,238,.12)}
+#mobile-fallback .vv-unsure summary:after,#mobile-fallback .amazon-inline{color:#b8d8f2}
+#mobile-fallback .mf-hero:after{background:linear-gradient(90deg,rgba(156,201,238,.3),transparent)}
 </style>
 
 <script id="vishar-stable-enhancement">
@@ -746,102 +738,6 @@ html,body{background:#000!important;color:#f5f5f7;-webkit-font-smoothing:antiali
 })();
 </script>
 
-<script id="vishar-custom-scrollbar">
-(()=>{
-  const mf=document.getElementById('mobile-fallback');
-  const ui=document.getElementById('vv-scrollbar');
-  if(!mf||!ui) return;
-  const fill=ui.querySelector('.vv-fill');
-  const thumb=ui.querySelector('.vv-thumb');
-  const marks=ui.querySelector('.vv-marks');
-  const label=ui.querySelector('.vv-label');
-  if(!fill||!thumb||!marks||!label) return;
-
-  const sectionDefs=[
-    ['top','Start'],['prepare','Prepare'],['nofilm','No film'],['film','Film'],
-    ['moisturiser','Care'],['avoid','Avoid'],['normal','Help'],['large','Large'],['touchup','Touch-up'],['finish','Finish']
-  ];
-  let sections=[];
-  let maxScroll=1, railH=1, raf=0, idleTimer=0, lastP=-1;
-
-  function visible(el){
-    if(!el) return false;
-    const cs=getComputedStyle(el);
-    return cs.display!=='none' && cs.visibility!=='hidden' && el.getClientRects().length>0;
-  }
-  function rebuild(){
-    const root=document.documentElement;
-    maxScroll=Math.max(1,root.scrollHeight-window.innerHeight);
-    railH=Math.max(1,ui.getBoundingClientRect().height);
-    sections=sectionDefs.map(([id,name])=>({id,name,el:document.getElementById(id)})).filter(x=>visible(x.el));
-    marks.replaceChildren();
-    sections.forEach(s=>{
-      const m=document.createElement('i');
-      m.className='vv-mark';
-      m.dataset.id=s.id;
-      const y=(s.el.getBoundingClientRect().top+(window.scrollY||root.scrollTop||0));
-      const p=Math.max(0,Math.min(1,y/maxScroll));
-      m.style.top=(p*100).toFixed(3)+'%';
-      marks.appendChild(m);
-    });
-    update(true);
-  }
-  function currentSection(y){
-    let cur=sections[0]||null;
-    const probe=y+window.innerHeight*.33;
-    for(const s of sections){
-      const top=s.el.getBoundingClientRect().top+y;
-      if(top<=probe) cur=s; else break;
-    }
-    return cur;
-  }
-  function update(force=false){
-    raf=0;
-    const root=document.documentElement;
-    const raw=window.scrollY||root.scrollTop||0;
-    const y=Math.max(0,Math.min(maxScroll,raw));
-    const p=Math.max(0,Math.min(1,y/maxScroll));
-    if(force||Math.abs(p-lastP)>.0005){
-      fill.style.transform='scaleY('+p.toFixed(5)+')';
-      const travel=Math.max(0,railH-12);
-      const ty=p*travel;
-      thumb.style.transform='translateY('+ty.toFixed(2)+'px)';
-      label.style.top=Math.max(8,Math.min(railH-8,ty+6)).toFixed(2)+'px';
-      lastP=p;
-    }
-    const cur=currentSection(y);
-    if(cur){
-      label.textContent=cur.name;
-      marks.querySelectorAll('.vv-mark').forEach(m=>m.classList.toggle('vv-current',m.dataset.id===cur.id));
-    }
-  }
-  function wake(){
-    ui.classList.add('vv-active');
-    clearTimeout(idleTimer);
-    idleTimer=setTimeout(()=>ui.classList.remove('vv-active'),850);
-  }
-  function schedule(){
-    wake();
-    if(!raf) raf=requestAnimationFrame(update);
-  }
-  function layout(){
-    requestAnimationFrame(()=>requestAnimationFrame(rebuild));
-  }
-
-  // Only hide the native scrollbar after this custom rail is confirmed mounted.
-  document.documentElement.classList.add('vv-custom-scrollbar');
-  addEventListener('scroll',schedule,{passive:true});
-  addEventListener('resize',layout,{passive:true});
-  if(window.visualViewport){visualViewport.addEventListener('resize',layout,{passive:true});}
-  const film=document.getElementById('vv-route-film');
-  const nofilm=document.getElementById('vv-route-nofilm');
-  film?.addEventListener('change',layout);
-  nofilm?.addEventListener('change',layout);
-  document.querySelector('.vv-unsure')?.addEventListener('toggle',layout);
-  if('ResizeObserver' in window){new ResizeObserver(layout).observe(mf);}
-  rebuild();
-})();
-</script>
 
 <div id="site-footer">
   <!-- build:footer -->
