@@ -71,8 +71,23 @@
   <!-- Intake semantic preflight. Empty means off; "on" enables the optional
        clarity check before submit. It never blocks an enquiry. -->
   <meta name="vishar-intake-preflight" content="on">
+  <!-- Enquiry form selector: "v2" shows the multi-step form, anything else the
+       legacy single-page form. ?enquiry_form=v2|legacy overrides it for one
+       visit so production can be checked before the default changes. The
+       legacy form stays in the page and is the instant rollback. -->
+  <meta name="vishar-enquiry-form" content="legacy">
+  <script>
+  (function () {
+    var configured = (document.querySelector('meta[name="vishar-enquiry-form"]') || {}).content || '';
+    var override = '';
+    try { override = new URLSearchParams(window.location.search).get('enquiry_form') || ''; } catch (e) { override = ''; }
+    var mode = override === 'v2' || override === 'legacy' ? override : configured;
+    if (mode === 'v2') document.documentElement.setAttribute('data-enquiry-form', 'v2');
+  })();
+  </script>
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/tailwind.css">
+  <link rel="stylesheet" href="/assets/css/enquiry-form-v2.css">
   <style>
     body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     ::selection{background:rgba(0,113,227,.35);color:#fff}
@@ -217,7 +232,7 @@
 
     <section class="px-6 py-24">
       <div class="max-w-[1200px] mx-auto grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
-        <aside class="space-y-5">
+        <aside class="booking-aside space-y-5">
           <div class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
             <p class="text-xs uppercase tracking-[0.25em] text-white/35 mb-4">Before you send</p>
             <ul class="space-y-3 text-sm leading-relaxed text-white/50">
@@ -233,6 +248,8 @@
           </div>
         </aside>
 
+        <div class="booking-main">
+        <div id="enquiry-v2" aria-live="off"></div>
         <form id="tattoo-enquiry-form" class="rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-10" novalidate>
           <div class="grid md:grid-cols-2 gap-5">
             <label><span class="field-label">Full name <span class="required">*</span></span><input class="form-field" type="text" name="name" autocomplete="name" maxlength="120" required></label>
@@ -262,6 +279,7 @@
           <p class="text-xs uppercase tracking-[0.25em] text-green-400 mb-4">Enquiry sent</p>
           <h2 class="text-2xl md:text-3xl font-semibold mb-4">Thank you. Your enquiry has been sent.</h2>
           <p id="enquiry-success-message" class="text-sm md:text-base leading-relaxed text-white/60"></p>
+        </div>
         </div>
       </div>
     </section>
@@ -328,6 +346,7 @@
   </div>
   <script src="/components.js" defer></script>
   <script src="/assets/js/intake-preflight.js"></script>
+  <script src="/assets/js/enquiry-form-v2.js" defer></script>
   <script>
   (function () {
     const canonicalBookingHost = 'vishartattoo.com';
@@ -800,6 +819,37 @@
         button.textContent = 'Try again';
       }
     });
+
+    // Shared with assets/js/enquiry-form-v2.js so both forms use the same
+    // endpoint, consent-gated advertising handoff, attribution, idempotency
+    // and conversion-after-save rules.
+    window.VisharBooking = {
+      useV2: document.documentElement.getAttribute('data-enquiry-form') === 'v2',
+      endpoint: endpoint,
+      preflightEnabled: preflightEnabled,
+      privacyNoticeVersion: PRIVACY_NOTICE_VERSION,
+      startedAt: startedAt,
+      attribution: attribution,
+      idempotencyKey: idempotencyKey,
+      clearIdempotencyKey: clearIdempotencyKey,
+      openAiAdsServerContext: openAiAdsServerContext,
+      metaAdsServerContext: metaAdsServerContext,
+      onSuccess: function (enquiryKey, result) {
+        // Only called after the server confirmed the enquiry and its images
+        // are saved, so only now is a lead conversion counted.
+        successMessage.textContent = result && result.reference
+          ? 'Your enquiry is saved as ' + result.reference + '. Vladimir will review it personally.'
+          : 'Your enquiry has been sent directly to Vladimir.';
+        var v2Root = document.getElementById('enquiry-v2');
+        if (v2Root) v2Root.classList.add('hidden');
+        form.classList.add('hidden');
+        successPanel.classList.remove('hidden');
+        successPanel.focus();
+        trackOpenAiLead(enquiryKey);
+        trackMetaLead(enquiryKey);
+        clearIdempotencyKey();
+      }
+    };
   })();
   </script>
 </body>

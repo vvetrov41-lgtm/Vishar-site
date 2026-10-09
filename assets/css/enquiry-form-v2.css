@@ -1,0 +1,99 @@
+/* Enquiry form v2. Black, quiet, no icons. Selected choices invert. */
+html[data-enquiry-form="v2"] #tattoo-enquiry-form { display: none !important; }
+html:not([data-enquiry-form="v2"]) #enquiry-v2 { display: none !important; }
+@media (max-width: 767px) {
+  html[data-enquiry-form="v2"] .booking-aside { order: 2; }
+  html[data-enquiry-form="v2"] .booking-main { order: 1; }
+}
+
+#enquiry-v2 { min-height: 28rem; }
+.ef-form { position: relative; border: 1px solid rgba(255,255,255,.1); border-radius: 1.5rem; background: rgba(255,255,255,.03); padding: 1.25rem 1rem 1.25rem; }
+@media (min-width: 768px) { .ef-form { padding: 2.25rem 2.5rem; } }
+
+.ef-progress { height: 2px; width: 100%; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; margin-bottom: 1.25rem; }
+.ef-progress-fill { height: 100%; width: 100%; background: #f5f5f7; transform-origin: left center; transform: scaleX(0); transition: transform .35s ease; }
+.ef-section { font-size: .72rem; letter-spacing: .18em; text-transform: uppercase; color: rgba(255,255,255,.55); margin: 0 0 1rem; outline: none; }
+
+.ef-body.ef-enter { animation: ef-enter .22s ease both; }
+@keyframes ef-enter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+.ef-question { display: block; font-size: 1.375rem; line-height: 1.25; font-weight: 600; letter-spacing: -.01em; color: #f5f5f7; margin: 0 0 .5rem; padding: 0; }
+@media (min-width: 768px) { .ef-question { font-size: 1.625rem; } }
+.ef-legend-small { display: block; font-size: .75rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.55); margin: 1.25rem 0 .6rem; padding: 0; }
+.ef-help { font-size: .875rem; line-height: 1.5; color: rgba(255,255,255,.55); margin: 0 0 1rem; }
+.ef-optional { color: rgba(255,255,255,.5); text-transform: none; letter-spacing: 0; }
+.ef-sr-only { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+.ef-fieldset { border: 0; margin: 0 0 .5rem; padding: 0; min-width: 0; }
+.ef-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+@media (min-width: 640px) { .ef-choices { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.ef-choices-1 { grid-template-columns: 1fr; }
+
+.ef-choice { position: relative; display: flex; flex-direction: column; justify-content: center; min-height: 3.25rem; padding: .75rem .9rem; border: 1px solid rgba(255,255,255,.14); border-radius: .9rem; background: rgba(255,255,255,.02); color: rgba(255,255,255,.85); cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .15s, border-color .15s, color .15s; user-select: none; }
+.ef-choice:hover { border-color: rgba(255,255,255,.32); }
+.ef-choice-input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.ef-choice-label { font-size: .95rem; line-height: 1.3; font-weight: 500; }
+.ef-choice-hint { font-size: .78rem; color: rgba(255,255,255,.55); margin-top: .2rem; }
+.ef-choice.is-selected, .ef-choice:has(.ef-choice-input:checked) { background: #f5f5f7; border-color: #f5f5f7; color: #000; }
+.ef-choice.is-selected .ef-choice-hint, .ef-choice:has(.ef-choice-input:checked) .ef-choice-hint { color: rgba(0,0,0,.6); }
+.ef-choice:has(.ef-choice-input:focus-visible) { outline: 2px solid rgba(0,113,227,.8); outline-offset: 2px; }
+.ef-choice:active { transform: scale(.985); }
+
+.ef-field { margin-top: 1.1rem; }
+.ef-field .form-field { font-size: 16px; } /* iOS: no zoom on focus */
+.ef-textarea { min-height: 8.5rem; resize: vertical; }
+.ef-note { font-size: .85rem; line-height: 1.5; color: rgba(255,255,255,.6); margin: .75rem 0 0; }
+.ef-note-visible { padding: .75rem .9rem; border: 1px solid rgba(255,255,255,.14); border-radius: .75rem; }
+.ef-notice { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; font-size: .85rem; color: rgba(255,255,255,.6); margin: 0 0 1rem; }
+.ef-notice[hidden] { display: none; }
+.ef-link-button { background: none; border: 0; padding: .25rem 0; color: #fff; text-decoration: underline; text-underline-offset: 4px; font: inherit; cursor: pointer; min-height: 44px; }
+
+.ef-images { margin-top: 1.25rem; padding-top: .25rem; }
+.ef-images + .ef-images { border-top: 1px solid rgba(255,255,255,.08); }
+.ef-file-input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.ef-file-input:focus-visible + .ef-add { outline: 2px solid rgba(0,113,227,.8); outline-offset: 3px; }
+.ef-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr)); gap: .5rem; list-style: none; padding: 0; margin: 0 0 .75rem; }
+.ef-thumbs:empty { display: none; }
+.ef-thumb { display: flex; flex-direction: column; gap: .25rem; }
+.ef-thumb img { width: 100%; aspect-ratio: 1 / 1; height: auto; object-fit: cover; display: block; border-radius: .75rem; background: rgba(255,255,255,.05); }
+.ef-thumb-remove { min-height: 44px; border: 0; border-radius: 999px; background: transparent; color: rgba(255,255,255,.7); font: inherit; font-size: .8rem; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.ef-thumb-remove:hover { color: #fff; }
+.ef-thumb-remove:focus-visible { outline: 2px solid rgba(0,113,227,.9); outline-offset: 1px; }
+
+.ef-error { margin: 1rem 0 0; padding: .75rem .9rem; border-radius: .75rem; background: rgba(248,113,113,.1); border: 1px solid rgba(248,113,113,.35); color: #fecaca; font-size: .9rem; line-height: 1.45; }
+.ef-error[hidden] { display: none; }
+
+.ef-nav { display: flex; gap: .75rem; margin-top: 1.5rem; }
+.ef-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: .75rem 1.4rem; border-radius: 999px; font: inherit; font-size: .95rem; font-weight: 600; cursor: pointer; transition: background-color .15s, color .15s, opacity .15s; -webkit-tap-highlight-color: transparent; }
+.ef-btn[hidden] { display: none; }
+.ef-btn:disabled { opacity: .55; cursor: wait; }
+.ef-btn-primary { flex: 1 1 auto; border: 1px solid #f5f5f7; background: #f5f5f7; color: #000; }
+.ef-btn-primary:hover:not(:disabled) { background: #fff; }
+.ef-btn-secondary { flex: 0 0 auto; border: 1px solid rgba(255,255,255,.2); background: transparent; color: rgba(255,255,255,.85); }
+.ef-btn-secondary:hover:not(:disabled) { border-color: rgba(255,255,255,.45); color: #fff; }
+.ef-add { width: 100%; }
+@media (min-width: 640px) { .ef-add { width: auto; } .ef-btn-primary { flex: 0 0 auto; min-width: 12rem; } .ef-nav { justify-content: space-between; } }
+
+.ef-summary { margin: .5rem 0 0; }
+.ef-summary-row { display: grid; grid-template-columns: 1fr; gap: .2rem; padding: .85rem 0; border-bottom: 1px solid rgba(255,255,255,.08); }
+@media (min-width: 640px) { .ef-summary-row { grid-template-columns: 9rem 1fr; gap: 1rem; } }
+.ef-summary-row dt { font-size: .72rem; letter-spacing: .12em; text-transform: uppercase; color: rgba(255,255,255,.55); padding-top: .2rem; }
+.ef-summary-row dd { margin: 0; display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.ef-summary-value { white-space: pre-line; overflow-wrap: anywhere; font-size: .95rem; line-height: 1.5; color: rgba(255,255,255,.85); }
+.ef-edit { flex: 0 0 auto; min-height: 44px; min-width: 44px; padding: 0 .25rem; background: none; border: 0; color: rgba(255,255,255,.6); text-decoration: underline; text-underline-offset: 4px; font: inherit; font-size: .85rem; cursor: pointer; margin-top: -.6rem; }
+.ef-edit:hover { color: #fff; }
+
+.ef-consent { display: flex; align-items: flex-start; gap: .75rem; margin-top: 1.25rem; font-size: .875rem; line-height: 1.55; color: rgba(255,255,255,.55); cursor: pointer; }
+.ef-consent input { margin-top: .2rem; width: 1.25rem; height: 1.25rem; flex: 0 0 auto; }
+.ef-link { color: #fff; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: rgba(255,255,255,.3); }
+.ef-trap { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+
+.ef-preflight { margin-top: 1.25rem; padding: .9rem 1rem; border: 1px solid rgba(245,194,107,.35); border-radius: .9rem; color: #f5dfb4; font-size: .9rem; line-height: 1.5; }
+.ef-preflight ul { margin: .5rem 0 .75rem; padding-left: 1.1rem; }
+.ef-preflight-title { margin: 0; font-weight: 500; }
+.ef-preflight-actions { display: flex; gap: .5rem; margin-bottom: .5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ef-body.ef-enter { animation: none; }
+  .ef-progress-fill { transition: none; }
+}
