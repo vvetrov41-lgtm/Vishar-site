@@ -1,0 +1,44 @@
+name: Validate Vladimir Meta CAPI access read-only
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc1048-inventory-capi-auth-20261009'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meta-capi-readonly-identity
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    environment: crm-production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Enforce exact read-only release target
+        shell: bash
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_NAME" = 'release/private-crm-rc1048-inventory-capi-auth-20261009' ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          git merge-base --is-ancestor 5dcf71eee4fa1de296058bd080275e403ddf5e82 HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run credential-free custody tests
+        run: node --test scripts/test-meta-capi-production-token.mjs
+      - name: Validate Meta business system user, scopes, Pixel and Cloudflare configuration without writes
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+          META_ADS_VLADIMIR_ACCESS_TOKEN: ${{ secrets.META_ADS_VLADIMIR_ACCESS_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/provision-meta-capi-production-token.mjs >> "$GITHUB_STEP_SUMMARY"
