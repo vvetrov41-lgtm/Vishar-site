@@ -60,32 +60,38 @@ describe('responsive navigation shell', () => {
     renderWithSession(<App />, { role: 'owner', path: '/' });
     await screen.findByRole('heading', { level: 2, name: 'Needs you now' });
 
-    const more = screen.getByRole('button', { name: 'More' });
-    fireEvent.click(more);
-    await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'true'));
+    // The shell can still re-mount after the heading renders, which resets
+    // the sheet to closed. Opening and every assertion run in one waitFor
+    // pass, so the test passes only when an open sheet shows the right
+    // groups, and a late re-mount just means another pass.
+    await waitFor(() => {
+      const more = screen.getByRole('button', { name: 'More' });
+      if (more.getAttribute('aria-expanded') !== 'true') fireEvent.click(more);
+      expect(more).toHaveAttribute('aria-expanded', 'true');
 
-    const dialog = screen.getByRole('dialog', { name: 'Sections' });
-    const work = within(dialog).getByRole('group', { name: 'Work' });
-    const manage = within(dialog).getByRole('group', { name: 'Manage' });
+      const dialog = screen.getByRole('dialog', { name: 'Sections' });
+      const work = within(dialog).getByRole('group', { name: 'Work' });
+      const manage = within(dialog).getByRole('group', { name: 'Manage' });
 
-    expect(within(work).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Enquiries',
-      'Follow-ups',
-      'Projects',
-      // Statistics is work, not setup: it is read every week rather than
-      // configured once.
-      'Statistics',
-    ]);
-    // Eight money and setup screens became two hub entries: the sheet lists
-    // six links instead of twelve.
-    expect(within(manage).getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Money',
-      'Settings',
-    ]);
-    expect(within(manage).getByRole('link', { name: 'Money' })).toHaveAttribute('href', '#/money');
-    expect(within(manage).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#/settings');
-    expect(within(dialog).queryByRole('group', { name: 'Money' })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('group', { name: 'Settings' })).not.toBeInTheDocument();
+      expect(within(work).getAllByRole('link').map((link) => link.textContent)).toEqual([
+        'Enquiries',
+        'Follow-ups',
+        'Projects',
+        // Statistics is work, not setup: it is read every week rather than
+        // configured once.
+        'Statistics',
+      ]);
+      // Eight money and setup screens became two hub entries: the sheet lists
+      // six links instead of twelve.
+      expect(within(manage).getAllByRole('link').map((link) => link.textContent)).toEqual([
+        'Money',
+        'Settings',
+      ]);
+      expect(within(manage).getByRole('link', { name: 'Money' })).toHaveAttribute('href', '#/money');
+      expect(within(manage).getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#/settings');
+      expect(within(dialog).queryByRole('group', { name: 'Money' })).not.toBeInTheDocument();
+      expect(within(dialog).queryByRole('group', { name: 'Settings' })).not.toBeInTheDocument();
+    });
   });
 
   it('lists every screen a hub stands for on the hub page, and nothing more', async () => {
