@@ -582,22 +582,49 @@ console.log('WhatsApp production onboarding boundary tests passed.');
 
 {
   const { requirePinnedSelection } = __testing;
-  // Kristina: her WABA or her phone id is accepted (Coexistence may change
-  // one of them); anything else is refused before credentials are written.
-  requirePinnedSelection('kristina-production', KRISTINA_WABA, KRISTINA_PHONE);
-  requirePinnedSelection('kristina-production', '99999999999999', KRISTINA_PHONE);
-  requirePinnedSelection('kristina-production', KRISTINA_WABA, '99999999999999');
+  // The artist's own phone number id is required, whatever the WABA.
+  requirePinnedSelection('kristina-production', KRISTINA_PHONE);
   assert.throws(
-    () => requirePinnedSelection('kristina-production', '341184815737145', '328102027058293'),
+    () => requirePinnedSelection('kristina-production', '10987654329'),
+    /meta_selection_not_artist_number/,
+    'another number in Kristina\'s WABA is refused',
+  );
+  assert.throws(
+    () => requirePinnedSelection('kristina-production', '328102027058293'),
     /meta_selection_not_artist_number/,
     "Vladimir's number cannot be bound to Kristina",
   );
   assert.throws(
-    () => requirePinnedSelection('vladimir-production', KRISTINA_WABA, KRISTINA_PHONE),
+    () => requirePinnedSelection('vladimir-production', KRISTINA_PHONE),
     /meta_selection_not_artist_number/,
     "Kristina's number cannot be bound to Vladimir",
   );
-  requirePinnedSelection('future-artist-production', '12345678903', '10987654323');
+  requirePinnedSelection('future-artist-production', '10987654323');
+}
+
+{
+  // A second number inside Kristina's own WABA: Meta confirms it belongs to
+  // the WABA, but it is not her number, so nothing is written.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const otherPhone = '10987654328';
+  globalThis.fetch = authorizedFetch(calls, {
+    phoneRows: [
+      { id: KRISTINA_PHONE, display_phone_number: '+44 7000 000002', verified_name: 'Kristina' },
+      { id: otherPhone, display_phone_number: '+44 7000 000008', verified_name: 'Other' },
+    ],
+  });
+  const sameWaba = bodyFor(KRISTINA_ID);
+  sameWaba.session.phone_number_id = otherPhone;
+  try {
+    const response = await onRequestPost({ request: request(sameWaba), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_selection_not_artist_number' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((call) => call.target.includes('/subscribed_apps')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 }
 
 {
