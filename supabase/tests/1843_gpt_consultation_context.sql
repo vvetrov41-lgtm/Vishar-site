@@ -64,6 +64,11 @@ insert into public.enquiries (
    repeat('d', 64), 'accepted', 'complete', 'Consult Kristina Client', 'kristina-1843@example.test', '2026-08-05', now(),
    now() - interval '3 days', null, null, 'Fine line', 'Ankle', 'Kristina fixture');
 
+-- The linked enquiry came from booking form v2 (20261010080000).
+update public.enquiries
+set project_details = crm_private.normalise_enquiry_project_input('{"areas":[{"region":"arm","placements":["full_sleeve","forearm"],"work":["cover_up"]},{"region":"leg","placements":["calf"],"work":["new"]}],"styles":["colour"]}'::jsonb) -> 'project_details'
+where id = 'dc531111-1111-4111-8111-111111111111';
+
 -- One analysed reference image on the linked enquiry (20261004160000).
 insert into public.enquiry_files (
   id, enquiry_id, ordinal, storage_path, mime_type, safe_extension, byte_size, upload_state, uploaded_at
@@ -224,6 +229,13 @@ select is((select r -> 'reference_analyses' -> 'images' -> 0 ->> 'summary' from 
   'the analysis is passed through unchanged, not re-summarised');
 select is((select r -> 'reference_analyses' -> 'images' -> 0 ->> 'model' from ctx_linked), '@cf/qwen/qwen3.8-27b',
   'the analysis names the vision model that wrote it');
+select is((select r -> 'enquiry' ->> 'project_summary' from ctx_linked),
+  'Full sleeve + Forearm cover-up + Leg tattoo',
+  'consultation preparation sees the whole structured project, not only Cover-up');
+select is((select jsonb_array_length(r -> 'enquiry' -> 'project_details' -> 'areas') from ctx_linked), 2,
+  'consultation preparation carries every body area');
+select is((select r -> 'enquiry' ->> 'project_type' from ctx_linked), 'Realism',
+  'legacy enquiry fields are unchanged');
 
 
 select is((select r -> 'enquiry_link' ->> 'status' from ctx_candidate), 'candidate',
