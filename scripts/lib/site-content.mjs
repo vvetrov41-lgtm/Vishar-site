@@ -44,7 +44,7 @@ export const COLLECTION_LINKS = [
     label: 'Colour Realism',
     href: '/colour-realism-tattoo-london/',
     description: 'Vivid photorealistic colour tattoos and custom compositions.',
-    image: '/assets/colour-realism/01.webp',
+    image: '/assets/colour-realism/02.webp',
     alt: 'Colour realism tattoo by Vladimir Vishar'
   },
   {
