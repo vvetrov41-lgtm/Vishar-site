@@ -449,9 +449,57 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
   const coexistence = bodyFor(KRISTINA_ID);
   coexistence.session.phone_number_id = null;
   try {
+    // Coexistence finished without a phone id and the WABA holds two numbers:
+    // Kristina's pinned number is selected, not refused as ambiguous.
     const response = await onRequestPost({ request: request(coexistence), env: env() });
+    assert.equal(response.status, 200);
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(JSON.parse(String(call.init.body)).text));
+    assert.equal(writes.length, 2);
+    for (const envelope of writes) assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // A route without a pin keeps refusing an ambiguous selection.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    artistId: FUTURE_ID,
+    phoneRows: [
+      { id: '10987654323', display_phone_number: '+44 7000 000003', verified_name: 'Future' },
+      { id: '10987654324', display_phone_number: '+44 7000 000004', verified_name: 'Other' },
+    ],
+  });
+  const ambiguous = bodyFor(FUTURE_ID);
+  ambiguous.session.phone_number_id = null;
+  try {
+    const response = await onRequestPost({ request: request(ambiguous), env: env() });
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_selection_ambiguous' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Coexistence without a phone id, on a WABA that does not hold Kristina's
+  // number: refused before any write.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    phoneRows: [{ id: '10987654327', display_phone_number: '+44 7000 000007', verified_name: 'Other' }],
+  });
+  const missing = bodyFor(KRISTINA_ID);
+  missing.session.phone_number_id = null;
+  try {
+    const response = await onRequestPost({ request: request(missing), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_not_in_waba' });
     assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
   } finally {
     globalThis.fetch = originalFetch;

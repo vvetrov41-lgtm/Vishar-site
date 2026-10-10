@@ -504,7 +504,13 @@ export async function onRequestPost(context) {
     stage = 'waba_discovery';
     const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, metaAppSecret);
     stage = 'meta_selection';
-    const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
+    // Coexistence may finish without a phone number id; a pinned route then
+    // asks for its own number, which verifyMetaSelection still requires to
+    // belong to the returned WABA.
+    const requestedPhoneNumberId = browserPhoneNumberId
+      || PINNED_ARTIST_PHONE_NUMBER_IDS[route.integrationKey]
+      || null;
+    const safeMeta = await verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId);
     stage = 'artist_number_pin';
     requirePinnedSelection(route.integrationKey, safeMeta.phoneNumberId);
     const envelope = JSON.stringify({
