@@ -199,7 +199,8 @@ function env() {
       return Response.json({
         error: {
           message: 'Echoed Hi {{1}}, your tattoo session is booked',
-          error_user_msg: 'Echoed user text',
+          error_user_title: 'Echoed Please confirm so I know to expect you.',
+          error_user_msg: 'Echoed Hi {{1}}',
           type: 'OAuthException',
           code: 100,
           error_subcode: 2388024,
@@ -221,6 +222,8 @@ function env() {
     subcode: 2388024,
     type: 'OAuthException',
     message: null,
+    user_title: null,
+    user_message: null,
     fbtrace_id: 'TRACE123',
   });
   const serialised = JSON.stringify(rpcCalls);
@@ -251,6 +254,8 @@ function env() {
     subcode: null,
     type: null,
     message: null,
+    user_title: null,
+    user_message: null,
     fbtrace_id: null,
   });
 }
@@ -267,7 +272,14 @@ function env() {
   });
   const diagnostic = await readProviderError(new Response(huge, { status: 400 }));
   assert.deepEqual(diagnostic, {
-    http_status: 400, code: null, subcode: null, type: null, message: null, fbtrace_id: null,
+    http_status: 400,
+    code: null,
+    subcode: null,
+    type: null,
+    message: null,
+    user_title: null,
+    user_message: null,
+    fbtrace_id: null,
   });
   assert.ok(pulled <= 4, `read ${pulled} chunks past the cap`);
 
@@ -327,6 +339,7 @@ function env() {
   const result = await maintainWhatsappBookingTemplates(env(), { fetchImpl });
   assert.equal(result.failed, 1);
   const record = rpcCalls.find((call) => call.name === 'service_record_booking_card_template_status');
+  assert.equal(record.args.p_error_code, 'whatsapp_template_api_unavailable_for_account');
   assert.deepEqual(record.args.p_provider_error, {
     stage: 'create_tattoo',
     http_status: 400,
@@ -334,6 +347,8 @@ function env() {
     subcode: 2494160,
     type: 'OAuthException',
     message: 'Your WhatsApp Business Account is restricted from creating message templates.',
+    user_title: null,
+    user_message: null,
     fbtrace_id: 'AbC_123-xyz',
   });
   assert.deepEqual(record.args.p_waba_health, {
@@ -377,6 +392,119 @@ function env() {
   assert.equal(health.entities[0].errors[0].error_code, 141010);
   assert.equal(__testing.providerMessage('ж'.repeat(151)), null);
   assert.equal(__testing.providerMessage('ж'.repeat(150)), 'ж'.repeat(150));
+}
+
+{
+  // Regression for Kristina's production WABA (2026-10-10): health is
+  // AVAILABLE and listing works, but every create returns 100/2494160 with
+  // only "Invalid parameter" as the message. The account cannot manage
+  // templates through the API. The real reason in error_user_title /
+  // error_user_msg is kept, the failure is classified as an account state,
+  // the second template is not attempted, nothing is reported as approved
+  // and the statuses stay UNKNOWN (fail-closed).
+  const rpcCalls = [];
+  const graphCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
+      if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (value === `https://graph.facebook.com/v25.0/${WABA}?fields=health_status`) {
+      return Response.json({
+        health_status: {
+          can_send_message: 'AVAILABLE',
+          entities: [
+            { entity_type: 'WABA', id: WABA, can_send_message: 'AVAILABLE' },
+            { entity_type: 'APP', id: '1', can_send_message: 'AVAILABLE' },
+          ],
+        },
+      });
+    }
+    if (value.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      const method = String(init.method || 'GET').toUpperCase();
+      graphCalls.push({ method, body: init.body ? JSON.parse(init.body) : null });
+      if (method === 'GET') return Response.json({ data: [] });
+      return Response.json({
+        error: {
+          message: 'Invalid parameter',
+          type: 'OAuthException',
+          code: 100,
+          error_subcode: 2494160,
+          is_transient: false,
+          error_user_title: 'Message templates unavailable',
+          error_user_msg: 'Message templates cannot be created or edited on this account through the API.',
+          fbtrace_id: 'AYv81xIAc40EUKpURk-9UAX',
+        },
+      }, { status: 400 });
+    }
+    throw new Error(`unexpected request ${value}`);
+  };
+
+  const result = await maintainWhatsappBookingTemplates(env(), { fetchImpl });
+  assert.deepEqual(result, { targets: 1, checked: 0, created: 0, approved: 0, failed: 1 });
+  assert.equal(graphCalls.filter((call) => call.method === 'POST').length, 1,
+    'the consultation template is not attempted after the account refused the first');
+  const record = rpcCalls.find((call) => call.name === 'service_record_booking_card_template_status');
+  assert.equal(record.args.p_tattoo_status, 'UNKNOWN');
+  assert.equal(record.args.p_consultation_status, 'UNKNOWN');
+  assert.equal(record.args.p_error_code, 'whatsapp_template_api_unavailable_for_account');
+  assert.deepEqual(record.args.p_provider_error, {
+    stage: 'create_tattoo',
+    http_status: 400,
+    code: 100,
+    subcode: 2494160,
+    type: 'OAuthException',
+    message: 'Invalid parameter',
+    user_title: 'Message templates unavailable',
+    user_message: 'Message templates cannot be created or edited on this account through the API.',
+    fbtrace_id: 'AYv81xIAc40EUKpURk-9UAX',
+  });
+  assert.equal(record.args.p_waba_health.can_send_message, 'AVAILABLE');
+  assert.equal(JSON.stringify(rpcCalls).includes(TOKEN), false);
+}
+
+{
+  // Templates created outside the API (WhatsApp Manager) on such an account
+  // are adopted by name, language and category: nothing is created, and the
+  // statuses come from Meta's own readback.
+  const rpcCalls = [];
+  const posts = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_booking_card_template_targets') {
+        return Response.json([target({ tattoo_template_status: 'UNKNOWN', consultation_template_status: 'UNKNOWN' })]);
+      }
+      if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (value.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      if (String(init.method || 'GET').toUpperCase() === 'POST') {
+        posts.push(value);
+        throw new Error('nothing may be created when both templates exist');
+      }
+      return Response.json({
+        data: [
+          { id: '1', name: 'booking_card_tattoo_v1', language: 'en_GB', category: 'UTILITY', status: 'PENDING' },
+          { id: '2', name: 'booking_card_consultation_v1', language: 'en_GB', category: 'UTILITY', status: 'APPROVED' },
+        ],
+      });
+    }
+    return Response.json({ error: { code: 1 } }, { status: 500 });
+  };
+  const result = await maintainWhatsappBookingTemplates(env(), { fetchImpl });
+  assert.equal(posts.length, 0);
+  assert.deepEqual(result, { targets: 1, checked: 1, created: 0, approved: 0, failed: 0 });
+  const record = rpcCalls.find((call) => call.name === 'service_record_booking_card_template_status');
+  assert.equal(record.args.p_tattoo_status, 'PENDING');
+  assert.equal(record.args.p_consultation_status, 'APPROVED');
+  assert.equal(record.args.p_error_code, null);
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');
