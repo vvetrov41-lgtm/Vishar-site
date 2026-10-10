@@ -757,6 +757,11 @@ function codeOnlyBody() {
       assert.equal(envelope.wabaId, KRISTINA_WABA);
       assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
     }
+    const phoneLookups = calls.filter((call) => call.target.includes('/phone_numbers'));
+    assert.ok(phoneLookups.length >= 2);
+    for (const call of phoneLookups) {
+      assert.equal(new URL(call.target).searchParams.get('limit'), '100', 'phone lookups ask for one full page');
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

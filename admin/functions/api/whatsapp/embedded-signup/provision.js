@@ -324,6 +324,7 @@ async function discoverPinnedWaba(accessToken, appSecret, pinnedPhoneNumberId) {
   for (const wabaId of targetIds) {
     const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/phone_numbers`);
     phonesUrl.searchParams.set('fields', 'id');
+    phonesUrl.searchParams.set('limit', '100');
     const phones = await graph(phonesUrl.toString(), {
       headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
     });
@@ -345,6 +346,9 @@ async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) 
 
   const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/phone_numbers`);
   phonesUrl.searchParams.set('fields', 'id,display_phone_number,verified_name');
+  // Meta pages /phone_numbers; one explicit page of 100 covers any WABA here,
+  // as in the existing-account path.
+  phonesUrl.searchParams.set('limit', '100');
   const phones = await graph(phonesUrl.toString(), {
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
