@@ -106,22 +106,35 @@ function templateDefinition(kind, name, language) {
 }
 
 // Meta returns HTTP 400 for most template failures (permission #200, token
-// #190, duplicate content, policy, a WABA-level template restriction), so the
-// status alone cannot explain one. The numeric code, subcode and type are
-// kept, plus Meta's own error message and fbtrace_id so a restriction can be
-// raised with Meta support. The message is Meta's text, bounded and dropped
-// if it could carry request content (a template placeholder or body line) or
-// anything token-like. error_user_msg / error_user_title are never read.
+// #190, duplicate content, policy, an account that cannot manage templates
+// through the API), so the status alone cannot explain one. The numeric code,
+// subcode and type are kept, plus Meta's own error message, its user-facing
+// title and text, and fbtrace_id so a failure can be raised with Meta
+// support. Every text is Meta's, bounded and dropped if it could carry
+// request content (a template placeholder or body line) or anything
+// token-like: the generic message is often only "Invalid parameter", and the
+// reason sits in error_user_title / error_user_msg.
 const PROVIDER_ERROR_TYPE = /^[A-Za-z_]{1,64}$/;
 const PROVIDER_TRACE_ID = /^[A-Za-z0-9_\-/+=]{6,64}$/;
 const MAX_PROVIDER_ERROR_BYTES = 8192;
 const MAX_PROVIDER_MESSAGE = 300;
 const TOKEN_LIKE = /\bEA[A-Za-z0-9]{20,}|[A-Za-z0-9_-]{40,}/;
 
-// A WABA-level restriction on creating or updating message templates. It is
-// not a missing permission: retrying every cycle cannot clear it, so the
-// claim RPC waits a day between attempts while it is recorded.
+// Meta refuses message_templates management through the API for this WABA.
+// Observed on a WhatsApp Business app (SMB) account that was shared with the
+// CRM app but not onboarded to Cloud API coexistence: messaging health is
+// AVAILABLE, listing works, every create returns 100/2494160 "Invalid
+// parameter", while the byte-identical payload is APPROVED on a Cloud API
+// WABA. It is an account state, not a payload or token-scope fault, so
+// retrying every cycle cannot clear it; the claim RPC re-probes every few
+// hours so templates added by another path (WhatsApp Manager, coexistence
+// onboarding) are picked up without a manual database change.
 export const TEMPLATE_RESTRICTION = Object.freeze({ code: 100, subcode: 2494160 });
+
+function isTemplateRestriction(providerError) {
+  return providerError?.code === TEMPLATE_RESTRICTION.code
+    && providerError?.subcode === TEMPLATE_RESTRICTION.subcode;
+}
 
 function utf8Length(value) {
   return new TextEncoder().encode(value).byteLength;
@@ -151,6 +164,8 @@ async function readProviderError(response) {
     subcode: null,
     type: null,
     message: null,
+    user_title: null,
+    user_message: null,
     fbtrace_id: null,
   };
   let reader;
@@ -182,6 +197,8 @@ async function readProviderError(response) {
       ? error.type
       : null;
     diagnostic.message = providerMessage(error?.message);
+    diagnostic.user_title = providerMessage(error?.error_user_title);
+    diagnostic.user_message = providerMessage(error?.error_user_msg);
     diagnostic.fbtrace_id = typeof error?.fbtrace_id === 'string'
       && PROVIDER_TRACE_ID.test(error.fbtrace_id)
       ? error.fbtrace_id
@@ -223,7 +240,9 @@ async function graph(binding, path, init, fetchImpl) {
         ? 'whatsapp_template_rate_limited'
         : response.status >= 500
           ? 'whatsapp_template_provider_unavailable'
-          : 'whatsapp_template_rejected';
+          : isTemplateRestriction(providerError)
+            ? 'whatsapp_template_api_unavailable_for_account'
+            : 'whatsapp_template_rejected';
     throw Object.assign(new Error('Meta template request failed'), { code, providerError });
   }
   try {

@@ -103,6 +103,34 @@ the Meta app is subscribed to the `smb_message_echoes` field (App Dashboard >
 WhatsApp > Configuration > Webhook fields). `history` and `smb_app_state_sync`
 are still not interpreted.
 
+### Booking-card templates and Meta 100/2494160
+
+Booking-card templates (`booking_card_tattoo_v1`, `booking_card_consultation_v1`,
+`en_GB`, `UTILITY`) are created and refreshed by the WhatsApp drain Worker
+(`workers/lib/whatsapp-booking-templates.js`). Cards for an artist are enabled
+only when both templates are `APPROVED` by Meta and the stored WABA health is
+`AVAILABLE` overall and for every entity.
+
+`code 100 / error_subcode 2494160` ("Invalid parameter") on template creation is
+an account state, not a payload fault. On 2026-10-10 Kristina's WABA
+`462106700328578` returned it with health `AVAILABLE`, while the byte-identical
+payload is `APPROVED` on Vladimir's WABA. Meta's WhatsApp tooling reports this
+WABA as `SMB_ACCOUNT_NOT_ON_COEX`: a WhatsApp Business app account that is not on
+Cloud API coexistence, so message templates cannot be created or edited on it
+through the API. The CRM records it as
+`whatsapp_template_api_unavailable_for_account`, keeps Meta's user-facing title
+and text, and re-probes every 3 hours. It recovers without a database edit once
+either:
+
+- the account is onboarded to Cloud API coexistence through Embedded Signup
+  (`featureType: whatsapp_business_app_onboarding`), after which the Worker
+  creates both templates itself; or
+- both templates are created in WhatsApp Manager with exactly the Worker's
+  definition (name, `en_GB`, `UTILITY`, LOCATION header, body, two quick-reply
+  buttons), after which the Worker adopts them by name and records Meta's status.
+
+Never set template statuses or `whatsapp_enabled` by hand.
+
 The current CRM transport implements plain text sends only. It has no approved
 message-template send path. Verify the current Meta messaging-window and
 billing rules immediately before real production sending; do not infer them
