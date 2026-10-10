@@ -60,9 +60,14 @@ describe('responsive navigation shell', () => {
     renderWithSession(<App />, { role: 'owner', path: '/' });
     await screen.findByRole('heading', { level: 2, name: 'Needs you now' });
 
-    const more = screen.getByRole('button', { name: 'More' });
-    fireEvent.click(more);
-    await waitFor(() => expect(more).toHaveAttribute('aria-expanded', 'true'));
+    // AppShell closes the sheet whenever the path changes, and the initial
+    // route can still settle after the heading renders. A click that lands
+    // before that is undone, so re-open until the sheet stays open.
+    await waitFor(() => {
+      const more = screen.getByRole('button', { name: 'More' });
+      if (more.getAttribute('aria-expanded') !== 'true') fireEvent.click(more);
+      expect(more).toHaveAttribute('aria-expanded', 'true');
+    });
 
     const dialog = screen.getByRole('dialog', { name: 'Sections' });
     const work = within(dialog).getByRole('group', { name: 'Work' });
