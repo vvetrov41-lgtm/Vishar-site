@@ -288,7 +288,9 @@ function extractUniqueWhatsappTargetIds(debugData) {
   return [...ids];
 }
 
-async function discoverWabaFromToken(accessToken, appSecret) {
+const MAX_PINNED_DISCOVERY_WABAS = 10;
+
+async function tokenWabaIds(accessToken, appSecret) {
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/debug_token`);
   url.searchParams.set('input_token', accessToken);
   const debug = await graph(url.toString(), {
@@ -300,8 +302,37 @@ async function discoverWabaFromToken(accessToken, appSecret) {
   });
   const targetIds = extractUniqueWhatsappTargetIds(debug?.data);
   if (targetIds.length === 0) throw Object.assign(new Error('meta_waba_not_discoverable'), { status: 409 });
+  return targetIds;
+}
+
+async function discoverWabaFromToken(accessToken, appSecret) {
+  const targetIds = await tokenWabaIds(accessToken, appSecret);
   if (targetIds.length !== 1) throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
   return targetIds[0];
+}
+
+// A code-only callback carries no WABA id. For a pinned route, pick the one
+// WABA the token grants that holds the artist's own number; none or more
+// than one is refused.
+async function discoverPinnedWaba(accessToken, appSecret, pinnedPhoneNumberId) {
+  const targetIds = await tokenWabaIds(accessToken, appSecret);
+  if (targetIds.length === 1) return targetIds[0];
+  if (targetIds.length > MAX_PINNED_DISCOVERY_WABAS) {
+    throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
+  }
+  const holders = [];
+  for (const wabaId of targetIds) {
+    const phonesUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/phone_numbers`);
+    phonesUrl.searchParams.set('fields', 'id');
+    const phones = await graph(phonesUrl.toString(), {
+      headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+    });
+    const rows = Array.isArray(phones?.data) ? phones.data : [];
+    if (rows.some((row) => String(row?.id || '') === pinnedPhoneNumberId)) holders.push(wabaId);
+  }
+  if (holders.length === 0) throw Object.assign(new Error('meta_phone_not_in_waba'), { status: 409 });
+  if (holders.length !== 1) throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
+  return holders[0];
 }
 
 async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) {
@@ -502,14 +533,15 @@ export async function onRequestPost(context) {
     const metaAppSecret = binding(env, 'META_APP_SECRET');
     const accessToken = await exchangeCode(code, metaAppSecret);
     stage = 'waba_discovery';
-    const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, metaAppSecret);
+    const pinnedPhoneNumberId = PINNED_ARTIST_PHONE_NUMBER_IDS[route.integrationKey] || null;
+    const wabaId = browserWabaId || (pinnedPhoneNumberId
+      ? await discoverPinnedWaba(accessToken, metaAppSecret, pinnedPhoneNumberId)
+      : await discoverWabaFromToken(accessToken, metaAppSecret));
     stage = 'meta_selection';
     // Coexistence may finish without a phone number id; a pinned route then
     // asks for its own number, which verifyMetaSelection still requires to
     // belong to the returned WABA.
-    const requestedPhoneNumberId = browserPhoneNumberId
-      || PINNED_ARTIST_PHONE_NUMBER_IDS[route.integrationKey]
-      || null;
+    const requestedPhoneNumberId = browserPhoneNumberId || pinnedPhoneNumberId;
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId);
     stage = 'artist_number_pin';
     requirePinnedSelection(route.integrationKey, safeMeta.phoneNumberId);

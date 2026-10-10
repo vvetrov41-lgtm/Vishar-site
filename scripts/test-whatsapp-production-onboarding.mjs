@@ -711,4 +711,86 @@ console.log('WhatsApp production onboarding boundary tests passed.');
   }
 }
 
+function codeOnlyFetch(calls, targetIds, holdersPhone) {
+  const base = authorizedFetch(calls);
+  return async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes('/debug_token')) {
+      calls.push({ target, init });
+      return Response.json({
+        data: {
+          is_valid: true,
+          app_id: '1481226093843982',
+          granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: targetIds }],
+        },
+      });
+    }
+    const other = targetIds.find((id) => id !== KRISTINA_WABA && target.includes(`/${id}/phone_numbers`));
+    if (other) {
+      calls.push({ target, init });
+      return Response.json({ data: [{ id: holdersPhone[other] ?? '10987654326' }] });
+    }
+    return base(url, init);
+  };
+}
+
+function codeOnlyBody() {
+  const body = bodyFor(KRISTINA_ID);
+  body.session = {};
+  return body;
+}
+
+{
+  // Code-only callback, token grants Kristina's WABA and another: the one
+  // holding her number is chosen.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, ['12345678906', KRISTINA_WABA], {});
+  try {
+    const response = await onRequestPost({ request: request(codeOnlyBody()), env: env() });
+    assert.equal(response.status, 200);
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(JSON.parse(String(call.init.body)).text));
+    assert.equal(writes.length, 2);
+    for (const envelope of writes) {
+      assert.equal(envelope.wabaId, KRISTINA_WABA);
+      assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Code-only callback where two granted WABAs both claim her number id:
+  // refused as ambiguous, nothing written.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, ['12345678906', KRISTINA_WABA], { '12345678906': KRISTINA_PHONE });
+  try {
+    const response = await onRequestPost({ request: request(codeOnlyBody()), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_waba_selection_ambiguous' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Code-only callback where no granted WABA holds her number: refused.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, ['12345678906', '12345678905'], {});
+  try {
+    const response = await onRequestPost({ request: request(codeOnlyBody()), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_not_in_waba' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 console.log('WhatsApp Embedded Signup artist number pin tests passed.');
