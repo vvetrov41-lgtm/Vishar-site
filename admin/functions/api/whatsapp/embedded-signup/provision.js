@@ -9,6 +9,32 @@ const PROVIDER_ID = /^[0-9]{5,32}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ARTIST_SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+// Artists whose WhatsApp number is already known. Embedded Signup lets the
+// operator pick any WABA their Meta login reaches, so for these routes the
+// selection must still be the artist's own WABA or phone number before any
+// binding is replaced; otherwise another number could take over the artist's
+// inbound and outbound traffic. Either id is enough because Coexistence may
+// return the same number under a different WABA. A route not listed here
+// keeps the generic first-connection behaviour.
+const PINNED_ARTIST_ASSETS = Object.freeze({
+  'vladimir-production': Object.freeze({
+    wabaIds: Object.freeze(['341184815737145']),
+    phoneNumberIds: Object.freeze(['328102027058293']),
+  }),
+  'kristina-production': Object.freeze({
+    wabaIds: Object.freeze(['462106700328578']),
+    phoneNumberIds: Object.freeze(['518907894641289']),
+  }),
+});
+
+function requirePinnedSelection(integrationKey, wabaId, phoneNumberId) {
+  const pinned = PINNED_ARTIST_ASSETS[integrationKey];
+  if (!pinned) return;
+  if (!pinned.wabaIds.includes(wabaId) && !pinned.phoneNumberIds.includes(phoneNumberId)) {
+    throw Object.assign(new Error('meta_selection_not_artist_number'), { status: 409 });
+  }
+}
+
 function edgeSafeStatus(status) {
   if (!Number.isInteger(status) || status < 400 || status > 599) return 500;
   return status >= 500 ? 500 : status;
@@ -485,6 +511,8 @@ export async function onRequestPost(context) {
     const wabaId = browserWabaId || await discoverWabaFromToken(accessToken, metaAppSecret);
     stage = 'meta_selection';
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, browserPhoneNumberId || null);
+    stage = 'artist_number_pin';
+    requirePinnedSelection(route.integrationKey, wabaId, safeMeta.phoneNumberId);
     const envelope = JSON.stringify({
       artistId,
       integrationKey: route.integrationKey,
@@ -550,4 +578,5 @@ export const __testing = {
   noFollowFetch,
   requireServerConfiguration,
   extractUniqueWhatsappTargetIds,
+  requirePinnedSelection,
 };

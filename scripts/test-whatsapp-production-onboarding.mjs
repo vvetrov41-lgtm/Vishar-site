@@ -72,14 +72,18 @@ function env(overrides = {}) {
   };
 }
 
+// Kristina's and Vladimir's routes are pinned to their own WABA / phone ids.
+const KRISTINA_WABA = '462106700328578';
+const KRISTINA_PHONE = '518907894641289';
+
 function bodyFor(artistId) {
   const suffix = artistId === KRISTINA_ID ? '2' : artistId === FUTURE_ID ? '3' : '1';
   return {
     artist_id: artistId,
     code: 'one-time-meta-code-for-test',
     session: {
-      waba_id: `1234567890${suffix}`,
-      phone_number_id: `1098765432${suffix}`,
+      waba_id: artistId === KRISTINA_ID ? KRISTINA_WABA : `1234567890${suffix}`,
+      phone_number_id: artistId === KRISTINA_ID ? KRISTINA_PHONE : `1098765432${suffix}`,
     },
   };
 }
@@ -95,7 +99,7 @@ function authorizedFetch(calls, {
   routeIntegrationKey = null,
   missingSecretWorker = null,
   phoneRows = [{
-    id: '10987654322',
+    id: KRISTINA_PHONE,
     display_phone_number: '+44 7000 000002',
     verified_name: 'Kristina',
   }],
@@ -438,7 +442,7 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
   const calls = [];
   globalThis.fetch = authorizedFetch(calls, {
     phoneRows: [
-      { id: '10987654322', display_phone_number: '+44 7000 000002', verified_name: 'Kristina' },
+      { id: KRISTINA_PHONE, display_phone_number: '+44 7000 000002', verified_name: 'Kristina' },
       { id: '10987654323', display_phone_number: '+44 7000 000003', verified_name: 'Other' },
     ],
   });
@@ -575,3 +579,61 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
 }
 
 console.log('WhatsApp production onboarding boundary tests passed.');
+
+{
+  const { requirePinnedSelection } = __testing;
+  // Kristina: her WABA or her phone id is accepted (Coexistence may change
+  // one of them); anything else is refused before credentials are written.
+  requirePinnedSelection('kristina-production', KRISTINA_WABA, KRISTINA_PHONE);
+  requirePinnedSelection('kristina-production', '99999999999999', KRISTINA_PHONE);
+  requirePinnedSelection('kristina-production', KRISTINA_WABA, '99999999999999');
+  assert.throws(
+    () => requirePinnedSelection('kristina-production', '341184815737145', '328102027058293'),
+    /meta_selection_not_artist_number/,
+    "Vladimir's number cannot be bound to Kristina",
+  );
+  assert.throws(
+    () => requirePinnedSelection('vladimir-production', KRISTINA_WABA, KRISTINA_PHONE),
+    /meta_selection_not_artist_number/,
+    "Kristina's number cannot be bound to Vladimir",
+  );
+  requirePinnedSelection('future-artist-production', '12345678903', '10987654323');
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const foreignWaba = '12345678909';
+  const foreignPhone = '10987654329';
+  const base = authorizedFetch(calls, {
+    phoneRows: [{ id: foreignPhone, display_phone_number: '+44 7000 000009', verified_name: 'Other' }],
+  });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes(`/${foreignWaba}?fields=id%2Cname`)) {
+      calls.push({ target, init });
+      return Response.json({ id: foreignWaba, name: 'Other WABA' });
+    }
+    if (target.includes(`/${foreignWaba}/phone_numbers`)) {
+      calls.push({ target, init });
+      return Response.json({ data: [{ id: foreignPhone, display_phone_number: '+44 7000 000009', verified_name: 'Other' }] });
+    }
+    return base(url, init);
+  };
+  const foreign = bodyFor(KRISTINA_ID);
+  foreign.session.waba_id = foreignWaba;
+  foreign.session.phone_number_id = foreignPhone;
+  try {
+    const response = await onRequestPost({ request: request(foreign), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_selection_not_artist_number' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false,
+      'no Worker binding is written for a number that is not the artist\'s');
+    assert.equal(calls.some((call) => call.target.includes('/subscribed_apps')), false);
+    assert.equal(calls.some((call) => call.target.includes('complete_artist_whatsapp_connection')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+console.log('WhatsApp Embedded Signup artist number pin tests passed.');
