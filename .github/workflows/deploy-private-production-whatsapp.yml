@@ -154,7 +154,13 @@ jobs:
         run: npm ci
 
       - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+        # Same fail-closed policy as the database gate and CRM validation:
+        # every moderate+ advisory blocks except the two exact build-time
+        # Tailwind 3 advisories listed in the script, which have no patched
+        # version in Tailwind 3's range and never reach the Worker bundle.
+        run: |
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Re-run focused WhatsApp production boundaries
         run: |
