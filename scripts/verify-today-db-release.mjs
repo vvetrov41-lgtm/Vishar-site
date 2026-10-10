@@ -7,10 +7,10 @@ export function verifyTodayLineage(source) {
   if (!rows.length) throw new Error('No migration state; refusing production mutation');
   const local = rows.map((r) => r[1]).filter(Boolean);
   const remote = rows.map((r) => r[2]).filter(Boolean);
-  if (remote.at(-1) !== '20261009220000') throw new Error('Production migration head changed');
+  if (remote.at(-1) !== '20261009230000') throw new Error('Production migration head changed');
   if (remote.some((version) => !local.includes(version))) throw new Error('Production contains unknown migration history');
   const pending = local.filter((version) => !remote.includes(version));
-  if (pending.length !== 1 || pending[0] !== '20261009230000') throw new Error('Expected exactly the ordered enquiry file body areas migration');
+  if (pending.length !== 1 || pending[0] !== '20261010080000') throw new Error('Expected exactly the ordered consultation context project summary migration');
   if (pending[0] <= remote.at(-1)) throw new Error('Out-of-order production migration');
   return pending[0];
 }
