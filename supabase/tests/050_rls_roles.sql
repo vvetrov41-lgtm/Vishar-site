@@ -627,6 +627,7 @@ insert into expected_function_acl values
   ('public.update_booking_source(uuid,text,text,boolean)', false, true, false),
   ('public.update_client_details(uuid,jsonb)', false, true, false),
   ('public.update_enquiry_details(uuid,jsonb)', false, true, false),
+  ('public.update_enquiry_project_details(uuid,jsonb,jsonb)', false, true, false),
   ('public.prepare_enquiry_reference_upload(uuid,text,text,bigint)', false, true, false),
   ('public.finalize_enquiry_reference_upload(uuid)', false, true, false),
   ('public.cancel_enquiry_reference_upload(uuid)', false, true, false),

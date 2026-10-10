@@ -72,7 +72,7 @@ const COPY = {
   ru: { areas: 'Зоны тела', styles: 'Стиль', size: 'Точное место и размер', existing: 'Существующая татуировка', notGiven: '—' },
 } as const;
 
-function label(value: string, language: Language): string {
+export function catalogueLabel(value: string, language: Language): string {
   return language === 'ru' ? RU[value] ?? value : value;
 }
 
@@ -93,20 +93,20 @@ export function EnquiryProjectDetails({ details, language }: { details: Details;
       <dd>
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {details.areas.map((area) => {
-            const where = area.placements.filter((placement) => placement !== 'Other').map((placement) => label(placement, language));
+            const where = area.placements.filter((placement) => placement !== 'Other').map((placement) => catalogueLabel(placement, language));
             if (area.otherPlacement) where.push(area.otherPlacement);
             return (
               <li key={area.region}>
-                <strong>{label(area.region, language)}</strong>
+                <strong>{catalogueLabel(area.region, language)}</strong>
                 {where.length ? `: ${where.join(', ')}` : ''}
-                {area.work.length ? ` — ${area.work.map((work) => label(work, language)).join(', ')}` : ''}
+                {area.work.length ? ` — ${area.work.map((work) => catalogueLabel(work, language)).join(', ')}` : ''}
               </li>
             );
           })}
         </ul>
       </dd>
       <dt>{copy.styles}</dt>
-      <dd>{details.styles.map((style) => label(style, language)).join(', ') || copy.notGiven}</dd>
+      <dd>{details.styles.map((style) => catalogueLabel(style, language)).join(', ') || copy.notGiven}</dd>
       {details.sizeNotes ? (<><dt>{copy.size}</dt><dd>{details.sizeNotes}</dd></>) : null}
       {details.existingDetails ? (<><dt>{copy.existing}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{details.existingDetails}</dd></>) : null}
     </dl>

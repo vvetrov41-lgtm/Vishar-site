@@ -150,6 +150,9 @@ export const OPERATOR_PARITY = Object.freeze([
   row('enquiries.get', 'CRM Core', 'view_enquiries', 'read', A, 'getEnquiry', ['public.gpt_get_enquiry']),
   row('enquiries.update', 'CRM Core', 'manage_enquiries', 'write', A, 'updateEnquiry', ['public.gpt_update_enquiry', 'public.update_enquiry_details']),
   row('enquiries.archive', 'CRM Core', 'manage_enquiries', 'write', A, 'archiveEnquiry', ['public.update_enquiry_details']),
+  row('enquiries.update_structured', 'CRM Core', 'manage_enquiries', 'write', N, 'updateEnquiryProjectDetails', ['public.update_enquiry_project_details'], {
+    note: 'Booking form v2 body areas, work types and styles. The server re-normalises and recomputes the legacy columns; a GPT tool must send the loaded state for conflict detection.',
+  }),
   row('enquiries.get_full', 'CRM Core', 'view_enquiries', 'read', A, 'getEnquiryFull', ['public.gpt_get_enquiry_full']),
   row('enquiries.set_status', 'CRM Core', 'manage_enquiries', 'write', A, 'setEnquiryStatus', ['public.gpt_set_enquiry_status', 'public.transition_enquiry_status']),
   row('enquiries.reply_outside_crm.set', 'Communications', 'manage_enquiries', 'write', N, 'setEnquiryReplyOutsideCrm',

@@ -39,6 +39,7 @@ import { EnquiryReplyEvidence } from '../components/EnquiryReplyEvidence';
 import { EnquiryTranslation } from '../components/EnquiryTranslation';
 import { ClientBrief } from '../components/ClientBrief';
 import { EnquiryProjectDetails, isStructuredProjectDetails } from '../components/EnquiryProjectDetails';
+import { EnquiryStructuredEditPanel } from '../components/EnquiryStructuredEditPanel';
 import { groupEmailThreads, threadNeedsOperator, type EmailThread } from '../lib/email-threads';
 import { ActivityFeed } from '../components/ActivityFeed';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
@@ -433,7 +434,25 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <ClientBrief text={enquiry.idea} language={language} />
           {enquiry.idea ? <EnquiryTranslation enquiryId={enquiry.id} api={api} language={language} /> : null}
         </div>
-        <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
+        {/* Booking form v2 enquiries are edited through their structure so the
+            card, lists and GPT reads cannot disagree; legacy enquiries keep
+            the free-text form. */}
+        {isStructuredProjectDetails(enquiry.project_details) ? (
+          <>
+            <EnquiryStructuredEditPanel
+              key={JSON.stringify(enquiry.project_details) + (enquiry.preferred_timing ?? '')}
+              enquiry={enquiry}
+              details={enquiry.project_details}
+              role={role}
+              api={api}
+              language={language}
+              onSaved={reload}
+            />
+            <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} mode="idea" />
+          </>
+        ) : (
+          <EnquiryEditPanel enquiry={enquiry} role={role} api={api} language={language} onSaved={reload} />
+        )}
       </Section>
 
       {can(role, 'viewEnquiryFiles') ? (

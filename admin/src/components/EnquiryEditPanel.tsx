@@ -14,12 +14,19 @@ export function EnquiryEditPanel({
   api,
   language,
   onSaved,
+  mode = 'all',
 }: {
   enquiry: Enquiry;
   role: CrmRole | null | undefined;
-  api: Pick<RecordEditApi, 'updateEnquiryDetails'>;
+  api: Pick<RecordEditApi, 'updateEnquiryDetails' | 'updateEnquiryIdea'>;
   language: 'en' | 'ru';
   onSaved: () => void;
+  /**
+   * 'idea' for booking form v2 enquiries: their type, placement, size,
+   * cover-up and timing are edited in EnquiryStructuredEditPanel, so only the
+   * description is offered and sent here.
+   */
+  mode?: 'all' | 'idea';
 }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -34,7 +41,7 @@ export function EnquiryEditPanel({
   if (!can(role, 'editEnquiry')) return null;
 
   const copy = language === 'ru' ? {
-    edit: 'Редактировать заявку',
+    edit: mode === 'idea' ? 'Редактировать описание' : 'Редактировать заявку',
     save: 'Сохранить',
     cancel: 'Отмена',
     type: 'Тип',
@@ -45,7 +52,7 @@ export function EnquiryEditPanel({
     idea: 'Описание проекта',
     failed: 'Не удалось сохранить изменения заявки.',
   } : {
-    edit: 'Edit enquiry',
+    edit: mode === 'idea' ? 'Edit description' : 'Edit enquiry',
     save: 'Save',
     cancel: 'Cancel',
     type: 'Type',
@@ -60,7 +67,7 @@ export function EnquiryEditPanel({
   if (!editing) {
     return (
       <div className="actions" style={{ marginTop: 12 }}>
-        <button type="button" onClick={() => setEditing(true)}>{copy.edit}</button>
+        <button type="button" onClick={() => { setIdea(value(enquiry.idea)); setEditing(true); }}>{copy.edit}</button>
       </div>
     );
   }
@@ -69,6 +76,12 @@ export function EnquiryEditPanel({
     setBusy(true);
     setError(null);
     try {
+      if (mode === 'idea') {
+        await api.updateEnquiryIdea(enquiry.id, idea);
+        setEditing(false);
+        onSaved();
+        return;
+      }
       await api.updateEnquiryDetails(enquiry.id, {
         projectType,
         placement,
@@ -89,13 +102,13 @@ export function EnquiryEditPanel({
   return (
     <div style={{ marginTop: 16 }}>
       {error ? <div className="notice warn" role="alert">{error}</div> : null}
-      <div className="form-grid">
+      {mode === 'all' ? <div className="form-grid">
         <label>{copy.type}<input value={projectType} maxLength={100} onChange={(event) => setProjectType(event.target.value)} /></label>
         <label>{copy.placement}<input value={placement} maxLength={160} onChange={(event) => setPlacement(event.target.value)} /></label>
         <label>{copy.size}<input value={approximateSize} maxLength={120} onChange={(event) => setApproximateSize(event.target.value)} /></label>
         <label>{copy.cover}<input value={coverUp} maxLength={40} onChange={(event) => setCoverUp(event.target.value)} /></label>
         <label>{copy.timing}<input value={preferredTiming} maxLength={160} onChange={(event) => setPreferredTiming(event.target.value)} /></label>
-      </div>
+      </div> : null}
       <label>
         {copy.idea}
         <textarea value={idea} maxLength={4000} onChange={(event) => setIdea(event.target.value)} />
