@@ -44,6 +44,7 @@ import { useApi, useSession } from '../lib/session';
 import { typeLabel } from './AppointmentsPage';
 import type { Appointment } from '../lib/appointment-api';
 import type { ClientConversation, ConversationMessage } from '../lib/communications-api';
+import { enquiryHeadline } from '../lib/enquiry-summary';
 import type { Client, Enquiry, FollowUp, InternalNote, Project } from '../lib/types';
 
 interface ClientData {
@@ -442,13 +443,13 @@ function WorkSection({
     .map((enquiry) => ({
       key: `enquiry-${enquiry.id}`,
       href: `/enquiries/${enquiry.id}`,
-      title: enquiry.project_type || enquiry.reference_number,
+      title: enquiryHeadline(enquiry) || enquiry.reference_number,
       kind: t('clientWorkspace.enquiry'),
       artistId: enquiry.artist_id,
       status: label('enquiryStatus', enquiry.status),
       tone: 'badge',
       when: enquiry.created_at,
-      extra: enquiry.project_type ? enquiry.reference_number : null,
+      extra: enquiryHeadline(enquiry) ? enquiry.reference_number : null,
     }));
 
   const rows = [...projectRows, ...enquiryRows].sort(

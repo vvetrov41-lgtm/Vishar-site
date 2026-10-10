@@ -18,6 +18,7 @@ import { conversationNeedsReply, type ConversationSummary } from './communicatio
 import { threadNeedsOperator, type EmailThread } from './email-threads';
 import { isActionableConversation } from './inbox-items';
 import type { MonzoReconciliationCandidate } from './payment-api';
+import { enquiryHeadline } from './enquiry-summary';
 import type { Enquiry, FollowUp, Project } from './types';
 
 export type TodayItemKind =
@@ -340,7 +341,7 @@ export function summariseToday(input: TodayInput): TodaySnapshot {
       href: `/enquiries/${enquiry.id}`,
       subject: input.clientName(enquiry.client_id),
       at: enquiry.created_at,
-      detail: enquiry.project_type,
+      detail: enquiryHeadline(enquiry),
       urgent: false,
       acknowledgement: {
         artistId: enquiry.artist_id,

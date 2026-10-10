@@ -7,6 +7,7 @@ import {
   groupEnquiriesForBoard,
   type EnquiryBoardColumnKey,
 } from '../lib/enquiry-board';
+import { enquiryBrief } from '../lib/enquiry-summary';
 import type { CrmRole, Enquiry, EnquiryStatus, StatusTransition } from '../lib/types';
 
 const COLUMN_LABEL_KEY: Record<EnquiryBoardColumnKey, string> = {
@@ -63,7 +64,7 @@ export function EnquiryBoard({
                       )}
                     </div>
                     <div className="enquiry-board-card-brief">
-                      {[enquiry.project_type, enquiry.placement].filter(Boolean).join(' · ')
+                      {enquiryBrief(enquiry)
                         || t('enquiries.projectTypeMissing')}
                     </div>
                     <div className="meta">

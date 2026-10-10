@@ -11,6 +11,7 @@ import { can } from '../lib/permissions';
 import type { Enquiry, EnquiryStatus, StatusTransition } from '../lib/types';
 import { useArtistScope } from '../lib/artist-scope';
 import { useDebouncedValue } from '../lib/use-debounced-value';
+import { enquiryHeadline } from '../lib/enquiry-summary';
 import { ENQUIRY_BOARD_STATUSES } from '../lib/enquiry-board';
 
 const FILTERS: ('' | EnquiryStatus)[] = [
@@ -430,7 +431,7 @@ export function EnquiriesPage() {
               <div className="meta">
                 <span className="badge">{label('enquiryStatus', enquiry.status)}</span>{' '}
                 {enquiry.assigned_to ? null : <span className="badge warn">{t('common.unassigned')}</span>}{' '}
-                {enquiry.project_type ?? t('enquiries.projectTypeMissing')} · {formatDateTime(enquiry.last_action_at, language)}
+                {enquiryHeadline(enquiry) ?? t('enquiries.projectTypeMissing')} · {formatDateTime(enquiry.last_action_at, language)}
               </div>
               <div className="meta">{enquiry.reference_number}</div>
             </Link>

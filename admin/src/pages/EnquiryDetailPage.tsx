@@ -53,6 +53,7 @@ import { formatPhoneForDisplay } from '../lib/phone';
 import { useLanguage } from '../lib/i18n';
 import type { Appointment } from '../lib/appointment-api';
 import type { ClientConversation } from '../lib/communications-api';
+import { enquiryHeadline } from '../lib/enquiry-summary';
 import type {
   Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
 } from '../lib/types';
@@ -241,7 +242,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
           <dt>{t('enquiry.prefers')}</dt>
           <dd>{localiseKnownValue(client?.preferred_contact ?? enquiry.submitted_preferred_contact ?? null, language)}</dd>
           <dt>{t('enquiry.type')}</dt>
-          <dd>{enquiry.project_type ?? '—'}</dd>
+          <dd>{enquiryHeadline(enquiry) ?? '—'}</dd>
           {enquiry.discovery_source || enquiry.discovery_source_detail ? (
             <>
               <dt>{t('enquiry.discoverySource')}</dt>
@@ -392,7 +393,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
                     void run(async () => {
                       const result = await api.convertEnquiry(
                         enquiry.id,
-                        `${enquiry.project_type ?? t('enquiry.defaultProjectTitle')} — ${enquiry.submitted_full_name ?? client?.full_name ?? enquiry.reference_number}`
+                        `${(enquiryHeadline(enquiry) ?? t('enquiry.defaultProjectTitle')).slice(0, 120)} — ${enquiry.submitted_full_name ?? client?.full_name ?? enquiry.reference_number}`
                       );
                       const projectId = (result as { project_id?: string })?.project_id;
                       if (projectId) navigate(`/projects/${projectId}`);
