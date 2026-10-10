@@ -186,6 +186,8 @@ export interface EnquiryFile {
   ordinal: number;
   /** What the client said the intake image shows; null for legacy and staff uploads. */
   intake_role?: EnquiryFileIntakeRole | null;
+  /** Booking form v2 region keys the image concerns; empty when not linked. */
+  body_areas?: string[];
   storage_path: string;
   original_filename: string | null;
   mime_type: string;

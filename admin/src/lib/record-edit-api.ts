@@ -215,6 +215,18 @@ export function createRecordEditApi(client: CrmClient) {
       return prepared;
     },
 
+    /** Staff category and body areas of one image; Storage is not touched. */
+    async setEnquiryFileClassification(fileId: string, intakeRole: EnquiryFile['intake_role'], bodyAreas: string[]) {
+      return rpcResult(
+        await client.rpc('set_enquiry_file_classification', {
+          p_file_id: fileId,
+          p_intake_role: intakeRole ?? null,
+          p_body_areas: bodyAreas,
+        }),
+        'classify that reference image'
+      );
+    },
+
     async finalizeEnquiryReference(fileId: string) {
       return rpcResult(
         await client.rpc('finalize_enquiry_reference_upload', { p_file_id: fileId }),

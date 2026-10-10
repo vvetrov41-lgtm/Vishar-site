@@ -431,7 +431,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       return unwrap<EnquiryFile[]>(
         await client
           .from('enquiry_files')
-          .select('id, enquiry_id, ordinal, intake_role, storage_path, original_filename, mime_type, byte_size, upload_state, created_at')
+          .select('id, enquiry_id, ordinal, intake_role, body_areas, storage_path, original_filename, mime_type, byte_size, upload_state, created_at')
           .eq('enquiry_id', enquiryId)
           .order('ordinal', { ascending: true }),
         'load reference images'
