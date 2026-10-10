@@ -72,14 +72,18 @@ function env(overrides = {}) {
   };
 }
 
+// Kristina's and Vladimir's routes are pinned to their own WABA / phone ids.
+const KRISTINA_WABA = '462106700328578';
+const KRISTINA_PHONE = '518907894641289';
+
 function bodyFor(artistId) {
   const suffix = artistId === KRISTINA_ID ? '2' : artistId === FUTURE_ID ? '3' : '1';
   return {
     artist_id: artistId,
     code: 'one-time-meta-code-for-test',
     session: {
-      waba_id: `1234567890${suffix}`,
-      phone_number_id: `1098765432${suffix}`,
+      waba_id: artistId === KRISTINA_ID ? KRISTINA_WABA : `1234567890${suffix}`,
+      phone_number_id: artistId === KRISTINA_ID ? KRISTINA_PHONE : `1098765432${suffix}`,
     },
   };
 }
@@ -95,7 +99,7 @@ function authorizedFetch(calls, {
   routeIntegrationKey = null,
   missingSecretWorker = null,
   phoneRows = [{
-    id: '10987654322',
+    id: KRISTINA_PHONE,
     display_phone_number: '+44 7000 000002',
     verified_name: 'Kristina',
   }],
@@ -438,16 +442,64 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
   const calls = [];
   globalThis.fetch = authorizedFetch(calls, {
     phoneRows: [
-      { id: '10987654322', display_phone_number: '+44 7000 000002', verified_name: 'Kristina' },
+      { id: KRISTINA_PHONE, display_phone_number: '+44 7000 000002', verified_name: 'Kristina' },
       { id: '10987654323', display_phone_number: '+44 7000 000003', verified_name: 'Other' },
     ],
   });
   const coexistence = bodyFor(KRISTINA_ID);
   coexistence.session.phone_number_id = null;
   try {
+    // Coexistence finished without a phone id and the WABA holds two numbers:
+    // Kristina's pinned number is selected, not refused as ambiguous.
     const response = await onRequestPost({ request: request(coexistence), env: env() });
+    assert.equal(response.status, 200);
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(JSON.parse(String(call.init.body)).text));
+    assert.equal(writes.length, 2);
+    for (const envelope of writes) assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // A route without a pin keeps refusing an ambiguous selection.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    artistId: FUTURE_ID,
+    phoneRows: [
+      { id: '10987654323', display_phone_number: '+44 7000 000003', verified_name: 'Future' },
+      { id: '10987654324', display_phone_number: '+44 7000 000004', verified_name: 'Other' },
+    ],
+  });
+  const ambiguous = bodyFor(FUTURE_ID);
+  ambiguous.session.phone_number_id = null;
+  try {
+    const response = await onRequestPost({ request: request(ambiguous), env: env() });
     assert.equal(response.status, 409);
     assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_selection_ambiguous' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Coexistence without a phone id, on a WABA that does not hold Kristina's
+  // number: refused before any write.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, {
+    phoneRows: [{ id: '10987654327', display_phone_number: '+44 7000 000007', verified_name: 'Other' }],
+  });
+  const missing = bodyFor(KRISTINA_ID);
+  missing.session.phone_number_id = null;
+  try {
+    const response = await onRequestPost({ request: request(missing), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_not_in_waba' });
     assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
   } finally {
     globalThis.fetch = originalFetch;
@@ -575,3 +627,175 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
 }
 
 console.log('WhatsApp production onboarding boundary tests passed.');
+
+{
+  const { requirePinnedSelection } = __testing;
+  // The artist's own phone number id is required, whatever the WABA.
+  requirePinnedSelection('kristina-production', KRISTINA_PHONE);
+  assert.throws(
+    () => requirePinnedSelection('kristina-production', '10987654329'),
+    /meta_selection_not_artist_number/,
+    'another number in Kristina\'s WABA is refused',
+  );
+  assert.throws(
+    () => requirePinnedSelection('kristina-production', '328102027058293'),
+    /meta_selection_not_artist_number/,
+    "Vladimir's number cannot be bound to Kristina",
+  );
+  assert.throws(
+    () => requirePinnedSelection('vladimir-production', KRISTINA_PHONE),
+    /meta_selection_not_artist_number/,
+    "Kristina's number cannot be bound to Vladimir",
+  );
+  requirePinnedSelection('future-artist-production', '10987654323');
+}
+
+{
+  // A second number inside Kristina's own WABA: Meta confirms it belongs to
+  // the WABA, but it is not her number, so nothing is written.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const otherPhone = '10987654328';
+  globalThis.fetch = authorizedFetch(calls, {
+    phoneRows: [
+      { id: KRISTINA_PHONE, display_phone_number: '+44 7000 000002', verified_name: 'Kristina' },
+      { id: otherPhone, display_phone_number: '+44 7000 000008', verified_name: 'Other' },
+    ],
+  });
+  const sameWaba = bodyFor(KRISTINA_ID);
+  sameWaba.session.phone_number_id = otherPhone;
+  try {
+    const response = await onRequestPost({ request: request(sameWaba), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_selection_not_artist_number' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((call) => call.target.includes('/subscribed_apps')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const foreignWaba = '12345678909';
+  const foreignPhone = '10987654329';
+  const base = authorizedFetch(calls, {
+    phoneRows: [{ id: foreignPhone, display_phone_number: '+44 7000 000009', verified_name: 'Other' }],
+  });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes(`/${foreignWaba}?fields=id%2Cname`)) {
+      calls.push({ target, init });
+      return Response.json({ id: foreignWaba, name: 'Other WABA' });
+    }
+    if (target.includes(`/${foreignWaba}/phone_numbers`)) {
+      calls.push({ target, init });
+      return Response.json({ data: [{ id: foreignPhone, display_phone_number: '+44 7000 000009', verified_name: 'Other' }] });
+    }
+    return base(url, init);
+  };
+  const foreign = bodyFor(KRISTINA_ID);
+  foreign.session.waba_id = foreignWaba;
+  foreign.session.phone_number_id = foreignPhone;
+  try {
+    const response = await onRequestPost({ request: request(foreign), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_selection_not_artist_number' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false,
+      'no Worker binding is written for a number that is not the artist\'s');
+    assert.equal(calls.some((call) => call.target.includes('/subscribed_apps')), false);
+    assert.equal(calls.some((call) => call.target.includes('complete_artist_whatsapp_connection')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+function codeOnlyFetch(calls, targetIds, holdersPhone) {
+  const base = authorizedFetch(calls);
+  return async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes('/debug_token')) {
+      calls.push({ target, init });
+      return Response.json({
+        data: {
+          is_valid: true,
+          app_id: '1481226093843982',
+          granular_scopes: [{ scope: 'whatsapp_business_management', target_ids: targetIds }],
+        },
+      });
+    }
+    const other = targetIds.find((id) => id !== KRISTINA_WABA && target.includes(`/${id}/phone_numbers`));
+    if (other) {
+      calls.push({ target, init });
+      return Response.json({ data: [{ id: holdersPhone[other] ?? '10987654326' }] });
+    }
+    return base(url, init);
+  };
+}
+
+function codeOnlyBody() {
+  const body = bodyFor(KRISTINA_ID);
+  body.session = {};
+  return body;
+}
+
+{
+  // Code-only callback, token grants Kristina's WABA and another: the one
+  // holding her number is chosen.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, ['12345678906', KRISTINA_WABA], {});
+  try {
+    const response = await onRequestPost({ request: request(codeOnlyBody()), env: env() });
+    assert.equal(response.status, 200);
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(JSON.parse(String(call.init.body)).text));
+    assert.equal(writes.length, 2);
+    for (const envelope of writes) {
+      assert.equal(envelope.wabaId, KRISTINA_WABA);
+      assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
+    }
+    const phoneLookups = calls.filter((call) => call.target.includes('/phone_numbers'));
+    assert.ok(phoneLookups.length >= 2);
+    for (const call of phoneLookups) {
+      assert.equal(new URL(call.target).searchParams.get('limit'), '100', 'phone lookups ask for one full page');
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Code-only callback where two granted WABAs both claim her number id:
+  // refused as ambiguous, nothing written.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, ['12345678906', KRISTINA_WABA], { '12345678906': KRISTINA_PHONE });
+  try {
+    const response = await onRequestPost({ request: request(codeOnlyBody()), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_waba_selection_ambiguous' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Code-only callback where no granted WABA holds her number: refused.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, ['12345678906', '12345678905'], {});
+  try {
+    const response = await onRequestPost({ request: request(codeOnlyBody()), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_not_in_waba' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+console.log('WhatsApp Embedded Signup artist number pin tests passed.');
