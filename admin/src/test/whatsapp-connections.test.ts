@@ -5,7 +5,7 @@ import {
   whatsappCrmEnvironment,
   whatsappIntegrationKey,
 } from '../lib/whatsapp-connections-api';
-import { canManageArtist } from '../pages/WhatsAppConnectionsPage';
+import { canManageArtist, canOfferCoexistenceReconnect } from '../pages/WhatsAppConnectionsPage';
 
 const VLADIMIR = {
   id: 'a1111111-1111-4111-8111-111111111111',
@@ -62,6 +62,13 @@ describe('WhatsApp Connections safety', () => {
     expect(canManageArtist('booking_manager', KRISTINA.id, kristinaMembership)).toBe(true);
     expect(canManageArtist('booking_manager', VLADIMIR.id, kristinaMembership)).toBe(false);
     expect(canManageArtist('read_only', KRISTINA.id, kristinaMembership)).toBe(false);
+  });
+
+  it('offers the Coexistence reconnect only for Kristina and only where production onboarding is allowed', () => {
+    expect(canOfferCoexistenceReconnect(KRISTINA.slug, true)).toBe(true);
+    expect(canOfferCoexistenceReconnect(KRISTINA.slug, false)).toBe(false);
+    expect(canOfferCoexistenceReconnect(VLADIMIR.slug, true)).toBe(false);
+    expect(canOfferCoexistenceReconnect(FUTURE_ARTIST.slug, true)).toBe(false);
   });
 
   it('derives routing keys only for the two known CRM Supabase environments', () => {

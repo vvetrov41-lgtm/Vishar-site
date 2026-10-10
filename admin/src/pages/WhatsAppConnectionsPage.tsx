@@ -26,6 +26,22 @@ interface ConnectionsData {
   environment: 'production' | 'staging';
 }
 
+// Kristina's WABA is a WhatsApp Business app account that Meta refuses to
+// let the CRM manage templates on (100/2494160) until the number is onboarded
+// to Cloud API coexistence. Coexistence keeps the number, the Business app and
+// its chats; the existing Embedded Signup flow already launches it
+// (featureType whatsapp_business_app_onboarding) and never registers or
+// migrates the number. Vladimir is already on coexistence and keeps only the
+// token form, so a working connection cannot be replaced by accident.
+const COEXISTENCE_RECONNECT_ARTISTS = new Set(['kristina']);
+
+export function canOfferCoexistenceReconnect(
+  artistSlug: string,
+  productionOnboardingAvailable: boolean,
+): boolean {
+  return productionOnboardingAvailable && COEXISTENCE_RECONNECT_ARTISTS.has(artistSlug);
+}
+
 export function canManageArtist(
   role: string | null | undefined,
   artistId: string,
@@ -341,6 +357,10 @@ export function WhatsAppConnectionsPage() {
           const existingAccountAvailable = productionOnboardingAvailable
             && (artist.slug === 'vladimir' || artist.slug === 'kristina');
           const existingMetaToken = existingMetaTokens[artist.id] ?? '';
+          const coexistenceReconnectAvailable = canOfferCoexistenceReconnect(
+            artist.slug,
+            productionOnboardingAvailable,
+          );
 
           return (
             <Section key={artist.id} title={artist.display_name}>
@@ -446,7 +466,32 @@ export function WhatsAppConnectionsPage() {
                       : 'The token is sent only to the CRM backend over HTTPS, verified with Meta, and written directly to artist-scoped encrypted Worker bindings. The field is cleared after the attempt.'}
                   </p>
                 </form>
-              ) : productionOnboardingAvailable ? (
+              ) : null}
+
+              {coexistenceReconnectAvailable ? (
+                <div style={{ marginTop: 12 }}>
+                  <p className="notice">
+                    {language === 'ru'
+                      ? 'Coexistence: подключает этот же номер из приложения WhatsApp Business к Cloud API. Номер, приложение и переписки остаются у мастера; номер не перерегистрируется. После подключения Worker сам создаст шаблоны booking-карточек, а карточки включатся только после одобрения Meta.'
+                      : 'Coexistence connects this same WhatsApp Business app number to Cloud API. The number, the app and its chats stay with the artist; the number is not re-registered. Afterwards the Worker creates the booking-card templates itself, and cards switch on only once Meta approves them.'}
+                  </p>
+                  <div className="actions">
+                    <button
+                      type="button"
+                      disabled={metaBusyArtistId !== null || !metaSdkReady}
+                      onClick={() => { void startMetaOnboarding(artist); }}
+                    >
+                      {metaBusy
+                        ? (language === 'ru' ? 'Подключаю…' : 'Connecting…')
+                        : !metaSdkReady
+                          ? (language === 'ru' ? 'Загрузка Meta…' : 'Loading Meta…')
+                          : (language === 'ru'
+                              ? `Подключить WhatsApp Business App ${artist.display_name} (Coexistence)`
+                              : `Connect ${artist.display_name} WhatsApp Business app (Coexistence)`)}
+                    </button>
+                  </div>
+                </div>
+              ) : !existingAccountAvailable && productionOnboardingAvailable ? (
                 <div className="actions" style={{ marginTop: 12 }}>
                   <button
                     type="button"
