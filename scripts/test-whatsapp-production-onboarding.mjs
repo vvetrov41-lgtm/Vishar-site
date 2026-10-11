@@ -937,3 +937,103 @@ function exchanges(calls) {
 }
 
 console.log('WhatsApp Embedded Signup CRM redirect tests passed.');
+
+// Since mid-2026 Meta's debug_token for an Embedded Signup token lists no WABA
+// target_ids (granular_scopes holds business_management and
+// whatsapp_business_manage_events; the flat scopes still carry
+// whatsapp_business_management). A pinned route then falls back to its own
+// pinned WABA, and the artist's token must still read that WABA and its number.
+function currentMetaDebugFetch(calls, { scopes, wabaReadable = true, phoneRows = null } = {}) {
+  const base = authorizedFetch(calls);
+  return async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes('/debug_token')) {
+      calls.push({ target, init });
+      return Response.json({
+        data: {
+          is_valid: true,
+          app_id: '1481226093843982',
+          type: 'USER',
+          scopes: scopes ?? ['whatsapp_business_management', 'whatsapp_business_messaging', 'business_management', 'public_profile'],
+          granular_scopes: [{ scope: 'business_management' }, { scope: 'whatsapp_business_manage_events' }],
+        },
+      });
+    }
+    if (!wabaReadable && target.includes(`/${KRISTINA_WABA}`)) {
+      calls.push({ target, init });
+      return Response.json({ error: { type: 'OAuthException', code: 100, error_subcode: 33 } }, { status: 400 });
+    }
+    if (phoneRows && target.includes(`/${KRISTINA_WABA}/phone_numbers`)) {
+      calls.push({ target, init });
+      return Response.json({ data: phoneRows });
+    }
+    return base(url, init);
+  };
+}
+
+{
+  assert.deepEqual({ ...__testing.PINNED_ARTIST_WABA_IDS }, {
+    'vladimir-production': '341184815737145',
+    'kristina-production': KRISTINA_WABA,
+  });
+
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = currentMetaDebugFetch(calls);
+  try {
+    const response = await onRequestPost({ request: request(redirectBody()), env: env() });
+    assert.equal(response.status, 200);
+    assert.ok(calls.some((call) => call.target.includes(`/${KRISTINA_WABA}?fields=id%2Cname`)),
+      'the pinned WABA is read with the artist token');
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(JSON.parse(String(call.init.body)).text));
+    assert.equal(writes.length, 2);
+    for (const envelope of writes) {
+      assert.equal(envelope.wabaId, KRISTINA_WABA);
+      assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+for (const [label, options, expected] of [
+  ['no WhatsApp management granted', { scopes: ['public_profile', 'business_management'] }, { status: 409, error: 'meta_waba_not_discoverable' }],
+  ['management without messaging', { scopes: ['whatsapp_business_management', 'business_management', 'public_profile'] }, { status: 409, error: 'meta_waba_not_discoverable' }],
+  ['messaging without management', { scopes: ['whatsapp_business_messaging', 'business_management', 'public_profile'] }, { status: 409, error: 'meta_waba_not_discoverable' }],
+  ['token cannot read the pinned WABA', { wabaReadable: false }, { status: 400, error: 'meta_request_failed' }],
+  ['pinned WABA no longer holds her number', { phoneRows: [{ id: '10987654326', display_phone_number: '+44 7000 000006', verified_name: 'Other' }] }, { status: 409 }],
+]) {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = currentMetaDebugFetch(calls, options);
+  try {
+    const response = await onRequestPost({ request: request(redirectBody()), env: env() });
+    const payload = await response.json();
+    assert.equal(payload.ok, false, label);
+    if (expected.error) assert.equal(payload.error, expected.error, label);
+    assert.ok(response.status >= 400, label);
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false, `${label}: nothing written`);
+    assert.equal(calls.some((call) => call.target.includes('/subscribed_apps')), false, `${label}: no subscription`);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // An unpinned route gets no fallback: without target_ids it is refused.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = currentMetaDebugFetch(calls);
+  try {
+    await assert.rejects(
+      __testing.discoverPinnedWaba('token', 'secret', '10987654323', null),
+      /meta_waba_not_discoverable/,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+console.log('WhatsApp Embedded Signup pinned-WABA fallback tests passed.');
