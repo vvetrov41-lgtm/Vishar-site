@@ -323,7 +323,13 @@ async function tokenWabaIds(accessToken, appSecret) {
   });
   const targetIds = extractUniqueWhatsappTargetIds(debug?.data);
   const scopes = Array.isArray(debug?.data?.scopes) ? debug.data.scopes : [];
-  return { targetIds, grantsWabaManagement: scopes.includes('whatsapp_business_management') };
+  // The drain and webhook Workers send with this token, so the fallback needs
+  // messaging as well as management, as the existing-account path requires.
+  return {
+    targetIds,
+    grantsWhatsApp: scopes.includes('whatsapp_business_management')
+      && scopes.includes('whatsapp_business_messaging'),
+  };
 }
 
 function notDiscoverable() {
@@ -341,11 +347,12 @@ async function discoverWabaFromToken(accessToken, appSecret) {
 // WABA the token grants that holds the artist's own number; none or more
 // than one is refused.
 async function discoverPinnedWaba(accessToken, appSecret, pinnedPhoneNumberId, pinnedWabaId = null) {
-  const { targetIds, grantsWabaManagement } = await tokenWabaIds(accessToken, appSecret);
+  const { targetIds, grantsWhatsApp } = await tokenWabaIds(accessToken, appSecret);
   if (targetIds.length === 0) {
     // No target_ids: only the artist's own pinned WABA, and only when the user
-    // granted WhatsApp management at all. Access is then proven functionally.
-    if (pinnedWabaId && grantsWabaManagement) return pinnedWabaId;
+    // granted WhatsApp management and messaging. Access is then proven
+    // functionally.
+    if (pinnedWabaId && grantsWhatsApp) return pinnedWabaId;
     throw notDiscoverable();
   }
   if (targetIds.length === 1) return targetIds[0];

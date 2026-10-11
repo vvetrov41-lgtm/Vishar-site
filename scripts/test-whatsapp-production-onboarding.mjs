@@ -1000,6 +1000,8 @@ function currentMetaDebugFetch(calls, { scopes, wabaReadable = true, phoneRows =
 
 for (const [label, options, expected] of [
   ['no WhatsApp management granted', { scopes: ['public_profile', 'business_management'] }, { status: 409, error: 'meta_waba_not_discoverable' }],
+  ['management without messaging', { scopes: ['whatsapp_business_management', 'business_management', 'public_profile'] }, { status: 409, error: 'meta_waba_not_discoverable' }],
+  ['messaging without management', { scopes: ['whatsapp_business_messaging', 'business_management', 'public_profile'] }, { status: 409, error: 'meta_waba_not_discoverable' }],
   ['token cannot read the pinned WABA', { wabaReadable: false }, { status: 400, error: 'meta_request_failed' }],
   ['pinned WABA no longer holds her number', { phoneRows: [{ id: '10987654326', display_phone_number: '+44 7000 000006', verified_name: 'Other' }] }, { status: 409 }],
 ]) {
