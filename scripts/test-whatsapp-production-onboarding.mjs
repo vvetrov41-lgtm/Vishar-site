@@ -799,3 +799,141 @@ function codeOnlyBody() {
 }
 
 console.log('WhatsApp Embedded Signup artist number pin tests passed.');
+
+// CRM-owned OAuth redirect (iPhone Safari and desktop alike): the code was
+// issued for redirect_uri = the CRM root, so it is exchanged with exactly that
+// value, once. The JS SDK popup path keeps exchanging without redirect_uri.
+function redirectBody(mode = 'crm_root') {
+  const body = codeOnlyBody();
+  body.session = null;
+  body.redirect_uri_mode = mode;
+  return body;
+}
+
+function exchanges(calls) {
+  return calls.filter((call) => call.target.includes('/oauth/access_token'));
+}
+
+{
+  assert.deepEqual({ ...__testing.META_OAUTH_REDIRECT_URIS }, { crm_root: 'https://crm.vishartattoo.com/' });
+
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = codeOnlyFetch(calls, [KRISTINA_WABA], {});
+  try {
+    const response = await onRequestPost({ request: request(redirectBody()), env: env() });
+    assert.equal(response.status, 200);
+    const [exchange, ...extra] = exchanges(calls);
+    assert.equal(extra.length, 0, 'the code is exchanged exactly once');
+    const form = new URLSearchParams(String(exchange.init.body));
+    assert.equal(form.get('redirect_uri'), 'https://crm.vishartattoo.com/');
+    assert.equal(form.getAll('redirect_uri').length, 1);
+    const writes = calls
+      .filter((call) => call.target.includes('/workers/scripts/') && call.init.method === 'PUT')
+      .map((call) => JSON.parse(JSON.parse(String(call.init.body)).text));
+    assert.equal(writes.length, 2);
+    for (const envelope of writes) assert.equal(envelope.phoneNumberId, KRISTINA_PHONE);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Desktop JS SDK popup: unchanged, no redirect_uri in the exchange.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { artistId: KRISTINA_ID });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(response.status, 200);
+    const [exchange, ...extra] = exchanges(calls);
+    assert.equal(extra.length, 0);
+    assert.equal(new URLSearchParams(String(exchange.init.body)).has('redirect_uri'), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // A redirect_uri mismatch (36008) is reported, never retried with another
+  // redirect_uri.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const base = codeOnlyFetch(calls, [KRISTINA_WABA], {});
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes('/oauth/access_token')) {
+      calls.push({ target: String(url), init });
+      return Response.json({ error: { type: 'OAuthException', code: 100, error_subcode: 36008 } }, { status: 400 });
+    }
+    return base(url, init);
+  };
+  try {
+    const response = await onRequestPost({ request: request(redirectBody()), env: env() });
+    assert.deepEqual(await response.json(), {
+      ok: false, error: 'meta_request_failed', graph_code: 100, graph_subcode: 36008, upstream_status: 400,
+    });
+    assert.equal(exchanges(calls).length, 1, 'one code, one exchange, one redirect_uri');
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  // Unknown modes, a caller-chosen URI, and a redirect code carrying browser
+  // session ids are refused before Meta is called.
+  const withSession = redirectBody();
+  withSession.session = { waba_id: KRISTINA_WABA, phone_number_id: KRISTINA_PHONE };
+  for (const body of [
+    redirectBody('https://evil.example/'),
+    redirectBody('__proto__'),
+    redirectBody('toString'),
+    redirectBody({ crm_root: true }),
+    withSession,
+  ]) {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    globalThis.fetch = codeOnlyFetch(calls, [KRISTINA_WABA], {});
+    try {
+      const response = await onRequestPost({ request: request(body), env: env() });
+      assert.equal(response.status, 400, JSON.stringify(body.redirect_uri_mode));
+      assert.deepEqual(await response.json(), { ok: false, error: 'invalid_signup_session' });
+      assert.equal(exchanges(calls).length, 0);
+      assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+}
+
+{
+  // Redirect flow still binds only Kristina's pinned number: a token granting
+  // only someone else's WABA connects nothing.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const foreignWaba = '12345678906';
+  const base = codeOnlyFetch(calls, [foreignWaba], {});
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    if (target.includes(`/${foreignWaba}?fields=id%2Cname`)) {
+      calls.push({ target, init });
+      return Response.json({ id: foreignWaba, name: 'Other WABA' });
+    }
+    if (target.includes(`/${foreignWaba}/phone_numbers`)) {
+      calls.push({ target, init });
+      return Response.json({ data: [{ id: '10987654326', display_phone_number: '+44 7000 000006', verified_name: 'Other' }] });
+    }
+    return base(url, init);
+  };
+  try {
+    const response = await onRequestPost({ request: request(redirectBody()), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false, error: 'meta_phone_not_in_waba' });
+    assert.equal(calls.some((call) => call.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((call) => call.target.includes('/subscribed_apps')), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+console.log('WhatsApp Embedded Signup CRM redirect tests passed.');

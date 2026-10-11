@@ -5,11 +5,13 @@ import { useLanguage } from '../lib/i18n';
 import { canShowArtistIntegration } from '../lib/integration-visibility';
 import {
   describeWhatsAppEmbeddedSignupError,
-  launchWhatsAppEmbeddedSignup,
   META_WHATSAPP_APP_ID,
   META_WHATSAPP_CONFIG_ID,
-  prepareWhatsAppEmbeddedSignup,
 } from '../lib/meta-whatsapp-embedded-signup';
+import {
+  beginEmbeddedSignupRedirect,
+  takeEmbeddedSignupCallback,
+} from '../lib/meta-whatsapp-signup-redirect';
 import { Link } from '../lib/router';
 import { useSession } from '../lib/session';
 import type { Artist } from '../lib/types';
@@ -63,44 +65,11 @@ export function WhatsAppConnectionsPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [metaBusyArtistId, setMetaBusyArtistId] = useState<string | null>(null);
   const [metaMessage, setMetaMessage] = useState<string | null>(null);
-  const [metaSdkReady, setMetaSdkReady] = useState(false);
-  const [metaSdkError, setMetaSdkError] = useState<string | null>(null);
   const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewTemplate, setReviewTemplate] = useState<MetaReviewTemplateMetadata | null>(null);
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
-  const canManageAnyArtist = profile?.role === 'owner'
-    || (profile?.role === 'booking_manager' && memberships.some(
-      (membership) => membership.is_active && membership.can_manage_integrations,
-    ));
-
-  useEffect(() => {
-    if (!canManageAnyArtist) return undefined;
-    let environment: 'production' | 'staging';
-    try {
-      environment = whatsappCrmEnvironment(supabaseUrl);
-    } catch {
-      return undefined;
-    }
-    if (environment !== 'production') return undefined;
-
-    let active = true;
-    setMetaSdkReady(false);
-    setMetaSdkError(null);
-    void prepareWhatsAppEmbeddedSignup()
-      .then(() => {
-        if (active) setMetaSdkReady(true);
-      })
-      .catch((cause) => {
-        if (!active) return;
-        setMetaSdkError(describeWhatsAppEmbeddedSignupError(cause, language));
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [canManageAnyArtist, language, supabaseUrl]);
 
   const { data, loading, error, reload } = useAsync<ConnectionsData>(async () => {
     if (!api) throw new Error('CRM API unavailable.');
@@ -135,16 +104,6 @@ export function WhatsAppConnectionsPage() {
     } finally {
       setBusyArtistId(null);
     }
-  }
-
-  function retryMetaSdk() {
-    setMetaSdkReady(false);
-    setMetaSdkError(null);
-    void prepareWhatsAppEmbeddedSignup()
-      .then(() => setMetaSdkReady(true))
-      .catch((cause) => {
-        setMetaSdkError(describeWhatsAppEmbeddedSignupError(cause, language));
-      });
   }
 
   async function runMetaReview(action: 'create' | 'delete' | 'status') {
@@ -222,38 +181,78 @@ export function WhatsAppConnectionsPage() {
     }
   }
 
-  async function startMetaOnboarding(artist: Artist) {
-    setMetaBusyArtistId(artist.id);
+  // Embedded Signup leaves the CRM: the page navigates to Meta's dialog in this
+  // tab and Meta returns to the CRM root, where main.tsx captures the code.
+  function startMetaOnboarding(artist: Artist) {
     setActionError(null);
     setMetaMessage(null);
+    if (
+      !api
+      || !data
+      || data.environment !== 'production'
+      || !canManageArtist(profile?.role, artist.id, memberships)
+    ) {
+      setActionError(language === 'ru'
+        ? 'Подключение WhatsApp через Meta недоступно в этой сессии CRM.'
+        : 'Production WhatsApp onboarding is unavailable in this CRM session.');
+      return;
+    }
+    setMetaBusyArtistId(artist.id);
     try {
-      if (
-        !api
-        || !data
-        || data.environment !== 'production'
-        || !canManageArtist(profile?.role, artist.id, memberships)
-      ) {
-        throw new Error('Production WhatsApp onboarding is unavailable in this CRM session.');
-      }
-      if (!metaSdkReady) throw new Error('Meta SDK is not ready yet.');
-
-      const signup = await launchWhatsAppEmbeddedSignup();
-      const provisioned = await api.provisionProductionWhatsApp(artist, supabaseUrl, signup);
-      const identity = [provisioned.verified_name, provisioned.display_phone_number]
-        .filter(Boolean)
-        .join(' · ');
-      setMetaMessage(
-        language === 'ru'
-          ? `WhatsApp ${artist.display_name} подключён${identity ? `: ${identity}` : ''}. Оба encrypted Worker bindings записаны.`
-          : `${artist.display_name} WhatsApp connected${identity ? `: ${identity}` : ''}. Both encrypted Worker bindings were written.`,
-      );
-      reload();
+      beginEmbeddedSignupRedirect(artist.id);
     } catch (cause) {
-      setActionError(describeWhatsAppEmbeddedSignupError(cause, language));
-    } finally {
       setMetaBusyArtistId(null);
+      setActionError(describeWhatsAppEmbeddedSignupError(cause, language));
     }
   }
+
+  // Meta's redirect back: exchange the single-use code once, for the artist the
+  // flow was started for, and only if this session may manage that artist.
+  useEffect(() => {
+    if (!api || !data || data.environment !== 'production') return;
+    const callback = takeEmbeddedSignupCallback();
+    if (!callback) return;
+    if (callback.status === 'rejected') {
+      setActionError(language === 'ru'
+        ? `Ответ Meta отклонён (${callback.reason}). Запустите подключение заново.`
+        : `Meta's response was refused (${callback.reason}). Start the connection again.`);
+      return;
+    }
+    const artist = data.artists.find((candidate) => candidate.id === callback.artistId);
+    if (!artist || !canManageArtist(profile?.role, artist.id, memberships)) {
+      setActionError(language === 'ru'
+        ? 'Подключение WhatsApp относится к мастеру, которым эта сессия не управляет.'
+        : 'The WhatsApp connection belongs to an artist this session cannot manage.');
+      return;
+    }
+    if (callback.status === 'cancelled') {
+      setActionError(language === 'ru'
+        ? `Подключение WhatsApp ${artist.display_name} отменено в Meta.`
+        : `${artist.display_name} WhatsApp connection was cancelled in Meta.`);
+      return;
+    }
+    setMetaBusyArtistId(artist.id);
+    void api.provisionProductionWhatsApp(artist, supabaseUrl, {
+      authorizationCode: callback.code,
+      wabaId: null,
+      phoneNumberId: null,
+      event: 'CODE_ONLY',
+      redirectFlow: 'crm_root',
+    })
+      .then((provisioned) => {
+        const identity = [provisioned.verified_name, provisioned.display_phone_number]
+          .filter(Boolean)
+          .join(' · ');
+        setMetaMessage(
+          language === 'ru'
+            ? `WhatsApp ${artist.display_name} подключён${identity ? `: ${identity}` : ''}. Оба encrypted Worker bindings записаны.`
+            : `${artist.display_name} WhatsApp connected${identity ? `: ${identity}` : ''}. Both encrypted Worker bindings were written.`,
+        );
+        reload();
+      })
+      .catch((cause) => setActionError(describeWhatsAppEmbeddedSignupError(cause, language)))
+      .finally(() => setMetaBusyArtistId(null));
+  }, [api, data, language, memberships, profile?.role, reload, supabaseUrl]);
 
   if (loading) {
     return <LoadingState label={language === 'ru' ? 'Загрузка WhatsApp…' : 'Loading WhatsApp…'} />;
@@ -292,15 +291,6 @@ export function WhatsAppConnectionsPage() {
           </p>
         ) : null}
       </div>
-
-      {canManageAnyArtist && data.environment === 'production' && metaSdkError ? (
-        <div className="notice warn" role="alert">
-          <p>{metaSdkError}</p>
-          <button type="button" disabled={metaBusyArtistId !== null} onClick={retryMetaSdk}>
-            {language === 'ru' ? 'Повторить загрузку Meta' : 'Retry Meta SDK'}
-          </button>
-        </div>
-      ) : null}
 
       {metaMessage ? <div className="notice" role="status">{metaMessage}</div> : null}
       {reviewMessage ? <div className="notice" role="status">{reviewMessage}</div> : null}
@@ -478,16 +468,14 @@ export function WhatsAppConnectionsPage() {
                   <div className="actions">
                     <button
                       type="button"
-                      disabled={metaBusyArtistId !== null || !metaSdkReady}
-                      onClick={() => { void startMetaOnboarding(artist); }}
+                      disabled={metaBusyArtistId !== null}
+                      onClick={() => startMetaOnboarding(artist)}
                     >
                       {metaBusy
                         ? (language === 'ru' ? 'Подключаю…' : 'Connecting…')
-                        : !metaSdkReady
-                          ? (language === 'ru' ? 'Загрузка Meta…' : 'Loading Meta…')
-                          : (language === 'ru'
-                              ? `Подключить WhatsApp Business App ${artist.display_name} (Coexistence)`
-                              : `Connect ${artist.display_name} WhatsApp Business app (Coexistence)`)}
+                        : (language === 'ru'
+                          ? `Подключить WhatsApp Business App ${artist.display_name} (Coexistence)`
+                          : `Connect ${artist.display_name} WhatsApp Business app (Coexistence)`)}
                     </button>
                   </div>
                 </div>
@@ -496,16 +484,14 @@ export function WhatsAppConnectionsPage() {
                   <button
                     type="button"
                     className="primary"
-                    disabled={metaBusyArtistId !== null || !metaSdkReady}
-                    onClick={() => { void startMetaOnboarding(artist); }}
+                    disabled={metaBusyArtistId !== null}
+                    onClick={() => startMetaOnboarding(artist)}
                   >
                     {metaBusy
                       ? (language === 'ru' ? 'Подключаю…' : 'Connecting…')
-                      : !metaSdkReady
-                        ? (language === 'ru' ? 'Загрузка Meta…' : 'Loading Meta…')
-                        : (language === 'ru'
-                            ? `Подключить WhatsApp ${artist.display_name}`
-                            : `Connect ${artist.display_name} WhatsApp`)}
+                      : (language === 'ru'
+                        ? `Подключить WhatsApp ${artist.display_name}`
+                        : `Connect ${artist.display_name} WhatsApp`)}
                   </button>
                 </div>
               ) : null}

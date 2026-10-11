@@ -187,6 +187,42 @@ describe('WhatsApp Connections safety', () => {
     }
   });
 
+  it('marks a CRM-root redirect code so the server exchanges it with that redirect_uri', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: true,
+      connected: true,
+      connected_at: '2026-10-11T10:00:00.000Z',
+      integration_key: 'kristina-production',
+      waba_name: 'Kristina WABA',
+      display_phone_number: '+44 7000 000002',
+      verified_name: 'Kristina',
+    }));
+
+    try {
+      await api.provisionProductionWhatsApp(
+        KRISTINA,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        {
+          authorizationCode: 'one-time-meta-code-for-test',
+          wabaId: null,
+          phoneNumberId: null,
+          event: 'CODE_ONLY',
+          redirectFlow: 'crm_root',
+        },
+      );
+      expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+        artist_id: KRISTINA.id,
+        code: 'one-time-meta-code-for-test',
+        session: null,
+        redirect_uri_mode: 'crm_root',
+      });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('sends existing-account tokens only to the same-origin fixed-artist provisioning boundary', async () => {
     const productionUrl = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
     const syntheticMetaToken = `synthetic-system-user-token-${'x'.repeat(64)}`;

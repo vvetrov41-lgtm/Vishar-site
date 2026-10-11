@@ -8,6 +8,7 @@ import { RouterProvider } from './lib/router';
 import { SessionProvider } from './lib/session';
 import { SurfaceProvider, readSurface } from './lib/surface';
 import { createCrmClient, isStaffInviteUrl, readTeamInviteUrl } from './lib/supabase';
+import { captureEmbeddedSignupCallbackAtStartup } from './lib/meta-whatsapp-signup-redirect';
 import './styles.css';
 import './booking-controls.css';
 import './mobile-overflow.css';
@@ -18,6 +19,9 @@ import './mobile-overflow.css';
 // Vite is actually in development mode; a production build remains hosted-
 // Supabase-only.
 const browserEnv = import.meta.env as unknown as Record<string, string | undefined>;
+// Meta's Embedded Signup redirect lands on the root with ?code&state. Take it
+// (single use) and move to the WhatsApp page before anything reads the URL.
+captureEmbeddedSignupCallbackAtStartup();
 const staffInviteMode = isStaffInviteUrl(window.location.href);
 const client = withConsequentialConfirmations(
   createCrmClient(browserEnv, import.meta.env.DEV, window.location.href)

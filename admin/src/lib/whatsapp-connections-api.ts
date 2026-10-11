@@ -291,6 +291,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
             waba_id: signup.wabaId,
             phone_number_id: signup.phoneNumberId,
           } : null,
+          ...(signup.redirectFlow === 'crm_root' ? { redirect_uri_mode: 'crm_root' } : {}),
         },
         expectedIntegrationKey,
       );
