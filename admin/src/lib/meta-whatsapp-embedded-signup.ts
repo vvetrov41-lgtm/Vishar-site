@@ -40,6 +40,10 @@ export interface WhatsAppEmbeddedSignupResult {
   wabaId: string | null;
   phoneNumberId: string | null;
   event: 'FINISH' | 'CODE_ONLY';
+  /** The code came back to the CRM root through the CRM-owned OAuth redirect
+   *  (meta-whatsapp-signup-redirect.ts), so the server must exchange it with
+   *  that exact redirect_uri. Absent for the JS SDK popup. */
+  redirectFlow?: 'crm_root';
 }
 
 export interface EmbeddedSignupMessage {

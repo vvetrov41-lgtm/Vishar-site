@@ -2,6 +2,17 @@ const APP_ID = '1481226093843982';
 const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
+// A code is bound to the redirect_uri of the dialog that issued it, and Meta
+// refuses an exchange with any other value (100/36008). The browser says which
+// dialog that was; each mode maps to exactly one server-owned value, and the
+// code is exchanged once with it. Nothing is retried with another value.
+//  - crm_root: the CRM-owned OAuth redirect (admin/src/lib/
+//    meta-whatsapp-signup-redirect.ts), redirect_uri = the production CRM root.
+//  - absent:   the JS SDK popup, exchanged without redirect_uri as Meta
+//    documents for SDK-issued codes.
+const META_OAUTH_REDIRECT_URIS = Object.freeze({
+  crm_root: `${PRODUCTION_CRM_ORIGIN}/`,
+});
 const WEBHOOK_WORKER = 'vishar-whatsapp-webhook-production';
 const DRAIN_WORKER = 'vishar-whatsapp-drain-production';
 const MAX_BODY_BYTES = 4096;
@@ -243,7 +254,7 @@ async function graph(url, init = {}) {
   return payload;
 }
 
-async function exchangeCode(code, appSecret) {
+async function exchangeCode(code, appSecret, redirectUri = null) {
   const url = `https://graph.facebook.com/${GRAPH_VERSION}/oauth/access_token`;
   const form = new URLSearchParams({
     client_id: APP_ID,
@@ -251,6 +262,7 @@ async function exchangeCode(code, appSecret) {
     code,
     grant_type: 'authorization_code',
   });
+  if (redirectUri) form.set('redirect_uri', redirectUri);
   let payload;
   try {
     payload = await graph(url, {
@@ -517,9 +529,17 @@ export async function onRequestPost(context) {
     const browserPhoneNumberId = typeof body?.session?.phone_number_id === 'string'
       ? body.session.phone_number_id.trim()
       : '';
+    const redirectUriMode = body?.redirect_uri_mode ?? null;
+    const redirectUri = redirectUriMode === null
+      ? null
+      : Object.prototype.hasOwnProperty.call(META_OAUTH_REDIRECT_URIS, redirectUriMode)
+        ? META_OAUTH_REDIRECT_URIS[redirectUriMode]
+        : undefined;
 
     if (
-      !UUID.test(artistId)
+      redirectUri === undefined
+      || (redirectUri && (browserWabaId || browserPhoneNumberId))
+      || !UUID.test(artistId)
       || code.length < 10
       || code.length > 2048
       || (browserWabaId && !PROVIDER_ID.test(browserWabaId))
@@ -535,7 +555,7 @@ export async function onRequestPost(context) {
     const route = await requireApprovedRoute(operator, env, artistId);
     stage = 'token_exchange';
     const metaAppSecret = binding(env, 'META_APP_SECRET');
-    const accessToken = await exchangeCode(code, metaAppSecret);
+    const accessToken = await exchangeCode(code, metaAppSecret, redirectUri);
     stage = 'waba_discovery';
     const pinnedPhoneNumberId = PINNED_ARTIST_PHONE_NUMBER_IDS[route.integrationKey] || null;
     const wabaId = browserWabaId || (pinnedPhoneNumberId
@@ -615,4 +635,5 @@ export const __testing = {
   requireServerConfiguration,
   extractUniqueWhatsappTargetIds,
   requirePinnedSelection,
+  META_OAUTH_REDIRECT_URIS,
 };
