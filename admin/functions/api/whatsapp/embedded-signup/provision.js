@@ -32,6 +32,15 @@ const PINNED_ARTIST_PHONE_NUMBER_IDS = Object.freeze({
   'vladimir-production': '328102027058293',
   'kristina-production': '518907894641289',
 });
+// The WABA each pinned number lives in (as in existing-account/provision.js).
+// Since mid-2026 Meta's debug_token for Embedded Signup tokens no longer lists
+// WABA target_ids, so a code-only callback cannot name its WABA. A pinned
+// route then uses this one, and verifyMetaSelection proves with the artist's
+// own token that it can read that WABA and that the WABA holds the number.
+const PINNED_ARTIST_WABA_IDS = Object.freeze({
+  'vladimir-production': '341184815737145',
+  'kristina-production': '462106700328578',
+});
 
 function requirePinnedSelection(integrationKey, phoneNumberId) {
   const pinned = PINNED_ARTIST_PHONE_NUMBER_IDS[integrationKey];
@@ -313,12 +322,17 @@ async function tokenWabaIds(accessToken, appSecret) {
     },
   });
   const targetIds = extractUniqueWhatsappTargetIds(debug?.data);
-  if (targetIds.length === 0) throw Object.assign(new Error('meta_waba_not_discoverable'), { status: 409 });
-  return targetIds;
+  const scopes = Array.isArray(debug?.data?.scopes) ? debug.data.scopes : [];
+  return { targetIds, grantsWabaManagement: scopes.includes('whatsapp_business_management') };
+}
+
+function notDiscoverable() {
+  return Object.assign(new Error('meta_waba_not_discoverable'), { status: 409 });
 }
 
 async function discoverWabaFromToken(accessToken, appSecret) {
-  const targetIds = await tokenWabaIds(accessToken, appSecret);
+  const { targetIds } = await tokenWabaIds(accessToken, appSecret);
+  if (targetIds.length === 0) throw notDiscoverable();
   if (targetIds.length !== 1) throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
   return targetIds[0];
 }
@@ -326,8 +340,14 @@ async function discoverWabaFromToken(accessToken, appSecret) {
 // A code-only callback carries no WABA id. For a pinned route, pick the one
 // WABA the token grants that holds the artist's own number; none or more
 // than one is refused.
-async function discoverPinnedWaba(accessToken, appSecret, pinnedPhoneNumberId) {
-  const targetIds = await tokenWabaIds(accessToken, appSecret);
+async function discoverPinnedWaba(accessToken, appSecret, pinnedPhoneNumberId, pinnedWabaId = null) {
+  const { targetIds, grantsWabaManagement } = await tokenWabaIds(accessToken, appSecret);
+  if (targetIds.length === 0) {
+    // No target_ids: only the artist's own pinned WABA, and only when the user
+    // granted WhatsApp management at all. Access is then proven functionally.
+    if (pinnedWabaId && grantsWabaManagement) return pinnedWabaId;
+    throw notDiscoverable();
+  }
   if (targetIds.length === 1) return targetIds[0];
   if (targetIds.length > MAX_PINNED_DISCOVERY_WABAS) {
     throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
@@ -559,7 +579,12 @@ export async function onRequestPost(context) {
     stage = 'waba_discovery';
     const pinnedPhoneNumberId = PINNED_ARTIST_PHONE_NUMBER_IDS[route.integrationKey] || null;
     const wabaId = browserWabaId || (pinnedPhoneNumberId
-      ? await discoverPinnedWaba(accessToken, metaAppSecret, pinnedPhoneNumberId)
+      ? await discoverPinnedWaba(
+        accessToken,
+        metaAppSecret,
+        pinnedPhoneNumberId,
+        PINNED_ARTIST_WABA_IDS[route.integrationKey] || null,
+      )
       : await discoverWabaFromToken(accessToken, metaAppSecret));
     stage = 'meta_selection';
     // Coexistence may finish without a phone number id; a pinned route then
@@ -636,4 +661,6 @@ export const __testing = {
   extractUniqueWhatsappTargetIds,
   requirePinnedSelection,
   META_OAUTH_REDIRECT_URIS,
+  PINNED_ARTIST_WABA_IDS,
+  discoverPinnedWaba,
 };
