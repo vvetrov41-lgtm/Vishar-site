@@ -223,6 +223,34 @@ describe('WhatsApp Connections safety', () => {
     }
   });
 
+  it('shows only the permission names Meta granted when no WABA can be found', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({
+      ok: false,
+      error: 'meta_waba_not_discoverable',
+      meta_scopes: ['public_profile', 'whatsapp_business_management', '<script>'],
+      meta_granular_scopes: ['business_management:0'],
+    }, { status: 409 }));
+    try {
+      await expect(api.provisionProductionWhatsApp(
+        KRISTINA,
+        'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+        {
+          authorizationCode: 'one-time-meta-code-for-test',
+          wabaId: null,
+          phoneNumberId: null,
+          event: 'CODE_ONLY',
+          redirectFlow: 'crm_root',
+        },
+      )).rejects.toThrow(
+        'meta_waba_not_discoverable scopes=public_profile,whatsapp_business_management granular=business_management:0',
+      );
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it('sends existing-account tokens only to the same-origin fixed-artist provisioning boundary', async () => {
     const productionUrl = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
     const syntheticMetaToken = `synthetic-system-user-token-${'x'.repeat(64)}`;

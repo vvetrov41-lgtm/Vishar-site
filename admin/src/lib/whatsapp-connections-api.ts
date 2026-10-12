@@ -121,6 +121,19 @@ function safeProvisioningDiagnostic(payload: Record<string, unknown> | null, res
   const error = payload && typeof payload.error === 'string'
     ? payload.error
     : `provisioning_failed_http_${responseStatus}`;
+  if (error === 'meta_waba_not_discoverable' && payload) {
+    // Permission names Meta granted, so a refusal shows what was missing.
+    const names = (value: unknown) => (Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string' && /^[a-z_]{1,64}(:\d{1,3})?$/.test(item)).slice(0, 16)
+      : []);
+    const scopes = names(payload.meta_scopes);
+    const granular = names(payload.meta_granular_scopes);
+    return [
+      error,
+      scopes.length ? `scopes=${scopes.join(',')}` : 'scopes=none',
+      granular.length ? `granular=${granular.join(',')}` : 'granular=none',
+    ].join(' ');
+  }
   if (error !== 'meta_request_failed' || !payload) return error;
 
   const details: string[] = [error];

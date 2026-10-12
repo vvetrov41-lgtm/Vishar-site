@@ -1037,3 +1037,27 @@ for (const [label, options, expected] of [
 }
 
 console.log('WhatsApp Embedded Signup pinned-WABA fallback tests passed.');
+
+{
+  // A discovery refusal reports the permission names Meta granted, and only
+  // names: no ids, no token.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = currentMetaDebugFetch(calls, { scopes: ['whatsapp_business_management', 'public_profile', 'Bad Scope!', 'meta-access-token-for-test'] });
+  try {
+    const response = await onRequestPost({ request: request(redirectBody()), env: env() });
+    assert.equal(response.status, 409);
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      ok: false,
+      error: 'meta_waba_not_discoverable',
+      meta_scopes: ['public_profile', 'whatsapp_business_management'],
+      meta_granular_scopes: ['business_management:0', 'whatsapp_business_manage_events:0'],
+    });
+    assert.equal(JSON.stringify(payload).includes(KRISTINA_WABA), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+console.log('WhatsApp Embedded Signup scope diagnostic tests passed.');

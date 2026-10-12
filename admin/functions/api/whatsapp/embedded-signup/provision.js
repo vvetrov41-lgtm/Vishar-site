@@ -323,22 +323,38 @@ async function tokenWabaIds(accessToken, appSecret) {
   });
   const targetIds = extractUniqueWhatsappTargetIds(debug?.data);
   const scopes = Array.isArray(debug?.data?.scopes) ? debug.data.scopes : [];
+  // Permission names only (never ids or tokens), returned with a discovery
+  // refusal so the operator can see what Meta actually granted.
+  const scopeDiagnostic = {
+    scopes: safeScopeNames(scopes),
+    granular: safeScopeNames((Array.isArray(debug?.data?.granular_scopes) ? debug.data.granular_scopes : [])
+      .map((grant) => (typeof grant?.scope === 'string'
+        ? `${grant.scope}:${Array.isArray(grant.target_ids) ? grant.target_ids.length : 0}`
+        : ''))),
+  };
   // The drain and webhook Workers send with this token, so the fallback needs
   // messaging as well as management, as the existing-account path requires.
   return {
     targetIds,
+    scopeDiagnostic,
     grantsWhatsApp: scopes.includes('whatsapp_business_management')
       && scopes.includes('whatsapp_business_messaging'),
   };
 }
 
-function notDiscoverable() {
-  return Object.assign(new Error('meta_waba_not_discoverable'), { status: 409 });
+function safeScopeNames(values) {
+  return [...new Set(values.filter((value) => typeof value === 'string' && /^[a-z_]{1,64}(:\d{1,3})?$/.test(value)))]
+    .sort()
+    .slice(0, 16);
+}
+
+function notDiscoverable(scopeDiagnostic = null) {
+  return Object.assign(new Error('meta_waba_not_discoverable'), { status: 409, scopeDiagnostic });
 }
 
 async function discoverWabaFromToken(accessToken, appSecret) {
-  const { targetIds } = await tokenWabaIds(accessToken, appSecret);
-  if (targetIds.length === 0) throw notDiscoverable();
+  const { targetIds, scopeDiagnostic } = await tokenWabaIds(accessToken, appSecret);
+  if (targetIds.length === 0) throw notDiscoverable(scopeDiagnostic);
   if (targetIds.length !== 1) throw Object.assign(new Error('meta_waba_selection_ambiguous'), { status: 409 });
   return targetIds[0];
 }
@@ -347,13 +363,13 @@ async function discoverWabaFromToken(accessToken, appSecret) {
 // WABA the token grants that holds the artist's own number; none or more
 // than one is refused.
 async function discoverPinnedWaba(accessToken, appSecret, pinnedPhoneNumberId, pinnedWabaId = null) {
-  const { targetIds, grantsWhatsApp } = await tokenWabaIds(accessToken, appSecret);
+  const { targetIds, grantsWhatsApp, scopeDiagnostic } = await tokenWabaIds(accessToken, appSecret);
   if (targetIds.length === 0) {
     // No target_ids: only the artist's own pinned WABA, and only when the user
     // granted WhatsApp management and messaging. Access is then proven
     // functionally.
     if (pinnedWabaId && grantsWhatsApp) return pinnedWabaId;
-    throw notDiscoverable();
+    throw notDiscoverable(scopeDiagnostic);
   }
   if (targetIds.length === 1) return targetIds[0];
   if (targetIds.length > MAX_PINNED_DISCOVERY_WABAS) {
@@ -644,6 +660,10 @@ export async function onRequestPost(context) {
       : null;
     const safeError = classifiedError || `provisioning_failed_${stage}`;
     const body = { ok: false, error: safeError };
+    if (safeError === 'meta_waba_not_discoverable' && error?.scopeDiagnostic) {
+      body.meta_scopes = error.scopeDiagnostic.scopes;
+      body.meta_granular_scopes = error.scopeDiagnostic.granular;
+    }
     if (safeError === 'meta_request_failed') {
       body.graph_code = Number.isInteger(error?.graphCode) ? error.graphCode : null;
       body.graph_subcode = Number.isInteger(error?.graphSubcode) ? error.graphSubcode : null;
