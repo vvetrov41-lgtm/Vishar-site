@@ -16,6 +16,7 @@ import {
   V2_LIMITS,
   V2_REGIONS,
   V2_STYLES,
+  stylesFor,
   V2_WORK,
   detailsToInput,
   firstProblem,
@@ -236,7 +237,7 @@ export function EnquiryStructuredEditPanel({
 
       <div role="group" aria-label={copy.styles}>
         <div className="meta">{copy.styles}</div>
-        {V2_STYLES.map((style) => (
+        {stylesFor(current.styles).map((style) => (
           <label key={style.key} style={{ display: 'inline-flex', gap: 4, marginRight: 12 }}>
             <input
               type="checkbox"

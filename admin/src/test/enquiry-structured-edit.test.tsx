@@ -5,6 +5,7 @@ import { EnquiryStructuredEditPanel } from '../components/EnquiryStructuredEditP
 import {
   detailsToInput,
   firstProblem,
+  stylesFor,
   toggleExclusive,
   togglePlacement,
   toPayload,
@@ -95,6 +96,32 @@ function renderStructured(updateEnquiryProjectDetails = vi.fn().mockResolvedValu
   fireEvent.click(screen.getByRole('button', { name: 'Edit body areas and style' }));
   return { updateEnquiryProjectDetails, onSaved };
 }
+
+describe('artist style sets', () => {
+  const keys = (list: { key: string }[]) => list.map((style) => style.key);
+
+  it('offers Kristina colour styles for her enquiries and realism styles for Vladimir', () => {
+    expect(keys(stylesFor(['floral', 'watercolour']))).toEqual(
+      ['floral', 'watercolour', 'custom_colour', 'miniature', 'anime', 'micro_realism', 'not_sure'],
+    );
+    expect(keys(stylesFor(['colour']))).toEqual(['black_grey', 'colour', 'not_sure']);
+  });
+
+  it('keeps every style available when only Not sure yet is chosen', () => {
+    expect(stylesFor(['not_sure'])).toEqual(V2_STYLES);
+    expect(stylesFor([])).toEqual(V2_STYLES);
+  });
+
+  it('maps stored Kristina labels back to keys', () => {
+    const input = detailsToInput({
+      schema: 'enquiry-v2',
+      areas: [{ region: 'Arm', placements: ['Forearm'], work: ['New tattoo'] }],
+      styles: ['Floral / botanical', 'Watercolour'],
+      imageRequirements: { designReference: true, existingTattooPhoto: false },
+    } as EnquiryProjectDetails);
+    expect(input?.styles).toEqual(['floral', 'watercolour']);
+  });
+});
 
 describe('structured enquiry editor', () => {
   it('adds Extension next to Cover-up and sends keys plus the loaded state', async () => {

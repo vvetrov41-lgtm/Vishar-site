@@ -34,6 +34,18 @@ select is(crm_private.normalise_enquiry_project_input('{"areas":[{"region":"leg"
   '{"project_details":{"schema":"enquiry-v2","areas":[{"region":"Leg","placements":["Half leg sleeve","Knee"],"work":["New tattoo"]}],"styles":["Black & Grey realism"],"imageRequirements":{"designReference":true,"existingTattooPhoto":false}},"project_type":"Large-scale project / sleeve","placement":"Leg: Half leg sleeve, Knee","approximate_size":"Not specified","cover_up":"No"}'::jsonb,
   'parity: half leg sleeve new');
 
+select is(crm_private.normalise_enquiry_project_input('{"areas":[{"region":"arm","placements":["forearm"],"work":["new"]}],"styles":["floral","watercolour"],"sizeNotes":"10-15 cm"}'::jsonb),
+  '{"project_details":{"schema":"enquiry-v2","areas":[{"region":"Arm","placements":["Forearm"],"work":["New tattoo"]}],"styles":["Floral / botanical","Watercolour"],"sizeNotes":"10-15 cm","imageRequirements":{"designReference":true,"existingTattooPhoto":false}},"project_type":"Floral / botanical + Watercolour","placement":"Arm: Forearm","approximate_size":"10-15 cm","cover_up":"No"}'::jsonb,
+  'parity: Kristina floral and watercolour forearm');
+
+select is(crm_private.normalise_enquiry_project_input('{"areas":[{"region":"leg","placements":["calf"],"work":["rework"]}],"styles":["anime"],"sizeNotes":"Not sure yet"}'::jsonb),
+  '{"project_details":{"schema":"enquiry-v2","areas":[{"region":"Leg","placements":["Calf"],"work":["Rework"]}],"styles":["Anime / cartoon"],"sizeNotes":"Not sure yet","imageRequirements":{"designReference":false,"existingTattooPhoto":true}},"project_type":"Anime / cartoon","placement":"Leg: Calf","approximate_size":"Not sure yet","cover_up":"Existing tattoo"}'::jsonb,
+  'parity: Kristina anime rework on the calf');
+
+select is(crm_private.normalise_enquiry_project_input('{"areas":[{"region":"hand","placements":["back_of_hand"],"work":["cover_up"]}],"styles":["micro_realism"]}'::jsonb),
+  '{"project_details":{"schema":"enquiry-v2","areas":[{"region":"Hand","placements":["Back of hand"],"work":["Cover-up"]}],"styles":["Micro-realism"],"imageRequirements":{"designReference":false,"existingTattooPhoto":true}},"project_type":"Cover-up","placement":"Hand: Back of hand","approximate_size":"Not specified","cover_up":"Yes"}'::jsonb,
+  'parity: Kristina micro-realism cover-up keeps Cover-up');
+
 select throws_ok('select crm_private.normalise_enquiry_project_input(''{"areas":[{"region":"tail","placements":[],"work":["new"]}],"styles":["colour"]}''::jsonb)',
   '22023', null, 'parity: Worker and SQL both reject unknown region');
 
@@ -63,6 +75,9 @@ select throws_ok('select crm_private.normalise_enquiry_project_input(''{"areas":
 
 select throws_ok('select crm_private.normalise_enquiry_project_input(''{"areas":[],"styles":["colour"]}''::jsonb)',
   '22023', null, 'parity: Worker and SQL both reject no areas');
+
+select throws_ok('select crm_private.normalise_enquiry_project_input(''{"areas":[{"region":"arm","placements":["forearm"],"work":["new"]}],"styles":["not_sure","floral"]}''::jsonb)',
+  '22023', null, 'parity: Worker and SQL both reject not sure with a Kristina style');
 
 select * from finish(true);
 rollback;

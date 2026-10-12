@@ -23,6 +23,7 @@ const REGIONS = new Map(catalogue.regions.map((region) => [region.key, {
 const WORK = new Map(catalogue.work.map((work) => [work.key, work]));
 const STYLES = new Map(catalogue.styles.map((style) => [style.key, style]));
 const EXISTING_WORK = new Set(['extension', 'cover_up', 'rework']);
+const REALISM_STYLES = new Set(['black_grey', 'colour']);
 const MAX_DETAILS_JSON = 8000;
 
 function invalid(message = 'Please check the project details and try again.') {
@@ -170,6 +171,11 @@ export function deriveLegacyFields(parsed) {
   if (allWork.has('cover_up')) projectType = 'Cover-up';
   else if (areas.some((area) => area.large)) projectType = 'Large-scale project / sleeve';
   else if (styleKeys.includes('not_sure')) projectType = 'Not sure yet';
+  // Kristina's colour styles have no realism wording: keep the client's own
+  // choice, for example "Floral / botanical + Watercolour".
+  else if (styleKeys.some((key) => !REALISM_STYLES.has(key))) {
+    projectType = styleKeys.map((key) => STYLES.get(key).label).join(' + ').slice(0, 100);
+  }
   else if (styleKeys.length === 2) projectType = 'Colour and black and grey realism';
   else if (styleKeys[0] === 'colour') projectType = 'Colour realism';
   else projectType = 'Black and grey realism';

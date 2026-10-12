@@ -9,10 +9,16 @@
 // Run with --write to regenerate the pgTAP file after a deliberate change.
 
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { parseProjectDetails, deriveLegacyFields } from '../workers/lib/enquiry-v2.js';
 
-const MIGRATION = 'supabase/migrations/20261009210000_structured_enquiry_editing.sql';
+// The effective catalogue is the last migration that redefines it.
+const MIGRATION = readdirSync('supabase/migrations')
+  .filter((name) => name.endsWith('.sql'))
+  .sort()
+  .map((name) => `supabase/migrations/${name}`)
+  .filter((path) => /create or replace function crm_private\.enquiry_v2_catalogue\(\)/.test(readFileSync(path, 'utf8')))
+  .at(-1);
 const PARITY = 'supabase/tests/331_enquiry_v2_sql_parity.sql';
 
 const config = JSON.parse(readFileSync('config/enquiry-form-v2.json', 'utf8'));
@@ -62,6 +68,20 @@ const fixtures = [
     areas: [{ region: 'leg', placements: ['half_leg_sleeve', 'knee'], work: ['new'] }],
     styles: ['black_grey'],
   }],
+  ['Kristina floral and watercolour forearm', {
+    areas: [{ region: 'arm', placements: ['forearm'], work: ['new'] }],
+    styles: ['floral', 'watercolour'],
+    sizeNotes: '10-15 cm',
+  }],
+  ['Kristina anime rework on the calf', {
+    areas: [{ region: 'leg', placements: ['calf'], work: ['rework'] }],
+    styles: ['anime'],
+    sizeNotes: 'Not sure yet',
+  }],
+  ['Kristina micro-realism cover-up keeps Cover-up', {
+    areas: [{ region: 'hand', placements: ['back_of_hand'], work: ['cover_up'] }],
+    styles: ['micro_realism'],
+  }],
 ];
 
 const invalid = [
@@ -78,6 +98,7 @@ const invalid = [
     { region: 'arm', placements: ['wrist'], work: ['new'] },
   ], styles: ['colour'] }],
   ['no areas', { areas: [], styles: ['colour'] }],
+  ['not sure with a Kristina style', { areas: [{ region: 'arm', placements: ['forearm'], work: ['new'] }], styles: ['not_sure', 'floral'] }],
 ];
 
 const q = (value) => `'${String(value).replaceAll("'", "''")}'`;

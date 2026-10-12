@@ -1122,6 +1122,25 @@ await test('v2: a new tattoo with one design reference is stored with structured
   assert.equal(calls.uploads.length, 1);
 });
 
+await test('v2: Kristina colour styles keep their own labels and her privacy notice version', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({ styles: ['floral', 'watercolour'], sizeNotes: '10-15 cm' });
+  const { response, payload } = await send(v2Form({ details, fields: { privacyNoticeVersion: '2026-10-12' } }));
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const args = intakeArgs(calls);
+  assert.deepEqual(args.p_enquiry.project_details.styles, ['Floral / botanical', 'Watercolour']);
+  assert.equal(args.p_enquiry.project_type, 'Floral / botanical + Watercolour');
+  assert.equal(args.p_enquiry.approximate_size, '10-15 cm');
+  assert.equal(args.p_enquiry.privacy_notice_version, '2026-10-12');
+});
+
+await test('v2: an unknown privacy notice version is still refused', async () => {
+  stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const { response, payload } = await send(v2Form({ fields: { privacyNoticeVersion: '2026-10-11' } }));
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, 'privacy_notice_not_acknowledged');
+});
+
 await test('v2: a plain cover-up needs only an existing tattoo photo', async () => {
   const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
   const details = v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: ['cover_up'] }], existingDetails: 'Faded name on forearm' });
