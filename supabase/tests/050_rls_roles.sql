@@ -621,6 +621,7 @@ insert into expected_function_acl values
   ('public.finalize_staff_invite(uuid)', false, true, false),
   ('public.list_assignable_profiles()', false, true, false),
   ('public.update_retention_policy(boolean,integer,integer,integer,integer,boolean)', false, true, false),
+  ('public.run_retention_dry_run()', false, true, false),
   ('public.list_accessible_artists()', false, true, false),
   ('public.list_booking_sources(uuid)', false, true, false),
   ('public.create_booking_source(uuid,text,text,text,text,boolean)', false, true, false),
@@ -821,6 +822,7 @@ insert into expected_function_acl values
   ('public.service_fail_enquiry_translation(uuid,uuid,text)', false, false, true),
   -- Deterministic attention shadow recording (20260924030000).
   ('public.service_record_attention_shadow()', false, false, true),
+  ('public.service_run_retention_dry_run()', false, false, true),
   -- Stale-brief convergence sweep (20260924036000). Backend only.
   ('public.service_converge_client_ai_briefs(integer)', false, false, true),
   -- Narrow client-state contract (20260924040000).

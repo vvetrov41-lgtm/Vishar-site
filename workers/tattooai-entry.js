@@ -10,7 +10,7 @@
 
 import tattooai from './tattooai.js';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
-import { convergeClientAiBriefs, drainCrmAgent, recordAttentionShadow } from './lib/crm-agent.js';
+import { convergeClientAiBriefs, drainCrmAgent, recordAttentionShadow, runRetentionDryRun } from './lib/crm-agent.js';
 import {
   RequestError,
   getCorsHeaders,
@@ -221,6 +221,8 @@ async function handleInternalCrmAgentDrain(request, env) {
   // Phase 6a: stale briefs converge a few per hour; the next drains pick
   // the queued refreshes up like any other job.
   await convergeClientAiBriefs(env);
+  // Retention phase 1: a daily dry run, throttled and audited in the database.
+  await runRetentionDryRun(env);
   const processed = Number.isInteger(result?.processed)
     ? Math.min(3, Math.max(0, result.processed))
     : 0;

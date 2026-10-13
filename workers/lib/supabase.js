@@ -88,6 +88,11 @@ export const AI_TELEMETRY_RPCS = new Set([
   'service_record_attention_shadow',
 ]);
 
+/** Retention phase 1: throttled daily dry run. Audits only, never deletes. */
+export const RETENTION_RPCS = new Set([
+  'service_run_retention_dry_run',
+]);
+
 /**
  * Intake semantic preflight telemetry: version, status, categories, provider
  * outcome and latency only. Never enquiry text. Fail-open.
@@ -241,6 +246,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !CRM_AGENT_RPCS.has(name)
       && !AI_TELEMETRY_RPCS.has(name)
+      && !RETENTION_RPCS.has(name)
       && !INTAKE_PREFLIGHT_RPCS.has(name)
       && !AUTOMATION_BACKEND_RPCS.has(name)
       && !ENQUIRY_AI_RPCS.has(name)
