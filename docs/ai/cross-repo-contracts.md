@@ -26,14 +26,14 @@ A public site may submit an enquiry to Vishar-site, but it must not decide autho
 Repository: `vvetrov41-lgtm/kisa` (default branch `main`; Cloudflare Workers
 Builds deploys `main`). Resolve the current head before every investigation.
 
-**Status: target contract, not yet live.** It is implemented in kisa PRs #111
-(form, head `c3ad1ce`) and #112 (privacy notice) and becomes live only after
-this repository's `specs/kristina-enquiry-v2/` release and those PRs are
-merged and deployed. Until then the live page is the legacy single-step form;
-`probe-kristina-live-booking-contract.mjs` reports which one it found. Update
-this section with the deployed kisa SHA once live.
+**Status: live since 2026-10-13.** kisa `main` at `d11440b8` (PRs #111 form,
+#112 privacy notice), deployed by Cloudflare Workers Builds to the `kisa`
+Worker that serves `kristinavishar.com` (version `d5b8e490`,
+`CRM_PRIVACY_NOTICE_VERSION=2026-10-12`). CRM side released from
+`3884179d` (database, TattooAI Worker, operator CRM). The live probe reports
+`enquiry-v2`.
 
-The target public form at `https://www.kristinavishar.com/booking/`:
+The public form at `https://www.kristinavishar.com/booking/`:
 
 - posts multipart to same-origin `/api/booking`;
 - sends the enquiry-v2 shape (`formSchema=enquiry-v2`, `projectDetails` JSON,
