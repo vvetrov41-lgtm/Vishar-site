@@ -1,0 +1,45 @@
+#!/usr/bin/env node
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+const source = readFileSync(new URL('../components.js', import.meta.url), 'utf8');
+const block = source.split('/* ── First/last known consented referral touch ──')[1]?.split('/* ── Cookie consent banner ── */')[0];
+assert.ok(block, 'consented attribution module exists');
+const local = new Map(), session = new Map();
+const store = (m) => ({ getItem:k=>m.get(k)||null, setItem:(k,v)=>m.set(k,String(v)), removeItem:k=>m.delete(k) });
+const window = { location: {origin:'https://vishartattoo.com',pathname:'/booking/',search:'?utm_source=ig&utm_medium=paid&utm_campaign=one'} };
+const document = {referrer:'https://instagram.com/'};
+const context = {window,document,localStorage:store(local),sessionStorage:store(session),getConsent:()=>local.get('vishar-cookie-consent'),URL,URLSearchParams,Date,Object,String,Number};
+vm.runInNewContext(block,context);
+assert.equal(window.VisharAttribution.read(),null,'no history before consent');
+assert.equal(local.size,0,'no pre-consent storage');
+local.set('vishar-cookie-consent','granted');
+const first=window.VisharAttribution.read();
+assert.equal(first.first.utmSource,'ig');
+assert.equal(first.last.utmMedium,'paid');
+assert.equal(first.first.referrerHost,'instagram.com');
+window.location={...window.location,pathname:'/about/',search:''};
+document.referrer='https://vishartattoo.com/booking/';
+let next=window.VisharAttribution.read();
+assert.equal(next.first.path,'/booking/');
+assert.equal(next.last.path,'/booking/','internal navigation does not overwrite the last acquisition');
+window.location={...window.location,pathname:'/booking/',search:'?utm_source=google&utm_campaign=return'};
+document.referrer='https://google.com/';
+next=window.VisharAttribution.read();
+assert.equal(next.first.utmSource,'ig','immutable first touch');
+assert.equal(next.last.utmSource,'google','latest campaign updated');
+assert.equal(next.last.referrerHost,'google.com');
+assert.ok(!JSON.stringify(next).includes('fbclid'));
+window.VisharAttribution.clear();
+assert.equal(local.has('vishar.analytics.touches.v1'),false);
+assert.equal(session.size,0);
+local.set('vishar-cookie-consent','denied');
+assert.equal(window.VisharAttribution.read(),null);
+const booking=readFileSync(new URL('../booking/index.html',import.meta.url),'utf8');
+const v2=readFileSync(new URL('../assets/js/enquiry-form-v2.js',import.meta.url),'utf8');
+for(const file of [booking,v2]){
+ assert.match(file,/payload\.append\('attributionConsent', 'granted'\)/);
+ assert.match(file,/payload\.append\('firstTouch', JSON\.stringify\(context\.touches\.first\)\)/);
+ assert.match(file,/payload\.append\('lastTouch', JSON\.stringify\(context\.touches\.last\)\)/);
+}
+console.log('Consented first/last touch attribution tests passed.');

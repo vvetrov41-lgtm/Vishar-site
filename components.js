@@ -370,11 +370,77 @@ function setConsent(value) {
 try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsing: banner will just reappear */ }
 }
 
+
+/* ── First/last known consented referral touch ──
+   Store bounded campaign fields, a relative path and referring hostname only.
+   No click IDs, full referring URLs, contact information or pre-consent visits. */
+const TOUCH_KEY = 'vishar.analytics.touches.v1';
+const TOUCH_VISIT_KEY = 'vishar.analytics.visit.v1';
+const TOUCH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function clearTouchAttribution() {
+  try { localStorage.removeItem(TOUCH_KEY); } catch (error) { /* storage blocked */ }
+  try { sessionStorage.removeItem(TOUCH_VISIT_KEY); } catch (error) { /* storage blocked */ }
+}
+function touchText(value, max) {
+  return String(value || '').replace(/[^a-zA-Z0-9 _.-]/g, '').slice(0, max);
+}
+function touchSnapshot() {
+  const params = new URLSearchParams(window.location.search);
+  let referrerHost = '';
+  let external = false;
+  try {
+    const ref = new URL(document.referrer);
+    external = ref.origin !== window.location.origin && (ref.protocol === 'https:' || ref.protocol === 'http:');
+    if (external) referrerHost = touchText(ref.hostname, 120);
+  } catch (error) { /* direct visit or invalid referrer */ }
+  const utm = {
+    utmSource: touchText(params.get('utm_source'), 120),
+    utmMedium: touchText(params.get('utm_medium'), 120),
+    utmCampaign: touchText(params.get('utm_campaign'), 160),
+    utmContent: touchText(params.get('utm_content'), 160),
+    utmTerm: touchText(params.get('utm_term'), 160)
+  };
+  const campaign = Object.values(utm).some(Boolean);
+  return {
+    touch: {
+      kind: campaign ? 'utm' : external ? 'referral' : 'direct',
+      path: String(window.location.pathname || '/').slice(0, 200),
+      referrerHost,
+      ...utm,
+      observedAt: new Date().toISOString()
+    },
+    meaningful: campaign || external
+  };
+}
+function captureTouchAttribution() {
+  if (getConsent() !== 'granted') return null;
+  const now = Date.now();
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(TOUCH_KEY) || 'null'); } catch (error) { /* blocked/corrupt */ }
+  if (!saved || !saved.first || !saved.last || !Number.isFinite(saved.savedAt)
+      || now - saved.savedAt < 0 || now - saved.savedAt >= TOUCH_TTL_MS) {
+    saved = null;
+  }
+  let visited = false;
+  try { visited = sessionStorage.getItem(TOUCH_VISIT_KEY) === '1'; } catch (error) { /* private mode */ }
+  const current = touchSnapshot();
+  if (!saved) saved = { savedAt: now, first: current.touch, last: current.touch };
+  else if (current.meaningful || !visited) saved.last = current.touch;
+  try { localStorage.setItem(TOUCH_KEY, JSON.stringify(saved)); } catch (error) { /* private mode */ }
+  try { sessionStorage.setItem(TOUCH_VISIT_KEY, '1'); } catch (error) { /* private mode */ }
+  return { first: saved.first, last: saved.last };
+}
+window.VisharAttribution = {
+  read: function () { return getConsent() === 'granted' ? captureTouchAttribution() : null; },
+  clear: clearTouchAttribution
+};
+
 /* ── Cookie consent banner ── */
 function buildConsentBanner() {
 const stored = getConsent();
-if (stored === 'granted') { grantAnalyticsConsent(); return; }
-if (stored === 'denied') { denyAnalyticsConsent(); return; }
+if (stored === 'granted') { captureTouchAttribution(); grantAnalyticsConsent(); return; }
+if (stored === 'denied') { clearTouchAttribution(); denyAnalyticsConsent(); return; }
 if (document.getElementById('cookie-consent')) return;
 
 const banner = document.createElement('div');
@@ -392,11 +458,13 @@ document.body.appendChild(banner);
 
 banner.querySelector('#cookie-accept').addEventListener('click', function () {
   setConsent('granted');
+  captureTouchAttribution();
   banner.remove();
   grantAnalyticsConsent();
 });
 banner.querySelector('#cookie-decline').addEventListener('click', function () {
   setConsent('denied');
+  clearTouchAttribution();
   banner.remove();
   denyAnalyticsConsent();
 });
@@ -405,6 +473,7 @@ banner.querySelector('#cookie-decline').addEventListener('click', function () {
 /* Re-open the banner from the privacy page ("Manage cookie preferences"). */
 window.visharManageCookies = function () {
 try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
+clearTouchAttribution();
 const existing = document.getElementById('cookie-consent');
 if (existing) existing.remove();
 buildConsentBanner();
