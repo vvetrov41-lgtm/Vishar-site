@@ -8,10 +8,11 @@
 --
 --   * crm_private.retention_enquiry_assessment(as_of) classifies every enquiry
 --     as a candidate or as excluded, with the reason. The last activity is the
---     latest contact with the CLIENT across enquiries, activity, Gmail,
---     WhatsApp, Instagram/communication threads, notes, follow-ups and files.
---     A client with any project, session, invoice, payment request or deposit
---     request is excluded entirely. An active retention hold excludes.
+--     latest contact with the CLIENT across enquiries, activity, Gmail (the
+--     30-day snapshot and the durable activity, outbound, thread and excerpt
+--     records), reply marks, WhatsApp, communication threads, notes,
+--     follow-ups and files. A client with any project, session, booking card,
+--     invoice, payment request or deposit request is excluded entirely. An active retention hold excludes.
 --   * public.retention_runs records each dry run: policy version, cutoff,
 --     counts by reason and candidate ids/dates only (no names or contact data).
 --   * public.service_run_retention_dry_run() runs at most once per 20 hours,
@@ -66,6 +67,7 @@ as $$
     union select i.client_id from public.invoices i where i.client_id is not null
     union select pr.client_id from public.payment_requests pr where pr.client_id is not null
     union select d.client_id from public.project_deposit_requests d where d.client_id is not null
+    union select b.client_id from crm_private.booking_cards b where b.client_id is not null
   ),
   held as (
     select h.client_id, h.enquiry_id, h.project_id
@@ -101,6 +103,17 @@ as $$
         from public.email_messages em where em.client_id is not null
       union all select g.client_id, coalesce(g.last_message_at, '-infinity')
         from public.gmail_client_metadata_snapshots g where g.client_id is not null
+      -- Durable Gmail activity outlives the 30-day snapshot above.
+      union all select ga.client_id, greatest(ga.updated_at, coalesce(ga.last_message_at, '-infinity'))
+        from crm_private.gmail_client_email_activity ga
+      union all select go.client_id, greatest(go.sent_at, go.recorded_at)
+        from crm_private.gmail_client_outbound_messages go
+      union all select gt.client_id, greatest(gt.created_at, gt.updated_at)
+        from crm_private.gmail_thread_contexts gt where gt.client_id is not null
+      union all select gx.client_id, greatest(gx.created_at, coalesce(gx.occurred_at, '-infinity'))
+        from crm_private.gmail_client_ai_excerpts gx where gx.client_id is not null
+      union all select rm.client_id, greatest(rm.created_at, coalesce(rm.message_at, '-infinity'))
+        from crm_private.client_reply_marks rm where rm.client_id is not null
       union all select n.client_id, greatest(n.created_at, n.updated_at)
         from public.internal_notes n where n.client_id is not null
       union all select f.client_id, greatest(f.created_at, f.updated_at)

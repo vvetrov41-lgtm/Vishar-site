@@ -89,6 +89,33 @@ select is(
   'later contact with the client extends retention'
 );
 
+-- Gmail contact whose 30-day snapshot has expired still counts: the durable
+-- activity record keeps the newest message time.
+insert into public.clients (id, full_name, phone, workspace_id)
+values ('c3365555-5555-4555-8555-555555555555', 'Retention Gmail', '+44 7700 933655',
+        (select workspace_id from public.artists where id = 'a1111111-1111-4111-8111-111111111111'));
+insert into public.enquiries (
+  id, client_id, reference_number, idempotency_key, intake_fingerprint,
+  client_identifier_conflict, submitted_full_name, submitted_email, submitted_phone,
+  submitted_preferred_contact, privacy_notice_version, privacy_acknowledged_at, artist_id
+) values ('e3365555-5555-4555-8555-555555555555', 'c3365555-5555-4555-8555-555555555555', 'ENQ-2099-3365',
+  gen_random_uuid(), repeat('b', 64), false, 'Retention Fixture', 'retention@example.test', '+44 7700 933600',
+  'Email', '2026-10-12', now(), 'a1111111-1111-4111-8111-111111111111');
+select is(
+  (select a.exclusion from crm_private.retention_enquiry_assessment(now() + interval '6 years') a
+   where a.enquiry_id = 'e3365555-5555-4555-8555-555555555555'),
+  null,
+  'without later contact the Gmail fixture is a candidate'
+);
+insert into crm_private.gmail_client_email_activity (artist_id, client_id, last_message_at, last_direction)
+values ('a1111111-1111-4111-8111-111111111111', 'c3365555-5555-4555-8555-555555555555', now() + interval '4 years', 'inbound');
+select is(
+  (select a.exclusion from crm_private.retention_enquiry_assessment(now() + interval '6 years') a
+   where a.enquiry_id = 'e3365555-5555-4555-8555-555555555555'),
+  'recent_activity',
+  'durable Gmail activity extends retention after the snapshot has expired'
+);
+
 -- Fail closed without a recorded policy.
 update public.system_settings set enquiry_retention_days = null where id;
 select is(
