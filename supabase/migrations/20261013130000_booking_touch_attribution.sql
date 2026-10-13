@@ -51,8 +51,8 @@ begin
    or p_last_touch ->> 'kind' not in ('utm','referral','direct')
    or (p_first_touch ->> 'observedAt') is null
    or (p_last_touch ->> 'observedAt') is null
-   or (p_first_touch ->> 'observedAt') !~ '^\\d{4}-\\d{2}-\\d{2}T'
-   or (p_last_touch ->> 'observedAt') !~ '^\\d{4}-\\d{2}-\\d{2}T' then
+   or (p_first_touch ->> 'observedAt') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
+   or (p_last_touch ->> 'observedAt') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T' then
     raise exception 'Invalid bounded touch attribution' using errcode='22023';
  end if;
  insert into crm_private.enquiry_touch_attribution

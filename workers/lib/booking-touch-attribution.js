@@ -2,7 +2,7 @@
 // This must remain outside the canonical intake fingerprint and never block a booking.
 const FIELD_LENGTHS = { utmSource:120, utmMedium:120, utmCampaign:160, utmContent:160, utmTerm:160 };
 const SAFE_TEXT = /^[a-zA-Z0-9 _.-]*$/;
-const SAFE_PATH = /^\/[a-zA-Z0-9/%_.-]{0,199}$/;
+const SAFE_PATH = new RegExp('^/[a-zA-Z0-9/%_.-]{0,199}$');
 const SAFE_HOST = /^(?:[a-z0-9-]+\.)*[a-z0-9-]+$/;
 const MAX_AGE_MS = 30 * 86400 * 1000;
 function decodeTouch(raw) {
