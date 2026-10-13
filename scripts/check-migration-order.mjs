@@ -29,7 +29,29 @@ export const APPLIED_LEDGER_VERSIONS = Object.freeze(new Set([
   '20261003072301',
   '20261003072600',
 ]));
+// One audited production ledger reconciliation. Supabase's migration API applied
+// the exact SQL blob under its generated timestamp after a full release was
+// blocked before mutation by an unrelated Telegram binding guard. The source
+// migration's old filename was never applied. No general rename exception.
+export const TOUCH_MIGRATION_RECONCILIATION = Object.freeze({
+  from: '20261013130000_booking_touch_attribution.sql',
+  to: '20261013122728_booking_touch_attribution.sql',
+  exactBlob: '7203b797ba2b0f1429471e7f74cad8a0161cd186',
+});
 const FILE_RE = /^([0-9]+)_[a-z0-9_]+\.sql$/;
+
+function reconcilesTouchMigration(baseFiles, headFiles) {
+  const { from, to } = TOUCH_MIGRATION_RECONCILIATION;
+  return baseFiles.includes(from) && !headFiles.includes(from) && headFiles.includes(to);
+}
+
+// Fail closed on any content change: this is a filename correction only.
+function verifyReconciliationBlob(baseRef) {
+  const { from, to, exactBlob } = TOUCH_MIGRATION_RECONCILIATION;
+  const oldBlob = execFileSync('git', ['rev-parse', `${baseRef}:${MIGRATIONS_DIR}/${from}`], { encoding: 'utf8' }).trim();
+  const newBlob = execFileSync('git', ['rev-parse', `HEAD:${MIGRATIONS_DIR}/${to}`], { encoding: 'utf8' }).trim();
+  if (oldBlob !== exactBlob || newBlob !== exactBlob) throw new Error('Touch migration ledger correction must preserve exact audited SQL blob');
+}
 
 export function versionOf(fileName) {
   const match = FILE_RE.exec(fileName);
@@ -52,13 +74,15 @@ export function checkOrder(baseFiles, headFiles) {
     return version > max ? version : max;
   }, -1n);
 
-  const removed = baseFiles.filter((file) => !headFiles.includes(file));
+  const touchReconciled = reconcilesTouchMigration(baseFiles, headFiles);
+  const removed = baseFiles.filter((file) => !headFiles.includes(file) && !(touchReconciled && file === TOUCH_MIGRATION_RECONCILIATION.from));
   for (const file of removed) errors.push(`migration already on the base branch was removed or renamed: ${file}`);
 
   for (const file of headFiles) {
     if (base.has(file)) continue;
     const version = versionOf(file);
     if (APPLIED_LEDGER_VERSIONS.has(version.toString())) continue;
+    if (touchReconciled && file === TOUCH_MIGRATION_RECONCILIATION.to) continue;
     if (version <= baseMax) {
       errors.push(
         `new migration ${file} has version ${version}, which is not greater than the newest base migration ${baseMax}; `
@@ -80,6 +104,11 @@ function selfTest() {
   assert.equal(checkOrder(['0001_a.sql'], ['0001_a.sql', '0001_b.sql']).length, 2);
   assert.equal(checkOrder(['0001_a.sql', '0002_b.sql'], ['0001_a.sql', '0003_b.sql']).length, 1);
   assert.throws(() => versionOf('bad.sql'));
+  const { from, to } = TOUCH_MIGRATION_RECONCILIATION;
+  assert.deepEqual(checkOrder([from], [to]), [], 'one audited ledger rename');
+  assert.equal(checkOrder([from], ['20261013122729_booking_touch_attribution.sql']).length, 2, 'unknown rename rejected');
+  assert.equal(checkOrder(['20261013130000_another.sql'], [to]).length, 2, 'exception cannot authorize other migrations');
+  assert.equal(checkOrder([from, '20261013130001_other.sql'], [to]).length, 1, 'exception cannot remove unrelated migration');
   // An already-applied ledger version may join the base; no other old version may.
   assert.deepEqual(checkOrder(['20261004090000_a.sql'], ['20261004090000_a.sql', '20261003072107_guard.sql']), []);
   assert.equal(checkOrder(['20261004090000_a.sql'], ['20261004090000_a.sql', '20261003072108_other.sql']).length, 1);
@@ -93,6 +122,9 @@ if (process.argv[2] === '--self-test') {
   const baseFiles = listAt(baseRef);
   const headFiles = listAt('HEAD');
   const errors = checkOrder(baseFiles, headFiles);
+  if (reconcilesTouchMigration(baseFiles, headFiles)) {
+    try { verifyReconciliationBlob(baseRef); } catch (error) { errors.push(String(error.message || error)); }
+  }
   if (errors.length) {
     for (const error of errors) console.error(`::error::${error}`);
     process.exit(1);
