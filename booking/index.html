@@ -346,7 +346,7 @@
   </div>
   <script src="/components.js" defer></script>
   <script src="/assets/js/intake-preflight.js"></script>
-  <script src="/assets/js/enquiry-form-v2.js?v=20261009" defer></script>
+  <script src="/assets/js/enquiry-form-v2.js?v=20261013-touch" defer></script>
   <script>
   (function () {
     const canonicalBookingHost = 'vishartattoo.com';
@@ -674,7 +674,8 @@
         utmMedium: (params.get('utm_medium') || '').slice(0, 120),
         utmCampaign: (params.get('utm_campaign') || '').slice(0, 160),
         utmContent: (params.get('utm_content') || '').slice(0, 160),
-        utmTerm: (params.get('utm_term') || '').slice(0, 160)
+        utmTerm: (params.get('utm_term') || '').slice(0, 160),
+        touches: window.VisharAttribution ? window.VisharAttribution.read() : null
       };
     }
 
@@ -766,6 +767,11 @@
         payload.append('utmCampaign', context.utmCampaign);
         payload.append('utmContent', context.utmContent);
         payload.append('utmTerm', context.utmTerm);
+        if (context.touches) {
+          payload.append('attributionConsent', 'granted');
+          payload.append('firstTouch', JSON.stringify(context.touches.first));
+          payload.append('lastTouch', JSON.stringify(context.touches.last));
+        }
         payload.append('elapsedMs', String(Date.now() - startedAt));
 
         const adsContext = openAiAdsServerContext();

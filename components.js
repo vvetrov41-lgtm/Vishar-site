@@ -370,11 +370,111 @@ function setConsent(value) {
 try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsing: banner will just reappear */ }
 }
 
+
+/* ── First/last known consented referral touch ──
+   Store bounded campaign fields, a relative path and referring hostname only.
+   No click IDs, full referring URLs, contact information or pre-consent visits. */
+const TOUCH_KEY = 'vishar.analytics.touches.v1';
+const TOUCH_VISIT_KEY = 'vishar.analytics.visit.v1';
+const TOUCH_CONSENT_KEY = 'vishar-booking-attribution-consent';
+function touchConsent() {
+  try { return localStorage.getItem(TOUCH_CONSENT_KEY); } catch (error) { return null; }
+}
+function setTouchConsent(value) {
+  try { localStorage.setItem(TOUCH_CONSENT_KEY, value); } catch (error) { /* private mode */ }
+}
+const TOUCH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function clearTouchAttribution() {
+  try { localStorage.removeItem(TOUCH_KEY); } catch (error) { /* storage blocked */ }
+  try { sessionStorage.removeItem(TOUCH_VISIT_KEY); } catch (error) { /* storage blocked */ }
+}
+function touchText(value, max) {
+  return String(value || '').replace(/[^a-zA-Z0-9 _.-]/g, '').slice(0, max);
+}
+function touchSnapshot() {
+  const params = new URLSearchParams(window.location.search);
+  let referrerHost = '';
+  let external = false;
+  try {
+    const ref = new URL(document.referrer);
+    external = ref.origin !== window.location.origin && (ref.protocol === 'https:' || ref.protocol === 'http:');
+    if (external) referrerHost = touchText(ref.hostname, 120);
+  } catch (error) { /* direct visit or invalid referrer */ }
+  const utm = {
+    utmSource: touchText(params.get('utm_source'), 120),
+    utmMedium: touchText(params.get('utm_medium'), 120),
+    utmCampaign: touchText(params.get('utm_campaign'), 160),
+    utmContent: touchText(params.get('utm_content'), 160),
+    utmTerm: touchText(params.get('utm_term'), 160)
+  };
+  const campaign = Object.values(utm).some(Boolean);
+  return {
+    touch: {
+      kind: campaign ? 'utm' : external ? 'referral' : 'direct',
+      path: String(window.location.pathname || '/').slice(0, 200),
+      referrerHost,
+      ...utm,
+      observedAt: new Date().toISOString()
+    },
+    meaningful: campaign || external
+  };
+}
+function captureTouchAttribution() {
+  if (getConsent() !== 'granted' || touchConsent() !== 'granted') return null;
+  const now = Date.now();
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(TOUCH_KEY) || 'null'); } catch (error) { /* blocked/corrupt */ }
+  if (!saved || !saved.first || !saved.last || !Number.isFinite(saved.savedAt)
+      || now - saved.savedAt < 0 || now - saved.savedAt >= TOUCH_TTL_MS) {
+    saved = null;
+  }
+  let visited = false;
+  try { visited = sessionStorage.getItem(TOUCH_VISIT_KEY) === '1'; } catch (error) { /* private mode */ }
+  const current = touchSnapshot();
+  if (!saved) saved = { savedAt: now, first: current.touch, last: current.touch };
+  else if (current.meaningful || !visited) saved.last = current.touch;
+  try { localStorage.setItem(TOUCH_KEY, JSON.stringify(saved)); } catch (error) { /* private mode */ }
+  try { sessionStorage.setItem(TOUCH_VISIT_KEY, '1'); } catch (error) { /* private mode */ }
+  return { first: saved.first, last: saved.last };
+}
+window.VisharAttribution = {
+  read: function () { return getConsent() === 'granted' && touchConsent() === 'granted' ? captureTouchAttribution() : null; },
+  clear: clearTouchAttribution
+};
+
+/* Existing analytics-only grants cannot authorise new enquiry-linked history.
+   Ask once for the expanded purpose rather than silently upgrading consent. */
+function offerAttributionConsentUpgrade() {
+  if (touchConsent() !== null || document.getElementById('booking-attribution-consent')) return;
+  const banner = document.createElement('div');
+  banner.id = 'booking-attribution-consent';
+  banner.setAttribute('role', 'region');
+  banner.setAttribute('aria-label', 'Booking source analytics consent');
+  banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
+  banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional booking source history: with your permission, this site can remember the first and latest known visit sources for 30 days, and link them to an enquiry if you send one. No previous visits are recovered. <a href="/privacy/" class="text-white/80 underline">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="touch-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black">Allow</button><button type="button" id="touch-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm text-white/70">No thanks</button></div>';
+  document.body.appendChild(banner);
+  banner.querySelector('#touch-accept').addEventListener('click', function () {
+    setTouchConsent('granted');
+    captureTouchAttribution();
+    banner.remove();
+  });
+  banner.querySelector('#touch-decline').addEventListener('click', function () {
+    setTouchConsent('denied');
+    clearTouchAttribution();
+    banner.remove();
+  });
+}
+
 /* ── Cookie consent banner ── */
 function buildConsentBanner() {
 const stored = getConsent();
-if (stored === 'granted') { grantAnalyticsConsent(); return; }
-if (stored === 'denied') { denyAnalyticsConsent(); return; }
+if (stored === 'granted') {
+  if (touchConsent() === 'granted') captureTouchAttribution();
+  else if (touchConsent() === null) offerAttributionConsentUpgrade();
+  grantAnalyticsConsent(); return;
+}
+if (stored === 'denied') { clearTouchAttribution(); denyAnalyticsConsent(); return; }
 if (document.getElementById('cookie-consent')) return;
 
 const banner = document.createElement('div');
@@ -383,7 +483,7 @@ banner.setAttribute('role', 'region');
 banner.setAttribute('aria-label', 'Cookie consent');
 banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
 banner.innerHTML = `
-  <p class="text-sm leading-relaxed text-white/60 mb-4">This site uses optional analytics cookies to see which pages are useful. Nothing is set unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p>
+  <p class="text-sm leading-relaxed text-white/60 mb-4">Optional analytics can measure site usage and remember the first and latest known visit sources for 30 days. If you send an enquiry, the sources can be linked to it. Nothing is stored for this purpose unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p>
   <div class="flex gap-3">
     <button type="button" id="cookie-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button>
     <button type="button" id="cookie-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button>
@@ -392,11 +492,15 @@ document.body.appendChild(banner);
 
 banner.querySelector('#cookie-accept').addEventListener('click', function () {
   setConsent('granted');
+  setTouchConsent('granted');
+  captureTouchAttribution();
   banner.remove();
   grantAnalyticsConsent();
 });
 banner.querySelector('#cookie-decline').addEventListener('click', function () {
   setConsent('denied');
+  setTouchConsent('denied');
+  clearTouchAttribution();
   banner.remove();
   denyAnalyticsConsent();
 });
@@ -405,6 +509,10 @@ banner.querySelector('#cookie-decline').addEventListener('click', function () {
 /* Re-open the banner from the privacy page ("Manage cookie preferences"). */
 window.visharManageCookies = function () {
 try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
+try { localStorage.removeItem(TOUCH_CONSENT_KEY); } catch (e) {}
+clearTouchAttribution();
+const extra = document.getElementById('booking-attribution-consent');
+if (extra) extra.remove();
 const existing = document.getElementById('cookie-consent');
 if (existing) existing.remove();
 buildConsentBanner();

@@ -941,6 +941,11 @@
       elapsedMs: String(Date.now() - shared.startedAt)
     };
     Object.keys(fields).forEach(function (key) { payload.append(key, fields[key]); });
+    if (context.touches) {
+      payload.append('attributionConsent', 'granted');
+      payload.append('firstTouch', JSON.stringify(context.touches.first));
+      payload.append('lastTouch', JSON.stringify(context.touches.last));
+    }
     var ads = shared.openAiAdsServerContext();
     if (ads) {
       payload.append('openaiAdsMeasurementConsent', 'granted');
