@@ -43,6 +43,7 @@ import {
   readMetaAdsMeasurementContext,
   recordMetaAdsAttribution,
 } from '../lib/meta-ads.js';
+import { readConsentedTouchAttribution, recordConsentedTouchAttribution } from '../lib/booking-touch-attribution.js';
 
 const SUPPORTED_HOSTED_FORM_TEMPLATE = 'tattoo-enquiry';
 
@@ -227,6 +228,7 @@ async function handleEnquiryIntakeInternal(
 
     const openAiAdsContext = readOpenAiAdsMeasurementContext(form, origin);
     const metaAdsContext = readMetaAdsMeasurementContext(form, origin);
+    const touchAttribution = readConsentedTouchAttribution(form);
     const files = await parseEnquiryFiles(form, { project });
 
     if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
@@ -329,6 +331,10 @@ async function handleEnquiryIntakeInternal(
       fileCount: manifests.length,
     });
 
+    // Separate optional RPC: never modifies the canonical intake fingerprint or replay semantics.
+    let touchRecorded = await recordConsentedTouchAttribution({
+      supabase, enquiryId, idempotencyKey, touches: touchAttribution, logger,
+    });
     let metaAttribution = await recordMetaAdsAttribution({
       supabase,
       enquiryId,
@@ -440,6 +446,11 @@ async function handleEnquiryIntakeInternal(
       );
     }
 
+    if (touchAttribution && !touchRecorded) {
+      touchRecorded = await recordConsentedTouchAttribution({
+        supabase, enquiryId, idempotencyKey, touches: touchAttribution, logger,
+      });
+    }
     // A transient attribution RPC failure never fails the booking. Retry once
     // after durable finalisation so a successful enquiry still gets its server
     // Lead whenever the database becomes available again during this request.

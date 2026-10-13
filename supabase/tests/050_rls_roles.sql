@@ -774,6 +774,7 @@ insert into expected_function_acl values
   ('public.service_begin_communication_send(uuid,text)', false, false, true),
   ('public.get_scheduler_heartbeat_status()', true, true, true),
   ('public.service_record_meta_attribution(uuid,text,boolean,text,text,text)', false, false, true),
+  ('public.service_record_enquiry_touch_attribution(uuid,uuid,boolean,jsonb,jsonb)', false, false, true),
   ('public.claim_meta_conversion_outbox(text,integer,integer)', false, false, true),
   ('public.record_meta_conversion_outbox_result(uuid,text,boolean,boolean,text)', false, false, true),
 

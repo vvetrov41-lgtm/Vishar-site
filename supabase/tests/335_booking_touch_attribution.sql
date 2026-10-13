@@ -1,0 +1,11 @@
+begin;
+select plan(7);
+select has_table('crm_private','enquiry_touch_attribution','private attribution table exists');
+select has_column('crm_private','enquiry_touch_attribution','conversion_touch','conversion source snapshot exists');
+select has_function('public','service_record_enquiry_touch_attribution',array['uuid','uuid','boolean','jsonb','jsonb'],'backend RPC exists');
+select ok((select relrowsecurity from pg_class where oid='crm_private.enquiry_touch_attribution'::regclass),'RLS is enabled');
+select is(has_table_privilege('authenticated','crm_private.enquiry_touch_attribution','SELECT'),false,'authenticated cannot select touch data');
+select is(has_function_privilege('authenticated','public.service_record_enquiry_touch_attribution(uuid,uuid,boolean,jsonb,jsonb)','EXECUTE'),false,'authenticated cannot call writer');
+select is(has_function_privilege('service_role','public.service_record_enquiry_touch_attribution(uuid,uuid,boolean,jsonb,jsonb)','EXECUTE'),true,'service can call bounded writer');
+select * from finish();
+rollback;
