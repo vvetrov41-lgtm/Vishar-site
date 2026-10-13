@@ -91,6 +91,7 @@ TELEGRAM_LINKING_ENABLED = "false"
 #   ARTIST_TELEGRAM_KRISTINA_HPRODUCTION
 #   TELEGRAM_BOT_TOKEN
 #   TELEGRAM_WEBHOOK_SECRET
+#   META_ADS_VLADIMIR_ACCESS_TOKEN (pre-provisioned, guarded by META_ADS_DRAIN_ENABLED)
 #
 # GMAIL_SERVICE and TATTOOAI_SERVICE are Cloudflare Service Bindings, not
 # secrets. They are generated only in the active deploy config. No Gmail
