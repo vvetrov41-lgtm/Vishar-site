@@ -15,7 +15,6 @@ import { statusClass } from './logging.js';
 export const ALLOWED_RPCS = new Set([
   'create_trusted_enquiry_intake',
   'create_hosted_enquiry_intake',
-  'service_record_enquiry_touch_attribution',
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
   'fail_enquiry_intake',
@@ -45,6 +44,9 @@ export const ALLOWED_RPCS = new Set([
   'service_claim_booking_card_template_targets',
   'service_record_booking_card_template_status',
 ]);
+
+/** Consent-gated attribution stays outside the pinned intake allow-list. */
+export const TOUCH_ATTRIBUTION_RPCS = new Set(['service_record_enquiry_touch_attribution']);
 
 /** Meta Ads is deliberately separate from the legacy intake RPC surface. */
 export const META_ADS_RPCS = new Set([
@@ -235,6 +237,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     if (
       !ALLOWED_RPCS.has(name)
       && !META_ADS_RPCS.has(name)
+      && !TOUCH_ATTRIBUTION_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !CRM_AGENT_RPCS.has(name)
       && !AI_TELEMETRY_RPCS.has(name)
