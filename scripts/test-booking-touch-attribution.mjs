@@ -20,7 +20,7 @@ assert.equal(called,1);
 assert.equal(await recordConsentedTouchAttribution({supabase:{rpc:async()=>{throw Error('offline');}},enquiryId:'e',idempotencyKey:'key',touches,logger}),false,'optional telemetry does not fail booking');
 assert.equal(await recordConsentedTouchAttribution({supabase:{rpc:async()=>{throw Error('must not call');}},enquiryId:'e',idempotencyKey:'key',touches:null,logger}),false);
 const route=readFileSync(new URL('../workers/routes/enquiries.js',import.meta.url),'utf8');
-const db=readFileSync(new URL('../supabase/migrations/20261013130000_booking_touch_attribution.sql',import.meta.url),'utf8');
+const db=readFileSync(new URL('../supabase/migrations/20261013122728_booking_touch_attribution.sql',import.meta.url),'utf8');
 assert.match(route,/readConsentedTouchAttribution\(form\)/);
 assert.match(route,/recordConsentedTouchAttribution/);
 assert.match(db,/on conflict \(enquiry_id\) do nothing/i);
