@@ -29,8 +29,9 @@ Builds deploys `main`). Resolve the current head before every investigation.
 **Status: live since 2026-10-13.** kisa `main` at `d11440b8` (PRs #111 form,
 #112 privacy notice), deployed by Cloudflare Workers Builds to the `kisa`
 Worker that serves `kristinavishar.com` (version `d5b8e490`,
-`CRM_PRIVACY_NOTICE_VERSION=2026-10-12`). CRM side released from
-`3884179d` (database, TattooAI Worker, operator CRM). The live probe reports
+`CRM_PRIVACY_NOTICE_VERSION=2026-10-12`). CRM database released from
+`cec763da`; TattooAI Worker and operator CRM released from `3884179d`.
+The live probe reports
 `enquiry-v2`.
 
 The public form at `https://www.kristinavishar.com/booking/`:
