@@ -64,6 +64,12 @@ const RU: Record<string, string> = {
   Rework: 'Переработка',
   'Black & Grey realism': 'Чёрно-серый реализм',
   'Colour realism': 'Цветной реализм',
+  'Floral / botanical': 'Цветы / ботаника',
+  Watercolour: 'Акварель',
+  'Custom colour': 'Цветная работа на заказ',
+  'Miniature / small tattoo': 'Миниатюра / небольшая татуировка',
+  'Anime / cartoon': 'Аниме / мультфильм',
+  'Micro-realism': 'Микрореализм',
   'Not sure yet': 'Пока не решил(а)',
 };
 

@@ -23,28 +23,40 @@ A public site may submit an enquiry to Vishar-site, but it must not decide autho
 
 ## `kisa` contract
 
-Repository: `vvetrov41-lgtm/kisa`.
+Repository: `vvetrov41-lgtm/kisa` (default branch `main`; Cloudflare Workers
+Builds deploys `main`). Resolve the current head before every investigation.
 
-The CRM-first Kristina booking implementation is currently represented by draft PR #59, branch `agent/kristina-booking-crm-setup`. At the snapshot inspected on 2026-08-10 its exact head was `d14ae734e63fa2966eb288da05a5259776b2f035`.
+**Status: target contract, not yet live.** It is implemented in kisa PRs #111
+(form, head `c3ad1ce`) and #112 (privacy notice) and becomes live only after
+this repository's `specs/kristina-enquiry-v2/` release and those PRs are
+merged and deployed. Until then the live page is the legacy single-step form;
+`probe-kristina-live-booking-contract.mjs` reports which one it found. Update
+this section with the deployed kisa SHA once live.
 
-That implementation:
+The target public form at `https://www.kristinavishar.com/booking/`:
 
-- accepts only a same-origin POST at `/api/booking`;
-- validates the public form and 1-3 reference images;
-- sends the normalized multipart payload to an HTTPS `CRM_BOOKING_ENDPOINT`;
-- generates an idempotency key server-side in the `kisa` Worker;
-- forwards the observed site Origin to the CRM request;
-- does not send an authoritative `artist_id`, booking source key, integration key, provider account, or payment destination;
-- treats CRM save as the primary success boundary;
-- treats its direct Telegram notification as optional/best-effort after CRM save.
+- posts multipart to same-origin `/api/booking`;
+- sends the enquiry-v2 shape (`formSchema=enquiry-v2`, `projectDetails` JSON,
+  `designReferences`, `existingTattooPhotos`) with one body area and Kristina's
+  styles; the page marks its form `data-form-schema="enquiry-v2"`;
+- generates the idempotency key in the browser (UUID) and retries once with
+  the same key and the same file bytes on network failure or 502/503/504.
 
-This SHA is only historical context. Resolve the current PR #59 head before every future cross-repo investigation.
+The `kisa` Worker (`src/index.js`):
 
-## Expected Kristina CRM-side binding
+- accepts only same-origin POSTs, applies the honeypot and minimum fill time,
+  rate-limits preflight;
+- strips server-owned fields (`source`, `landingPage`, `artist_id`,
+  `publicSourceId`, `sourceKey`, privacy fields, `idempotencyKey`) and sets
+  them itself, including `privacyNoticeVersion` from `CRM_PRIVACY_NOTICE_VERSION`;
+- forwards to `CRM_BOOKING_ENDPOINT`, the TattooAI Worker with the registry
+  public source id in `?source=`, with the observed Origin;
+- maps CRM 4xx to 400 and CRM 5xx or network failure to 502.
 
-The current contract expects Vishar-site deployment configuration and database state to bind the request to Kristina through server-controlled values, including the logical booking source `kristina-website`, the deployed booking form version, and an exact allowed Origin.
-
-Do not assume those values are active in production or staging. Check the target environment separately. The source contract and deployment activation are different facts.
+TattooAI resolves the source and Artist through `resolve_booking_source_public`
+(public id plus exact Origin). The browser never selects routing.
+`scripts/probe-kristina-live-booking-contract.mjs` checks this contract live
+without persistence, in legacy or v2 mode as the page declares.
 
 ## Cross-repo trace procedure
 

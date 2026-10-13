@@ -1,6 +1,6 @@
 {
   "schema": "enquiry-v2",
-  "note": "Booking form v2 catalogue. The public form on main embeds the same keys in assets/js/enquiry-form-v2.js; keep both in step. Labels are stored in enquiries.project_details.",
+  "note": "Booking form v2 catalogue. The public forms embed the same keys (assets/js/enquiry-form-v2.js on main for vishartattoo.com, public/booking/ in the kisa repo for kristinavishar.com); keep them in step. Styles marked artist=kristina are Kristina's colour styles; the others are Vladimir's realism styles. Labels are stored in enquiries.project_details.",
   "regions": [
     { "key": "arm", "label": "Arm", "placements": [
       { "key": "shoulder", "label": "Shoulder" },
@@ -77,6 +77,12 @@
   "styles": [
     { "key": "black_grey", "label": "Black & Grey realism" },
     { "key": "colour", "label": "Colour realism" },
+    { "key": "floral", "label": "Floral / botanical", "artist": "kristina" },
+    { "key": "watercolour", "label": "Watercolour", "artist": "kristina" },
+    { "key": "custom_colour", "label": "Custom colour", "artist": "kristina" },
+    { "key": "miniature", "label": "Miniature / small tattoo", "artist": "kristina" },
+    { "key": "anime", "label": "Anime / cartoon", "artist": "kristina" },
+    { "key": "micro_realism", "label": "Micro-realism", "artist": "kristina" },
     { "key": "not_sure", "label": "Not sure yet", "exclusive": true }
   ],
   "limits": {

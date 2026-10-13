@@ -12,7 +12,7 @@ import type { EnquiryProjectDetails } from './types';
 
 export interface CataloguePlacement { key: string; label: string; group?: string; large?: boolean }
 export interface CatalogueRegion { key: string; label: string; placements: CataloguePlacement[] }
-export interface CatalogueOption { key: string; label: string; exclusive?: boolean }
+export interface CatalogueOption { key: string; label: string; exclusive?: boolean; artist?: string }
 
 export const V2_REGIONS = catalogue.regions as CatalogueRegion[];
 export const V2_WORK = catalogue.work as CatalogueOption[];
@@ -77,6 +77,18 @@ export function detailsToInput(details: EnquiryProjectDetails): ProjectInput | n
     ...(details.sizeNotes ? { sizeNotes: details.sizeNotes } : {}),
     ...(details.existingDetails ? { existingDetails: details.existingDetails } : {}),
   };
+}
+
+/**
+ * Styles offered in the editor. Kristina's colour styles and Vladimir's
+ * realism styles are separate sets; the enquiry's current choice decides
+ * which set applies. "Not sure yet" alone keeps every style available.
+ */
+export function stylesFor(selected: string[]): CatalogueOption[] {
+  const chosen = V2_STYLES.filter((style) => selected.includes(style.key) && !style.exclusive);
+  if (chosen.length === 0) return V2_STYLES;
+  const artist = chosen[0].artist ?? null;
+  return V2_STYLES.filter((style) => style.exclusive || (style.artist ?? null) === artist);
 }
 
 export function hasExistingWork(input: ProjectInput): boolean {
