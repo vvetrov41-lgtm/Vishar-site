@@ -75,7 +75,22 @@ form.set('discoverySourceDetail', '');
 form.set('idea', 'Production route contract probe');
 form.set('website', '');
 form.set('consent', 'yes');
-form.set('references', new Blob(['not an image'], { type: 'image/png' }), 'not-an-image.txt');
+const jpegSignatureWithPadding = Uint8Array.from([
+  0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+]);
+const pngSignatureWithPadding = Uint8Array.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x00,
+]);
+form.append(
+  'references',
+  new Blob([jpegSignatureWithPadding], { type: 'image/jpeg' }),
+  'route-probe-valid.jpeg',
+);
+form.append(
+  'references',
+  new Blob([pngSignatureWithPadding], { type: 'image/jpeg' }),
+  'route-probe-mismatch.jpeg',
+);
 
 const response = await fetch(apiUrl, {
   method: 'POST',
@@ -94,12 +109,12 @@ try {
   throw new Error(`Kristina booking endpoint returned non-JSON HTTP ${response.status}`);
 }
 
-if (response.status !== 400 || body?.code !== 'invalid_file_extension') {
+if (response.status !== 400 || body?.code !== 'file_content_mismatch') {
   throw new Error(
     `Kristina booking endpoint contract changed: HTTP ${response.status}, code ${String(body?.code ?? 'missing')}`,
   );
 }
 
 console.log(
-  'Kristina live booking contract is healthy: page, site.js, same-origin adapter and TattooAI validation all reached without persistence.',
+  'Kristina live booking contract is healthy: page, site.js, same-origin adapter, valid JPEG bytes and mismatch detection all reached without persistence.',
 );
