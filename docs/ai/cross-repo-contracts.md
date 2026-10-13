@@ -23,12 +23,17 @@ A public site may submit an enquiry to Vishar-site, but it must not decide autho
 
 ## `kisa` contract
 
-Repository: `vvetrov41-lgtm/kisa` (default branch `main`, deployed with
-`npx wrangler deploy`). Resolve the current head before every investigation;
-the description below records the contract as of 2026-10-12
-(`specs/kristina-enquiry-v2/`).
+Repository: `vvetrov41-lgtm/kisa` (default branch `main`; Cloudflare Workers
+Builds deploys `main`). Resolve the current head before every investigation.
 
-The public form at `https://www.kristinavishar.com/booking/`:
+**Status: target contract, not yet live.** It is implemented in kisa PRs #111
+(form, head `c3ad1ce`) and #112 (privacy notice) and becomes live only after
+this repository's `specs/kristina-enquiry-v2/` release and those PRs are
+merged and deployed. Until then the live page is the legacy single-step form;
+`probe-kristina-live-booking-contract.mjs` reports which one it found. Update
+this section with the deployed kisa SHA once live.
+
+The target public form at `https://www.kristinavishar.com/booking/`:
 
 - posts multipart to same-origin `/api/booking`;
 - sends the enquiry-v2 shape (`formSchema=enquiry-v2`, `projectDetails` JSON,
