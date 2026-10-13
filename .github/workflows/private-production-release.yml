@@ -466,6 +466,7 @@ jobs:
           const expected = [
             'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
             'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'META_ADS_VLADIMIR_ACCESS_TOKEN',
             'SUPABASE_SECRET_KEY',
             'TELEGRAM_BOT_TOKEN',
             'TELEGRAM_WEBHOOK_SECRET',
@@ -642,6 +643,7 @@ jobs:
           const expected = [
             'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
             'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
+            'META_ADS_VLADIMIR_ACCESS_TOKEN',
             'SUPABASE_SECRET_KEY',
             'TELEGRAM_BOT_TOKEN',
             'TELEGRAM_WEBHOOK_SECRET',
