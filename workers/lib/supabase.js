@@ -15,6 +15,7 @@ import { statusClass } from './logging.js';
 export const ALLOWED_RPCS = new Set([
   'create_trusted_enquiry_intake',
   'create_hosted_enquiry_intake',
+  'service_record_enquiry_touch_attribution',
   'mark_enquiry_file_uploaded',
   'finalize_enquiry_intake',
   'fail_enquiry_intake',
