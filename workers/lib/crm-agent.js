@@ -503,6 +503,29 @@ export async function recordAttentionShadow(env, deps = {}) {
 }
 
 /**
+ * Retention phase 1: ask the database for a dry run. It records at most one
+ * per 20 hours and never deletes anything. Counts only, fail-open, never
+ * affects the drain result.
+ */
+export async function runRetentionDryRun(env, deps = {}) {
+  if (!enabled(env)) return 'disabled';
+  try {
+    const supabase = deps.supabase ?? createSupabaseClient(env, deps.fetchImpl ?? fetch);
+    const result = await supabase.rpc('service_run_retention_dry_run', {});
+    if (result?.status === 'recorded') {
+      const candidates = Number.isInteger(result.candidates) ? result.candidates : null;
+      const log = candidates > 0 ? console.warn : console.log;
+      log('retention.dry_run', JSON.stringify({ candidates, candidateFiles: result.candidate_files ?? null }));
+      return 'recorded';
+    }
+    return result?.status === 'throttled' ? 'throttled' : 'rejected';
+  } catch {
+    console.error('retention.dry_run failed', JSON.stringify({ code: 'retention_dry_run_failed' }));
+    return 'failed';
+  }
+}
+
+/**
  * Phase 6a: enqueue ordinary refreshes for a few stale briefs. The database
  * owns the budget (a few per hour) and the dedupe; this only asks. Counts
  * only, fail-open, never affects the drain result.
