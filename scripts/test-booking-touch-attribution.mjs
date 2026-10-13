@@ -14,6 +14,8 @@ vm.runInNewContext(block,context);
 assert.equal(window.VisharAttribution.read(),null,'no history before consent');
 assert.equal(local.size,0,'no pre-consent storage');
 local.set('vishar-cookie-consent','granted');
+assert.equal(window.VisharAttribution.read(),null,'previous analytics-only consent does not grant visit history');
+local.set('vishar-booking-attribution-consent','granted');
 const first=window.VisharAttribution.read();
 assert.equal(first.first.utmSource,'ig');
 assert.equal(first.last.utmMedium,'paid');

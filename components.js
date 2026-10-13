@@ -376,6 +376,13 @@ try { localStorage.setItem(CONSENT_KEY, value); } catch (e) { /* private browsin
    No click IDs, full referring URLs, contact information or pre-consent visits. */
 const TOUCH_KEY = 'vishar.analytics.touches.v1';
 const TOUCH_VISIT_KEY = 'vishar.analytics.visit.v1';
+const TOUCH_CONSENT_KEY = 'vishar-booking-attribution-consent';
+function touchConsent() {
+  try { return localStorage.getItem(TOUCH_CONSENT_KEY); } catch (error) { return null; }
+}
+function setTouchConsent(value) {
+  try { localStorage.setItem(TOUCH_CONSENT_KEY, value); } catch (error) { /* private mode */ }
+}
 const TOUCH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function clearTouchAttribution() {
@@ -414,7 +421,7 @@ function touchSnapshot() {
   };
 }
 function captureTouchAttribution() {
-  if (getConsent() !== 'granted') return null;
+  if (getConsent() !== 'granted' || touchConsent() !== 'granted') return null;
   const now = Date.now();
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(TOUCH_KEY) || 'null'); } catch (error) { /* blocked/corrupt */ }
@@ -432,14 +439,41 @@ function captureTouchAttribution() {
   return { first: saved.first, last: saved.last };
 }
 window.VisharAttribution = {
-  read: function () { return getConsent() === 'granted' ? captureTouchAttribution() : null; },
+  read: function () { return getConsent() === 'granted' && touchConsent() === 'granted' ? captureTouchAttribution() : null; },
   clear: clearTouchAttribution
 };
+
+/* Existing analytics-only grants cannot authorise new enquiry-linked history.
+   Ask once for the expanded purpose rather than silently upgrading consent. */
+function offerAttributionConsentUpgrade() {
+  if (touchConsent() !== null || document.getElementById('booking-attribution-consent')) return;
+  const banner = document.createElement('div');
+  banner.id = 'booking-attribution-consent';
+  banner.setAttribute('role', 'region');
+  banner.setAttribute('aria-label', 'Booking source analytics consent');
+  banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
+  banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional booking source history: with your permission, this site can remember the first and latest known visit sources for 30 days, and link them to an enquiry if you send one. No previous visits are recovered. <a href="/privacy/" class="text-white/80 underline">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="touch-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black">Allow</button><button type="button" id="touch-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm text-white/70">No thanks</button></div>';
+  document.body.appendChild(banner);
+  banner.querySelector('#touch-accept').addEventListener('click', function () {
+    setTouchConsent('granted');
+    captureTouchAttribution();
+    banner.remove();
+  });
+  banner.querySelector('#touch-decline').addEventListener('click', function () {
+    setTouchConsent('denied');
+    clearTouchAttribution();
+    banner.remove();
+  });
+}
 
 /* ── Cookie consent banner ── */
 function buildConsentBanner() {
 const stored = getConsent();
-if (stored === 'granted') { captureTouchAttribution(); grantAnalyticsConsent(); return; }
+if (stored === 'granted') {
+  if (touchConsent() === 'granted') captureTouchAttribution();
+  else if (touchConsent() === null) offerAttributionConsentUpgrade();
+  grantAnalyticsConsent(); return;
+}
 if (stored === 'denied') { clearTouchAttribution(); denyAnalyticsConsent(); return; }
 if (document.getElementById('cookie-consent')) return;
 
@@ -458,12 +492,14 @@ document.body.appendChild(banner);
 
 banner.querySelector('#cookie-accept').addEventListener('click', function () {
   setConsent('granted');
+  setTouchConsent('granted');
   captureTouchAttribution();
   banner.remove();
   grantAnalyticsConsent();
 });
 banner.querySelector('#cookie-decline').addEventListener('click', function () {
   setConsent('denied');
+  setTouchConsent('denied');
   clearTouchAttribution();
   banner.remove();
   denyAnalyticsConsent();
@@ -473,7 +509,10 @@ banner.querySelector('#cookie-decline').addEventListener('click', function () {
 /* Re-open the banner from the privacy page ("Manage cookie preferences"). */
 window.visharManageCookies = function () {
 try { localStorage.removeItem(CONSENT_KEY); } catch (e) {}
+try { localStorage.removeItem(TOUCH_CONSENT_KEY); } catch (e) {}
 clearTouchAttribution();
+const extra = document.getElementById('booking-attribution-consent');
+if (extra) extra.remove();
 const existing = document.getElementById('cookie-consent');
 if (existing) existing.remove();
 buildConsentBanner();
