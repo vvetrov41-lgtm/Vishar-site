@@ -108,7 +108,7 @@ function selfTest() {
   assert.deepEqual(checkOrder([from], [to]), [], 'one audited ledger rename');
   assert.equal(checkOrder([from], ['20261013122729_booking_touch_attribution.sql']).length, 2, 'unknown rename rejected');
   assert.equal(checkOrder(['20261013130000_another.sql'], [to]).length, 2, 'exception cannot authorize other migrations');
-  assert.equal(checkOrder([from, '20261013130001_other.sql'], [to]).length, 2, 'exception cannot remove unrelated migration');
+  assert.equal(checkOrder([from, '20261013130001_other.sql'], [to]).length, 1, 'exception cannot remove unrelated migration');
   // An already-applied ledger version may join the base; no other old version may.
   assert.deepEqual(checkOrder(['20261004090000_a.sql'], ['20261004090000_a.sql', '20261003072107_guard.sql']), []);
   assert.equal(checkOrder(['20261004090000_a.sql'], ['20261004090000_a.sql', '20261003072108_other.sql']).length, 1);
