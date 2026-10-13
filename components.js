@@ -483,7 +483,7 @@ banner.setAttribute('role', 'region');
 banner.setAttribute('aria-label', 'Cookie consent');
 banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
 banner.innerHTML = `
-  <p class="text-sm leading-relaxed text-white/60 mb-4">This site uses optional analytics cookies to see which pages are useful. Nothing is set unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p>
+  <p class="text-sm leading-relaxed text-white/60 mb-4">Optional analytics can measure site usage and remember the first and latest known visit sources for 30 days. If you send an enquiry, the sources can be linked to it. Nothing is stored for this purpose unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p>
   <div class="flex gap-3">
     <button type="button" id="cookie-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button>
     <button type="button" id="cookie-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button>
