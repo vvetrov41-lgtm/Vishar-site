@@ -3200,6 +3200,7 @@
       ],
       "handler": [
         "public.gpt_get_statistics",
+        "public.get_statistics",
         "RLS:public.statistics_enquiries",
         "RLS:public.statistics_sessions",
         "RLS:public.statistics_projects",

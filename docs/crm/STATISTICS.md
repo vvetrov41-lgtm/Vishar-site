@@ -10,53 +10,30 @@ a bug — `admin/src/lib/statistics.ts` carries the same definitions in code, an
 
 ## Where the numbers come from
 
-Existing CRM tables, read through the security_invoker `statistics_*`
-projections: `statistics_enquiries`, `statistics_projects`,
-`statistics_sessions` and, behind finance access only,
-`statistics_payment_transactions` and `statistics_payment_requests`.
+One call: `public.get_statistics(artist_ids, from, to)`
+(`supabase/migrations/20261015120000_statistics_core.sql`). It returns, per
+artist, the current window and the equal window before it, each computed by
+`crm_private.statistics_core`. `public.gpt_get_statistics` reads the same core,
+and response time reuses `crm_private.enquiry_reply_state`, the evidence Today's
+pulse reads. No metric is defined in the browser: `admin/src/lib/statistics-overview.ts`
+only sums counts across artists and decides what to say.
 
-The projections remove explicitly excluded test lineage
-(`20260920185324_analytics_exclusion.sql`). On 2026-10-15
-(`20261015100000_statistics_projection_attribution.sql`) they gained columns,
-appended only: `utm_medium`, `utm_campaign` and `referrer_host` (the referrer's
-host, never its URL) on enquiries; `created_at` on sessions; `expires_at` on
-payment requests. Every one of them was already readable by `authenticated` on
-its base table, so no access was widened. There is no aggregate RPC yet.
+The core reads the `statistics_*` projections, so explicitly excluded test
+lineage (`20260920185324_analytics_exclusion.sql`) is absent from every figure.
 
-PostHog is not involved. The product-analytics workstream measures how the CRM
-itself is used and is deliberately not a source of business figures.
+PostHog is not involved.
 
 ## Access
 
-Reads go through `admin/src/lib/statistics-api.ts`. Each is an artist-scoped
-select on a table the CRM already reads elsewhere.
-
-- Operational rows (`enquiries`, `projects`, `sessions`) are governed by
-  `can_access_artist(artist_id)`, which resolves to
-  `crm_private.has_artist_capability(artist_id, 'view')`.
-- Finance rows (`payment_transactions`, `payment_requests`) are governed by
-  `can_view_artist_finance(artist_id)` →
-  `has_artist_capability(artist_id, 'view_finance')`. `projects_finance` is a
-  `security_invoker`, `security_barrier` view over `crm_private`, so it is
-  scoped by the same rule.
-- `sessions.price`, `projects.estimate_total`, `hourly_rate` and
-  `deposit_amount` are not granted to `authenticated` at all at the column
-  level. The screen never selects them from the base tables.
-
-The artist selector narrows the question; it does not grant anything. With no
-artist chosen the browser adds no `artist_id` filter, so the answer is exactly
-what row level security allows — re-implementing the scope in the browser would
-create a second, weaker copy of it.
-
-The money section renders only when the finance reads returned rows. A refused
-finance read is treated as "no money section", never as a page error, so a
-viewer without finance access sees a complete screen minus that block.
-
-Reads are paged (500 rows at a time, ceiling 20 000) rather than capped at the
-200–300 the working-queue reads use. Reads by id list are sent 100 ids per
-request, so no request URL grows with the period. A silently clipped page would produce a
-number that is simply false. Hitting the ceiling sets a flag and the screen
-says the figures are partial.
+- `get_statistics` checks `crm_private.has_artist_capability(artist, 'view')`
+  for every artist before reading anything for it. An artist the caller may not
+  view is an error (`42501`), never an empty answer.
+- Money is included only where the caller holds `view_finance` on that artist.
+- With no artist chosen, the server answers for every artist the caller may
+  view, one entry each. The screen adds counts and same-currency money; it never
+  averages rates and shows medians per artist.
+- `statistics_core` and its helpers are not executable by any API role.
+- Only aggregates leave the database.
 
 ## Periods
 
@@ -116,6 +93,14 @@ Tattoo sessions and touch-ups whose **booking** was made in the period
 (`sessions.created_at`), whatever date they are for, drafts excluded. A booking
 cancelled later stays counted and is shown as cancelled. This is the only
 figure that shows a week's sales while the work is months ahead.
+
+### Response time
+From `crm_private.enquiry_reply_state` over the period's enquiries: the median
+hours to the first reply a person sent (WhatsApp/Instagram accepted by the
+provider, CRM email sent, Gmail SENT), the number with a known time, the number
+answered without a known time (operator attestation, Gmail lookup pending) and
+the number unanswered. Reply evidence is complete only from 2026-09-28
+(WhatsApp echoes) and 2026-10-04 (Gmail SENT).
 
 ### Comparison with the previous period
 A change is stated only when the CRM holds complete history for the previous
@@ -210,21 +195,26 @@ Enquiries by `created_at` and non-draft sessions by `start_at`, bucketed by
 day (≤31 days), week starting Monday (≤120 days) or month. Every bucket in
 range is emitted, including empty ones, so a quiet week reads as a gap.
 
-### Booked ahead
-Planned tattoo sessions starting in the next **90 days**, as a count and hours,
-and the consultations in the same window as a separate count.
+### Diary ahead
+Twelve weeks from the artist's current local Monday (`artists.timezone`; each
+boundary converted on its own so a clock change cannot shift a week): tattoo
+sessions and hours per week, consultations per week as a separate count, and
+the number of tattoo sessions booked beyond the twelve weeks.
 
 **No utilisation percentage is shown.** The CRM holds no provable capacity
 denominator.
 
 ### Money
-Shown only where the database returned finance rows. Three quantities, **never
-added together**, each **per currency**:
+Shown only where the database returned finance. **Actual** (received,
+refunded) and **expected** (waiting to be paid, booked value ahead, still to
+collect) are separate blocks and never added together; each per currency:
 
 | Figure | Definition |
 | --- | --- |
 | Payments received | `succeeded` `credit` transactions, refund types excluded, by `occurred_at`. Deposits are included here |
 | Refunded | Succeeded `debit` or refund-type transactions. Shown apart, never subtracted |
+| Booked value ahead (forecast) | `sessions.price` of confirmed future tattoo sessions, per currency. Shown only when at least 80% of them carry a price; otherwise the coverage is stated |
+| Still to collect ahead (forecast) | booked value minus `crm_private.booking_card_deposit_for_session` per session |
 | Waiting to be paid | Requests with status `pending` and no past `expires_at`, read today whatever their creation date. Unexpired part-paid requests are counted, not summed, because their remainder is not in the projection |
 
 Removed 2026-10-15: "Deposits requested" (summed cancelled and re-issued
@@ -267,15 +257,18 @@ These are floors, not significance tests.
 
 ## Tests
 
-- `admin/src/test/statistics.test.ts` — every formula above: period boundaries,
-  half-open membership, current vs previous, conversion cohorts, cancellation
-  and no-show separation, hours fallback, repeat-client pairing, source
-  priority, funnel legacy rows, bucket edges, currency separation, insight
-  floors and determinism.
-- `admin/src/test/statistics-api.test.ts` — artist scoping, date bounds,
-  paging to exhaustion, the truncation flag, unbounded conversion reads, the
-  narrow column list, and the finance and registry reads failing closed.
-- `admin/src/test/statistics-page.test.tsx` — the money section appearing for
-  exactly the roles the database returns finance rows to, the empty period, the
-  absence of any utilisation percentage, the custom range guard, and a
-  phone-width render.
+- `supabase/tests/1845_statistics_core.sql` — every definition on fixtures
+  (consultation is not a conversion, two projects make a returning client,
+  cancelled/paid/expired requests are not owed, maturity, channel rules, a
+  draft dated by its confirmation, diary weeks across a clock change) and the
+  denials (another artist, no finance, anonymous, window limit); GPT reads the
+  same core.
+- `supabase/tests/1844_statistics_projection_attribution.sql` — the projection
+  columns, host-only referrer, exclusion lineage.
+- `admin/src/test/statistics-overview.test.ts` — combining artists (counts only,
+  medians per artist), attention items, insights, the forecast coverage gate.
+- `admin/src/test/statistics-api.test.ts` — one RPC call, artist scope left to
+  the database, refusal surfaced as an error.
+- `admin/src/test/statistics-page.test.tsx` — order on a phone, money for
+  exactly the viewer the database returns it to, actual vs expected money, no
+  change without history.

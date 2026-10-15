@@ -1,22 +1,18 @@
 import { EmptyState, Section } from './StateViews';
 import { discoveryBreakdown } from '../lib/discovery-statistics';
 import { discoverySourceLabel } from '../lib/discovery-source-registry';
-import type { StatisticsEnquiryWithDiscovery } from '../lib/statistics-api';
-import type { Period } from '../lib/statistics';
 import type { Language } from '../lib/i18n';
 
 export function DiscoverySourceSection({
-  enquiries,
-  period,
+  counts,
   language,
   locale,
 }: {
-  enquiries: StatisticsEnquiryWithDiscovery[];
-  period: Period;
+  counts: Record<string, number>;
   language: Language;
   locale: string;
 }) {
-  const rows = discoveryBreakdown(enquiries, period);
+  const rows = discoveryBreakdown(counts);
   const copy = language === 'ru'
     ? {
         title: 'Как о вас узнали',

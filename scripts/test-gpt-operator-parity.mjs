@@ -124,7 +124,7 @@ const workerEndpoints = [
   ['admin/functions/api/whatsapp/existing-account/provision.js', '', 'whatsapp.existing_account.system_user_token'],
   ['admin/functions/api/whatsapp/meta-review/template.js', '', 'whatsapp.meta_review.template'],
   // Operator reads that go to PostgREST views/tables rather than an RPC.
-  ['admin/src/lib/statistics-api.ts', "'statistics_enquiries'", 'statistics.summary'],
+  ['admin/src/lib/statistics-api.ts', "'get_statistics'", 'statistics.summary'],
   ['admin/src/lib/api.ts', ".from('integration_outbox')", 'deliveries.failed.list'],
 ];
 
