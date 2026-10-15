@@ -28,6 +28,10 @@ export const APPLIED_LEDGER_VERSIONS = Object.freeze(new Set([
   '20261003072107',
   '20261003072301',
   '20261003072600',
+  // Applied directly in production by Supabase's migration API on 2026-10-15.
+  // Its generated version predates the base's future-dated 10:00 and 12:00
+  // migrations. Audit the exact source blob below, not a general exemption.
+  '20261015062338',
 ]));
 // One audited production ledger reconciliation. Supabase's migration API applied
 // the exact SQL blob under its generated timestamp after a full release was
@@ -38,7 +42,17 @@ export const TOUCH_MIGRATION_RECONCILIATION = Object.freeze({
   to: '20261013122728_booking_touch_attribution.sql',
   exactBlob: '7203b797ba2b0f1429471e7f74cad8a0161cd186',
 });
+export const CALENDAR_LEDGER_RECONCILIATION = Object.freeze({
+  file: '20261015062338_legacy_calendar_payload_and_integration_diagnostics.sql',
+  exactBlob: '49fa9202eee7c52d109535be943b8fe55577049e',
+});
 const FILE_RE = /^([0-9]+)_[a-z0-9_]+\.sql$/;
+function verifyCalendarLedgerBlob() {
+  const { file, exactBlob } = CALENDAR_LEDGER_RECONCILIATION;
+  const blob = execFileSync('git', ['rev-parse', `HEAD:${MIGRATIONS_DIR}/${file}`], { encoding: 'utf8' }).trim();
+  if (blob !== exactBlob) throw new Error('Calendar ledger reconciliation must retain its exact applied SQL blob');
+}
+
 
 function reconcilesTouchMigration(baseFiles, headFiles) {
   const { from, to } = TOUCH_MIGRATION_RECONCILIATION;
@@ -81,7 +95,12 @@ export function checkOrder(baseFiles, headFiles) {
   for (const file of headFiles) {
     if (base.has(file)) continue;
     const version = versionOf(file);
-    if (APPLIED_LEDGER_VERSIONS.has(version.toString())) continue;
+    if (APPLIED_LEDGER_VERSIONS.has(version.toString())) {
+      if (version.toString() === '20261015062338' && file !== CALENDAR_LEDGER_RECONCILIATION.file) {
+        errors.push('Calendar ledger exception is valid only for the audited filename');
+      }
+      continue;
+    }
     if (touchReconciled && file === TOUCH_MIGRATION_RECONCILIATION.to) continue;
     if (version <= baseMax) {
       errors.push(
@@ -112,6 +131,11 @@ function selfTest() {
   // An already-applied ledger version may join the base; no other old version may.
   assert.deepEqual(checkOrder(['20261004090000_a.sql'], ['20261004090000_a.sql', '20261003072107_guard.sql']), []);
   assert.equal(checkOrder(['20261004090000_a.sql'], ['20261004090000_a.sql', '20261003072108_other.sql']).length, 1);
+  const calendar = CALENDAR_LEDGER_RECONCILIATION.file;
+  assert.deepEqual(checkOrder(['20261015120000_stats.sql'], ['20261015120000_stats.sql', calendar]), [],
+    'already-applied exact calendar ledger version is permitted');
+  assert.equal(checkOrder(['20261015120000_stats.sql'], ['20261015120000_stats.sql', '20261015062338_impostor.sql']).length, 1,
+    'calendar ledger exception cannot authorize an alternate filename');
   console.log('Migration order guard self-test passed.');
 }
 
@@ -124,6 +148,10 @@ if (process.argv[2] === '--self-test') {
   const errors = checkOrder(baseFiles, headFiles);
   if (reconcilesTouchMigration(baseFiles, headFiles)) {
     try { verifyReconciliationBlob(baseRef); } catch (error) { errors.push(String(error.message || error)); }
+  }
+  if (headFiles.includes(CALENDAR_LEDGER_RECONCILIATION.file)
+      && !baseFiles.includes(CALENDAR_LEDGER_RECONCILIATION.file)) {
+    try { verifyCalendarLedgerBlob(); } catch (error) { errors.push(String(error.message || error)); }
   }
   if (errors.length) {
     for (const error of errors) console.error(`::error::${error}`);
