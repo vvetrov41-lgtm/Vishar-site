@@ -106,14 +106,6 @@ select is((select action::text from public.service_resolve_appointment_client_ac
  (select raw_token from confirmed_token))),'confirm_attendance',
  'existing backend action endpoint resolves group capability');
 
-savepoint stale_card;
-update public.sessions set calendar_version=calendar_version+1,
- start_at=start_at+interval '5 minutes',end_at=end_at+interval '5 minutes'
-where id='c7142222-2222-4222-8222-222222222222';
-select throws_ok(format('select public.service_apply_appointment_client_action(%L)',
- (select raw_token from confirmed_token)),'42501',null,
- 'an edited date invalidates the entire old group link atomically');
-rollback to savepoint stale_card;
 select is((select public.service_apply_appointment_client_action(
  (select raw_token from confirmed_token))->>'session_count'),'3',
  'one click applies to the three unchanged appointments');
@@ -124,5 +116,20 @@ select is((select count(*)::int from public.sessions where
 select throws_ok(format('select public.service_apply_appointment_client_action(%L)',
  (select raw_token from confirmed_token)),'42501',null,
  'the same confirmation cannot be replayed');
+-- A newly issued group link becomes invalid if any sibling date changes,
+-- even when the anchor itself has not changed.
+create temporary table stale_token(raw_token text);
+insert into stale_token(raw_token)
+select a.raw_token from crm_private.issue_booking_card_client_actions(
+ (select anchor_card_id from crm_private.booking_card_groups g
+ join public.session_deposit_groups pg on pg.id=g.group_id
+ where pg.project_id='c7131111-1111-4111-8111-111111111111')) a
+where a.action='confirm_attendance';
+update public.sessions set calendar_version=calendar_version+1,
+ start_at=start_at+interval '5 minutes',end_at=end_at+interval '5 minutes'
+where id='c7142222-2222-4222-8222-222222222222';
+select throws_ok(format('select public.service_apply_appointment_client_action(%L)',
+ (select raw_token from stale_token)),'42501',null,
+ 'an edited date invalidates the entire old group link atomically');
 select * from finish();
 rollback;
