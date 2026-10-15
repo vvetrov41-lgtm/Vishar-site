@@ -105,35 +105,12 @@ export function StatisticsPage() {
         {view.comparable ? t('stats.comparison', { days: period.days }) : t('stats.noComparison')}
       </p>
 
-      {view.attention.length > 0 ? (
-        <section className="stats-attention" aria-labelledby="stats-attention-title">
-          <h2 id="stats-attention-title">{t('stats.attention')}</h2>
-          <ul>
-            {view.attention.map((item) => {
-              const text = t(`stats.attention.${item.id}`, {
-                ...item.params,
-                first: typeof item.params.first === 'string' ? dayMonth(item.params.first, locale) : '',
-              });
-              const linked = item.target === '/payments'
-                ? mayOpenPayments
-                : item.id === 'consultationsAwaitingOutcome' ? mayRecordOutcomes : true;
-              return (
-                <li key={`${item.id}-${JSON.stringify(item.params)}`}>
-                  {linked ? (
-                    <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
-                  ) : (
-                    <span className="stats-attention-text">{text}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      ) : null}
-
       {!hasAnything ? <EmptyState title={t('stats.emptyTitle')} hint={t('stats.emptyHint')} /> : null}
 
-      <Section title={t('stats.headline')}>
+      {/* First screen on a phone: the four headline figures, then what needs
+          attention. Charts follow below the fold. */}
+      <section className="stats-headline" aria-labelledby="stats-headline-title">
+        <h2 id="stats-headline-title" className="visually-hidden">{t('stats.headline')}</h2>
         <div className="stats-kpis">
           <Kpi label={t('stats.kpi.enquiries')} hint={t('stats.kpi.enquiriesHint')} value={format(current.enquiries, locale)} change={change(view.enquiries)} />
           <Kpi
@@ -174,7 +151,33 @@ export function StatisticsPage() {
             })}
           </p>
         ) : null}
-      </Section>
+      </section>
+
+      {view.attention.length > 0 ? (
+        <section className="stats-attention" aria-labelledby="stats-attention-title">
+          <h2 id="stats-attention-title">{t('stats.attention')}</h2>
+          <ul>
+            {view.attention.map((item) => {
+              const text = t(`stats.attention.${item.id}`, {
+                ...item.params,
+                first: typeof item.params.first === 'string' ? dayMonth(item.params.first, locale) : '',
+              });
+              const linked = item.target === '/payments'
+                ? mayOpenPayments
+                : item.id === 'consultationsAwaitingOutcome' ? mayRecordOutcomes : true;
+              return (
+                <li key={`${item.id}-${JSON.stringify(item.params)}`}>
+                  {linked ? (
+                    <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
+                  ) : (
+                    <span className="stats-attention-text">{text}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
 
       <Section title={t('stats.diary')}>
         <DiaryChart weeks={current.upcoming.weeks} locale={locale} />
