@@ -19,7 +19,7 @@ import { DiscoverySourceSection } from '../components/DiscoverySourceSection';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatMoney } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
-import { canAccess } from '../lib/permissions';
+import { can, canAccess } from '../lib/permissions';
 import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import {
@@ -46,6 +46,8 @@ export function StatisticsPage() {
   // Payments opens only for finance managers; a view-only viewer still sees
   // the count, without a link to a page that would refuse them.
   const mayOpenPayments = canAccess(profile?.role, 'manageFinance', memberships);
+  // The outcome buttons live on the calendar for those who manage sessions.
+  const mayRecordOutcomes = can(profile?.role, 'manageSessions');
 
   const [preset, setPreset] = useState<Preset>('30d');
   const [customFrom, setCustomFrom] = useState('');
@@ -112,7 +114,9 @@ export function StatisticsPage() {
                 ...item.params,
                 first: typeof item.params.first === 'string' ? dayMonth(item.params.first, locale) : '',
               });
-              const linked = item.target !== '/payments' || mayOpenPayments;
+              const linked = item.target === '/payments'
+                ? mayOpenPayments
+                : item.id === 'consultationsAwaitingOutcome' ? mayRecordOutcomes : true;
               return (
                 <li key={`${item.id}-${JSON.stringify(item.params)}`}>
                   {linked ? (
@@ -249,6 +253,10 @@ export function StatisticsPage() {
           <dd>{format(current.sessions.no_show, locale)}</dd>
           <dt>{t('stats.consultationsHeld')}</dt>
           <dd>{format(current.sessions.consultations_held, locale)}</dd>
+          <dt>{t('stats.consultationsUnverified')}</dt>
+          <dd>{format(current.sessions.consultations_unverified, locale)}</dd>
+          <dt>{t('stats.consultationsNoShow')}</dt>
+          <dd>{format(current.sessions.consultations_no_show, locale)}</dd>
           <dt>{t('stats.uniqueClients')}</dt>
           <dd>{format(current.unique_clients, locale)}</dd>
         </dl>

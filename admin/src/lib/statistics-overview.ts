@@ -155,8 +155,11 @@ export function combineCores(cores: StatisticsCore[]): StatisticsCore {
       no_show: add((core) => core.sessions.no_show),
       hours: add((core) => core.sessions.hours),
       consultations_held: add((core) => core.sessions.consultations_held),
+      consultations_no_show: add((core) => core.sessions.consultations_no_show),
+      consultations_unverified: add((core) => core.sessions.consultations_unverified),
       consultations_cancelled: add((core) => core.sessions.consultations_cancelled),
     },
+    consultations_awaiting_outcome: add((core) => core.consultations_awaiting_outcome),
     returning_clients: {
       active: add((core) => core.returning_clients.active),
       returning: add((core) => core.returning_clients.returning),
@@ -186,7 +189,7 @@ export function replyEvidenceComplete(periodFrom: string): boolean {
 }
 
 export interface AttentionItem {
-  id: 'unanswered' | 'emptyWeeks' | 'channelNoBookings' | 'openPayments';
+  id: 'unanswered' | 'emptyWeeks' | 'channelNoBookings' | 'openPayments' | 'consultationsAwaitingOutcome';
   params: Record<string, string | number>;
   target: string;
 }
@@ -260,6 +263,13 @@ export function buildOverview(
         target: '#stats-channels',
       });
     }
+  }
+  if (current.consultations_awaiting_outcome > 0) {
+    attention.push({
+      id: 'consultationsAwaitingOutcome',
+      params: { count: current.consultations_awaiting_outcome },
+      target: '/appointments#consultation-outcomes',
+    });
   }
   const openCount = current.finance?.open.reduce((total, entry) => total + (entry.count ?? 0), 0) ?? 0;
   if (openCount > 0) {

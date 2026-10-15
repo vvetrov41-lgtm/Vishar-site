@@ -1,5 +1,5 @@
 import { render, renderHook, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CrmClient } from '../lib/api';
 import { createAppointmentApi, type Appointment } from '../lib/appointment-api';
 import { AppointmentRow, clientResponseLabel } from '../pages/AppointmentsPage';
@@ -69,6 +69,11 @@ function renderRow(appointment: Appointment) {
 }
 
 describe('appointment client response visibility', () => {
+  // The fixture consultation is on 2026-09-01. Once it has ended it reads as
+  // "ended, outcome not confirmed" instead, so these checks run before it.
+  beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true, now: new Date('2026-08-31T09:00:00Z') }); });
+  afterEach(() => { vi.useRealTimers(); });
+
   it('reads authoritative client response fields from sessions', async () => {
     const select = vi.fn((_columns: string) => ({
       order: vi.fn(() => ({
@@ -132,5 +137,19 @@ describe('appointment client response visibility', () => {
     expect(appointmentDisplayStatus({ ...BASE_APPOINTMENT, client_response: 'attendance_confirmed', client_response_calendar_version: 3 }, 'ru', 'Подтверждено')).toBe('Клиент подтвердил');
     expect(appointmentDisplayStatus({ ...BASE_APPOINTMENT, client_response: 'attendance_confirmed', client_response_calendar_version: 2 }, 'ru', 'Подтверждено')).toBe('Ожидаем подтверждения клиента');
     expect(appointmentDisplayStatus({ ...BASE_APPOINTMENT, status: 'cancelled', client_response: 'attendance_confirmed', client_response_calendar_version: 3 }, 'ru', 'Отменено')).toBe('Отменено');
+  });
+});
+
+describe('ended consultation status', () => {
+  it('reads as awaiting its outcome once it has ended, whatever the client said before', () => {
+    vi.useFakeTimers({ now: new Date('2026-09-02T09:00:00Z') });
+    try {
+      const ended = { ...BASE_APPOINTMENT, status: 'confirmed' as const };
+      expect(appointmentDisplayStatus(ended, 'ru', 'Подтверждена')).toBe('Прошла, результат не подтверждён');
+      expect(appointmentDisplayStatus(ended, 'en', 'Confirmed')).toBe('Ended, outcome not confirmed');
+      expect(appointmentDisplayStatus({ ...ended, status: 'completed' }, 'en', 'Completed')).toBe('Completed');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
