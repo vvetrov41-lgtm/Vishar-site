@@ -52,8 +52,12 @@ grant select on source_k to authenticated;
 select pg_temp.claims('{"sub":"df011111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-unified-integrations"}');
 select public.gpt_artist_context('a1111111-1111-4111-8111-111111111111');
 
-select throws_ok($$select public.gpt_list_integration_status()$$, '42501', null,
-  'integration status stays closed without the integrations ceiling');
+select lives_ok($$select public.gpt_list_integration_status()$$,
+  'read-only integration diagnostics require CRM read, not the write ceiling');
+select lives_ok($$select public.gpt_list_calendar_connection_status()$$,
+  'read-only calendar diagnostics are also available without the write ceiling');
+select throws_ok($$select public.gpt_reset_calendar_expected_account()$$, '42501', null,
+  'calendar integration mutation remains closed without the integrations ceiling');
 select throws_ok($$select public.gpt_list_booking_sources()$$, '42501', null,
   'booking sources stay closed without the integrations ceiling');
 
