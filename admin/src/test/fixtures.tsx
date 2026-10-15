@@ -427,6 +427,10 @@ export interface FakeClientOptions {
    * but switched off, which is production's default.
    */
   todayPulse?: unknown;
+  /** What `get_artist_session_pricing` answers. Omitted means not configured. */
+  artistPricing?: unknown;
+  /** Rows of `projects_finance` for an owner. Omitted means PROJECT_FINANCE. */
+  projectFinanceRows?: unknown[];
   /** What `get_statistics` answers. Omitted means STATISTICS_RESULT for the role. */
   statistics?: unknown;
   /** What `get_conversation_link_suggestion` answers. Omitted means no match. */
@@ -687,7 +691,8 @@ function tableResult(
   emailMessages: Record<string, unknown>[] = [],
   gmailMetadataSnapshots: Record<string, unknown>[] = [],
   conversations: Record<string, unknown>[] = CONVERSATIONS as unknown as Record<string, unknown>[],
-  extraEnquiries: Record<string, unknown>[] = []
+  extraEnquiries: Record<string, unknown>[] = [],
+  projectFinanceRows?: unknown[]
 ) {
   if (failTable === table) return { data: null, error: { code: 'PGRST000', message: 'boom' } };
 
@@ -720,7 +725,7 @@ function tableResult(
       return { data: [PROJECT], error: null };
     case 'projects_finance':
       // Owner-only view: a non-owner selects zero rows, not an error.
-      return { data: role === 'owner' ? [PROJECT_FINANCE] : [], error: null };
+      return { data: role === 'owner' ? (projectFinanceRows ?? [PROJECT_FINANCE]) : [], error: null };
     case 'statistics_sessions':
     case 'sessions':
       return { data: [SESSION, ...extraSessions], error: null };
@@ -940,7 +945,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
         options.emailMessages,
         options.gmailMetadataSnapshots,
         options.conversations,
-        options.extraEnquiries
+        options.extraEnquiries,
+        options.projectFinanceRows
       );
     // PostgREST applies `eq` server-side, so the fake does too. Without this a
     // screen that scopes a read by client, project or status would "pass" while
@@ -1231,6 +1237,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       }
       if (name === 'list_capabilities') return { data: [], error: null };
       if (name === 'list_attention_acknowledgements') return { data: [], error: null };
+      if (name === 'get_artist_session_pricing' && options.artistPricing) {
+        return { data: options.artistPricing, error: null };
+      }
       if (name === 'get_statistics') {
         return { data: options.statistics ?? statisticsResult(effectiveRole === 'owner'), error: null };
       }

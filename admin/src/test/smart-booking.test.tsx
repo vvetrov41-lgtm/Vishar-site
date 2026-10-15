@@ -6,11 +6,13 @@
 // one matters most - the database holds the schedule lock, so the test proves
 // the interface reports the refusal rather than pretending it booked.
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { App } from '../App';
+import { clearSessionPricingCache } from '../components/SessionPriceSuggestion';
 import {
   CLIENT_ID,
+  PROJECT_FINANCE,
   VLADIMIR_ARTIST_ID,
   renderWithSession,
 } from './fixtures';
@@ -44,6 +46,9 @@ async function openPanel(options: Record<string, unknown> = {}) {
 }
 
 describe('booking a session by asking for one', () => {
+  // Rates are cached per page load; each test is its own page load.
+  beforeEach(() => clearSessionPricingCache());
+
   it('offers only valid free times for a seven-hour tattoo session', async () => {
     await openPanel();
 
@@ -103,6 +108,67 @@ describe('booking a session by asking for one', () => {
     fireEvent.click(screen.getByRole('button', { name: '7 h' }));
     const price = await screen.findByDisplayValue('980.00');
     fireEvent.change(price, { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
+    const slots = await screen.findAllByRole('button', { name: /free here/ });
+    fireEvent.click(slots[0]);
+    const summary = await screen.findByRole('group', { name: 'Booking summary' });
+    fireEvent.click(within(summary).getByRole('button', { name: 'Book it' }));
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => entry.name === 'schedule_appointment')).toBe(true);
+      expect(rpcCalls.some((entry) => entry.name === 'schedule_appointment_with_price')).toBe(false);
+    });
+  });
+
+  const VLADIMIR_RATES = {
+    artist_id: VLADIMIR_ARTIST_ID,
+    configured: true,
+    currency: 'GBP',
+    hourly_rate: 140,
+    full_day_rate: 980,
+    full_day_hours: 7,
+    session_deposit_amount: 250,
+    updated_at: null,
+  };
+  const NO_PROJECT_RATE = [{ ...PROJECT_FINANCE, hourly_rate: null }];
+
+  it('fills the price from the artist\'s own rates when the project has no rate', async () => {
+    await openPanel({ artistPricing: VLADIMIR_RATES, projectFinanceRows: NO_PROJECT_RATE });
+    fireEvent.click(screen.getByRole('button', { name: '4 h' }));
+    const price = await screen.findByDisplayValue('560.00');
+    expect(screen.getByText(/Suggested from the artist's rates, check before booking/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    // A full day is the configured day price, not 7 x 140 by accident.
+    expect(await screen.findByDisplayValue('980.00')).toBe(price);
+  });
+
+  it('leaves the price empty for an artist without rates, never borrowing another artist\'s', async () => {
+    await openPanel({ projectFinanceRows: NO_PROJECT_RATE });
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    const price = screen.getByLabelText(/Session price/) as HTMLInputElement;
+    await waitFor(() => expect(price.value).toBe(''));
+  });
+
+  it('keeps an amount the operator typed when the length changes', async () => {
+    await openPanel({ artistPricing: VLADIMIR_RATES, projectFinanceRows: NO_PROJECT_RATE });
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    const price = await screen.findByDisplayValue('980.00');
+    fireEvent.change(price, { target: { value: '900' } });
+    fireEvent.click(screen.getByRole('button', { name: '4 h' }));
+    expect((price as HTMLInputElement).value).toBe('900');
+  });
+
+  it('books with the price explicitly left TBD', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    await openPanel({ rpcCalls, artistPricing: VLADIMIR_RATES });
+    fireEvent.click(screen.getByRole('button', { name: '7 h' }));
+    await screen.findByDisplayValue('980.00');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Price TBD' }));
+    const price = screen.getByLabelText(/Session price/) as HTMLInputElement;
+    expect(price.value).toBe('');
+    expect(price).toBeDisabled();
+    // Changing the length does not bring a price back while TBD is chosen.
+    fireEvent.click(screen.getByRole('button', { name: '4 h' }));
+    expect(price.value).toBe('');
     fireEvent.click(screen.getByRole('button', { name: 'Find free times' }));
     const slots = await screen.findAllByRole('button', { name: /free here/ });
     fireEvent.click(slots[0]);

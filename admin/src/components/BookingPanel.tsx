@@ -181,18 +181,28 @@ export function BookingPanel({
     durationMinutes: priceDurationMinutes,
     enabled: appointmentType === 'tattoo_session' && mayManagePrice,
   });
-  const projectPrice = priceSuggestion?.source === 'project' ? priceSuggestion : null;
-  const autoPrice = projectPrice ? projectPrice.price.toFixed(2) : '';
+  // Price TBD: the operator decided the price is not known yet. The field is
+  // emptied and locked, and the booking is saved without a price.
+  const [priceTbd, setPriceTbd] = useState(false);
+  const autoPrice = priceSuggestion && !priceTbd ? priceSuggestion.price.toFixed(2) : '';
   const priceIsAuto = !sessionPriceTouched && autoPrice !== '' && sessionPrice === autoPrice;
 
   useEffect(() => {
-    // A price calculated from the project estimate's rate is pre-filled as a
-    // visible, editable suggestion. Booking with the field filled in is the
-    // operator's confirmation of that amount; clearing it books without a
-    // price. The artist's general rates stay a one-tap suggestion only.
+    // A price calculated from the project's own rate, or else the artist's
+    // own rates, is pre-filled as a visible, editable amount. Booking with
+    // the field filled in is the operator's confirmation of that amount, and
+    // it becomes the session's confirmed price. Until the operator types, the
+    // amount follows the chosen length. Another artist's rates are never
+    // used: without rates the field stays empty.
     if (sessionPriceTouched) return;
     setSessionPrice(autoPrice);
   }, [autoPrice, sessionPriceTouched]);
+
+  function choosePriceTbd(next: boolean) {
+    setPriceTbd(next);
+    setSessionPriceTouched(false);
+    if (next) setSessionPrice('');
+  }
 
   const grouped = useMemo(() => groupByDay(slots ?? []), [slots]);
   const automaticManualEnd = useMemo(
@@ -447,32 +457,41 @@ export function BookingPanel({
         ) : null}
 
         {paidAppointment && mayManagePrice ? (
-          <label>
-            <span>{copy.sessionPrice} · {copy.optional}</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              min="0.01"
-              max="100000"
-              step="0.01"
-              value={sessionPrice}
-              onChange={(event) => { setSessionPriceTouched(true); setSessionPrice(event.target.value); }}
-              placeholder={copy.sessionPricePlaceholder}
-              aria-invalid={sessionPriceInvalid}
-            />
+          <div className="booking-price">
+            <label>
+              <span>{copy.sessionPrice}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                min="0.01"
+                max="100000"
+                step="0.01"
+                value={sessionPrice}
+                disabled={priceTbd}
+                onChange={(event) => { setSessionPriceTouched(true); setSessionPrice(event.target.value); }}
+                placeholder={priceTbd ? copy.sessionPriceTbdPlaceholder : copy.sessionPricePlaceholder}
+                aria-invalid={sessionPriceInvalid}
+              />
+            </label>
+            <label className="conflict-acknowledgement">
+              <input type="checkbox" checked={priceTbd} onChange={(event) => choosePriceTbd(event.target.checked)} />
+              <span>{copy.sessionPriceTbd}</span>
+            </label>
             <span className="meta">
-              {priceIsAuto && projectPrice
-                ? `${copy.sessionPriceFromProject} ${priceSuggestionLabel(projectPrice, language, language === 'ru' ? 'ru-RU' : 'en-GB', { showSource: false })}`
-                : copy.sessionPriceHint}
+              {priceTbd
+                ? copy.sessionPriceTbdHint
+                : priceIsAuto && priceSuggestion
+                  ? `${priceSuggestion.source === 'project' ? copy.sessionPriceFromProject : copy.sessionPriceFromArtist} ${priceSuggestionLabel(priceSuggestion, language, language === 'ru' ? 'ru-RU' : 'en-GB', { showSource: false })}`
+                  : copy.sessionPriceHint}
             </span>
-            {priceIsAuto ? null : (
+            {priceIsAuto || priceTbd ? null : (
               <SessionPriceSuggestion
                 suggestion={priceSuggestion}
                 currentValue={sessionPrice}
                 onUse={(value) => { setSessionPriceTouched(true); setSessionPrice(value); }}
               />
             )}
-          </label>
+          </div>
         ) : null}
         {sessionPriceInvalid ? (
           <p className="notice warn" role="alert">{copy.invalidPrice}</p>
@@ -875,6 +894,10 @@ const COPY = {
     noEnquiry: 'No enquiry',
     sessionPrice: 'Session price',
     sessionPriceFromProject: 'Suggested from the project rate, check before booking:',
+    sessionPriceFromArtist: 'Suggested from the artist\'s rates, check before booking:',
+    sessionPriceTbd: 'Price TBD',
+    sessionPriceTbdPlaceholder: 'Price to be decided',
+    sessionPriceTbdHint: 'The session is booked without a price. Statistics estimates it from the rates until a price is saved; booking cards wait for a saved price.',
     sessionPricePlaceholder: 'Price for this session',
     sessionPriceHint: 'The amount in this field becomes the session price when you book; booking cards use it. Leave it blank if the price is not decided yet.',
     invalidPrice: 'Enter a price between 0.01 and 100000 with no more than two decimal places.',
@@ -944,6 +967,10 @@ const COPY = {
     noEnquiry: 'Без заявки',
     sessionPrice: 'Стоимость сеанса',
     sessionPriceFromProject: 'Предложено по ставке проекта, проверь перед бронью:',
+    sessionPriceFromArtist: 'Предложено по тарифу артиста, проверь перед бронью:',
+    sessionPriceTbd: 'Цена позже (TBD)',
+    sessionPriceTbdPlaceholder: 'Цена ещё не решена',
+    sessionPriceTbdHint: 'Сеанс забронируется без цены. Statistics оценит его по тарифу, пока цена не сохранена; карточка записи ждёт сохранённую цену.',
     sessionPricePlaceholder: 'Цена этого сеанса',
     sessionPriceHint: 'Сумма в этом поле станет ценой сеанса при бронировании, её использует карточка записи. Оставь пустым, если цена ещё не решена.',
     invalidPrice: 'Укажите сумму от 0,01 до 100000 максимум с двумя знаками после запятой.',

@@ -1017,6 +1017,10 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
   cursor: pointer;
 }
 
+/* Session price: the amount, then "Price TBD", then where the amount came from. */
+.booking-price { display: grid; gap: 6px; align-content: start; }
+.booking-price .conflict-acknowledgement { margin: 0; }
+
 /* Fields stack by default, which is what a phone needs - a date input with the
    keyboard open wants the full row. Pairs only appear where there is room. */
 @media (min-width: 641px) {
