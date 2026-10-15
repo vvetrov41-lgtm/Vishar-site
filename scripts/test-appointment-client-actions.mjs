@@ -40,6 +40,8 @@ function backendFetch({
   action = 'confirm_attendance',
   outcome = 'attendance_confirmed',
   artistName = 'Vladimir Vishar',
+  grouped = false,
+  sessionCount = 1,
 } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -53,7 +55,7 @@ function backendFetch({
     }
     if (href.endsWith('/rest/v1/rpc/service_apply_appointment_client_action')) {
       if (applyStatus !== 200) return new Response('{}', { status: applyStatus });
-      return Response.json({ action, outcome, artist_display_name: artistName });
+      return Response.json({ action, outcome, artist_display_name: artistName, grouped, session_count: sessionCount });
     }
     throw new Error(`unexpected backend call: ${href}`);
   };
@@ -121,6 +123,31 @@ await test('each server-bound action has explicit copy and reschedule does not p
     assert.equal(response.status, 200);
     assert.match(await response.text(), pattern);
   }
+});
+
+await test('group confirmation POST reports every booked date without exposing a capability', async () => {
+  const { fetchImpl } = backendFetch({ grouped: true, sessionCount: 4 });
+  const response = await handleAppointmentClientActionRequest(
+    new Request(URL, { method: 'POST' }), env, { fetchImpl },
+  );
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /All sessions confirmed/);
+  assert.match(html, /all 4 sessions with Vladimir Vishar/);
+  assert.doesNotMatch(html, /appointment with Vladimir Vishar/);
+  assert.equal(html.includes(TOKEN), false);
+});
+
+await test('group reschedule response never claims dates were moved', async () => {
+  const { fetchImpl } = backendFetch({
+    action: 'request_reschedule', outcome: 'reschedule_requested',
+    grouped: true, sessionCount: 3,
+  });
+  const response = await handleAppointmentClientActionRequest(
+    new Request(URL, { method: 'POST' }), env, { fetchImpl },
+  );
+  assert.equal(response.status, 200);
+  assert.match(await response.text(), /All 3 dates remain booked until you agree any changes/);
 });
 
 await test('the rendered confirmation page leaks no capability or backend identifier', async () => {
