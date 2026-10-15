@@ -167,6 +167,7 @@ declare
   v_maturity_cutoff timestamptz := p_now - interval '14 days';
   v_timezone text;
   v_week0 timestamptz;
+  v_monday date;
   v_result jsonb;
   v_finance jsonb := null;
   v_own_hosts text[];
@@ -174,12 +175,16 @@ begin
   select coalesce(array_agg(distinct crm_private.statistics_host(b.allowed_origin)), '{}')
     into v_own_hosts
   from public.booking_sources b
-  where b.allowed_origin is not null;
+  where b.artist_id = p_artist_id
+    and b.allowed_origin is not null;
 
   select coalesce(a.timezone, 'Europe/London') into v_timezone
   from public.artists a where a.id = p_artist_id;
-  -- Weeks start on the artist's local Monday.
-  v_week0 := (date_trunc('week', p_now at time zone v_timezone)) at time zone v_timezone;
+  -- Weeks start on the artist's local Monday. Each boundary is built from a
+  -- local date and converted on its own, so a clock change inside the
+  -- horizon (Europe/London on 2026-10-25) cannot shift a week by an hour.
+  v_monday := date_trunc('week', p_now at time zone v_timezone)::date;
+  v_week0 := v_monday::timestamp at time zone v_timezone;
 
   with
   enq as (
@@ -271,7 +276,10 @@ begin
     where status::text in ('proposed', 'confirmed') and start_at >= p_now
   ),
   weeks as (
-    select g as week_index, v_week0 + make_interval(days => 7 * g) as week_start
+    select g as week_index,
+           v_monday + 7 * g as week_date,
+           (v_monday + 7 * g)::timestamp at time zone v_timezone as week_start,
+           (v_monday + 7 * (g + 1))::timestamp at time zone v_timezone as week_end
     from generate_series(0, 11) g
   )
   select jsonb_build_object(
@@ -355,17 +363,17 @@ begin
     'upcoming', jsonb_build_object(
       'weeks', (
         select jsonb_agg(jsonb_build_object(
-          'week_start', to_char(w.week_start at time zone v_timezone, 'YYYY-MM-DD'),
+          'week_start', to_char(w.week_date, 'YYYY-MM-DD'),
           'tattoo_sessions', (select count(*) from ahead a where a.is_work
-                              and a.start_at >= w.week_start and a.start_at < w.week_start + interval '7 days'),
+                              and a.start_at >= w.week_start and a.start_at < w.week_end),
           'tattoo_hours', (select round(coalesce(sum(a.hours), 0)::numeric, 2) from ahead a where a.is_work
-                              and a.start_at >= w.week_start and a.start_at < w.week_start + interval '7 days'),
+                              and a.start_at >= w.week_start and a.start_at < w.week_end),
           'consultations', (select count(*) from ahead a where a.is_consultation
-                              and a.start_at >= w.week_start and a.start_at < w.week_start + interval '7 days')
+                              and a.start_at >= w.week_start and a.start_at < w.week_end)
         ) order by w.week_index)
         from weeks w),
       'tattoo_sessions_later', (select count(*) from ahead where is_work
-                                and start_at >= v_week0 + interval '84 days')
+                                and start_at >= (v_monday + 84)::timestamp at time zone v_timezone)
     ),
     'history_start', (select min(created_at) from enq)
   )

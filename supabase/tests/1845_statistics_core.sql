@@ -249,6 +249,19 @@ select ok(
      -> 'bookings_made' ->> 'tattoo')::int = 0),
   'and not on the day the draft was typed');
 
+-- Week buckets across the Europe/London clock change of 2026-10-25.
+select ok(
+  (select bool_and(extract(isodow from (w ->> 'week_start')::date) = 1)
+   from jsonb_array_elements(crm_private.statistics_core(
+     'a1111111-1111-4111-8111-111111111111', '2026-10-01', '2026-10-21', '2026-10-20 12:00+00', false
+   ) -> 'upcoming' -> 'weeks') w),
+  'every diary week starts on a local Monday, across a clock change');
+select is(
+  (select (crm_private.statistics_core(
+     'a1111111-1111-4111-8111-111111111111', '2026-10-01', '2026-10-21', '2026-10-20 12:00+00', false
+   ) -> 'upcoming' -> 'weeks' -> 1 ->> 'week_start')),
+  '2026-10-26', 'the week after the clock change begins on Monday 26 October');
+
 -- ---------------------------------------------------------- authorization
 
 create function pg_temp.claims(p text) returns void language sql as $$
