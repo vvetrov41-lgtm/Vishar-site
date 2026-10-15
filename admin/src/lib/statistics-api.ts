@@ -35,17 +35,32 @@ export interface StatisticsWeek {
   consultations: number;
 }
 
+/**
+ * Upcoming confirmed tattoo work, valued three ways that are never mixed:
+ * a confirmed value is the price saved on a session (the one booking cards
+ * and payment requests use); an estimated value is computed by the server
+ * from the artist's or project's own rates and the planned length, and is
+ * never saved; sessions with neither are counted under no_basis.
+ */
+export interface StatisticsForecast {
+  sessions: number;
+  pricing_configured: boolean;
+  confirmed: { sessions: number; value: CurrencyAmount[]; remaining_after_deposits: CurrencyAmount[] };
+  estimated: { sessions: number; full_day: number; hourly: number; from_project_rate: number; value: CurrencyAmount[] };
+  no_basis: { sessions: number; hours: number };
+  /** Confirmed plus estimated. */
+  expected_value: CurrencyAmount[];
+  /** Paid deposits allocated to these sessions, taken off once. */
+  deposits_paid: CurrencyAmount[];
+  remaining_after_deposits: CurrencyAmount[];
+}
+
 export interface StatisticsFinanceBlock {
   received: CurrencyAmount[];
   refunded: CurrencyAmount[];
   open: CurrencyAmount[];
   partially_paid: number;
-  forecast: {
-    confirmed_sessions: number;
-    priced_sessions: number;
-    booked_value: CurrencyAmount[];
-    remaining_after_deposits: CurrencyAmount[];
-  };
+  forecast: StatisticsForecast;
   deposits_paid_by_channel: Record<string, number>;
 }
 

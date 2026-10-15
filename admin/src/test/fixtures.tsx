@@ -795,11 +795,27 @@ export const STATISTICS_FINANCE = {
   refunded: [],
   open: [{ currency: 'GBP', amount: 250, count: 1 }],
   partially_paid: 0,
+  // Vladimir on 2026-10-15: 6 of 19 sessions priced (£5,880); the other 13
+  // estimated from £140/h and £980 per 7-hour day (£11,340).
   forecast: {
-    confirmed_sessions: 10,
-    priced_sessions: 2,
-    booked_value: [{ currency: 'GBP', amount: 1960 }],
-    remaining_after_deposits: [{ currency: 'GBP', amount: 1460 }],
+    sessions: 19,
+    pricing_configured: true,
+    confirmed: {
+      sessions: 6,
+      value: [{ currency: 'GBP', amount: 5880 }],
+      remaining_after_deposits: [{ currency: 'GBP', amount: 4380 }],
+    },
+    estimated: {
+      sessions: 13,
+      full_day: 10,
+      hourly: 3,
+      from_project_rate: 11,
+      value: [{ currency: 'GBP', amount: 11340 }],
+    },
+    no_basis: { sessions: 0, hours: 0 },
+    expected_value: [{ currency: 'GBP', amount: 17220 }],
+    deposits_paid: [{ currency: 'GBP', amount: 1500 }],
+    remaining_after_deposits: [{ currency: 'GBP', amount: 15720 }],
   },
   deposits_paid_by_channel: { manual: 2 },
 };

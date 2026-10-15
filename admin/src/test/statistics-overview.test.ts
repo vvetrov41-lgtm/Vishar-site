@@ -7,7 +7,6 @@ import {
   buildOverview,
   combineCores,
   conversionRate,
-  forecastReady,
 } from '../lib/statistics-overview';
 import type { StatisticsCore, StatisticsResult } from '../lib/statistics-api';
 import { STATISTICS_FINANCE, statisticsCore, statisticsResult } from './fixtures';
@@ -135,9 +134,29 @@ describe('overview', () => {
     });
   });
 
-  it('shows the money forecast only when most future sessions carry a price', () => {
-    expect(forecastReady(STATISTICS_FINANCE as never)).toBe(false);
-    expect(forecastReady({ ...STATISTICS_FINANCE, forecast: { ...STATISTICS_FINANCE.forecast, priced_sessions: 8 } } as never)).toBe(true);
-    expect(forecastReady(null)).toBe(false);
+  it('adds the forecast across artists without mixing confirmed and estimated value', () => {
+    const rated = core({ finance: STATISTICS_FINANCE });
+    const unrated = core({
+      finance: {
+        ...STATISTICS_FINANCE,
+        forecast: {
+          sessions: 2,
+          pricing_configured: false,
+          confirmed: { sessions: 0, value: [], remaining_after_deposits: [] },
+          estimated: { sessions: 0, full_day: 0, hourly: 0, from_project_rate: 0, value: [] },
+          no_basis: { sessions: 2, hours: 14 },
+          expected_value: [],
+          deposits_paid: [],
+          remaining_after_deposits: [],
+        },
+      },
+    });
+    const forecast = combineCores([rated, unrated]).finance!.forecast;
+    expect(forecast.sessions).toBe(21);
+    expect(forecast.confirmed.value).toMatchObject([{ currency: 'GBP', amount: 5880 }]);
+    expect(forecast.estimated.value).toMatchObject([{ currency: 'GBP', amount: 11340 }]);
+    expect(forecast.no_basis).toEqual({ sessions: 2, hours: 14 });
+    // One artist without rates: the combined view must not claim rates exist.
+    expect(forecast.pricing_configured).toBe(false);
   });
 });

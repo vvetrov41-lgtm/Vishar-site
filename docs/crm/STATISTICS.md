@@ -205,16 +205,36 @@ the number of tattoo sessions booked beyond the twelve weeks.
 denominator.
 
 ### Money
-Shown only where the database returned finance. **Actual** (received,
-refunded) and **expected** (waiting to be paid, booked value ahead, still to
-collect) are separate blocks and never added together; each per currency:
+Shown only where the database returned finance. Three money concepts are
+kept apart and never added into one another; each is per currency:
+
+- **Actual received**: succeeded payment transactions only.
+- **Confirmed value**: `sessions.price`, the price saved on one session. It is
+  the only value booking cards, payment requests and the balance after a
+  deposit use.
+- **Estimated value**: computed on every read by
+  `crm_private.session_value_estimate` from the artist's own rates
+  (`crm_private.artist_session_pricing`) or the project's own hourly rate,
+  and the planned length. It is the server copy of `suggestSessionPrice()`
+  (the price the CRM suggests while booking); the same cases pin both. It is
+  never written to `sessions.price`, never sent to a client and never used for
+  a payment request. A later change of the artist's rates moves estimates
+  only; a saved price never changes.
+
+An artist without rates has no basis for an estimate. Another artist's rates
+are never borrowed: those sessions are counted with their hours as "without a
+basis", and the screen says the rates are missing.
 
 | Figure | Definition |
 | --- | --- |
 | Payments received | `succeeded` `credit` transactions, refund types excluded, by `occurred_at`. Deposits are included here |
 | Refunded | Succeeded `debit` or refund-type transactions. Shown apart, never subtracted |
-| Booked value ahead (forecast) | `sessions.price` of confirmed future tattoo sessions, per currency. Shown only when at least 80% of them carry a price; otherwise the coverage is stated |
-| Still to collect ahead (forecast) | booked value minus `crm_private.booking_card_deposit_for_session` per session |
+| Upcoming confirmed sessions (forecast) | Confirmed tattoo sessions from now on, plus touch-ups that carry a saved price (touch-ups are often free, so none is estimated). Consultations, cancelled and past sessions never enter. A rescheduled session counts at its new date |
+| Confirmed price | Sum of `sessions.price` of those sessions, with their count |
+| Estimated from rates | For each session without a saved price: the project's hourly rate × length; at the artist's standard rate a session of at least the configured day length is the day price; without a project rate, the artist's day price or hourly rate × length. Shown with "≈" and a dashed outline |
+| Expected value | Confirmed plus estimated |
+| Still to collect | Expected value minus the paid deposit `crm_private.booking_card_deposit_for_session` allocates to each session, once, never below zero per session. The confirmed-only balance is also returned |
+| Completeness | "{confirmed} of {total} sessions have a confirmed price", always shown. The former rule that hid the forecast below 80% coverage was removed on 2026-10-15 |
 | Waiting to be paid | Requests with status `pending` and no past `expires_at`, read today whatever their creation date. Unexpired part-paid requests are counted, not summed, because their remainder is not in the projection |
 
 Removed 2026-10-15: "Deposits requested" (summed cancelled and re-issued
@@ -239,10 +259,9 @@ These are floors, not significance tests.
 
 - **A utilisation or "load" percentage.** No provable denominator. See above.
 - **Server-side aggregation.** Planned as Statistics 2.0 (`specs/statistics-2/`).
-- **Session price and payment status as revenue.** `sessions_finance.price` is
-  what a session is priced at, not what was collected; `payment_transactions`
-  already answers what was collected. Adding a second, softer revenue figure
-  next to the hard one would invite the two to be read as the same thing.
+- **Session price as revenue.** `sessions.price` and the estimate are what a
+  session is worth, not what was collected; `payment_transactions` answers
+  what was collected, and the screen keeps them in separate blocks.
 - **Client-level or enquiry-level drill-down.** The screen is aggregates only,
   and reads no contact column to produce them.
 - **Cross-artist comparison.** Each viewer sees their own permitted scope; a
@@ -266,7 +285,15 @@ These are floors, not significance tests.
 - `supabase/tests/1844_statistics_projection_attribution.sql` — the projection
   columns, host-only referrer, exclusion lineage.
 - `admin/src/test/statistics-overview.test.ts` — combining artists (counts only,
-  medians per artist), attention items, insights, the forecast coverage gate.
+  medians per artist), attention items, insights, the forecast combined
+  across artists.
+- `supabase/tests/1846_statistics_session_value.sql` — estimate cases, the
+  three money concepts, deposits taken off once, cancelled/consultation/
+  free touch-up/past sessions out, a reschedule, a longer session, a new
+  artist rate (saved prices untouched, nothing written to `sessions.price`),
+  an artist without rates, the GPT forecast from the same core.
+- `admin/src/test/session-pricing.test.ts` — the same estimate cases against
+  the CRM's price suggestion.
 - `admin/src/test/statistics-api.test.ts` — one RPC call, artist scope left to
   the database, refusal surfaced as an error.
 - `admin/src/test/statistics-page.test.tsx` — order on a phone, money for
