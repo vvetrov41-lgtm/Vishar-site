@@ -52,7 +52,7 @@ begin
 
   return jsonb_build_object('session_id', v_session_id, 'project_id', p_project_id, 'status', p_status);
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION crm_private.legacy_set_session_status(p_session_id uuid, p_status session_status)
  RETURNS jsonb
@@ -138,7 +138,7 @@ begin
     'changed', true
   );
 end;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION crm_private.enqueue_outbox(p_kind outbox_kind, p_dedupe_key text, p_payload jsonb DEFAULT '{}'::jsonb, p_client_id uuid DEFAULT NULL::uuid, p_enquiry_id uuid DEFAULT NULL::uuid, p_project_id uuid DEFAULT NULL::uuid, p_session_id uuid DEFAULT NULL::uuid, p_email_message_id uuid DEFAULT NULL::uuid)
  RETURNS uuid
@@ -151,28 +151,14 @@ declare
   v_type public.appointment_type;
   v_version integer;
 begin
-  -- Validate calendar jobs before the worker sees them. A missing appointment
-  -- type used to dead-letter every legacy project session.
+  -- Validate a calendar job against its canonical appointment at enqueue time.
   if p_kind in ('calendar_create', 'calendar_update', 'calendar_cancel') then
     select s.appointment_type, s.calendar_version into v_type, v_version
     from public.sessions s where s.id = p_session_id;
     if v_type is null
        or p_payload ->> 'session_id' is distinct from p_session_id::text
        or p_payload ->> 'appointment_type' is distinct from v_type::text
-       or coalesce(p_payload ->> 'calendar_version', '') !~ '^[0-9]{1,9}
-    id, kind, dedupe_key, payload, client_id, enquiry_id, project_id, session_id, email_message_id
-  ) values (
-    v_id, p_kind, p_dedupe_key, coalesce(p_payload, '{}'::jsonb),
-    p_client_id, p_enquiry_id, p_project_id, p_session_id, p_email_message_id
-  );
-  return v_id;
-exception when unique_violation then
-  -- The same logical job is already queued. That is the dedupe key doing its
-  -- job, not an error.
-  return null;
-end;
-$function$
- then
+       or coalesce(p_payload ->> 'calendar_version', '') !~ '^[0-9]{1,9}$' then
       raise exception 'calendar outbox payload does not match the session'
         using errcode = '23514';
     end if;
@@ -193,7 +179,7 @@ exception when unique_violation then
   -- job, not an error.
   return null;
 end;
-$function$
+$function$;
 
 create or replace function public.gpt_list_integration_status()
 returns jsonb language plpgsql security definer
