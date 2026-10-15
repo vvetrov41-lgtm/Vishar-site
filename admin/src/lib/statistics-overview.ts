@@ -70,8 +70,11 @@ function sumWeeks(lists: StatisticsWeek[][]): StatisticsWeek[] {
 }
 
 function sumFinance(blocks: Array<StatisticsFinanceBlock | null>): StatisticsFinanceBlock | null {
-  const present = blocks.filter((block): block is StatisticsFinanceBlock => block !== null);
-  if (present.length === 0) return null;
+  // Money is combined only when every artist returned it. A total that
+  // silently leaves out the artists the viewer may not see money for would
+  // read as a studio total while the counts beside it cover everyone.
+  if (blocks.length === 0 || blocks.some((block) => block === null)) return null;
+  const present = blocks as StatisticsFinanceBlock[];
   return {
     received: sumMoney(present.map((block) => block.received)),
     refunded: sumMoney(present.map((block) => block.refunded)),
@@ -157,6 +160,18 @@ export function forecastReady(finance: StatisticsFinanceBlock | null): boolean {
   return total > 0 && priced / total >= FORECAST_MIN_PRICE_COVERAGE;
 }
 
+/**
+ * When reply evidence became complete: WhatsApp phone-app echoes from
+ * 2026-09-28, Gmail SENT from 2026-10-04 (20261004090000). Before it, a reply
+ * the CRM never saw reads as "no reply", so "unanswered" is only stated for a
+ * period that starts on or after this instant.
+ */
+export const REPLY_EVIDENCE_COMPLETE_FROM = '2026-10-04T00:00:00Z';
+
+export function replyEvidenceComplete(periodFrom: string): boolean {
+  return Date.parse(periodFrom) >= Date.parse(REPLY_EVIDENCE_COMPLETE_FROM);
+}
+
 export interface AttentionItem {
   id: 'unanswered' | 'emptyWeeks' | 'channelNoBookings' | 'openPayments';
   params: Record<string, string | number>;
@@ -178,6 +193,9 @@ export interface StatisticsOverview {
   previous: StatisticsCore;
   /** Per-artist medians, because medians do not combine. */
   replyMedians: Array<{ artistId: string; hours: number | null }>;
+  bookingMedians: Array<{ artistId: string; days: number | null }>;
+  /** False when the period starts before reply evidence was complete. */
+  replyCoverage: boolean;
   enquiries: Delta;
   bookings: Delta;
   completed: Delta;
@@ -204,8 +222,9 @@ export function buildOverview(
   const previousConversion = conversionRate(previous);
   const enquiries = delta(current.enquiries, previous.enquiries);
 
+  const replyCoverage = replyEvidenceComplete(result.from);
   const attention: AttentionItem[] = [];
-  if (current.reply.unanswered > 0) {
+  if (replyCoverage && current.reply.unanswered > 0) {
     attention.push({ id: 'unanswered', params: { count: current.reply.unanswered }, target: '/inbox' });
   }
   // Empty weeks in the next eight, counting from next week: this week is
@@ -272,6 +291,11 @@ export function buildOverview(
       artistId: artist.artist_id,
       hours: artist.current.reply.median_first_reply_hours,
     })),
+    bookingMedians: artists.map((artist) => ({
+      artistId: artist.artist_id,
+      days: artist.current.conversion.median_days_to_booking,
+    })),
+    replyCoverage,
     enquiries,
     bookings: delta(current.bookings_made.tattoo, previous.bookings_made.tattoo),
     completed: delta(current.sessions.completed, previous.sessions.completed),

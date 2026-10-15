@@ -19,7 +19,8 @@ import { DiscoverySourceSection } from '../components/DiscoverySourceSection';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { formatMoney } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
-import { useApi } from '../lib/session';
+import { canAccess } from '../lib/permissions';
+import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import {
   CONVERSION_MATURITY_DAYS,
@@ -41,6 +42,10 @@ export function StatisticsPage() {
   const api = useApi();
   const { t, language, locale } = useLanguage();
   const { selectedArtistId, artists } = useArtistScope();
+  const { profile, memberships } = useSession();
+  // Payments opens only for finance managers; a view-only viewer still sees
+  // the count, without a link to a page that would refuse them.
+  const mayOpenPayments = canAccess(profile?.role, 'manageFinance', memberships);
 
   const [preset, setPreset] = useState<Preset>('30d');
   const [customFrom, setCustomFrom] = useState('');
@@ -102,17 +107,22 @@ export function StatisticsPage() {
         <section className="stats-attention" aria-labelledby="stats-attention-title">
           <h2 id="stats-attention-title">{t('stats.attention')}</h2>
           <ul>
-            {view.attention.map((item) => (
-              <li key={`${item.id}-${JSON.stringify(item.params)}`}>
-                <a href={item.target}>
-                  <span>{t(`stats.attention.${item.id}`, {
-                    ...item.params,
-                    first: typeof item.params.first === 'string' ? dayMonth(item.params.first, locale) : '',
-                  })}</span>
-                  <span aria-hidden="true">›</span>
-                </a>
-              </li>
-            ))}
+            {view.attention.map((item) => {
+              const text = t(`stats.attention.${item.id}`, {
+                ...item.params,
+                first: typeof item.params.first === 'string' ? dayMonth(item.params.first, locale) : '',
+              });
+              const linked = item.target !== '/payments' || mayOpenPayments;
+              return (
+                <li key={`${item.id}-${JSON.stringify(item.params)}`}>
+                  {linked ? (
+                    <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
+                  ) : (
+                    <span className="stats-attention-text">{text}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       ) : null}
@@ -177,11 +187,10 @@ export function StatisticsPage() {
       <Section title={t('stats.funnel')}>
         <FunnelChart overview={view} locale={locale} />
         <p className="stats-caveat">{t('stats.funnelNote')}</p>
-        {current.conversion.median_days_to_booking !== null ? (
-          <p className="stats-caveat">
-            {t('stats.daysToBooking', { days: current.conversion.median_days_to_booking })}
-          </p>
+        {bookingMedianText(view, nameOf) ? (
+          <p className="stats-caveat">{t('stats.daysToBooking', { days: bookingMedianText(view, nameOf) })}</p>
         ) : null}
+        {!view.replyCoverage ? <p className="stats-caveat">{t('stats.replyCoverage')}</p> : null}
       </Section>
 
       <Section title={t('stats.sources')}>
@@ -294,6 +303,13 @@ function replyValue(view: StatisticsOverview, nameOf: (id: string) => string, lo
   if (view.replyMedians.length === 1) return formatHours(Number(known[0].hours), locale);
   // Medians do not add up; one per artist, initial first.
   return known.map((entry) => `${nameOf(entry.artistId).slice(0, 1)} ${formatHours(Number(entry.hours), locale)}`).join(' · ');
+}
+
+function bookingMedianText(view: StatisticsOverview, nameOf: (id: string) => string): string {
+  const known = view.bookingMedians.filter((entry) => entry.days !== null);
+  if (known.length === 0) return '';
+  if (view.bookingMedians.length === 1) return String(known[0].days);
+  return known.map((entry) => `${nameOf(entry.artistId).slice(0, 1)} ${entry.days}`).join(' · ');
 }
 
 function dayMonth(isoDate: string, locale: string): string {

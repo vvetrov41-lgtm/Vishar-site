@@ -85,6 +85,13 @@ describe('delta', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('period limit', () => {
+  it('refuses a custom range longer than the server answers', () => {
+    expect(periodForDates('2025-01-01', '2026-02-04')).not.toBeNull();
+    expect(periodForDates('2025-01-01', '2026-02-05')).toBeNull();
+  });
+});
+
 describe('rate changes', () => {
   // Audit 2026-10-15, P0-5: "+N pts, was 0" against an empty cohort.
   it('states no change in a rate when either side has no rate', () => {

@@ -76,12 +76,34 @@ describe('overview', () => {
   });
 
   it('asks for attention on unanswered enquiries, empty weeks ahead and a channel with no bookings', () => {
-    const overview = buildOverview(result([{}]), label);
+    const overview = buildOverview({ ...result([{}]), from: '2026-10-05T23:00:00Z' }, label);
     expect(overview.attention.map((item) => item.id)).toEqual(['unanswered', 'emptyWeeks', 'channelNoBookings']);
     const empty = overview.attention.find((item) => item.id === 'emptyWeeks')!;
     // Weeks 2..8 of the fixture have nothing booked; this week is not counted.
     expect(empty.params.count).toBe(6);
     expect(overview.attention.find((item) => item.id === 'channelNoBookings')!.params).toEqual({ channel: 'paid:meta', enquiries: 8 });
+  });
+
+  // Codex review on #1097: before reply evidence was complete, a reply the
+  // CRM never saw reads as "no reply".
+  it('raises no unanswered alert for a period that starts before reply evidence was complete', () => {
+    const overview = buildOverview({ ...result([{}]), from: '2026-09-15T23:00:00Z' }, label);
+    expect(overview.replyCoverage).toBe(false);
+    expect(overview.attention.some((item) => item.id === 'unanswered')).toBe(false);
+  });
+
+  it('keeps a booking-time median per artist', () => {
+    expect(buildOverview(result([{}, {}]), label).bookingMedians).toEqual([
+      { artistId: 'artist-0', days: 4.5 },
+      { artistId: 'artist-1', days: 4.5 },
+    ]);
+  });
+
+  // Codex review on #1097: a total that silently omits artists without finance.
+  it('combines no money when any artist returned none', () => {
+    const withMoney = core({ finance: STATISTICS_FINANCE });
+    expect(combineCores([withMoney, core()]).finance).toBeNull();
+    expect(combineCores([withMoney, withMoney]).finance?.received[0].amount).toBe(1000);
   });
 
   it('never names direct, manual or own-site traffic as a channel that does not book', () => {

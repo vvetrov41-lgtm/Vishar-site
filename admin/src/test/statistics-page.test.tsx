@@ -38,7 +38,9 @@ describe('Statistics screen', () => {
     const headline = screen.getByRole('heading', { level: 2, name: 'Headline' });
     expect(attention.compareDocumentPosition(headline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const section = attention.closest('section') as HTMLElement;
-    expect(within(section).getByText('Enquiries without a reply: 2')).toBeInTheDocument();
+    // The fixture period starts before reply evidence was complete.
+    expect(within(section).queryByText(/Enquiries without a reply/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Reply evidence is complete only from 4 October 2026/)).toBeInTheDocument();
     expect(within(section).getByText(/Meta ads: 8 enquiries old enough to judge, no tattoo booked/)).toBeInTheDocument();
 
     const kpis = headline.closest('section') as HTMLElement;
@@ -86,6 +88,24 @@ describe('Statistics screen', () => {
     await renderStatistics('owner', statistics);
     expect(await screen.findByText('£1,960.00')).toBeInTheDocument();
     expect(screen.getByText('£1,460.00')).toBeInTheDocument();
+  });
+
+  it('raises the unanswered alert once the period lies inside complete reply evidence', async () => {
+    await renderStatistics('owner', { ...statisticsResult(true), from: '2026-10-05T23:00:00Z' });
+    expect(screen.getByText('Enquiries without a reply: 2')).toBeInTheDocument();
+  });
+
+  it('shows waiting payments without a link to a page a view-only viewer cannot open', async () => {
+    await renderStatistics('booking_manager', statisticsResult(true));
+    const section = screen.getByRole('heading', { level: 2, name: 'Needs attention' }).closest('section') as HTMLElement;
+    const item = within(section).getByText('Payment requests waiting to be paid: 1');
+    expect(item.closest('a')).toBeNull();
+  });
+
+  it('links waiting payments for a finance manager', async () => {
+    await renderStatistics('owner');
+    const item = screen.getByText('Payment requests waiting to be paid: 1');
+    expect(item.closest('a')?.getAttribute('href')).toBe('/payments');
   });
 
   it('shows no money at all where the database returned none', async () => {

@@ -8,6 +8,9 @@
 /** Days an enquiry is given before its outcome is judged (server constant). */
 export const CONVERSION_MATURITY_DAYS = 14;
 
+/** The longest window public.get_statistics answers. */
+export const MAX_PERIOD_DAYS = 400;
+
 export interface CurrencyAmount {
   currency: string;
   amount: number;
@@ -120,6 +123,8 @@ export function periodForDates(fromDate: string, toDate: string): PeriodPair | n
   const end = addLocalDays(to, 1);
   if (end.getTime() <= from.getTime()) return null;
   const days = Math.round((end.getTime() - from.getTime()) / 86400000);
+  // public.get_statistics answers at most 400 days.
+  if (days > MAX_PERIOD_DAYS) return null;
   const previousFrom = addLocalDays(from, -days);
   return {
     preset: 'custom',
