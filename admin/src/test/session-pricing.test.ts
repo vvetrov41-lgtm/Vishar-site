@@ -128,3 +128,33 @@ describe('project rate is the exact price source', () => {
       .toBe('£560 · 4 h × £140, from the project rate');
   });
 });
+
+// The same cases pin crm_private.session_value_estimate in
+// supabase/tests/1846_statistics_session_value.sql, so Statistics, GPT and the
+// price the CRM suggests can never disagree about an estimate.
+describe('suggestSessionPrice parity with the Statistics estimate', () => {
+  const noRates: ArtistSessionPricing = {
+    ...vladimir, configured: false, hourly_rate: null, full_day_rate: null, full_day_hours: null,
+  };
+  const hourlyOnly: ArtistSessionPricing = { ...vladimir, full_day_rate: null, full_day_hours: null };
+  const cases: Array<[string, number, number | null, string | null, ArtistSessionPricing | null, [number, string, string, string] | null]> = [
+    ['3 h at the standard rate', 3, null, null, vladimir, [420, 'GBP', 'hourly', 'artist']],
+    ['4 h at the standard rate', 4, null, null, vladimir, [560, 'GBP', 'hourly', 'artist']],
+    ['a full day', 7, null, null, vladimir, [980, 'GBP', 'full_day', 'artist']],
+    ['a longer day', 8, null, null, vladimir, [980, 'GBP', 'full_day', 'artist']],
+    ['a project at the standard rate', 7, 140, 'GBP', vladimir, [980, 'GBP', 'full_day', 'project']],
+    ['a different project rate is not capped', 7, 200, 'GBP', vladimir, [1400, 'GBP', 'hourly', 'project']],
+    ['a project rate in the project currency', 3, 200, 'EUR', vladimir, [600, 'EUR', 'hourly', 'project']],
+    ['no day price from an hourly rate', 10, null, null, hourlyOnly, [1400, 'GBP', 'hourly', 'artist']],
+    ['no rates, no estimate', 7, null, null, noRates, null],
+    ['a project rate without artist rates', 3, 120, 'GBP', null, [360, 'GBP', 'hourly', 'project']],
+  ];
+  it.each(cases)('%s', (_name, hours, projectRate, projectCurrency, artist, expected) => {
+    const suggestion = suggestSessionPrice(hours * 60, {
+      projectHourlyRate: projectRate,
+      projectCurrency,
+      artistPricing: artist,
+    });
+    expect(suggestion ? [suggestion.price, suggestion.currency, suggestion.basis, suggestion.source] : null).toEqual(expected);
+  });
+});

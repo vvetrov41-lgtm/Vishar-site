@@ -369,3 +369,18 @@
 }
 .stats-details summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; }
 .stats-money-pending .stats-kpi-detail { margin-top: 6px; }
+
+/* Forecast: confirmed and estimated value side by side, never one figure. */
+.stats-forecast { padding: 12px; margin-top: 10px; }
+.stats-forecast-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.stats-forecast-part { padding: 10px; border-radius: 10px; min-width: 0; }
+.stats-forecast-part.confirmed { border: 1px solid var(--border-strong); }
+.stats-forecast-part.estimated { border: 1px dashed var(--border-strong); }
+.stats-forecast-part.estimated .stats-kpi-value { color: var(--muted); }
+.stats-forecast-remaining { margin-top: 10px; }
+.stats-forecast-gap { color: var(--warn); }

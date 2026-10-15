@@ -12,6 +12,7 @@ import type {
   StatisticsChannelRow,
   StatisticsCore,
   StatisticsFinanceBlock,
+  StatisticsForecast,
   StatisticsResult,
   StatisticsWeek,
 } from './statistics-api';
@@ -69,6 +70,32 @@ function sumWeeks(lists: StatisticsWeek[][]): StatisticsWeek[] {
   });
 }
 
+function sumForecast(forecasts: StatisticsForecast[]): StatisticsForecast {
+  const add = (pick: (forecast: StatisticsForecast) => number) =>
+    forecasts.reduce((total, forecast) => total + (Number(pick(forecast)) || 0), 0);
+  const money = (pick: (forecast: StatisticsForecast) => CurrencyAmount[]) => sumMoney(forecasts.map(pick));
+  return {
+    sessions: add((f) => f.sessions),
+    pricing_configured: forecasts.every((f) => f.pricing_configured),
+    confirmed: {
+      sessions: add((f) => f.confirmed.sessions),
+      value: money((f) => f.confirmed.value),
+      remaining_after_deposits: money((f) => f.confirmed.remaining_after_deposits),
+    },
+    estimated: {
+      sessions: add((f) => f.estimated.sessions),
+      full_day: add((f) => f.estimated.full_day),
+      hourly: add((f) => f.estimated.hourly),
+      from_project_rate: add((f) => f.estimated.from_project_rate),
+      value: money((f) => f.estimated.value),
+    },
+    no_basis: { sessions: add((f) => f.no_basis.sessions), hours: add((f) => f.no_basis.hours) },
+    expected_value: money((f) => f.expected_value),
+    deposits_paid: money((f) => f.deposits_paid),
+    remaining_after_deposits: money((f) => f.remaining_after_deposits),
+  };
+}
+
 function sumFinance(blocks: Array<StatisticsFinanceBlock | null>): StatisticsFinanceBlock | null {
   // Money is combined only when every artist returned it. A total that
   // silently leaves out the artists the viewer may not see money for would
@@ -80,12 +107,7 @@ function sumFinance(blocks: Array<StatisticsFinanceBlock | null>): StatisticsFin
     refunded: sumMoney(present.map((block) => block.refunded)),
     open: sumMoney(present.map((block) => block.open)),
     partially_paid: present.reduce((total, block) => total + block.partially_paid, 0),
-    forecast: {
-      confirmed_sessions: present.reduce((total, block) => total + block.forecast.confirmed_sessions, 0),
-      priced_sessions: present.reduce((total, block) => total + block.forecast.priced_sessions, 0),
-      booked_value: sumMoney(present.map((block) => block.forecast.booked_value)),
-      remaining_after_deposits: sumMoney(present.map((block) => block.forecast.remaining_after_deposits)),
-    },
+    forecast: sumForecast(present.map((block) => block.forecast)),
     deposits_paid_by_channel: sumRecord(present.map((block) => block.deposits_paid_by_channel)),
   };
 }
@@ -149,15 +171,6 @@ export function combineCores(cores: StatisticsCore[]): StatisticsCore {
 
 export function conversionRate(core: StatisticsCore): number | null {
   return core.conversion.mature === 0 ? null : (core.conversion.converted / core.conversion.mature) * 100;
-}
-
-/** A forecast is shown only once most future sessions carry a price. */
-export const FORECAST_MIN_PRICE_COVERAGE = 0.8;
-
-export function forecastReady(finance: StatisticsFinanceBlock | null): boolean {
-  if (!finance) return false;
-  const { confirmed_sessions: total, priced_sessions: priced } = finance.forecast;
-  return total > 0 && priced / total >= FORECAST_MIN_PRICE_COVERAGE;
 }
 
 /**
