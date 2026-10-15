@@ -67,27 +67,49 @@ describe('Statistics screen', () => {
     expect(within(funnel).getByText('Median 4.5 days from enquiry to tattoo booking.')).toBeInTheDocument();
   });
 
-  it('keeps actual money and expected money apart, and holds the forecast until prices exist', async () => {
+  it('keeps actual money and expected money apart', async () => {
     await renderStatistics('owner');
     const money = (await screen.findByRole('heading', { level: 2, name: 'Money' })).closest('section') as HTMLElement;
     expect(within(money).getByText('Received')).toBeInTheDocument();
     expect(within(money).getByText('Expected, not yet money')).toBeInTheDocument();
     expect(within(money).getByText('£500.00')).toBeInTheDocument();
     expect(within(money).getByText('£250.00')).toBeInTheDocument();
-    // 2 of 10 future sessions are priced: no booked value is printed.
-    expect(within(money).queryByText('£1,960.00')).not.toBeInTheDocument();
-    expect(within(money).getByText(/A price is set on 2 of 10 future sessions/)).toBeInTheDocument();
   });
 
-  it('prints the forecast once most sessions carry a price', async () => {
+  it('shows the forecast with few saved prices, confirmed and estimated value apart', async () => {
+    await renderStatistics('owner');
+    const money = (await screen.findByRole('heading', { level: 2, name: 'Money' })).closest('section') as HTMLElement;
+    // 6 of 19 priced: the forecast is still shown, and says how complete it is.
+    expect(within(money).getByText('≈ £17,220.00')).toBeInTheDocument();
+    const confirmed = within(money).getByText('Confirmed price').closest('.stats-forecast-part') as HTMLElement;
+    expect(within(confirmed).getByText('£5,880.00')).toBeInTheDocument();
+    const estimated = within(money).getByText('Estimated from rates').closest('.stats-forecast-part') as HTMLElement;
+    expect(within(estimated).getByText('≈ £11,340.00')).toBeInTheDocument();
+    expect(within(money).getByText('≈ £15,720.00')).toBeInTheDocument();
+    expect(within(money).getByText('6 of 19 sessions have a confirmed price.')).toBeInTheDocument();
+    expect(within(money).queryByText(/without a basis/)).not.toBeInTheDocument();
+  });
+
+  it('says plainly when an artist has no rates, and links to them for a finance manager', async () => {
     const statistics = statisticsResult(true) as any;
     statistics.artists[0].current.finance = {
       ...statistics.artists[0].current.finance,
-      forecast: { ...statistics.artists[0].current.finance.forecast, priced_sessions: 9 },
+      forecast: {
+        sessions: 2,
+        pricing_configured: false,
+        confirmed: { sessions: 0, value: [], remaining_after_deposits: [] },
+        estimated: { sessions: 0, full_day: 0, hourly: 0, from_project_rate: 0, value: [] },
+        no_basis: { sessions: 2, hours: 14 },
+        expected_value: [],
+        deposits_paid: [],
+        remaining_after_deposits: [],
+      },
     };
     await renderStatistics('owner', statistics);
-    expect(await screen.findByText('£1,960.00')).toBeInTheDocument();
-    expect(screen.getByText('£1,460.00')).toBeInTheDocument();
+    const gap = await screen.findByText(/Sessions without a basis for an estimate: 2/);
+    expect(gap.textContent).toContain('another artist\'s rates are never used');
+    expect(within(gap).getByRole('link', { name: 'Set rates' }).getAttribute('href')).toBe('/payments');
+    expect(screen.getByText('0 of 2 sessions have a confirmed price.')).toBeInTheDocument();
   });
 
   it('raises the unanswered alert once the period lies inside complete reply evidence', async () => {

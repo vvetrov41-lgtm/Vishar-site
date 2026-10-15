@@ -31,8 +31,8 @@ import {
   type Delta,
   type PeriodPair,
 } from '../lib/statistics';
-import type { StatisticsChannelRow, StatisticsResult, StatisticsWeek } from '../lib/statistics-api';
-import { buildOverview, forecastReady, type StatisticsOverview } from '../lib/statistics-overview';
+import type { StatisticsChannelRow, StatisticsForecast, StatisticsResult, StatisticsWeek } from '../lib/statistics-api';
+import { buildOverview, type StatisticsOverview } from '../lib/statistics-overview';
 import './StatisticsPage.css';
 
 const PRESETS = ['7d', '30d', '90d', '12m'] as const;
@@ -226,23 +226,8 @@ export function StatisticsPage() {
               amounts={current.finance.open}
               language={language}
             />
-            {forecastReady(current.finance) ? (
-              <>
-                <MoneyBlock title={t('stats.money.bookedValue')} hint={t('stats.money.bookedValueHint')} amounts={current.finance.forecast.booked_value} language={language} />
-                <MoneyBlock title={t('stats.money.remaining')} hint={t('stats.money.remainingHint')} amounts={current.finance.forecast.remaining_after_deposits} language={language} />
-              </>
-            ) : (
-              <div className="card stats-money-block stats-money-pending">
-                <div className="stats-kpi-label">{t('stats.money.bookedValue')}</div>
-                <div className="stats-kpi-detail">
-                  {t('stats.money.forecastCoverage', {
-                    priced: current.finance.forecast.priced_sessions,
-                    total: current.finance.forecast.confirmed_sessions,
-                  })}
-                </div>
-              </div>
-            )}
           </div>
+          <ForecastPanel forecast={current.finance.forecast} language={language} locale={locale} mayOpenPayments={mayOpenPayments} />
         </Section>
       ) : null}
 
@@ -558,6 +543,81 @@ function MoneyBlock({
         ))
       )}
       <div className="stats-kpi-detail">{hint}</div>
+    </div>
+  );
+}
+
+/**
+ * Upcoming confirmed tattoo work. Confirmed value (the price saved on a
+ * session) and estimated value (computed from rates, never saved) are shown
+ * side by side and labelled, so an estimate is never read as an agreed price.
+ */
+function ForecastPanel({
+  forecast, language, locale, mayOpenPayments,
+}: {
+  forecast: StatisticsForecast;
+  language: Language;
+  locale: string;
+  mayOpenPayments: boolean;
+}) {
+  const { t } = useLanguage();
+  const lines = (amounts: CurrencyAmount[], approximate = false) => (amounts.length === 0 ? (
+    <div className="stats-kpi-value stats-money-none">—</div>
+  ) : amounts.map((entry) => (
+    <div key={entry.currency} className="stats-money-line">
+      <span className="stats-kpi-value">{approximate ? '≈ ' : ''}{formatMoney(entry.amount, entry.currency, language)}</span>
+    </div>
+  )));
+
+  if (forecast.sessions === 0) {
+    return (
+      <div className="card stats-forecast">
+        <div className="stats-kpi-label">{t('stats.forecast.title')}</div>
+        <div className="stats-kpi-detail">{t('stats.forecast.none')}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card stats-forecast">
+      <div className="stats-kpi-label">{t('stats.forecast.title')}</div>
+      {lines(forecast.expected_value, forecast.estimated.sessions > 0)}
+      <div className="stats-kpi-detail">{t('stats.forecast.titleHint')}</div>
+      <div className="stats-forecast-split">
+        <div className="stats-forecast-part confirmed">
+          <div className="stats-kpi-label">{t('stats.forecast.confirmed')}</div>
+          {lines(forecast.confirmed.value)}
+          <div className="stats-kpi-detail">{t('stats.forecast.confirmedHint', { count: forecast.confirmed.sessions })}</div>
+        </div>
+        <div className="stats-forecast-part estimated">
+          <div className="stats-kpi-label">{t('stats.forecast.estimated')}</div>
+          {lines(forecast.estimated.value, true)}
+          <div className="stats-kpi-detail">{t('stats.forecast.estimatedHint', { count: forecast.estimated.sessions })}</div>
+        </div>
+      </div>
+      <div className="stats-forecast-remaining">
+        <div className="stats-kpi-label">{t('stats.forecast.remaining')}</div>
+        {lines(forecast.remaining_after_deposits, forecast.estimated.sessions > 0)}
+        <div className="stats-kpi-detail">
+          {forecast.deposits_paid.length > 0
+            ? t('stats.forecast.remainingHint', {
+              deposits: forecast.deposits_paid.map((entry) => formatMoney(entry.amount, entry.currency, language)).join(' · '),
+            })
+            : t('stats.forecast.remainingNoDeposits')}
+        </div>
+      </div>
+      <p className="stats-caveat">
+        {t('stats.forecast.coverage', { confirmed: forecast.confirmed.sessions, total: forecast.sessions })}
+      </p>
+      {forecast.no_basis.sessions > 0 ? (
+        <p className="stats-caveat stats-forecast-gap">
+          {t('stats.forecast.noBasis', {
+            count: forecast.no_basis.sessions,
+            hours: formatHours(Number(forecast.no_basis.hours), locale),
+          })}
+          {mayOpenPayments ? <> <a href="/payments">{t('stats.forecast.setRates')}</a></> : null}
+        </p>
+      ) : null}
     </div>
   );
 }
