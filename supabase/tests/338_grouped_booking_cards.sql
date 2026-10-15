@@ -14,13 +14,24 @@ where profile_id='c7111111-1111-4111-8111-111111111111'
 
 insert into public.clients(id,full_name,email,phone) values
  ('c7121111-1111-4111-8111-111111111111','Synthetic Group Card','group-card-client@example.test','+447700900611');
-insert into public.projects(id,client_id,artist_id,title,status,currency) values
+insert into public.enquiries(
+ id,client_id,artist_id,reference_number,idempotency_key,intake_fingerprint,status,
+ intake_state,submitted_full_name,submitted_email,privacy_notice_version,privacy_acknowledged_at
+) values (
+ 'c7171111-1111-4111-8111-111111111111','c7121111-1111-4111-8111-111111111111',
+ 'a1111111-1111-4111-8111-111111111111','PENDING',
+ 'c7172222-2222-4222-8222-222222222222',repeat('7',64),'accepted','complete',
+ 'Synthetic Group Card','group-card-client@example.test','2026-08-05',now()
+);
+insert into public.projects(id,client_id,enquiry_id,artist_id,title,status,currency) values
  ('c7131111-1111-4111-8111-111111111111',
  'c7121111-1111-4111-8111-111111111111',
+ 'c7171111-1111-4111-8111-111111111111',
  'a1111111-1111-4111-8111-111111111111','Group confirmation fixture','active','GBP');
-insert into crm_private.gmail_thread_contexts(artist_id,client_id,provider_thread_id,subject,created_at,updated_at)
+insert into crm_private.gmail_thread_contexts(artist_id,client_id,enquiry_id,provider_thread_id,subject,created_at,updated_at)
 values ('a1111111-1111-4111-8111-111111111111',
- 'c7121111-1111-4111-8111-111111111111','group-card-synthetic-thread','Tattoo booking',now(),now());
+ 'c7121111-1111-4111-8111-111111111111',
+ 'c7171111-1111-4111-8111-111111111111','group-card-synthetic-thread','Tattoo booking',now(),now());
 
 insert into public.sessions(id,client_id,project_id,artist_id,appointment_type,status,
  start_at,end_at,duration_hours,price,currency) values
