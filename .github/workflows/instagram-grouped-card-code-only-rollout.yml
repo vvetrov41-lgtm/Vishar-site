@@ -2,7 +2,7 @@ name: Code-only Instagram grouped-card rollout
 on:
   push:
     branches:
-      - ops/instagram-grouped-card-release-20261015
+      - release/private-crm-rc1100-instagram-code-only
   workflow_dispatch:
 
 permissions:
