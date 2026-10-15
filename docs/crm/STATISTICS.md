@@ -1,8 +1,13 @@
 # Statistics
 
-The CRM's Statistics screen at `/statistics`. Every figure it shows is a count
-of the studio's own records; none of it comes from a telemetry system, and
-none of it is estimated.
+The CRM's Statistics screen at `/statistics`, under More on a phone (Today
+keeps the tab-bar slot). Every figure it shows is a count of the studio's own
+records; none of it comes from a telemetry system. The one estimate, the
+value of upcoming sessions without a saved price, is labelled as such and
+kept apart from confirmed prices and money received (see Money).
+
+On a phone the first screen holds the four headline figures and "Needs
+attention" above the bottom navigation (checked at 390x844); charts follow.
 
 This document is the contract. Where it and the screen disagree, one of them is
 a bug — `admin/src/lib/statistics.ts` carries the same definitions in code, and

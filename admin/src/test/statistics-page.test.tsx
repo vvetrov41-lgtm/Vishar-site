@@ -32,11 +32,13 @@ describe('Statistics screen', () => {
     expect(rpcCalls.filter((call) => call.name === 'get_statistics')).toHaveLength(1);
   });
 
-  it('puts what needs attention first, then the four headline numbers', async () => {
+  it('opens on the four headline numbers, then what needs attention, before any chart', async () => {
     await renderStatistics('owner');
     const attention = screen.getByRole('heading', { level: 2, name: 'Needs attention' });
     const headline = screen.getByRole('heading', { level: 2, name: 'Headline' });
-    expect(attention.compareDocumentPosition(headline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const diary = screen.getByRole('heading', { level: 2, name: 'Diary ahead' });
+    expect(headline.compareDocumentPosition(attention) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(attention.compareDocumentPosition(diary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const section = attention.closest('section') as HTMLElement;
     // The fixture period starts before reply evidence was complete.
     expect(within(section).queryByText(/Enquiries without a reply/)).not.toBeInTheDocument();
