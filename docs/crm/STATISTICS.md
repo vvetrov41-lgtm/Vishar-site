@@ -225,7 +225,7 @@ added together**, each **per currency**:
 | --- | --- |
 | Payments received | `succeeded` `credit` transactions, refund types excluded, by `occurred_at`. Deposits are included here |
 | Refunded | Succeeded `debit` or refund-type transactions. Shown apart, never subtracted |
-| Waiting to be paid | Requests with status `pending` and no past `expires_at`, read today whatever their creation date. Part-paid requests are counted, not summed, because their remainder is not in the projection |
+| Waiting to be paid | Requests with status `pending` and no past `expires_at`, read today whatever their creation date. Unexpired part-paid requests are counted, not summed, because their remainder is not in the projection |
 
 Removed 2026-10-15: "Deposits requested" (summed cancelled and re-issued
 requests: £2,250 shown for £1,250 actually requested and paid) and "Quoted on

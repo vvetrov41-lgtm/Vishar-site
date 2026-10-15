@@ -1084,6 +1084,10 @@ function accumulate(rows: Array<{ currency: string; amount: number | string }>):
  */
 export function isOpenRequest(request: StatisticsPaymentRequest, now: Date): boolean {
   if (request.status !== 'pending') return false;
+  return isUnexpired(request, now);
+}
+
+function isUnexpired(request: StatisticsPaymentRequest, now: Date): boolean {
   if (!request.expires_at) return true;
   const expires = Date.parse(request.expires_at);
   return Number.isNaN(expires) || expires > now.getTime();
@@ -1122,7 +1126,11 @@ export function financeTotals(
       ),
     ),
     open: accumulate(openRequests.filter((request) => isOpenRequest(request, now))),
-    partiallyPaid: openRequests.filter((request) => request.status === 'partially_paid').length,
+    // The payment workflow treats a part-paid request as open only while it
+    // has not expired, exactly like a pending one.
+    partiallyPaid: openRequests.filter(
+      (request) => request.status === 'partially_paid' && isUnexpired(request, now),
+    ).length,
   };
 }
 

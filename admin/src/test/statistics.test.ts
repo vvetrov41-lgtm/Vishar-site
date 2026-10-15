@@ -789,6 +789,14 @@ describe('finance', () => {
     expect(totals.partiallyPaid).toBe(1);
   });
 
+  it('does not count an expired part-paid request as still owed', () => {
+    const totals = financeTotals([], [
+      paymentRequest({ id: 'r1', status: 'partially_paid', expires_at: new Date(2026, 8, 1).toISOString() }),
+      paymentRequest({ id: 'r2', status: 'partially_paid', expires_at: new Date(2026, 8, 20).toISOString() }),
+    ], current, NOW);
+    expect(totals.partiallyPaid).toBe(1);
+  });
+
   it('does not add requested money to money received', () => {
     const totals = financeTotals([transaction({ amount: 250 })], [paymentRequest({ status: 'paid', amount: 250 })], current, NOW);
     expect(totals.received[0].amount).toBe(250);
