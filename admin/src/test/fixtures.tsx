@@ -779,7 +779,8 @@ export function statisticsCore(overrides: Record<string, unknown> = {}) {
       { key: 'paid:meta', kind: 'paid', value: 'meta', enquiries: 9, consulted: 1, booked: 0, matured: 8, matured_booked: 0 },
       { key: 'manual', kind: 'manual', value: null, enquiries: 3, consulted: 1, booked: 3, matured: 1, matured_booked: 1 },
     ],
-    sessions: { booked: 4, completed: 2, planned: 1, cancelled: 1, no_show: 0, hours: 12, consultations_held: 2, consultations_cancelled: 0 },
+    sessions: { booked: 4, completed: 2, planned: 1, cancelled: 1, no_show: 0, hours: 12, consultations_held: 2, consultations_no_show: 0, consultations_unverified: 0, consultations_cancelled: 0 },
+    consultations_awaiting_outcome: 0,
     returning_clients: { active: 2, returning: 1 },
     upcoming: {
       weeks: Array.from({ length: 12 }, (_, index) => ({
@@ -952,7 +953,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     // screen that scopes a read by client, project or status would "pass" while
     // rendering rows the database would never have returned.
     const filters: { column: string; value: unknown }[] = [];
-    const bounds: { column: string; kind: 'gte' | 'gt' | 'lt'; value: unknown }[] = [];
+    const bounds: { column: string; kind: 'gte' | 'gt' | 'lt' | 'lte'; value: unknown }[] = [];
+    const sets: { column: string; values: unknown[] }[] = [];
     let page: { start: number; end: number } | null = null;
     const chain: any = {
       select: () => chain,
@@ -967,6 +969,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       },
       in: (...args: unknown[]) => {
         queryCalls.push({ table, method: 'in', args });
+        if (typeof args[0] === 'string' && Array.isArray(args[1])) sets.push({ column: args[0], values: args[1] });
         return chain;
       },
       ilike: (...args: unknown[]) => {
@@ -990,6 +993,11 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       lt: (...args: unknown[]) => {
         queryCalls.push({ table, method: 'lt', args });
         if (typeof args[0] === 'string') bounds.push({ column: args[0], kind: 'lt', value: args[1] });
+        return chain;
+      },
+      lte: (...args: unknown[]) => {
+        queryCalls.push({ table, method: 'lte', args });
+        if (typeof args[0] === 'string') bounds.push({ column: args[0], kind: 'lte', value: args[1] });
         return chain;
       },
       order: () => chain,
@@ -1040,8 +1048,14 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
           if (Number.isNaN(left) || Number.isNaN(right)) return true;
           if (kind === 'gte') return left >= right;
           if (kind === 'gt') return left > right;
+          if (kind === 'lte') return left <= right;
           return left < right;
         }));
+      }
+      if (sets.length > 0) {
+        rows = rows.filter((row: any) => sets.every(({ column, values }) => (
+          row === null || typeof row !== 'object' || !(column in row) || values.includes(row[column])
+        )));
       }
       if (page) rows = rows.slice(page.start, page.end + 1);
       return rows;

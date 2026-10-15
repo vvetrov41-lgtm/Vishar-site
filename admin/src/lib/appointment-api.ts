@@ -193,6 +193,29 @@ export function createAppointmentApi(client: CrmClient) {
       return rows.map(normaliseAppointment);
     },
 
+    /**
+     * Ended consultations still `confirmed`: their outcome is unknown until the
+     * operator records it (completed / no_show) or a later tattoo booking
+     * proves the client came (crm_private.resolve_evidenced_consultations).
+     * Row level security limits them to the artists the caller may see.
+     */
+    async listConsultationsAwaitingOutcome(filters: { artistId?: string } = {}): Promise<Appointment[]> {
+      let query = client
+        .from('sessions')
+        .select('id, artist_id, client_id, enquiry_id, project_id, appointment_type, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, calendar_sync_status, calendar_last_synced_version, calendar_last_synced_at, calendar_last_error_code, client_response, client_response_at, client_response_calendar_version, notes, cancelled_at')
+        .eq('status', 'confirmed')
+        .in('appointment_type', ['in_person_consultation', 'video_consultation'])
+        .lte('end_at', new Date().toISOString())
+        .order('start_at', { ascending: false })
+        .limit(50);
+      if (filters.artistId) query = query.eq('artist_id', filters.artistId);
+      const rows = unwrap<Array<Partial<Appointment> & Pick<Appointment, 'id' | 'artist_id' | 'status' | 'start_at' | 'end_at'>>>(
+        await query,
+        'load appointments'
+      );
+      return rows.map(normaliseAppointment);
+    },
+
     async scheduleAppointment(input: ScheduleAppointmentInput): Promise<ScheduledAppointment> {
       // Bounded enums only: the appointment kind, where the booking came from,
       // and how far ahead it sits. No artist, client, enquiry or project id.

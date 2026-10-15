@@ -93,7 +93,7 @@ from (values
 ) v(id, name)
 cross join public.artists a where a.id = 'a1111111-1111-4111-8111-111111111111';
 
--- E1 mature, tattoo booked. E2 mature, consultation only. E3 mature, tattoo
+-- E1 mature, tattoo booked. E2 mature, consultation held (completed) only. E3 mature, tattoo
 -- cancelled. E4 young, tattoo booked. E5 excluded from analytics, tattoo
 -- booked. E6 mature, paid Meta, nothing booked.
 insert into public.enquiries (
@@ -134,7 +134,7 @@ select v.id::uuid, v.project::uuid, v.client::uuid, v.enquiry::uuid, v.status::p
        case when v.status = 'cancelled' then now() end
 from (values
   ('5c400001-0000-4000-8000-000000000001', '5c300001-0000-4000-8000-000000000001', '5c100001-0000-4000-8000-000000000001', '5c200001-0000-4000-8000-000000000001', 'confirmed', 'tattoo_session', interval '30 days', 6.0),
-  ('5c400002-0000-4000-8000-000000000002', null, '5c100002-0000-4000-8000-000000000002', '5c200002-0000-4000-8000-000000000002', 'confirmed', 'in_person_consultation', interval '-3 days', 0.5),
+  ('5c400002-0000-4000-8000-000000000002', null, '5c100002-0000-4000-8000-000000000002', '5c200002-0000-4000-8000-000000000002', 'completed', 'in_person_consultation', interval '-3 days', 0.5),
   ('5c400003-0000-4000-8000-000000000003', '5c300003-0000-4000-8000-000000000003', '5c100003-0000-4000-8000-000000000003', '5c200003-0000-4000-8000-000000000003', 'cancelled', 'tattoo_session', interval '40 days', 6.0),
   ('5c400004-0000-4000-8000-000000000004', '5c300004-0000-4000-8000-000000000004', '5c100004-0000-4000-8000-000000000004', '5c200004-0000-4000-8000-000000000004', 'confirmed', 'tattoo_session', interval '50 days', 6.0),
   ('5c400005-0000-4000-8000-000000000005', '5c300005-0000-4000-8000-000000000005', '5c100005-0000-4000-8000-000000000005', '5c200005-0000-4000-8000-000000000005', 'confirmed', 'tattoo_session', interval '20 days', 6.0),

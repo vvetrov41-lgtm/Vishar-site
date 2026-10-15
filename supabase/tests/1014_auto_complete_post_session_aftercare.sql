@@ -33,6 +33,14 @@ from (values
   ('fa000000-0000-4000-8000-000000000004'::uuid,'tattoo_session','confirmed',interval '24 hours',interval '4 hours')
 ) v(id,appointment_type,status,lead,duration);
 
+-- The tattoo sessions were booked before the consultation began, so none is
+-- evidence that the consultation took place (20261015180000): the clock alone
+-- must leave the consultation as it is.
+update public.sessions set created_at = now() - interval '2 days'
+where id in ('fa000000-0000-4000-8000-000000000001',
+             'fa000000-0000-4000-8000-000000000003',
+             'fa000000-0000-4000-8000-000000000004');
+
 select crm_private.log_artist_activity(
   (select id from t_aftercare_artist),
   'appointment.scheduled','system',null,
@@ -69,7 +77,7 @@ select is(
   'completed','ended confirmed tattoo is automatically completed');
 select is(
   (select status::text from public.sessions where id='fa000000-0000-4000-8000-000000000002'),
-  'confirmed','consultations never auto-complete');
+  'confirmed','consultations never auto-complete by the clock');
 select is(
   (select status::text from public.sessions where id='fa000000-0000-4000-8000-000000000003'),
   'no_show','no-show session is untouched');

@@ -74,6 +74,20 @@ describe('overview', () => {
     expect(overview.conversionDelta).toBeNull();
   });
 
+  it('asks for the outcome of ended consultations, which are never counted as held', () => {
+    const awaiting = core({
+      consultations_awaiting_outcome: 3,
+      sessions: { ...core().sessions, consultations_held: 1, consultations_unverified: 3 },
+    });
+    const overview = buildOverview(result([{ current: awaiting }]), label);
+    expect(overview.attention).toContainEqual({
+      id: 'consultationsAwaitingOutcome',
+      params: { count: 3 },
+      target: '/appointments#consultation-outcomes',
+    });
+    expect(overview.current.sessions.consultations_held).toBe(1);
+  });
+
   it('asks for attention on unanswered enquiries, empty weeks ahead and a channel with no bookings', () => {
     const overview = buildOverview({ ...result([{}]), from: '2026-10-05T23:00:00Z' }, label);
     expect(overview.attention.map((item) => item.id)).toEqual(['unanswered', 'emptyWeeks', 'channelNoBookings']);

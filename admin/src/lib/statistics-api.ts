@@ -93,9 +93,15 @@ export interface StatisticsCore {
     cancelled: number;
     no_show: number;
     hours: number;
+    /** Consultations known to have taken place (status completed). */
     consultations_held: number;
+    consultations_no_show: number;
+    /** Ended, still confirmed: outcome not known, never counted as held. */
+    consultations_unverified: number;
     consultations_cancelled: number;
   };
+  /** Every ended consultation awaiting its outcome, whatever the window. */
+  consultations_awaiting_outcome: number;
   returning_clients: { active: number; returning: number };
   upcoming: { weeks: StatisticsWeek[]; tattoo_sessions_later: number };
   /** null when the caller holds no finance access on the artist. */

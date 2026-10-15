@@ -5,6 +5,7 @@ import { appointmentDisplayStatus } from '../lib/appointment-display-status';
 import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 import { BookingPanel } from '../components/BookingPanel';
 import { ClientPicker } from '../components/ClientPicker';
+import { ConsultationOutcomes } from '../components/ConsultationOutcomes';
 import { MonthCalendarView, dayHeading, timeOffLabel } from '../components/MonthCalendarView';
 import {
   WeekCalendarView,
@@ -285,6 +286,7 @@ export function AppointmentsPage() {
   return (
     <>
       {statusError ? <p className="notice warn" role="alert">{statusError}</p> : null}
+      <ConsultationOutcomes artistId={selectedArtistId ?? null} mayManage={mayManage} onChanged={reload} />
       {view === 'month' ? (
         <>
           <Section title={copy.title}>
