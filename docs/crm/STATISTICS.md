@@ -221,6 +221,15 @@ kept apart and never added into one another; each is per currency:
   a payment request. A later change of the artist's rates moves estimates
   only; a saved price never changes.
 
+How a price becomes confirmed: when a tattoo session is booked, the CRM
+pre-fills the price field with the same suggestion (the project's own rate,
+else the artist's own rates), visibly and editably. Booking with the amount in
+the field saves it as the session's confirmed price. While the operator has
+not typed, the amount follows the chosen length; a typed amount is kept.
+"Price TBD" books without a price, and Statistics keeps estimating that
+session until a price is saved. Editing an existing session never replaces
+its saved price; it only offers a one-tap suggestion.
+
 An artist without rates has no basis for an estimate. Another artist's rates
 are never borrowed: those sessions are counted with their hours as "without a
 basis", and the screen says the rates are missing.
