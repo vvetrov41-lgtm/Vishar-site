@@ -1,0 +1,142 @@
+name: Code-only Instagram grouped-card rollout
+on:
+  push:
+    branches:
+      - ops/instagram-grouped-card-release-20261015
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: instagram-grouped-card-automatic-dispatch
+  cancel-in-progress: false
+
+jobs:
+  preserve-and-dispatch:
+    runs-on: ubuntu-latest
+    environment: crm-production
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CF_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CF_ACCOUNT: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      RELEASE_SHA: 68952896629e8471df9530fb227cae1ed5cbf6ea
+      RELEASE_REF: release/private-crm-rc1100-grouped-booking-cards
+      EXPECTED_OAUTH_STATE: ${{ vars.CRM_PRODUCTION_INSTAGRAM_OAUTH_STATE_ID }}
+      EXPECTED_OAUTH_TOKENS: ${{ vars.CRM_PRODUCTION_INSTAGRAM_OAUTH_TOKENS_ID }}
+      EXPECTED_APP_ID: ${{ secrets.CRM_PRODUCTION_INSTAGRAM_APP_ID }}
+      EXPECTED_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      EXPECTED_VLADIMIR_PIN: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_VLADIMIR }}
+      EXPECTED_KRISTINA_PIN: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_KRISTINA }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED }}
+    steps:
+      - name: Check out bounded control-plane change
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail closed on source, lineage and production release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ops/instagram-grouped-card-release-20261015'
+          test "$DEPLOY_ENABLED" = 'true'
+          git merge-base --is-ancestor "$RELEASE_SHA" HEAD
+          test "$(git diff --name-only "$RELEASE_SHA" HEAD)" = '.github/workflows/instagram-grouped-card-code-only-rollout.yml'
+          test -z "$(git status --porcelain)"
+          gh api "repos/$GITHUB_REPOSITORY/branches/$RELEASE_REF" > "$RUNNER_TEMP/release-branch.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$RELEASE_SHA&per_page=100" > "$RUNNER_TEMP/release-checks.json"
+          RELEASE_FILE="$RUNNER_TEMP/release-branch.json" CHECKS_FILE="$RUNNER_TEMP/release-checks.json" node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const branch=JSON.parse(fs.readFileSync(process.env.RELEASE_FILE,'utf8'));
+          if(branch?.commit?.sha!==process.env.RELEASE_SHA) throw new Error('Release branch moved or lineage mismatch');
+          const runs=JSON.parse(fs.readFileSync(process.env.CHECKS_FILE,'utf8')).workflow_runs||[];
+          const release=runs.filter(r=>r.name==='Private production release' && r.head_sha===process.env.RELEASE_SHA && r.conclusion==='success');
+          if(!release.length) throw new Error('The exact code SHA has not passed the production release');
+          console.log('Exact previously deployed CRM production lineage verified');
+          NODE
+      - name: Read remote Instagram settings and preserve every active flag
+        id: remote
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CF_TOKEN" && test -n "$CF_ACCOUNT"
+          curl --fail --silent --show-error --max-time 30 --retry 2 \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -o "$RUNNER_TEMP/instagram-remote.json" \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/workers/scripts/vishar-instagram-production/settings"
+          REMOTE_FILE="$RUNNER_TEMP/instagram-remote.json" node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const v=JSON.parse(fs.readFileSync(process.env.REMOTE_FILE,'utf8'));
+          if(v.success!==true || !Array.isArray(v.result?.bindings)) throw new Error('Cannot attest existing Instagram Worker binding configuration');
+          const bindings=v.result.bindings;
+          const map=new Map();
+          for(const b of bindings) {
+            if(!b?.name || map.has(b.name)) throw new Error('Duplicate or unidentified Worker binding');
+            map.set(b.name,b);
+          }
+          const plain=(name)=>{
+            const b=map.get(name);
+            if(b?.type!=='plain_text'||typeof b.text!=='string') throw new Error('Missing expected remote plain-text binding '+name);
+            return b.text;
+          };
+          const expected={
+            VISHAR_ENVIRONMENT:'production',
+            SUPABASE_URL:'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+            INSTAGRAM_APP_ID:process.env.EXPECTED_APP_ID,
+            SUPABASE_PUBLISHABLE_KEY:process.env.EXPECTED_PUBLISHABLE_KEY,
+          };
+          for(const [k,val] of Object.entries(expected)) if(!val || plain(k)!==val) throw new Error('Protected production source mismatch for '+k);
+          for(const [name,expectedValue] of [
+            ['INSTAGRAM_ACCOUNT_VLADIMIR',process.env.EXPECTED_VLADIMIR_PIN],
+            ['INSTAGRAM_ACCOUNT_KRISTINA',process.env.EXPECTED_KRISTINA_PIN],
+          ]) {
+            if(expectedValue) {
+              if(plain(name)!==expectedValue) throw new Error('Artist account pin mismatch '+name);
+            } else if(map.has(name)) throw new Error('Existing artist account pin must not be cleared: '+name);
+          }
+          for(const [name,id] of [
+            ['INSTAGRAM_OAUTH_STATE',process.env.EXPECTED_OAUTH_STATE],
+            ['INSTAGRAM_OAUTH_TOKENS',process.env.EXPECTED_OAUTH_TOKENS],
+          ]) {
+            const binding=map.get(name);
+            if(!/^[a-f0-9]{32}$/.test(id||'') || binding?.type!=='kv_namespace'
+              || binding.namespace_id!==id) throw new Error('KV namespace drift '+name);
+          }
+          if(process.env.EXPECTED_OAUTH_STATE===process.env.EXPECTED_OAUTH_TOKENS) throw new Error('KV isolation boundary breached');
+          const secretNames=['INSTAGRAM_APP_SECRET','INSTAGRAM_TOKEN_ENCRYPTION_KEY','INSTAGRAM_WEBHOOK_VERIFY_TOKEN','SUPABASE_SECRET_KEY'];
+          for(const name of secretNames) if(map.get(name)?.type!=='secret_text') throw new Error('Missing required existing encrypted secret '+name);
+          const actualSecretNames=bindings.filter(b=>b.type==='secret_text').map(b=>b.name).sort();
+          if(JSON.stringify(actualSecretNames)!==JSON.stringify([...secretNames].sort())) throw new Error('Unexpected remote secret-name drift');
+          for(const name of ['INSTAGRAM_OAUTH_ENABLED','INSTAGRAM_DRAIN_ENABLED','INSTAGRAM_ENRICHMENT_ENABLED']) {
+            const value=plain(name);
+            if(value!=='true'&&value!=='false') throw new Error('Unknown production flag '+name);
+          }
+          const oauth=plain('INSTAGRAM_OAUTH_ENABLED');
+          const drain=plain('INSTAGRAM_DRAIN_ENABLED');
+          const enrichment=plain('INSTAGRAM_ENRICHMENT_ENABLED');
+          if(drain==='true' && oauth!=='true') throw new Error('Instagram drain cannot be live without OAuth');
+          // This release is code-only. It must never activate or deactivate a capability.
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            'oauth='+oauth+'\n'+'drain='+drain+'\n'+'enrichment='+enrichment+'\n');
+          console.log('Remote production account, KV, secret names, account pins and capability flags validated');
+          console.log('Existing feature states: onboarding='+oauth+' drain='+drain+' enrichment='+enrichment);
+          NODE
+      - name: Dispatch canonical exact-head protected Instagram deployment
+        shell: bash
+        env:
+          OAUTH: ${{ steps.remote.outputs.oauth }}
+          DRAIN: ${{ steps.remote.outputs.drain }}
+          ENRICHMENT: ${{ steps.remote.outputs.enrichment }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-private-production-instagram.yml/dispatches" \
+            -f "ref=$RELEASE_REF" \
+            -f "inputs[approved_sha]=$RELEASE_SHA" \
+            -f 'inputs[deploy]=true' \
+            -f 'inputs[approval_phrase]=EXPOSE_PRIVATE_CRM_INSTAGRAM' \
+            -f "inputs[enable_oauth]=$OAUTH" \
+            -f "inputs[enable_drain]=$DRAIN" \
+            -f "inputs[enable_enrichment]=$ENRICHMENT" >/dev/null
+          echo 'Dispatched the canonical protected Instagram deploy with unchanged existing feature flags.'
