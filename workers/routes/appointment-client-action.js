@@ -94,8 +94,8 @@ function actionCopy(action, artistName) {
     case 'confirm_attendance':
       return {
         title: 'Confirm attendance',
-        heading: 'Confirm your appointment',
-        body: `Confirm that you plan to attend your appointment with ${artistName}.`,
+        heading: 'Confirm your booking',
+        body: `Please confirm your booking with ${artistName}. The confirmation applies to all dates listed in the booking message.`,
         button: 'Confirm attendance',
       };
     case 'request_reschedule':
@@ -118,7 +118,19 @@ function actionCopy(action, artistName) {
   }
 }
 
-function successCopy(outcome, artistName) {
+function successCopy(outcome, artistName, grouped = false, sessionCount = 1) {
+  if (grouped && sessionCount >= 2 && sessionCount <= 12) {
+    if (outcome === 'attendance_confirmed') return {
+      title: 'Sessions confirmed',
+      heading: 'All sessions confirmed',
+      body: `Your confirmation for all ${sessionCount} sessions with ${artistName} has been recorded.`,
+    };
+    if (outcome === 'reschedule_requested') return {
+      title: 'Change requested',
+      heading: 'Request sent',
+      body: `Your request has been sent to ${artistName}. All ${sessionCount} dates remain booked until you agree any changes with the artist.`,
+    };
+  }
   switch (outcome) {
     case 'attendance_confirmed':
       return {
@@ -161,7 +173,11 @@ function normalizeMutationPayload(payload) {
     ? payload.artist_display_name.trim()
     : '';
   if (!artistName || artistName.length > 200) return null;
-  return { action: payload.action, outcome: payload.outcome, artistName };
+  const grouped = payload.grouped === true
+    && Number.isInteger(payload.session_count)
+    && payload.session_count >= 2 && payload.session_count <= 12;
+  return { action: payload.action, outcome: payload.outcome, artistName,
+    grouped, sessionCount: grouped ? payload.session_count : 1 };
 }
 
 function mapBackendError(error) {
@@ -235,7 +251,7 @@ export async function handleAppointmentClientActionRequest(
         { p_token: token },
       ));
       if (!result) return unavailable(503);
-      const copy = successCopy(result.outcome, result.artistName);
+      const copy = successCopy(result.outcome, result.artistName, result.grouped, result.sessionCount);
       return copy ? page(copy) : unavailable(503);
     } catch (error) {
       return mapBackendError(error);

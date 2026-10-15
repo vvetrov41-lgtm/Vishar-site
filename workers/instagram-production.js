@@ -733,7 +733,7 @@ function instagramPrepare(db) {
         bookingCard: {
           text: row.message_text,
           quickReplies: [
-            { title: "I'll be there", payload: row.confirm_payload },
+            { title: row.message_text.includes('Confirm all sessions:') ? 'Confirm all dates' : "I'll be there", payload: row.confirm_payload },
             { title: 'Need another time', payload: row.reschedule_payload },
           ],
         },
