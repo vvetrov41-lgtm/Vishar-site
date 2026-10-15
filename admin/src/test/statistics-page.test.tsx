@@ -40,10 +40,30 @@ describe('Statistics screen', () => {
     const enquiries = within(headline).getByText('New enquiries').closest('.stats-kpi') as HTMLElement;
     expect(within(enquiries).getByText('1')).toBeInTheDocument();
 
-    // The fixture enquiry produced the fixture project, so the cohort converted.
-    const conversion = within(headline).getByText('Conversion').closest('.stats-kpi') as HTMLElement;
+    // The fixture enquiry booked a tattoo session and is old enough to judge.
+    const conversion = within(headline).getByText('Enquiry to tattoo').closest('.stats-kpi') as HTMLElement;
     expect(within(conversion).getByText('100%')).toBeInTheDocument();
-    expect(within(conversion).getByText('1 of 1')).toBeInTheDocument();
+    expect(within(conversion).getByText('1 of 1 judged')).toBeInTheDocument();
+  });
+
+  it('does not count a consultation as a conversion on the screen', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: '/statistics',
+      extraEnquiries: [{ id: 'e-consult', client_id: 'c-consult', created_at: '2026-07-02T09:00:00Z' }],
+      extraSessions: [{
+        id: 's-consult', enquiry_id: 'e-consult', project_id: null, client_id: 'c-consult',
+        appointment_type: 'in_person_consultation', status: 'confirmed',
+        start_at: '2026-07-10T10:00:00Z', end_at: '2026-07-10T10:30:00Z', duration_hours: 0.5,
+      }],
+    });
+    const headline = (await screen.findByRole('heading', { level: 2, name: 'Headline' })).closest('section') as HTMLElement;
+    const conversion = within(headline).getByText('Enquiry to tattoo').closest('.stats-kpi') as HTMLElement;
+    // Two judged enquiries; only the one with a tattoo session converted.
+    expect(within(conversion).getByText('50%')).toBeInTheDocument();
+    expect(within(conversion).getByText('1 of 2 judged')).toBeInTheDocument();
+    const completed = within(headline).getByText('Hours tattooed').closest('.stats-kpi') as HTMLElement;
+    expect(within(completed).getByText('0 h')).toBeInTheDocument();
   });
 
   it('states booked time ahead in hours and offers no utilisation percentage', async () => {
@@ -51,28 +71,32 @@ describe('Statistics screen', () => {
 
     expect(screen.getByText(/Booked time is shown in hours, not as a percentage/)).toBeInTheDocument();
     expect(screen.queryByText(/utilisation/i)).not.toBeInTheDocument();
-    expect(screen.getByText('Hours booked in the next 90 days')).toBeInTheDocument();
+    expect(screen.getByText('Tattoo hours in the next 90 days')).toBeInTheDocument();
+    expect(screen.getByText('Consultations in the next 90 days')).toBeInTheDocument();
   });
 
   it('publishes the formula behind every headline figure on the screen itself', async () => {
     await renderStatistics('owner');
 
     fireEvent.click(screen.getByText('How each figure is worked out'));
-    expect(screen.getByText(/A no-show is counted separately and is not a cancellation/)).toBeInTheDocument();
-    expect(screen.getByText(/never by a matching name or address/)).toBeInTheDocument();
+    expect(screen.getByText(/A no-show is counted separately/)).toBeInTheDocument();
+    expect(screen.getByText(/A consultation or a project on its own is not a conversion/)).toBeInTheDocument();
+    expect(screen.getByText(/Several sessions of one piece are one project, not a return/)).toBeInTheDocument();
   });
 
-  it('shows money to a viewer the database returns finance rows to', async () => {
+  it('shows money received and money still owed, and never a sum of requests', async () => {
     await renderStatistics('owner');
 
     const money = await screen.findByRole('heading', { level: 2, name: 'Money' });
     const section = money.closest('section') as HTMLElement;
     const received = within(section).getByText('Payments received').closest('.stats-money-block') as HTMLElement;
     expect(within(received).getByText('£150.00')).toBeInTheDocument();
-    // Four quantities, kept apart. An estimate is never presented as revenue.
-    expect(within(section).getByText('Deposits requested')).toBeInTheDocument();
-    expect(within(section).getByText('Quoted on new projects')).toBeInTheDocument();
-    expect(within(section).getByText('An estimate on projects created in the period. Not revenue.')).toBeInTheDocument();
+    // The fixture's deposit request is paid, so nothing is waiting: the paid
+    // request is not counted again next to the money it produced.
+    const open = within(section).getByText('Waiting to be paid').closest('.stats-money-block') as HTMLElement;
+    expect(within(open).queryByText(/£/)).not.toBeInTheDocument();
+    expect(within(section).queryByText('Deposits requested')).not.toBeInTheDocument();
+    expect(within(section).queryByText('Quoted on new projects')).not.toBeInTheDocument();
   });
 
   it('shows no money at all to a booking manager without finance access', async () => {
@@ -82,7 +106,7 @@ describe('Statistics screen', () => {
     expect(screen.queryByText('Payments received')).not.toBeInTheDocument();
     expect(screen.queryByText(/£/)).not.toBeInTheDocument();
     // Everything that is not money still renders.
-    expect(screen.getByRole('heading', { level: 2, name: 'Enquiry to booking' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Enquiry to tattoo' })).toBeInTheDocument();
   });
 
   it('shows no money at all to a read-only viewer', async () => {
@@ -105,14 +129,13 @@ describe('Statistics screen', () => {
     expect(screen.queryByRole('heading', { level: 2, name: 'What stands out' })).not.toBeInTheDocument();
   });
 
-  it('compares against a window of the same length and says which', async () => {
+  it('states no change against a window the CRM holds no history for', async () => {
+    // The fixture's history begins on 1 July; the previous 30-day window opens
+    // on 20 June. "+1, was 0" would be growth from records that never existed.
     await renderStatistics('owner');
-    expect(screen.getByText('Compared with the 30 days immediately before.')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: '90 days' }));
-    await waitFor(() => {
-      expect(screen.getByText('Compared with the 90 days immediately before.')).toBeInTheDocument();
-    });
+    expect(screen.getByText('No comparison: the CRM holds no complete history for the period before this one.')).toBeInTheDocument();
+    expect(screen.queryByText(/^was /)).not.toBeInTheDocument();
+    expect(screen.queryByText('No change')).not.toBeInTheDocument();
   });
 
   it('offers a custom range and refuses to apply a backwards one', async () => {
@@ -159,21 +182,21 @@ describe('Statistics screen', () => {
     window.innerWidth = 375;
     await renderStatistics('owner');
 
-    for (const title of ['Headline', 'Over time', 'Enquiry to booking', 'Where enquiries came from', 'Sessions']) {
+    for (const title of ['Headline', 'Over time', 'Enquiry to tattoo', 'Where enquiries came from', 'Sessions']) {
       expect(screen.getByRole('heading', { level: 2, name: title })).toBeInTheDocument();
     }
     // The trend is a list of buckets, so a screen reader gets the numbers a
     // sighted reader gets from the bars.
     expect(screen.getByRole('list', { name: 'Over time' })).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: 'Sessions by day of the week' })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Tattoo sessions by day of the week' })).toBeInTheDocument();
   });
 
-  it('names a source from the enquiry\'s own recorded value when the registry is empty', async () => {
+  it('reports a campaign tag as its own channel instead of the booking form', async () => {
     await renderStatistics('owner');
 
     const sources = screen.getByRole('heading', { level: 2, name: 'Where enquiries came from' }).closest('section') as HTMLElement;
-    // The fixture enquiry carries no booking source, so the campaign tag decides.
-    expect(within(sources).getByRole('rowheader', { name: 'google' })).toBeInTheDocument();
+    // The fixture enquiry carries utm_source=google without a paid medium.
+    expect(within(sources).getByRole('rowheader', { name: 'Campaign tag: Google' })).toBeInTheDocument();
   });
 
   it('offers Statistics in the navigation of every role that may read enquiries', async () => {

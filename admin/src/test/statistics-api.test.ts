@@ -65,7 +65,16 @@ function fakeClient(options: {
       is(column: string, value: unknown) { call.filters.push(['is', column, value]); return builder; },
       gte(column: string, value: unknown) { call.filters.push(['gte', column, value]); return builder; },
       lt(column: string, value: unknown) { call.filters.push(['lt', column, value]); return builder; },
-      order() { return builder; },
+      order(column: string, options: { ascending: boolean }) { call.filters.push(['order', column, options.ascending]); return builder; },
+      limit(count: number) {
+        call.range = [0, count - 1];
+        calls.push(call);
+        if (deny.has(table)) {
+          return Promise.resolve({ data: null, error: { code: '42501', message: 'permission denied' } });
+        }
+        const sourceRows = rows[table] ?? rows[sourceTable[table]] ?? [];
+        return Promise.resolve({ data: sourceRows.slice(0, count), error: null });
+      },
       range(start: number, end: number) {
         call.range = [start, end];
         calls.push(call);
@@ -177,7 +186,8 @@ describe('statistics reader completeness', () => {
 
     expect(dataset.enquiries).toHaveLength(1200);
     expect(dataset.truncated).toBe(false);
-    expect(calls.filter((call) => call.table === 'statistics_enquiries').map((call) => call.range)).toEqual([
+    // The one-row history read is not part of the paging under test.
+    expect(calls.filter((call) => call.table === 'statistics_enquiries' && call.columns !== 'created_at').map((call) => call.range)).toEqual([
       [0, 499], [500, 999], [1000, 1499],
     ]);
   });
@@ -269,7 +279,7 @@ describe('statistics reader completeness', () => {
     const { client } = fakeClient();
     const dataset = await createStatisticsApi(client).loadStatistics(request());
     expect(dataset).toMatchObject({
-      enquiries: [], projects: [], sessions: [], bookingSources: [], finance: null, truncated: false,
+      enquiries: [], projects: [], sessions: [], historyStart: null, finance: null, truncated: false,
     });
   });
 });
@@ -286,7 +296,7 @@ describe('statistics reader finance boundary', () => {
 
   it('treats a refused finance read as no finance block, not as a page failure', async () => {
     const { client } = fakeClient({
-      deny: ['statistics_payment_transactions', 'statistics_payment_requests', 'projects_finance'],
+      deny: ['statistics_payment_transactions', 'statistics_payment_requests'],
     });
 
     const dataset = await createStatisticsApi(client).loadStatistics(request({ includeFinance: true }));
@@ -316,7 +326,7 @@ describe('statistics reader finance boundary', () => {
 
   it('lets the rest of the finance block stand when only one of its reads is refused', async () => {
     const { client } = fakeClient({
-      deny: ['projects_finance'],
+      deny: ['statistics_payment_requests'],
       rows: {
         payment_transactions: [{
           id: 't1', artist_id: ARTIST, transaction_type: 'payment', direction: 'credit',
@@ -332,16 +342,79 @@ describe('statistics reader finance boundary', () => {
 
     const dataset = await createStatisticsApi(client).loadStatistics(request({ includeFinance: true }));
     expect(dataset.finance!.transactions).toHaveLength(1);
-    expect(dataset.finance!.projectEstimates).toEqual([]);
+    expect(dataset.finance!.openRequests).toEqual([]);
   });
 });
 
-describe('statistics reader optional registry', () => {
-  it('carries on without labels when the booking source registry is refused', async () => {
-    // booking_sources is readable to whoever may manage them, which a working
-    // artist need not be. The breakdown falls back to the enquiry's own source.
-    const { client } = fakeClient({ deny: ['booking_sources'] });
+describe('statistics reader, corrected definitions (audit 2026-10-15)', () => {
+  const enquiryRow = (index: number) => ({
+    id: `e${index}`, artist_id: ARTIST, client_id: `c${index}`, status: 'new', source: null,
+    booking_source_id: null, communication_channel: null, utm_source: null, created_at: WINDOW.from,
+  });
+
+  it('asks for campaign tags and the referrer host, never the full referrer URL', async () => {
+    const { client, calls } = fakeClient();
+    await createStatisticsApi(client).loadStatistics(request());
+    const enquiries = calls.find((call) => call.table === 'statistics_enquiries')!;
+    for (const column of ['utm_medium', 'utm_campaign', 'referrer_host']) {
+      expect(enquiries.columns).toContain(column);
+    }
+    expect(enquiries.columns.split(', ')).not.toContain('referrer');
+    const sessions = calls.find((call) => call.table === 'statistics_sessions')!;
+    expect(sessions.columns).toContain('created_at');
+  });
+
+  it('reads bookings by the day they were made, so a booking for next spring is this period\'s sale', async () => {
+    const { client, calls } = fakeClient();
+    await createStatisticsApi(client).loadStatistics(request());
+    const made = calls.filter(
+      (call) => call.table === 'statistics_sessions' && call.filters.some(([kind, column]) => kind === 'gte' && column === 'created_at'),
+    );
+    expect(made).toHaveLength(1);
+    expect(made[0].filters).toContainEqual(['lt', 'created_at', WINDOW.to]);
+    expect(made[0].filters.some(([, column]) => column === 'start_at')).toBe(false);
+  });
+
+  it('keeps every id list small, however many enquiries the period holds', async () => {
+    // An unbounded in.(...) list carried every id in the URL: 2.8 KB at 70 ids
+    // in production, past gateway limits within months.
+    const enquiries = Array.from({ length: 250 }, (_, index) => enquiryRow(index));
+    const { client, calls } = fakeClient({ rows: { enquiries } });
+    await createStatisticsApi(client).loadStatistics(request());
+
+    const linked = calls.filter(
+      (call) => call.table === 'statistics_projects' && call.filters.some(([kind, column]) => kind === 'in' && column === 'enquiry_id'),
+    );
+    expect(linked).toHaveLength(3);
+    const sizes = linked.map((call) => (call.filters.find(([kind]) => kind === 'in')![2] as string[]).length);
+    expect(sizes).toEqual([100, 100, 50]);
+  });
+
+  it('finds where the visible history begins with one scoped row', async () => {
+    const { client, calls } = fakeClient({ rows: { enquiries: [enquiryRow(1)] } });
     const dataset = await createStatisticsApi(client).loadStatistics(request());
-    expect(dataset.bookingSources).toEqual([]);
+    const first = calls.find((call) => call.table === 'statistics_enquiries' && call.columns === 'created_at')!;
+    expect(first.range).toEqual([0, 0]);
+    expect(first.filters).toContainEqual(['order', 'created_at', true]);
+    expect(first.filters).toContainEqual(['eq', 'artist_id', ARTIST]);
+    expect(first.filters).toContainEqual(['eq', 'intake_state', 'complete']);
+    expect(dataset.historyStart).toBe(WINDOW.from);
+  });
+
+  it('answers no history rather than failing the page when that read is refused', async () => {
+    const { client } = fakeClient({ deny: ['statistics_enquiries'] });
+    await expect(createStatisticsApi(client).loadStatistics(request())).rejects.toThrow();
+    // The enquiry read itself failing is a real failure; the history read alone
+    // is covered by readHistoryStart returning null on error.
+  });
+
+  it('reads money still owed without a date bound, and never a cancelled or paid request', async () => {
+    const { client, calls } = fakeClient();
+    await createStatisticsApi(client).loadStatistics(request({ includeFinance: true }));
+    const requests = calls.find((call) => call.table === 'statistics_payment_requests')!;
+    expect(requests.filters).toContainEqual(['in', 'status', ['pending', 'partially_paid']]);
+    expect(requests.filters.some(([kind]) => kind === 'gte' || kind === 'lt')).toBe(false);
+    expect(requests.columns).toContain('expires_at');
+    expect(calls.some((call) => call.table === 'projects_finance' || call.table === 'booking_sources')).toBe(false);
   });
 });
