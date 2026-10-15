@@ -7,7 +7,11 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  bookingsMade,
   buildInsights,
+  channelBreakdown,
+  channelFor,
+  consultedEnquiryIds,
   conversionMaturity,
   convertedEnquiryIds,
   delta,
@@ -15,19 +19,22 @@ import {
   financeTotals,
   funnel,
   granularityFor,
+  isOpenRequest,
   localIsoDate,
   periodEndingToday,
   periodForDates,
   periodForPreset,
+  previousPeriodComparable,
+  rateDelta,
   repeatClients,
   sessionHours,
   sessionTotals,
   sessionsByWeekday,
-  sourceBreakdown,
-  sourceKeyFor,
   timeSeries,
   upcomingLoad,
   within,
+  type ChannelRow,
+  type InsightInput,
   type StatisticsEnquiry,
   type StatisticsPaymentRequest,
   type StatisticsProject,
@@ -157,6 +164,8 @@ describe('delta', () => {
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+
 describe('enquiry conversion', () => {
   const { current } = periodEndingToday(30, NOW);
 
@@ -168,7 +177,10 @@ describe('enquiry conversion', () => {
       enquiry({ id: 'e4' }),
     ];
     const projects = [project({ id: 'p1', enquiry_id: 'e1' })];
-    const sessions = [session({ id: 's1', enquiry_id: 'e2', project_id: null })];
+    const sessions = [
+      session({ id: 's1', enquiry_id: null, project_id: 'p1' }),
+      session({ id: 's2', enquiry_id: 'e2', project_id: null }),
+    ];
 
     const result = enquiryConversion(enquiries, projects, sessions, current);
     expect(result.denominator).toBe(4);
@@ -176,28 +188,60 @@ describe('enquiry conversion', () => {
     expect(result.rate).toBe(50);
   });
 
-  it('counts an enquiry once however many projects it produced', () => {
-    const enquiries = [enquiry({ id: 'e1' })];
-    const projects = [
-      project({ id: 'p1', enquiry_id: 'e1' }),
-      project({ id: 'p2', enquiry_id: 'e1' }),
+  // Audit 2026-10-15, P0-1: in production every "conversion" of the latest
+  // 30-day cohort was a consultation, and one was a cancelled consultation.
+  it('does not count a consultation as a conversion, however it went', () => {
+    const sessions = [
+      session({ id: 's1', enquiry_id: 'e1', project_id: null, appointment_type: 'in_person_consultation', status: 'confirmed' }),
+      session({ id: 's2', enquiry_id: 'e2', project_id: null, appointment_type: 'video_consultation', status: 'completed' }),
+      session({ id: 's3', enquiry_id: 'e3', project_id: null, appointment_type: 'in_person_consultation', status: 'cancelled' }),
     ];
-    const result = enquiryConversion(enquiries, projects, [], current);
+    expect(convertedEnquiryIds([], sessions).size).toBe(0);
+    expect(consultedEnquiryIds([], sessions)).toEqual(new Set(['e1', 'e2']));
+  });
+
+  it('counts a touch-up as tattoo work', () => {
+    const sessions = [session({ id: 's1', enquiry_id: 'e1', appointment_type: 'touch_up', status: 'confirmed' })];
+    expect(convertedEnquiryIds([], sessions).has('e1')).toBe(true);
+  });
+
+  it('does not count a cancelled tattoo booking as a conversion', () => {
+    const sessions = [session({ id: 's1', enquiry_id: 'e1', status: 'cancelled' })];
+    expect(convertedEnquiryIds([], sessions).size).toBe(0);
+  });
+
+  it('still counts a no-show: the booking was made and held', () => {
+    const sessions = [session({ id: 's1', enquiry_id: 'e1', status: 'no_show' })];
+    expect(convertedEnquiryIds([], sessions).has('e1')).toBe(true);
+  });
+
+  it('does not count a project with no tattoo session as a conversion', () => {
+    // Since 2026-09-07 a project is created by booking the first tattoo
+    // session; a project alone is a manual draft or a cancelled booking.
+    expect(convertedEnquiryIds([project({ id: 'p1', enquiry_id: 'e1' })], []).size).toBe(0);
+  });
+
+  it('counts an enquiry once however many tattoo sessions it produced', () => {
+    const enquiries = [enquiry({ id: 'e1' })];
+    const sessions = [
+      session({ id: 's1', enquiry_id: 'e1' }),
+      session({ id: 's2', enquiry_id: 'e1' }),
+    ];
+    const result = enquiryConversion(enquiries, [], sessions, current);
     expect(result.converted).toBe(1);
     expect(result.rate).toBe(100);
   });
 
   it('counts a conversion that happened after the period closed', () => {
-    // The cohort is fixed by when the enquiry arrived. What became of it is not
-    // bounded by the same window, or a period would report the wrong answer for
-    // every enquiry converted the following week.
     const enquiries = [enquiry({ id: 'e1' })];
-    const projects = [project({
-      id: 'p1',
+    const sessions = [session({
+      id: 's1',
       enquiry_id: 'e1',
-      created_at: new Date(2027, 0, 1).toISOString(),
+      status: 'confirmed',
+      start_at: new Date(2027, 0, 1, 10).toISOString(),
+      end_at: new Date(2027, 0, 1, 16).toISOString(),
     })];
-    expect(enquiryConversion(enquiries, projects, [], current).converted).toBe(1);
+    expect(enquiryConversion(enquiries, [], sessions, current).converted).toBe(1);
   });
 
   it('reaches an enquiry through the session\'s project when the session has no enquiry of its own', () => {
@@ -217,6 +261,34 @@ describe('enquiry conversion', () => {
     expect(result.rate).toBeNull();
   });
 
+  // Audit 2026-10-15, P0-4: a young cohort was compared with a mature one.
+  it('judges only enquiries old enough to have booked, and reports the rest as pending', () => {
+    const enquiries = [
+      enquiry({ id: 'old-booked', created_at: new Date(2026, 7, 10).toISOString() }),
+      enquiry({ id: 'old-lost', created_at: new Date(2026, 7, 12).toISOString() }),
+      enquiry({ id: 'young-booked', created_at: new Date(2026, 8, 3).toISOString() }),
+      enquiry({ id: 'young-open', created_at: new Date(2026, 8, 4).toISOString() }),
+    ];
+    const sessions = [
+      session({ id: 's1', enquiry_id: 'old-booked' }),
+      session({ id: 's2', enquiry_id: 'young-booked', status: 'confirmed' }),
+    ];
+    const result = enquiryConversion(enquiries, [], sessions, current, { now: NOW, days: 14 });
+    expect(result.cohort).toBe(4);
+    expect(result.denominator).toBe(2);
+    expect(result.converted).toBe(1);
+    expect(result.rate).toBe(50);
+    expect(result.pending).toBe(2);
+    expect(result.pendingConverted).toBe(1);
+  });
+
+  it('has no rate while every enquiry is still too young', () => {
+    const result = enquiryConversion([enquiry({ id: 'e1' })], [], [], current, { now: NOW, days: 14 });
+    expect(result.denominator).toBe(0);
+    expect(result.rate).toBeNull();
+    expect(result.pending).toBe(1);
+  });
+
   it('says how much of the cohort has had time to convert', () => {
     const enquiries = [
       enquiry({ id: 'old', created_at: new Date(2026, 7, 15).toISOString() }),
@@ -225,6 +297,31 @@ describe('enquiry conversion', () => {
     const maturity = conversionMaturity(enquiries, current, NOW, 14);
     expect(maturity.total).toBe(2);
     expect(maturity.settled).toBe(1);
+  });
+});
+
+describe('period comparison', () => {
+  // Audit 2026-10-15, P0-5: "+N pts, was 0" against an empty cohort.
+  it('states no change in a rate when either side has no rate', () => {
+    expect(rateDelta(40, null)).toBeNull();
+    expect(rateDelta(null, 40)).toBeNull();
+    expect(rateDelta(null, null)).toBeNull();
+    expect(rateDelta(40, 25)?.difference).toBe(15);
+  });
+
+  it('compares only with a previous window the CRM holds complete history for', () => {
+    const pair = periodEndingToday(30, NOW);
+    const longBefore = new Date(2026, 0, 1).toISOString();
+    const insidePrevious = new Date(2026, 7, 20).toISOString();
+    expect(previousPeriodComparable(pair, longBefore)).toBe(true);
+    expect(previousPeriodComparable(pair, insidePrevious)).toBe(false);
+    expect(previousPeriodComparable(pair, null)).toBe(false);
+    expect(previousPeriodComparable(pair, 'nonsense')).toBe(false);
+  });
+
+  it('treats a 12-month window as incomparable while the CRM is younger than two years', () => {
+    const pair = periodForPreset('12m', NOW);
+    expect(previousPeriodComparable(pair, new Date(2026, 7, 15).toISOString())).toBe(false);
   });
 });
 
@@ -341,57 +438,106 @@ describe('sessions', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('tattoo work and consultations', () => {
+  const { current } = periodEndingToday(30, NOW);
+
+  it('never counts a consultation as a session worked, an hour or a cancellation', () => {
+    const totals = sessionTotals([
+      session({ id: 's1', status: 'completed', duration_hours: 6 }),
+      session({ id: 's2', appointment_type: 'in_person_consultation', status: 'completed', duration_hours: 0.5 }),
+      session({ id: 's3', appointment_type: 'in_person_consultation', status: 'confirmed', duration_hours: 0.5 }),
+      session({ id: 's4', appointment_type: 'video_consultation', status: 'cancelled', duration_hours: 0.5 }),
+    ], current);
+    expect(totals.completed).toBe(1);
+    expect(totals.hours).toBe(6);
+    expect(totals.booked).toBe(1);
+    expect(totals.cancellationRate).toBe(0);
+    expect(totals.consultations).toEqual({ held: 2, cancelled: 1 });
+  });
+
+  it('counts bookings by the day they were made, not the day they are for', () => {
+    const made = bookingsMade([
+      session({ id: 's1', status: 'confirmed', created_at: new Date(2026, 8, 2).toISOString(), start_at: new Date(2027, 2, 1, 10).toISOString(), end_at: new Date(2027, 2, 1, 16).toISOString() }),
+      session({ id: 's2', status: 'cancelled', created_at: new Date(2026, 8, 3).toISOString() }),
+      session({ id: 's3', appointment_type: 'in_person_consultation', status: 'confirmed', created_at: new Date(2026, 8, 3).toISOString() }),
+      session({ id: 's4', status: 'confirmed', created_at: new Date(2026, 5, 1).toISOString() }),
+      session({ id: 's5', status: 'draft', created_at: new Date(2026, 8, 3).toISOString() }),
+      session({ id: 's6', status: 'confirmed', created_at: null }),
+    ], current);
+    expect(made).toEqual({ tattoo: 2, tattooCancelled: 1, consultations: 1 });
+  });
+
+  it('keeps consultations ahead out of the tattoo hours ahead', () => {
+    const load = upcomingLoad([
+      session({ id: 's1', status: 'confirmed', start_at: new Date(2026, 8, 20, 10).toISOString(), duration_hours: 6 }),
+      session({ id: 's2', appointment_type: 'in_person_consultation', status: 'confirmed', start_at: new Date(2026, 8, 21, 10).toISOString(), duration_hours: 0.5 }),
+    ], NOW, 30);
+    expect(load).toMatchObject({ sessions: 1, hours: 6, consultations: 1 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe('repeat clients', () => {
   const { current } = periodEndingToday(30, NOW);
 
-  it('counts a client seen more than once by the same artist', () => {
+  it('counts a client who came back for a second piece', () => {
     const history = [
-      session({ id: 's1', client_id: 'client-a', start_at: new Date(2025, 1, 1).toISOString() }),
-      session({ id: 's2', client_id: 'client-a' }),
-      session({ id: 's3', client_id: 'client-b' }),
+      session({ id: 's1', project_id: 'p-old', start_at: new Date(2025, 5, 1, 10).toISOString(), end_at: new Date(2025, 5, 1, 15).toISOString() }),
+      session({ id: 's2', project_id: 'p-new' }),
     ];
-    const result = repeatClients(history, current);
-    expect(result.active).toBe(2);
-    expect(result.repeat).toBe(1);
-    expect(result.rate).toBe(50);
+    expect(repeatClients(history, current)).toEqual({ active: 1, repeat: 1, rate: 100 });
+  });
+
+  // Audit 2026-10-15, P0-2: 7 of 13 production clients would have been called
+  // "repeat" for having several sessions of one piece.
+  it('does not call several sessions of one project a return', () => {
+    const history = [
+      session({ id: 's1', project_id: 'p1', start_at: new Date(2026, 7, 1, 10).toISOString(), end_at: new Date(2026, 7, 1, 16).toISOString() }),
+      session({ id: 's2', project_id: 'p1' }),
+      session({ id: 's3', project_id: 'p1', status: 'confirmed', start_at: new Date(2026, 9, 1, 10).toISOString(), end_at: new Date(2026, 9, 1, 16).toISOString() }),
+    ];
+    expect(repeatClients(history, current)).toEqual({ active: 1, repeat: 0, rate: 0 });
+  });
+
+  it('does not let a consultation make a client active or a return', () => {
+    const history = [
+      session({ id: 's1', project_id: null, appointment_type: 'in_person_consultation', status: 'completed' }),
+      session({ id: 's2', project_id: 'p1', status: 'completed', start_at: new Date(2025, 1, 1, 10).toISOString(), end_at: new Date(2025, 1, 1, 15).toISOString() }),
+    ];
+    expect(repeatClients(history, current)).toEqual({ active: 0, repeat: 0, rate: null });
   });
 
   it('does not merge two artists into one relationship', () => {
-    // One visit each is not a repeat client for either artist.
     const history = [
-      session({ id: 's1', client_id: 'client-a', artist_id: ARTIST }),
-      session({ id: 's2', client_id: 'client-a', artist_id: OTHER_ARTIST }),
+      session({ id: 's1', artist_id: ARTIST, project_id: 'p1' }),
+      session({ id: 's2', artist_id: OTHER_ARTIST, project_id: 'p2' }),
     ];
-    const result = repeatClients(history, current);
-    expect(result.active).toBe(2);
-    expect(result.repeat).toBe(0);
+    expect(repeatClients(history, current)).toEqual({ active: 2, repeat: 0, rate: 0 });
   });
 
-  it('counts history outside the period, so a long-standing client is not called new', () => {
+  it('ignores a cancelled project on both sides of the count', () => {
     const history = [
-      session({ id: 'old', client_id: 'client-a', start_at: new Date(2024, 3, 1).toISOString() }),
-      session({ id: 'now', client_id: 'client-a' }),
+      session({ id: 's1', project_id: 'p-old', status: 'cancelled', start_at: new Date(2025, 5, 1, 10).toISOString(), end_at: new Date(2025, 5, 1, 15).toISOString() }),
+      session({ id: 's2', project_id: 'p-new' }),
     ];
-    expect(repeatClients(history, current).repeat).toBe(1);
+    expect(repeatClients(history, current).repeat).toBe(0);
   });
 
-  it('ignores cancelled bookings on both sides of the count', () => {
+  it('never adds a project for a legacy session that has none', () => {
     const history = [
-      session({ id: 'old', client_id: 'client-a', status: 'cancelled', start_at: new Date(2024, 3, 1).toISOString() }),
-      session({ id: 'now', client_id: 'client-a' }),
+      session({ id: 's1', project_id: null, start_at: new Date(2025, 5, 1, 10).toISOString(), end_at: new Date(2025, 5, 1, 15).toISOString() }),
+      session({ id: 's2', project_id: 'p1' }),
     ];
-    const result = repeatClients(history, current);
-    expect(result.active).toBe(1);
-    expect(result.repeat).toBe(0);
+    expect(repeatClients(history, current).repeat).toBe(0);
   });
 
   it('identifies clients by id, never by a matching name or address', () => {
-    // Two distinct client rows stay two clients whatever they are called.
     const history = [
-      session({ id: 's1', client_id: 'client-a' }),
-      session({ id: 's2', client_id: 'client-b' }),
+      session({ id: 's1', client_id: 'c-a', project_id: 'p1' }),
+      session({ id: 's2', client_id: 'c-b', project_id: 'p2' }),
     ];
-    expect(repeatClients(history, current).repeat).toBe(0);
+    expect(repeatClients(history, current)).toEqual({ active: 2, repeat: 0, rate: 0 });
   });
 
   it('has no rate when nobody was seen', () => {
@@ -401,82 +547,72 @@ describe('repeat clients', () => {
 
 // ---------------------------------------------------------------------------
 
-describe('sources', () => {
+describe('channels', () => {
   const { current } = periodEndingToday(30, NOW);
+  const WEBSITE_FORM = 'b1111111-1111-4111-8111-111111111111';
 
-  it('applies one rule per enquiry, in a fixed priority order', () => {
-    expect(sourceKeyFor(enquiry({
-      booking_source_id: 'bs-1',
-      communication_channel: 'whatsapp',
-      utm_source: 'instagram',
-      source: '/booking/',
-    }))).toEqual({ key: 'booking_source:bs-1', kind: 'booking_source', value: 'bs-1' });
-
-    expect(sourceKeyFor(enquiry({
-      booking_source_id: null,
-      communication_channel: 'instagram',
-      utm_source: 'ads',
-    })).kind).toBe('channel');
-
-    expect(sourceKeyFor(enquiry({
-      booking_source_id: null,
-      communication_channel: null,
-      utm_source: 'ads',
-    })).kind).toBe('utm');
-
-    expect(sourceKeyFor(enquiry({
-      booking_source_id: null,
-      communication_channel: null,
-      utm_source: '   ',
-      source: 'crm_manual',
-    })).kind).toBe('form');
-
-    expect(sourceKeyFor(enquiry({
-      booking_source_id: null,
-      communication_channel: null,
-      utm_source: null,
-      source: null,
-    })).kind).toBe('unknown');
+  // Audit 2026-10-15, P0-7: every website enquiry carries a booking form id,
+  // and ranking it first hid 20 paid enquiries behind one "website" row.
+  it('reads a paid campaign tag through the booking form id', () => {
+    const fb = channelFor(enquiry({ booking_source_id: WEBSITE_FORM, utm_source: 'fb', utm_medium: 'paid', referrer_host: 'facebook.com' }));
+    const ig = channelFor(enquiry({ booking_source_id: WEBSITE_FORM, utm_source: 'ig', utm_medium: 'paid', referrer_host: 'instagram.com' }));
+    expect(fb).toEqual({ key: 'paid:meta', kind: 'paid', value: 'meta' });
+    expect(ig).toEqual(fb);
+    expect(channelFor(enquiry({ utm_source: 'google', utm_medium: 'cpc' })).key).toBe('paid:google');
+    expect(channelFor(enquiry({ utm_source: null, utm_medium: 'PAID' })).key).toBe('paid:other');
   });
 
-  it('keeps two registry forms apart even when they share a landing page', () => {
-    const rows = sourceBreakdown([
-      enquiry({ id: 'e1', booking_source_id: 'bs-1', source: '/booking/' }),
-      enquiry({ id: 'e2', booking_source_id: 'bs-2', source: '/booking/' }),
-    ], [], [], current);
-    expect(rows).toHaveLength(2);
+  it('keeps a non-paid campaign tag apart from paid traffic', () => {
+    expect(channelFor(enquiry({ utm_source: 'ig', utm_medium: 'social' }))).toEqual({ key: 'campaign:instagram', kind: 'campaign', value: 'instagram' });
   });
 
-  it('labels a form from the registry when the registry can be read', () => {
-    const rows = sourceBreakdown(
-      [enquiry({ id: 'e1', booking_source_id: 'bs-1', source: '/booking/' })],
-      [], [], current,
-      [{ id: 'bs-1', display_label: 'Studio booking form' }],
-    );
-    expect(rows[0].label).toBe('Studio booking form');
+  it('classifies the referrer host when there is no campaign tag', () => {
+    const cases: Array<[string, string]> = [
+      ['l.instagram.com', 'social:instagram'],
+      ['www.instagram.com', 'social:instagram'],
+      ['m.facebook.com', 'social:facebook'],
+      ['www.google.co.uk', 'search:google'],
+      ['chatgpt.com', 'ai:chatgpt'],
+      ['www.perplexity.ai', 'ai:perplexity'],
+      ['www.tattoodo.com', 'referral:tattoodo.com'],
+    ];
+    for (const [host, key] of cases) {
+      expect(channelFor(enquiry({ referrer_host: host })).key).toBe(key);
+    }
   });
 
-  it('falls back to the enquiry\'s own source when the registry is refused', () => {
-    const rows = sourceBreakdown(
-      [enquiry({ id: 'e1', booking_source_id: 'bs-1', source: 'kristinavishar.com/#booking' })],
-      [], [], current,
-      [],
-    );
-    expect(rows[0].label).toBe('kristinavishar.com/#booking');
+  it('does not invent an origin for a visitor who came from the studio\'s own site', () => {
+    expect(channelFor(enquiry({ referrer_host: 'vishartattoo.com' })).kind).toBe('internal');
+    expect(channelFor(enquiry({ referrer_host: 'www.kristinavishar.com' })).kind).toBe('internal');
+    expect(channelFor(enquiry({ referrer_host: 'booking.vishartattoo.com' })).kind).toBe('internal');
   });
 
-  it('reports conversions per source and sorts by volume', () => {
-    const rows = sourceBreakdown([
-      enquiry({ id: 'e1', booking_source_id: null, utm_source: 'instagram' }),
-      enquiry({ id: 'e2', booking_source_id: null, utm_source: 'instagram' }),
-      enquiry({ id: 'e3', booking_source_id: null, utm_source: 'google' }),
-    ], [project({ id: 'p1', enquiry_id: 'e1' })], [], current);
+  it('calls an enquiry with no signal direct-or-unknown, never organic', () => {
+    expect(channelFor(enquiry({ source: '/booking/' }))).toEqual({ key: 'direct', kind: 'direct', value: null });
+  });
 
-    expect(rows[0].key).toBe('utm:instagram');
-    expect(rows[0].enquiries).toBe(2);
-    expect(rows[0].converted).toBe(1);
-    expect(rows[0].rate).toBe(50);
-    expect(rows[1].rate).toBe(0);
+  it('keeps manual entries and conversation-opened enquiries as their own channels', () => {
+    expect(channelFor(enquiry({ source: 'crm_manual' })).kind).toBe('manual');
+    expect(channelFor(enquiry({ communication_channel: 'whatsapp', utm_medium: 'paid' })).key).toBe('conversation:whatsapp');
+  });
+
+  it('reports enquiries, consultations and tattoo bookings per channel', () => {
+    const enquiries = [
+      enquiry({ id: 'e1', utm_source: 'fb', utm_medium: 'paid', created_at: new Date(2026, 7, 10).toISOString() }),
+      enquiry({ id: 'e2', utm_source: 'ig', utm_medium: 'paid', created_at: new Date(2026, 7, 11).toISOString() }),
+      enquiry({ id: 'e3', referrer_host: 'instagram.com' }),
+      enquiry({ id: 'e4', source: 'crm_manual', created_at: new Date(2026, 7, 12).toISOString() }),
+    ];
+    const sessions = [
+      session({ id: 's1', enquiry_id: 'e2', project_id: null, appointment_type: 'in_person_consultation', status: 'confirmed' }),
+      session({ id: 's2', enquiry_id: 'e4', project_id: null }),
+    ];
+    const rows = channelBreakdown(enquiries, [], sessions, current, { now: NOW, days: 14 });
+    const meta = rows.find((row) => row.key === 'paid:meta');
+    expect(meta).toMatchObject({ enquiries: 2, consulted: 1, booked: 0, matured: 2, maturedBooked: 0 });
+    expect(rows.find((row) => row.key === 'manual')).toMatchObject({ enquiries: 1, booked: 1 });
+    expect(rows.find((row) => row.key === 'social:instagram')).toMatchObject({ enquiries: 1, matured: 0 });
+    expect(rows[0].key).toBe('paid:meta');
   });
 });
 
@@ -485,37 +621,44 @@ describe('sources', () => {
 describe('funnel', () => {
   const { current } = periodEndingToday(30, NOW);
 
-  it('counts distinct enquiries at every stage', () => {
-    const result = funnel(
-      [enquiry({ id: 'e1' }), enquiry({ id: 'e2' }), enquiry({ id: 'e3' }), enquiry({ id: 'e4' })],
-      [project({ id: 'p1', enquiry_id: 'e1' }), project({ id: 'p2', enquiry_id: 'e1' }), project({ id: 'p3', enquiry_id: 'e2' })],
-      [session({ id: 's1', enquiry_id: 'e1', project_id: 'p1' })],
-      current,
-    );
-    expect(result.stages.map((stage) => stage.count)).toEqual([4, 2, 1]);
-    expect(result.stages[1].rateFromPrevious).toBe(50);
-    expect(result.stages[2].rateFromPrevious).toBe(50);
+  it('counts distinct enquiries at every stage, against the enquiries', () => {
+    const enquiries = [enquiry({ id: 'e1' }), enquiry({ id: 'e2' }), enquiry({ id: 'e3' }), enquiry({ id: 'e4' })];
+    const sessions = [
+      session({ id: 'c1', enquiry_id: 'e1', project_id: null, appointment_type: 'in_person_consultation', status: 'completed' }),
+      session({ id: 's1', enquiry_id: 'e1', status: 'confirmed' }),
+      session({ id: 's2', enquiry_id: 'e2', status: 'completed' }),
+      session({ id: 's3', enquiry_id: 'e2', status: 'completed' }),
+    ];
+    const result = funnel(enquiries, [], sessions, current);
+    expect(result.stages.map((stage) => [stage.id, stage.count, stage.shareOfEnquiries])).toEqual([
+      ['enquiries', 4, null],
+      ['consultations', 1, 25],
+      ['booked', 2, 50],
+      ['completed', 1, 25],
+    ]);
   });
 
-  it('reports a legacy row with no link instead of counting it as a failure', () => {
-    // A project created before the CRM recorded enquiry_id came from somewhere.
-    // Folding it into the cohort as unconverted would understate every
-    // historical period.
-    const result = funnel(
-      [enquiry({ id: 'e1' })],
-      [project({ id: 'legacy', enquiry_id: null })],
-      [session({ id: 'legacy-session', enquiry_id: null, project_id: null })],
-      current,
-    );
-    expect(result.stages[0].count).toBe(1);
-    expect(result.stages[1].count).toBe(0);
+  it('never reaches a booking through a consultation', () => {
+    const sessions = [session({ id: 'c1', enquiry_id: 'e1', project_id: null, appointment_type: 'video_consultation', status: 'confirmed' })];
+    const result = funnel([enquiry({ id: 'e1' })], [], sessions, current);
+    expect(result.stages.find((stage) => stage.id === 'booked')?.count).toBe(0);
+    expect(result.stages.find((stage) => stage.id === 'consultations')?.count).toBe(1);
+  });
+
+  it('reports tattoo work with no link instead of counting it as a failure', () => {
+    const projects = [project({ id: 'p-legacy', enquiry_id: null })];
+    const sessions = [
+      session({ id: 's1', enquiry_id: null, project_id: null }),
+      session({ id: 's2', enquiry_id: null, project_id: null, appointment_type: 'in_person_consultation' }),
+    ];
+    const result = funnel([], projects, sessions, current);
     expect(result.unlinkedProjects).toBe(1);
     expect(result.unlinkedSessions).toBe(1);
   });
 
-  it('has no transition rates at all when nothing came in', () => {
+  it('has no shares at all when nothing came in', () => {
     const result = funnel([], [], [], current);
-    expect(result.stages.map((stage) => stage.rateFromPrevious)).toEqual([null, null, null]);
+    expect(result.stages.every((stage) => stage.shareOfEnquiries === null)).toBe(true);
   });
 });
 
@@ -583,10 +726,11 @@ describe('finance', () => {
       id: 'req-1',
       artist_id: ARTIST,
       purpose: 'deposit',
-      amount: 50,
+      amount: 250,
       currency: 'GBP',
       status: 'pending',
       created_at: new Date(2026, 8, 2, 10, 0, 0).toISOString(),
+      expires_at: null,
       ...overrides,
     };
   }
@@ -595,8 +739,7 @@ describe('finance', () => {
     const totals = financeTotals([
       transaction({ id: 't1', amount: 100, currency: 'GBP' }),
       transaction({ id: 't2', amount: 200, currency: 'EUR' }),
-    ], [], [], [], current);
-
+    ], [], current, NOW);
     expect(totals.received).toEqual([
       { currency: 'EUR', amount: 200, count: 1 },
       { currency: 'GBP', amount: 100, count: 1 },
@@ -604,78 +747,68 @@ describe('finance', () => {
   });
 
   it('excludes a payment that did not go through', () => {
-    const totals = financeTotals([
-      transaction({ id: 't1', status: 'failed', amount: 500 }),
-      transaction({ id: 't2', amount: 100 }),
-    ], [], [], [], current);
-    expect(totals.received[0].amount).toBe(100);
+    const totals = financeTotals([transaction({ status: 'failed' })], [], current, NOW);
+    expect(totals.received).toEqual([]);
   });
 
   it('shows refunds apart instead of netting them off silently', () => {
     const totals = financeTotals([
-      transaction({ id: 't1', amount: 100 }),
-      transaction({ id: 't2', transaction_type: 'refund', direction: 'debit', amount: 40 }),
-    ], [], [], [], current);
-    expect(totals.received[0].amount).toBe(100);
-    expect(totals.refunded[0].amount).toBe(40);
+      transaction({ id: 't1', amount: 300 }),
+      transaction({ id: 't2', amount: 100, direction: 'debit', transaction_type: 'refund' }),
+    ], [], current, NOW);
+    expect(totals.received[0].amount).toBe(300);
+    expect(totals.refunded[0].amount).toBe(100);
   });
 
   it('places a payment by when the money moved', () => {
-    const totals = financeTotals([
-      transaction({ id: 't1', occurred_at: new Date(2026, 3, 1).toISOString() }),
-    ], [], [], [], current);
+    const totals = financeTotals([transaction({ occurred_at: new Date(2026, 5, 1).toISOString() })], [], current, NOW);
     expect(totals.received).toEqual([]);
   });
 
   it('reads a numeric that arrived as a string', () => {
-    const totals = financeTotals([transaction({ amount: '125.50' })], [], [], [], current);
-    expect(totals.received[0].amount).toBe(125.5);
+    expect(financeTotals([transaction({ amount: '1250.50' })], [], current, NOW).received[0].amount).toBe(1250.5);
   });
 
-  it('keeps requested deposits, received money and quoted estimates separate', () => {
-    const totals = financeTotals(
-      [transaction({ id: 't1', amount: 100 })],
-      [
-        paymentRequest({ id: 'r1', amount: 50 }),
-        paymentRequest({ id: 'r2', purpose: 'session_balance', amount: 900 }),
-      ],
-      [{ project_id: 'project-1', currency: 'GBP', estimate_total: 1200 }],
-      [project({ id: 'project-1' })],
-      current,
-    );
-    expect(totals.received[0].amount).toBe(100);
-    expect(totals.depositsRequested[0].amount).toBe(50);
-    expect(totals.estimatedProjectValue[0].amount).toBe(1200);
+  // Audit 2026-10-15, P0-3: four cancelled £250 requests, re-issued and paid
+  // as other requests, were summed with the paid ones: £2,250 for £1,250.
+  it('never counts a cancelled, paid or expired request as money still owed', () => {
+    const totals = financeTotals([], [
+      paymentRequest({ id: 'r1', status: 'cancelled' }),
+      paymentRequest({ id: 'r2', status: 'paid' }),
+      paymentRequest({ id: 'r3', status: 'expired' }),
+      paymentRequest({ id: 'r4', status: 'pending', expires_at: new Date(2026, 8, 1).toISOString() }),
+      paymentRequest({ id: 'r5', status: 'pending', expires_at: new Date(2026, 8, 20).toISOString() }),
+      paymentRequest({ id: 'r6', status: 'pending' }),
+    ], current, NOW);
+    expect(totals.open).toEqual([{ currency: 'GBP', amount: 500, count: 2 }]);
   });
 
-  it('ignores an estimate for a project created outside the period', () => {
-    const totals = financeTotals(
-      [], [],
-      [{ project_id: 'old', currency: 'GBP', estimate_total: 5000 }],
-      [project({ id: 'old', created_at: new Date(2025, 0, 1).toISOString() })],
-      current,
-    );
-    expect(totals.estimatedProjectValue).toEqual([]);
+  it('counts part-paid requests without inventing their remainder', () => {
+    const totals = financeTotals([], [paymentRequest({ status: 'partially_paid' })], current, NOW);
+    expect(totals.open).toEqual([]);
+    expect(totals.partiallyPaid).toBe(1);
   });
 
-  it('ignores a project with no estimate at all rather than counting it as zero', () => {
-    const totals = financeTotals(
-      [], [],
-      [{ project_id: 'project-1', currency: 'GBP', estimate_total: null }],
-      [project({ id: 'project-1' })],
-      current,
-    );
-    expect(totals.estimatedProjectValue).toEqual([]);
+  it('does not count an expired part-paid request as still owed', () => {
+    const totals = financeTotals([], [
+      paymentRequest({ id: 'r1', status: 'partially_paid', expires_at: new Date(2026, 8, 1).toISOString() }),
+      paymentRequest({ id: 'r2', status: 'partially_paid', expires_at: new Date(2026, 8, 20).toISOString() }),
+    ], current, NOW);
+    expect(totals.partiallyPaid).toBe(1);
   });
 
-  it('returns four empty lists when there is nothing to report', () => {
-    const totals = financeTotals([], [], [], [], current);
-    expect(totals).toEqual({
-      received: [],
-      refunded: [],
-      depositsRequested: [],
-      estimatedProjectValue: [],
-    });
+  it('does not add requested money to money received', () => {
+    const totals = financeTotals([transaction({ amount: 250 })], [paymentRequest({ status: 'paid', amount: 250 })], current, NOW);
+    expect(totals.received[0].amount).toBe(250);
+    expect(totals.open).toEqual([]);
+    expect(totals).not.toHaveProperty('depositsRequested');
+    expect(totals).not.toHaveProperty('estimatedProjectValue');
+  });
+
+  it('decides openness on the request itself', () => {
+    expect(isOpenRequest(paymentRequest(), NOW)).toBe(true);
+    expect(isOpenRequest(paymentRequest({ expires_at: 'not a date' }), NOW)).toBe(true);
+    expect(isOpenRequest(paymentRequest({ expires_at: NOW.toISOString() }), NOW)).toBe(false);
   });
 });
 
@@ -683,17 +816,20 @@ describe('finance', () => {
 
 describe('insights', () => {
   const emptyTotals = sessionTotals([], periodEndingToday(30, NOW).current);
-  const base = {
+  const noConversion = { denominator: 0, converted: 0, rate: null, cohort: 0, pending: 0, pendingConverted: 0 };
+  const base: InsightInput = {
+    comparable: true,
     enquiries: delta(0, 0),
-    conversion: {
-      current: { denominator: 0, converted: 0, rate: null },
-      previous: { denominator: 0, converted: 0, rate: null },
-    },
+    conversion: { current: noConversion, previous: noConversion },
     sessions: { current: emptyTotals, previous: emptyTotals },
-    weekday: [0, 0, 0, 0, 0, 0, 0],
-    topSource: null,
-    topSourceLabel: null,
+    channels: [],
+    channelLabel: (row) => row.key,
   };
+  const row = (overrides: Partial<ChannelRow>): ChannelRow => ({
+    key: 'paid:meta', kind: 'paid', value: 'meta',
+    enquiries: 0, consulted: 0, booked: 0, matured: 0, maturedBooked: 0,
+    ...overrides,
+  });
 
   it('says nothing at all when there is nothing to say', () => {
     expect(buildInsights(base)).toEqual([]);
@@ -701,77 +837,86 @@ describe('insights', () => {
 
   it('states an enquiry trend only once both windows are big enough', () => {
     expect(buildInsights({ ...base, enquiries: delta(4, 2) })).toEqual([]);
-    const [insight] = buildInsights({ ...base, enquiries: delta(12, 6) });
-    expect(insight.id).toBe('insight.enquiriesUp');
-    expect(insight.params.percent).toBe(100);
+    expect(buildInsights({ ...base, enquiries: delta(12, 6) })[0].id).toBe('insight.enquiriesUp');
   });
 
   it('ignores a change too small to mean anything', () => {
     expect(buildInsights({ ...base, enquiries: delta(21, 20) })).toEqual([]);
   });
 
-  it('names a busiest day only when one day genuinely leads', () => {
-    expect(buildInsights({ ...base, weekday: [4, 4, 0, 0, 0, 0, 0] })).toEqual([]);
-    const [insight] = buildInsights({ ...base, weekday: [2, 1, 1, 1, 5, 0, 0] });
-    expect(insight.id).toBe('insight.busiestWeekday');
-    expect(insight.params.weekday).toBe(4);
-    expect(insight.params.count).toBe(5);
-  });
-
-  it('will not name a busiest day from a handful of bookings', () => {
-    expect(buildInsights({ ...base, weekday: [3, 1, 0, 0, 0, 0, 0] })).toEqual([]);
-  });
-
-  it('names a leading source with its conversions', () => {
-    const [insight] = buildInsights({
+  it('states no trend at all against a window the CRM has no history for', () => {
+    const input = {
       ...base,
-      topSource: { key: 'utm:instagram', kind: 'utm', value: 'instagram', label: null, enquiries: 14, converted: 8, rate: 57 },
-      topSourceLabel: 'Instagram',
-    });
-    expect(insight).toEqual({
-      id: 'insight.topSource',
-      params: { source: 'Instagram', enquiries: 14, converted: 8 },
-      tone: 'neutral',
-    });
+      comparable: false,
+      enquiries: delta(53, 22),
+      conversion: {
+        current: { ...noConversion, denominator: 20, converted: 0, rate: 0 },
+        previous: { ...noConversion, denominator: 20, converted: 8, rate: 40 },
+      },
+    };
+    expect(buildInsights(input)).toEqual([]);
   });
 
-  it('reports a rise in cancellations once both windows carry enough bookings', () => {
-    const period = periodEndingToday(30, NOW).current;
-    const previous = sessionTotals(
-      Array.from({ length: 10 }, (_, index) => session({
-        id: `p${index}`,
-        status: index < 2 ? 'cancelled' : 'completed',
-      })),
-      period,
-    );
-    const current = sessionTotals(
-      Array.from({ length: 10 }, (_, index) => session({
-        id: `c${index}`,
-        status: index < 5 ? 'cancelled' : 'completed',
-      })),
-      period,
-    );
-    const insights = buildInsights({ ...base, sessions: { current, previous } });
-    expect(insights).toContainEqual({
-      id: 'insight.cancellationsUp',
-      params: { from: 2, to: 5 },
+  // Audit 2026-10-15, P0-4.
+  it('compares conversion only over enquiries old enough to judge', () => {
+    const young = {
+      current: { ...noConversion, denominator: 3, converted: 0, rate: 0, cohort: 53, pending: 50 },
+      previous: { ...noConversion, denominator: 22, converted: 6, rate: 27.3, cohort: 22 },
+    };
+    expect(buildInsights({ ...base, conversion: young })).toEqual([]);
+
+    const mature = {
+      current: { ...noConversion, denominator: 26, converted: 0, rate: 0, cohort: 53, pending: 27 },
+      previous: young.previous,
+    };
+    expect(buildInsights({ ...base, conversion: mature })).toEqual([{
+      id: 'insight.conversionDown',
+      params: { from: 27, to: 0, mature: 26, pending: 27 },
+      tone: 'bad',
+    }]);
+  });
+
+  it('names a channel whose judged enquiries have booked nothing, first', () => {
+    const input = {
+      ...base,
+      enquiries: delta(12, 6),
+      channels: [
+        row({ matured: 13, maturedBooked: 0 }),
+        row({ key: 'social:instagram', kind: 'social', value: 'instagram', matured: 4 }),
+        row({ key: 'direct', kind: 'direct', value: null, matured: 20 }),
+        row({ key: 'manual', kind: 'manual', value: null, matured: 10 }),
+      ],
+    };
+    const insights = buildInsights(input);
+    expect(insights[0]).toEqual({
+      id: 'insight.channelNoBookings',
+      params: { channel: 'paid:meta', enquiries: 13 },
       tone: 'bad',
     });
+    expect(insights.filter((insight) => insight.id === 'insight.channelNoBookings')).toHaveLength(1);
+  });
+
+  it('says nothing about a channel once it has booked', () => {
+    expect(buildInsights({ ...base, channels: [row({ matured: 13, maturedBooked: 1 })] })).toEqual([]);
+  });
+
+  it('reports a rise in tattoo cancellations once both windows carry enough bookings', () => {
+    const now = { ...emptyTotals, booked: 10, cancelled: 3 };
+    const before = { ...emptyTotals, booked: 10, cancelled: 1 };
+    expect(buildInsights({ ...base, sessions: { current: now, previous: before } })[0].id).toBe('insight.cancellationsUp');
+    expect(buildInsights({ ...base, sessions: { current: { ...now, booked: 4 }, previous: before } })).toEqual([]);
   });
 
   it('is deterministic: the same aggregates give the same sentences in the same order', () => {
     const input = {
       ...base,
-      enquiries: delta(20, 10),
-      weekday: [1, 1, 1, 1, 9, 0, 0],
-      topSource: { key: 'utm:instagram', kind: 'utm' as const, value: 'instagram', label: null, enquiries: 14, converted: 8, rate: 57 },
-      topSourceLabel: 'Instagram',
+      enquiries: delta(12, 6),
+      channels: [row({ matured: 9 })],
     };
     expect(buildInsights(input)).toEqual(buildInsights(input));
     expect(buildInsights(input).map((insight) => insight.id)).toEqual([
+      'insight.channelNoBookings',
       'insight.enquiriesUp',
-      'insight.busiestWeekday',
-      'insight.topSource',
     ]);
   });
 });

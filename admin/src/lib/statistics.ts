@@ -39,6 +39,12 @@ export interface StatisticsEnquiry {
   booking_source_id: string | null;
   communication_channel: string | null;
   utm_source: string | null;
+  /** Campaign medium (`paid`, `social`, ...). Absent on rows read before the
+   *  projection carried it, which classifies exactly like null. */
+  utm_medium?: string | null;
+  utm_campaign?: string | null;
+  /** Host of the referrer only, lower case. Never the full URL. */
+  referrer_host?: string | null;
   created_at: string;
 }
 
@@ -63,6 +69,8 @@ export interface StatisticsSession {
   end_at: string;
   duration_hours: number | null;
   cancelled_at: string | null;
+  /** When the booking was made. Decides "booked in the period". */
+  created_at?: string | null;
 }
 
 /** A `payment_transactions` row. Only ever present when the database returned
@@ -87,22 +95,20 @@ export interface StatisticsPaymentRequest {
   currency: string;
   status: string;
   created_at: string;
-}
-
-export interface StatisticsBookingSource {
-  id: string;
-  display_label: string;
+  expires_at?: string | null;
 }
 
 // ---------------------------------------------------------------------------
-// Status vocabularies
+// Status and appointment vocabularies
 // ---------------------------------------------------------------------------
 //
-// Mirrored from the production enums (`session_status`, `project_status`). A
-// value outside these sets is counted as "some other status" rather than
+// Mirrored from the production enums (`session_status`, `appointment_type`).
+// A value outside these sets is counted as "some other status" rather than
 // silently folded into the nearest one.
 
-/** A booking that happened. */
+/** A booking that happened. Tattoo work is set to completed automatically
+ *  once its end time has passed (crm_private.auto_complete_due_tattoo_sessions)
+ *  unless the artist marked it cancelled or a no-show first. */
 export const COMPLETED_SESSION_STATUSES = new Set(['completed']);
 /** A booking that is meant to happen. */
 export const PLANNED_SESSION_STATUSES = new Set(['proposed', 'confirmed']);
@@ -114,10 +120,39 @@ export const NO_SHOW_SESSION_STATUSES = new Set(['no_show']);
 /** Never counted anywhere. A draft is a half-written row, not a booking. */
 export const DRAFT_SESSION_STATUSES = new Set(['draft']);
 
+/**
+ * Tattoo work: the appointments a project exists for. A touch-up belongs to
+ * the tattoo it touches up. Everything a studio sells is in here.
+ */
+export const TATTOO_APPOINTMENT_TYPES = new Set(['tattoo_session', 'touch_up']);
+/**
+ * A conversation about the work, not the work. The database states the same
+ * rule: booking a consultation "must not convert an enquiry into tattoo work"
+ * (20260907070000_enquiry_auto_project_booking.sql). A consultation is
+ * therefore never a conversion, never a repeat visit and never worked hours.
+ */
+export const CONSULTATION_APPOINTMENT_TYPES = new Set(['in_person_consultation', 'video_consultation']);
+
+export function isTattooWork(session: StatisticsSession): boolean {
+  return TATTOO_APPOINTMENT_TYPES.has(session.appointment_type);
+}
+
+export function isConsultation(session: StatisticsSession): boolean {
+  return CONSULTATION_APPOINTMENT_TYPES.has(session.appointment_type);
+}
+
 /** Every session status that represents a real booking, whatever became of it.
  *  This is the denominator of the cancellation rate. */
 export function isBookedSession(session: StatisticsSession): boolean {
   return !DRAFT_SESSION_STATUSES.has(session.status);
+}
+
+/**
+ * A booking that stands: made, and not called off. A no-show still stands -
+ * the client was booked and the slot was held for them.
+ */
+export function isHeldBooking(session: StatisticsSession): boolean {
+  return isBookedSession(session) && !CANCELLED_SESSION_STATUSES.has(session.status);
 }
 
 /** A session that counts as work having been agreed: it happened, or it is
@@ -268,88 +303,177 @@ export function delta(current: number, previous: number): Delta {
 }
 
 // ---------------------------------------------------------------------------
+// Comparability
+// ---------------------------------------------------------------------------
+
+/**
+ * Whether the previous window can be compared with the current one at all.
+ *
+ * A comparison against a window the CRM holds no history for is not a
+ * comparison: "+53 enquiries, was 0" for a 12-month period would claim growth
+ * from nothing when the records simply did not exist yet. `historyStart` is
+ * the earliest enquiry the viewer may see. When the previous window opens
+ * before it, the previous figures are partial and no change is stated.
+ */
+export function previousPeriodComparable(period: PeriodPair, historyStart: string | null): boolean {
+  if (!historyStart) return false;
+  const start = Date.parse(historyStart);
+  if (Number.isNaN(start)) return false;
+  return start <= Date.parse(period.previous.from);
+}
+
+// ---------------------------------------------------------------------------
 // Enquiries and conversion
 // ---------------------------------------------------------------------------
 
+/** Days an enquiry is given before its outcome is counted. */
+export const CONVERSION_MATURITY_DAYS = 14;
+
 export interface ConversionResult {
-  /** Enquiries created inside the period. The denominator. */
+  /** Enquiries created in the period that are old enough to be judged. The
+   *  denominator. Equal to `cohort` when no maturity rule is applied. */
   denominator: number;
-  /** Of those, the ones that led to a project or a booking. */
+  /** Of those, the ones that led to a tattoo booking that stands. */
   converted: number;
   /** null when the denominator is 0. A rate over nothing is not 0%. */
   rate: number | null;
+  /** Every enquiry created in the period, mature or not. */
+  cohort: number;
+  /** Enquiries still too young to be judged, and how many of them have
+   *  already booked. Shown, never folded into the rate. */
+  pending: number;
+  pendingConverted: number;
+}
+
+export interface MaturityRule {
+  now: Date;
+  days: number;
+}
+
+function enquiryOfProjectMap(projects: StatisticsProject[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const project of projects) {
+    if (project.enquiry_id) map.set(project.id, project.enquiry_id);
+  }
+  return map;
+}
+
+function enquiryOfSession(session: StatisticsSession, enquiryOfProject: Map<string, string>): string | null {
+  if (session.enquiry_id) return session.enquiry_id;
+  return session.project_id ? enquiryOfProject.get(session.project_id) ?? null : null;
 }
 
 /**
- * Cohort conversion, definition in full.
+ * Every enquiry id that led to tattoo work which stands.
  *
- * Denominator: enquiries whose `created_at` falls in the period. Membership is
- * decided by that one timestamp and no other, so an enquiry counts once, in
- * the period it arrived in.
+ * Converted means: at least one tattoo session or touch-up, reached through
+ * `sessions.enquiry_id` or through the session's project, that is neither a
+ * draft nor cancelled. A no-show still counts - the booking was made and kept
+ * open for the client.
  *
- * Converted: an enquiry in that cohort which is referenced by at least one
- * project (`projects.enquiry_id`) or at least one booked session
- * (`sessions.enquiry_id`, or `sessions.project_id` -> that project's
- * `enquiry_id`). The project or session may have been created at any time,
- * including after the period ended - the question is what became of that
- * cohort, not what happened inside a window.
+ * Deliberately not conversions:
+ * - a consultation, however it went (see CONSULTATION_APPOINTMENT_TYPES);
+ * - a project on its own. Since 2026-09-07 a project is created by booking the
+ *   first tattoo session, so a project with no tattoo session is either a
+ *   manual draft or one whose booking was cancelled;
+ * - a tattoo booking that was cancelled.
+ */
+export function convertedEnquiryIds(
+  projects: StatisticsProject[],
+  sessions: StatisticsSession[],
+): Set<string> {
+  const enquiryOfProject = enquiryOfProjectMap(projects);
+  const ids = new Set<string>();
+  for (const session of sessions) {
+    if (!isTattooWork(session) || !isHeldBooking(session)) continue;
+    const enquiryId = enquiryOfSession(session, enquiryOfProject);
+    if (enquiryId) ids.add(enquiryId);
+  }
+  return ids;
+}
+
+/** Every enquiry id that had a consultation which was not called off. */
+export function consultedEnquiryIds(
+  projects: StatisticsProject[],
+  sessions: StatisticsSession[],
+): Set<string> {
+  const enquiryOfProject = enquiryOfProjectMap(projects);
+  const ids = new Set<string>();
+  for (const session of sessions) {
+    if (!isConsultation(session) || !isHeldBooking(session)) continue;
+    const enquiryId = enquiryOfSession(session, enquiryOfProject);
+    if (enquiryId) ids.add(enquiryId);
+  }
+  return ids;
+}
+
+/** Every enquiry id whose tattoo work has actually taken place. */
+export function tattooCompletedEnquiryIds(
+  projects: StatisticsProject[],
+  sessions: StatisticsSession[],
+): Set<string> {
+  const enquiryOfProject = enquiryOfProjectMap(projects);
+  const ids = new Set<string>();
+  for (const session of sessions) {
+    if (!isTattooWork(session) || !COMPLETED_SESSION_STATUSES.has(session.status)) continue;
+    const enquiryId = enquiryOfSession(session, enquiryOfProject);
+    if (enquiryId) ids.add(enquiryId);
+  }
+  return ids;
+}
+
+function isMature(enquiry: StatisticsEnquiry, maturity: MaturityRule | undefined): boolean {
+  if (!maturity) return true;
+  const created = Date.parse(enquiry.created_at);
+  return !Number.isNaN(created) && created <= maturity.now.getTime() - maturity.days * 86400000;
+}
+
+/**
+ * Cohort conversion to tattoo work, definition in full.
  *
- * The consequence, stated rather than hidden: a cohort that is still young
- * converts less simply because it has had less time. `conversionMaturity`
- * below exists so the screen can say so.
+ * Cohort: enquiries whose `created_at` falls in the period. Membership is
+ * decided by that one timestamp, so an enquiry counts once, in the period it
+ * arrived in. What became of it may have happened after the period closed.
+ *
+ * Converted: see `convertedEnquiryIds`.
+ *
+ * Maturity: with a rule given, only enquiries at least `days` old form the
+ * denominator. A two-day-old enquiry has not failed to book; counting it as
+ * unconverted made every young period look like a collapse. The young ones
+ * are reported as `pending` instead. Without a rule the whole cohort is used.
  */
 export function enquiryConversion(
   enquiries: StatisticsEnquiry[],
   projects: StatisticsProject[],
   sessions: StatisticsSession[],
   period: Period,
+  maturity?: MaturityRule,
 ): ConversionResult {
   const cohort = enquiries.filter((enquiry) => within(period, enquiry.created_at));
   const converted = convertedEnquiryIds(projects, sessions);
-  const hits = cohort.filter((enquiry) => converted.has(enquiry.id)).length;
+  const mature = cohort.filter((enquiry) => isMature(enquiry, maturity));
+  const young = cohort.filter((enquiry) => !isMature(enquiry, maturity));
+  const hits = mature.filter((enquiry) => converted.has(enquiry.id)).length;
   return {
-    denominator: cohort.length,
+    denominator: mature.length,
     converted: hits,
-    rate: cohort.length === 0 ? null : (hits / cohort.length) * 100,
+    rate: mature.length === 0 ? null : (hits / mature.length) * 100,
+    cohort: cohort.length,
+    pending: young.length,
+    pendingConverted: young.filter((enquiry) => converted.has(enquiry.id)).length,
   };
-}
-
-/** Every enquiry id that some project or booked session points back at. */
-export function convertedEnquiryIds(
-  projects: StatisticsProject[],
-  sessions: StatisticsSession[],
-): Set<string> {
-  const ids = new Set<string>();
-  const enquiryOfProject = new Map<string, string>();
-  for (const project of projects) {
-    if (!project.enquiry_id) continue;
-    enquiryOfProject.set(project.id, project.enquiry_id);
-    ids.add(project.enquiry_id);
-  }
-  for (const session of sessions) {
-    if (!isBookedSession(session)) continue;
-    if (session.enquiry_id) {
-      ids.add(session.enquiry_id);
-      continue;
-    }
-    const viaProject = session.project_id ? enquiryOfProject.get(session.project_id) : undefined;
-    if (viaProject) ids.add(viaProject);
-  }
-  return ids;
 }
 
 /**
  * How much of the cohort has had a fair chance to convert.
  *
- * `settled` counts enquiries older than `maturityDays`. The screen uses it to
- * mark a conversion figure as still moving instead of presenting a trailing
- * edge as a fall.
+ * `settled` counts enquiries older than `maturityDays`.
  */
 export function conversionMaturity(
   enquiries: StatisticsEnquiry[],
   period: Period,
   now: Date,
-  maturityDays = 14,
+  maturityDays = CONVERSION_MATURITY_DAYS,
 ): { total: number; settled: number } {
   const cohort = enquiries.filter((enquiry) => within(period, enquiry.created_at));
   const cutoff = now.getTime() - maturityDays * 86400000;
@@ -359,23 +483,39 @@ export function conversionMaturity(
   };
 }
 
+/**
+ * Change in a rate, in percentage points, or null when either side has no
+ * rate. A rate against an empty cohort is not 0%, so "+40 pts, was 0" would
+ * be invented.
+ */
+export function rateDelta(current: number | null, previous: number | null): Delta | null {
+  if (current === null || previous === null) return null;
+  return delta(Math.round(current), Math.round(previous));
+}
+
 // ---------------------------------------------------------------------------
 // Sessions
 // ---------------------------------------------------------------------------
 
 export interface SessionTotals {
-  /** Bookings due to start inside the period, drafts excluded. */
+  /** Tattoo bookings due to start inside the period, drafts excluded. */
   booked: number;
   completed: number;
   planned: number;
   cancelled: number;
   noShow: number;
-  /** Hours across completed sessions only. */
+  /** Hours across completed tattoo work only. */
   hours: number;
-  /** Mean hours per completed session, or null when there were none. */
+  /** Mean hours per completed tattoo session, or null when there were none. */
   averageHours: number | null;
   /** cancelled / booked, as a percentage. null when nothing was booked. */
   cancellationRate: number | null;
+  /** Consultations due in the period, kept entirely apart from tattoo work. */
+  consultations: {
+    /** Not cancelled, not a draft. */
+    held: number;
+    cancelled: number;
+  };
 }
 
 /**
@@ -401,35 +541,76 @@ export function sessionHours(session: StatisticsSession): number {
  * Every session figure for one period.
  *
  * Period membership is decided by `start_at` throughout, including for
- * cancellations. That is deliberate: the rate answers "of the work that was due
- * in this window, how much fell through", which needs one timestamp on both
- * sides of the division. Using `cancelled_at` for the numerator and `start_at`
- * for the denominator would produce a ratio of two different populations.
+ * cancellations: the rate answers "of the work that was due in this window,
+ * how much fell through", which needs one timestamp on both sides of the
+ * division.
+ *
+ * Tattoo work and consultations are never added together. A half-hour
+ * consultation is not a session worked, and counting it as one inflated
+ * sessions, hours and the cancellation rate alike.
  */
 export function sessionTotals(sessions: StatisticsSession[], period: Period): SessionTotals {
   const inPeriod = sessions.filter(
     (session) => isBookedSession(session) && within(period, session.start_at),
   );
-  const completed = inPeriod.filter((session) => COMPLETED_SESSION_STATUSES.has(session.status));
-  const planned = inPeriod.filter((session) => PLANNED_SESSION_STATUSES.has(session.status));
-  const cancelled = inPeriod.filter((session) => CANCELLED_SESSION_STATUSES.has(session.status));
-  const noShow = inPeriod.filter((session) => NO_SHOW_SESSION_STATUSES.has(session.status));
+  const work = inPeriod.filter(isTattooWork);
+  const consultations = inPeriod.filter(isConsultation);
+  const completed = work.filter((session) => COMPLETED_SESSION_STATUSES.has(session.status));
+  const planned = work.filter((session) => PLANNED_SESSION_STATUSES.has(session.status));
+  const cancelled = work.filter((session) => CANCELLED_SESSION_STATUSES.has(session.status));
+  const noShow = work.filter((session) => NO_SHOW_SESSION_STATUSES.has(session.status));
   const hours = completed.reduce((total, session) => total + sessionHours(session), 0);
   return {
-    booked: inPeriod.length,
+    booked: work.length,
     completed: completed.length,
     planned: planned.length,
     cancelled: cancelled.length,
     noShow: noShow.length,
     hours,
     averageHours: completed.length === 0 ? null : hours / completed.length,
-    cancellationRate: inPeriod.length === 0 ? null : (cancelled.length / inPeriod.length) * 100,
+    cancellationRate: work.length === 0 ? null : (cancelled.length / work.length) * 100,
+    consultations: {
+      held: consultations.filter(isHeldBooking).length,
+      cancelled: consultations.filter((session) => CANCELLED_SESSION_STATUSES.has(session.status)).length,
+    },
+  };
+}
+
+export interface BookingsMade {
+  /** Tattoo sessions or touch-ups whose booking was made in the period. */
+  tattoo: number;
+  /** Of those, the ones since cancelled. Still counted above: the booking was
+   *  made in the period, and that is the question being answered. */
+  tattooCancelled: number;
+  consultations: number;
+}
+
+/**
+ * Bookings made in the period, placed by `created_at` - the day the booking
+ * was made, not the day of the appointment. This is the only figure that
+ * shows a week's sales while the work itself is months ahead.
+ *
+ * Rows without `created_at` (read before the projection carried it) are not
+ * placed at all rather than guessed.
+ */
+export function bookingsMade(sessions: StatisticsSession[], period: Period): BookingsMade {
+  const made = sessions.filter(
+    (session) => isBookedSession(session) && within(period, session.created_at ?? null),
+  );
+  const tattoo = made.filter(isTattooWork);
+  return {
+    tattoo: tattoo.length,
+    tattooCancelled: tattoo.filter((session) => CANCELLED_SESSION_STATUSES.has(session.status)).length,
+    consultations: made.filter(isConsultation).length,
   };
 }
 
 export interface UpcomingLoad {
+  /** Tattoo sessions and touch-ups ahead. */
   sessions: number;
   hours: number;
+  /** Consultations ahead, counted apart and never in the hours. */
+  consultations: number;
   days: number;
 }
 
@@ -447,18 +628,20 @@ export function upcomingLoad(sessions: StatisticsSession[], now: Date, days = 30
     (session) => PLANNED_SESSION_STATUSES.has(session.status)
       && within({ from, to }, session.start_at),
   );
+  const work = ahead.filter(isTattooWork);
   return {
-    sessions: ahead.length,
-    hours: ahead.reduce((total, session) => total + sessionHours(session), 0),
+    sessions: work.length,
+    hours: work.reduce((total, session) => total + sessionHours(session), 0),
+    consultations: ahead.filter(isConsultation).length,
     days,
   };
 }
 
-/** Sessions by local weekday, Monday first. Index 0 is Monday. */
+/** Tattoo sessions by local weekday, Monday first. Index 0 is Monday. */
 export function sessionsByWeekday(sessions: StatisticsSession[], period: Period): number[] {
   const counts = [0, 0, 0, 0, 0, 0, 0];
   for (const session of sessions) {
-    if (!isLiveSession(session) || !within(period, session.start_at)) continue;
+    if (!isTattooWork(session) || !isLiveSession(session) || !within(period, session.start_at)) continue;
     const day = new Date(session.start_at).getDay();
     counts[(day + 6) % 7] += 1;
   }
@@ -470,9 +653,9 @@ export function sessionsByWeekday(sessions: StatisticsSession[], period: Period)
 // ---------------------------------------------------------------------------
 
 export interface RepeatClients {
-  /** Distinct clients with a live session starting inside the period. */
+  /** Distinct clients with live tattoo work starting inside the period. */
   active: number;
-  /** Of those, the ones this artist has seen more than once, ever. */
+  /** Of those, the ones who have come back for a second piece. */
   repeat: number;
   rate: number | null;
 }
@@ -482,29 +665,31 @@ export interface RepeatClients {
  *
  * Identity is `client_id` and nothing else. Matching on a name or an email
  * string would merge two people who share a name and split one person who
- * changed address; the CRM already resolves intake to a client row, and that
- * row is the answer.
+ * changed address.
  *
- * Active: distinct clients with a completed or planned session starting in the
- * period. Repeat: those among them who have two or more completed or planned
- * sessions with the same artist across their whole history - the history the
- * viewer can see, which is the history row level security allows them. Pairing
- * is (client, artist), so a client seen once by each of two artists is a repeat
- * client for neither.
+ * Active: distinct (artist, client) pairs with a completed or planned tattoo
+ * session or touch-up starting in the period. Consultations do not make a
+ * client active.
  *
- * `history` is every session in scope, not just the period's. Counting inside
- * the period alone would call a client of three years "new" because their
- * second visit happens to be their only one this month.
+ * Repeat: those pairs with live tattoo work on two or more DIFFERENT projects
+ * with the same artist across their whole visible history. A sleeve done over
+ * five sessions is one client coming back to finish one piece, not a returning
+ * client; counting sessions called most of a multi-session diary "repeat".
+ * A session with no project (legacy rows) cannot be told apart from its
+ * neighbours and so never adds a project.
  */
 export function repeatClients(
   history: StatisticsSession[],
   period: Period,
 ): RepeatClients {
-  const live = history.filter(isLiveSession);
-  const lifetime = new Map<string, number>();
+  const live = history.filter((session) => isTattooWork(session) && isLiveSession(session));
+  const projects = new Map<string, Set<string>>();
   for (const session of live) {
+    if (!session.project_id) continue;
     const key = `${session.artist_id}:${session.client_id}`;
-    lifetime.set(key, (lifetime.get(key) ?? 0) + 1);
+    const set = projects.get(key) ?? new Set<string>();
+    set.add(session.project_id);
+    projects.set(key, set);
   }
   const activeKeys = new Set(
     live
@@ -513,7 +698,7 @@ export function repeatClients(
   );
   let repeat = 0;
   for (const key of activeKeys) {
-    if ((lifetime.get(key) ?? 0) >= 2) repeat += 1;
+    if ((projects.get(key)?.size ?? 0) >= 2) repeat += 1;
   }
   return {
     active: activeKeys.size,
@@ -523,49 +708,124 @@ export function repeatClients(
 }
 
 // ---------------------------------------------------------------------------
-// Sources
+// Channels
 // ---------------------------------------------------------------------------
 
-export type SourceKind = 'booking_source' | 'channel' | 'utm' | 'form' | 'unknown';
+/**
+ * Where an enquiry came from, as the records can prove it.
+ *
+ * paid      - a campaign tag with a paid medium (utm_medium paid, cpc, ...).
+ * campaign  - a campaign tag without a paid medium (utm_medium social, ...).
+ * social / search / ai / referral - the referrer's host.
+ * internal  - the referrer is one of the studio's own sites: the visitor
+ *             navigated there first, so where they came from is not known.
+ * conversation - the enquiry was opened from a WhatsApp or Instagram thread.
+ * manual    - typed into the CRM by the studio.
+ * direct    - nothing recorded. Not "organic": simply unknown.
+ *
+ * The booking form an enquiry used (`booking_source_id`) is deliberately not a
+ * channel. Every website enquiry carries it, so ranking it first hid every
+ * campaign tag and referrer behind one "website" row.
+ *
+ * This is the technical source. What the client said in the form
+ * (`discovery_source`) is reported separately and never merged with it.
+ */
+export type ChannelKind =
+  | 'paid'
+  | 'campaign'
+  | 'social'
+  | 'search'
+  | 'ai'
+  | 'referral'
+  | 'internal'
+  | 'conversation'
+  | 'manual'
+  | 'direct';
 
-export interface SourceBreakdownRow {
+export interface Channel {
   key: string;
-  kind: SourceKind;
-  /** The raw value behind the key. Translated at the edge, never here. */
+  kind: ChannelKind;
+  /** Platform or host behind the channel, e.g. `meta`, `instagram`, `google`. */
   value: string | null;
-  label: string | null;
-  enquiries: number;
-  converted: number;
-  rate: number | null;
 }
 
-/**
- * Which field decides an enquiry's source, in strict priority order.
- *
- * 1. `booking_source_id` - a row in the booking source registry, the CRM's own
- *    authoritative answer to "which form was this".
- * 2. `communication_channel` - WhatsApp or Instagram, for enquiries opened from
- *    a conversation rather than a form.
- * 3. `utm_source` - a campaign tag on the submission.
- * 4. `source` - the raw landing path or intake marker the form recorded.
- * 5. Nothing, which is reported as unknown rather than folded into a neighbour.
- *
- * Exactly one rule fires per enquiry and no two values are ever merged. Two
- * forms that happen to sit on the same landing page stay two rows, because they
- * are two registry entries; guessing they are "really" one source would be the
- * heuristic this is written to avoid.
- */
-export function sourceKeyFor(enquiry: StatisticsEnquiry): { key: string; kind: SourceKind; value: string | null } {
-  if (enquiry.booking_source_id) {
-    return { key: `booking_source:${enquiry.booking_source_id}`, kind: 'booking_source', value: enquiry.booking_source_id };
+const PAID_MEDIUMS = new Set([
+  'paid', 'cpc', 'ppc', 'cpm', 'cpv', 'paidsocial', 'paid_social', 'paid-social',
+  'paid_search', 'paid-search', 'paidsearch', 'ads', 'ad', 'display', 'sponsored',
+]);
+
+/** The studio's own hosts. A referrer here says nothing about acquisition. */
+export const OWN_HOSTS = ['vishartattoo.com', 'kristinavishar.com'];
+
+const PLATFORM_ALIASES: Record<string, string> = {
+  fb: 'facebook',
+  facebook: 'facebook',
+  ig: 'instagram',
+  instagram: 'instagram',
+  meta: 'meta',
+  google: 'google',
+  adwords: 'google',
+  googleads: 'google',
+  tiktok: 'tiktok',
+  chatgpt: 'chatgpt',
+  'chatgpt.com': 'chatgpt',
+};
+
+function platformOf(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  return PLATFORM_ALIASES[value] ?? value;
+}
+
+function hostMatches(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+function classifyReferrer(host: string): Channel {
+  const bare = host.replace(/^www\./, '');
+  if (OWN_HOSTS.some((own) => hostMatches(bare, own))) {
+    return { key: 'internal', kind: 'internal', value: null };
   }
-  const channel = trimmed(enquiry.communication_channel);
-  if (channel) return { key: `channel:${channel}`, kind: 'channel', value: channel };
-  const utm = trimmed(enquiry.utm_source);
-  if (utm) return { key: `utm:${utm}`, kind: 'utm', value: utm };
-  const source = trimmed(enquiry.source);
-  if (source) return { key: `form:${source}`, kind: 'form', value: source };
-  return { key: 'unknown', kind: 'unknown', value: null };
+  if (hostMatches(bare, 'instagram.com')) return { key: 'social:instagram', kind: 'social', value: 'instagram' };
+  if (hostMatches(bare, 'facebook.com') || bare === 'fb.com' || bare === 'fb.me') {
+    return { key: 'social:facebook', kind: 'social', value: 'facebook' };
+  }
+  if (hostMatches(bare, 'tiktok.com')) return { key: 'social:tiktok', kind: 'social', value: 'tiktok' };
+  if (hostMatches(bare, 'pinterest.com')) return { key: 'social:pinterest', kind: 'social', value: 'pinterest' };
+  if (hostMatches(bare, 'chatgpt.com') || hostMatches(bare, 'openai.com')) return { key: 'ai:chatgpt', kind: 'ai', value: 'chatgpt' };
+  if (hostMatches(bare, 'perplexity.ai')) return { key: 'ai:perplexity', kind: 'ai', value: 'perplexity' };
+  if (hostMatches(bare, 'claude.ai')) return { key: 'ai:claude', kind: 'ai', value: 'claude' };
+  if (bare === 'gemini.google.com') return { key: 'ai:gemini', kind: 'ai', value: 'gemini' };
+  if (hostMatches(bare, 'copilot.microsoft.com')) return { key: 'ai:copilot', kind: 'ai', value: 'copilot' };
+  if (/(^|\.)google\.[a-z.]+$/.test(bare)) return { key: 'search:google', kind: 'search', value: 'google' };
+  if (hostMatches(bare, 'bing.com')) return { key: 'search:bing', kind: 'search', value: 'bing' };
+  if (hostMatches(bare, 'duckduckgo.com')) return { key: 'search:duckduckgo', kind: 'search', value: 'duckduckgo' };
+  return { key: `referral:${bare}`, kind: 'referral', value: bare };
+}
+
+export function channelFor(enquiry: StatisticsEnquiry): Channel {
+  const conversation = trimmed(enquiry.communication_channel);
+  if (conversation) {
+    return { key: `conversation:${conversation}`, kind: 'conversation', value: conversation };
+  }
+  if (trimmed(enquiry.source) === 'crm_manual') return { key: 'manual', kind: 'manual', value: null };
+
+  const utmSource = trimmed(enquiry.utm_source);
+  const utmMedium = trimmed(enquiry.utm_medium)?.toLowerCase() ?? null;
+  if (utmMedium && PAID_MEDIUMS.has(utmMedium)) {
+    const platform = utmSource ? platformOf(utmSource) : 'other';
+    // Instagram and Facebook placements of one Meta campaign are one channel.
+    const value = platform === 'instagram' || platform === 'facebook' ? 'meta' : platform;
+    return { key: `paid:${value}`, kind: 'paid', value };
+  }
+  if (utmSource) {
+    const value = platformOf(utmSource);
+    return { key: `campaign:${value}`, kind: 'campaign', value };
+  }
+
+  const host = trimmed(enquiry.referrer_host)?.toLowerCase();
+  if (host) return classifyReferrer(host);
+
+  return { key: 'direct', kind: 'direct', value: null };
 }
 
 function trimmed(value: string | null | undefined): string | null {
@@ -573,83 +833,80 @@ function trimmed(value: string | null | undefined): string | null {
   return text.length > 0 ? text : null;
 }
 
+export interface ChannelRow extends Channel {
+  enquiries: number;
+  /** Enquiries that had a consultation (not called off). */
+  consulted: number;
+  /** Enquiries that led to tattoo work which stands, at any time. */
+  booked: number;
+  /** Enquiries old enough to judge, and how many of them booked. */
+  matured: number;
+  maturedBooked: number;
+}
+
 /**
- * Enquiries and conversions per source for one period.
+ * Enquiries, consultations and tattoo bookings per channel for one period.
  *
- * `bookingSources` supplies display labels where the viewer is allowed to read
- * the registry. Where they are not - `booking_sources` is readable only to
- * whoever may manage them - the enquiry's own `source` value is used instead.
- * That is a second authoritative field on the same row, not a guess, and it
- * keeps distinct forms as distinct rows either way.
+ * No rate column: a channel's young enquiries have not failed to book. The
+ * matured counts are carried so an insight can speak about a channel only
+ * once its enquiries have had time.
  */
-export function sourceBreakdown(
+export function channelBreakdown(
   enquiries: StatisticsEnquiry[],
   projects: StatisticsProject[],
   sessions: StatisticsSession[],
   period: Period,
-  bookingSources: StatisticsBookingSource[] = [],
-): SourceBreakdownRow[] {
-  const labels = new Map(bookingSources.map((source) => [source.id, source.display_label]));
-  const converted = convertedEnquiryIds(projects, sessions);
-  const rows = new Map<string, SourceBreakdownRow>();
-
+  maturity?: MaturityRule,
+): ChannelRow[] {
+  const booked = convertedEnquiryIds(projects, sessions);
+  const consulted = consultedEnquiryIds(projects, sessions);
+  const rows = new Map<string, ChannelRow>();
   for (const enquiry of enquiries) {
     if (!within(period, enquiry.created_at)) continue;
-    const { key, kind, value } = sourceKeyFor(enquiry);
-    const existing = rows.get(key) ?? {
-      key,
-      kind,
-      value,
-      label: kind === 'booking_source' && value
-        ? labels.get(value) ?? trimmed(enquiry.source)
-        : null,
-      enquiries: 0,
-      converted: 0,
-      rate: null,
+    const channel = channelFor(enquiry);
+    const row = rows.get(channel.key) ?? {
+      ...channel, enquiries: 0, consulted: 0, booked: 0, matured: 0, maturedBooked: 0,
     };
-    existing.enquiries += 1;
-    if (converted.has(enquiry.id)) existing.converted += 1;
-    rows.set(key, existing);
+    row.enquiries += 1;
+    if (consulted.has(enquiry.id)) row.consulted += 1;
+    if (booked.has(enquiry.id)) row.booked += 1;
+    if (isMature(enquiry, maturity)) {
+      row.matured += 1;
+      if (booked.has(enquiry.id)) row.maturedBooked += 1;
+    }
+    rows.set(channel.key, row);
   }
-
-  return [...rows.values()]
-    .map((row) => ({ ...row, rate: row.enquiries === 0 ? null : (row.converted / row.enquiries) * 100 }))
-    .sort((a, b) => b.enquiries - a.enquiries || a.key.localeCompare(b.key));
+  return [...rows.values()].sort((a, b) => b.enquiries - a.enquiries || a.key.localeCompare(b.key));
 }
 
 // ---------------------------------------------------------------------------
 // Funnel
 // ---------------------------------------------------------------------------
 
+export type FunnelStageId = 'enquiries' | 'consultations' | 'booked' | 'completed';
+
 export interface FunnelStage {
-  id: 'enquiries' | 'projects' | 'sessions';
+  id: FunnelStageId;
   count: number;
-  /** Share of the stage above, or null at the top and over an empty cohort. */
-  rateFromPrevious: number | null;
+  /** Share of the period's enquiries, or null over an empty cohort. Every
+   *  stage is measured against the enquiries: a tattoo can be booked without
+   *  a consultation, so the stages are not strictly nested. */
+  shareOfEnquiries: number | null;
 }
 
 export interface Funnel {
   stages: FunnelStage[];
   /**
-   * Rows in the period that carry no link back up the chain, and so cannot be
-   * placed in the funnel at all.
-   *
-   * These are reported, never counted as zero. A project created before the
-   * CRM recorded `enquiry_id` did come from somewhere; calling its cohort
-   * "unconverted" would understate every historical period.
+   * Tattoo work in the period that carries no link back to an enquiry, and so
+   * cannot be placed in the funnel at all. Reported, never counted as zero.
    */
   unlinkedProjects: number;
   unlinkedSessions: number;
 }
 
 /**
- * Enquiry -> Project -> Session, as a cohort of the enquiries created in the
- * period.
- *
- * Every stage counts distinct enquiries, not rows: an enquiry that produced
- * two projects is one enquiry that reached the project stage. A session
- * qualifies through `enquiry_id` or through its project's `enquiry_id`,
- * whichever the row carries.
+ * Enquiry -> consultation -> tattoo booked -> tattoo done, as a cohort of the
+ * enquiries created in the period. Every stage counts distinct enquiries.
  */
 export function funnel(
   enquiries: StatisticsEnquiry[],
@@ -659,48 +916,28 @@ export function funnel(
 ): Funnel {
   const cohort = enquiries.filter((enquiry) => within(period, enquiry.created_at));
   const cohortIds = new Set(cohort.map((enquiry) => enquiry.id));
+  const count = (ids: Set<string>) => [...ids].filter((id) => cohortIds.has(id)).length;
+  const share = (value: number) => (cohort.length === 0 ? null : (value / cohort.length) * 100);
 
-  const enquiryOfProject = new Map<string, string>();
-  const reachedProject = new Set<string>();
-  for (const project of projects) {
-    if (!project.enquiry_id) continue;
-    enquiryOfProject.set(project.id, project.enquiry_id);
-    if (cohortIds.has(project.enquiry_id)) reachedProject.add(project.enquiry_id);
-  }
-
-  const reachedSession = new Set<string>();
-  for (const session of sessions) {
-    if (!isBookedSession(session)) continue;
-    const enquiryId = session.enquiry_id
-      ?? (session.project_id ? enquiryOfProject.get(session.project_id) ?? null : null);
-    if (enquiryId && cohortIds.has(enquiryId)) reachedSession.add(enquiryId);
-  }
-
-  const stages: FunnelStage[] = [
-    { id: 'enquiries', count: cohort.length, rateFromPrevious: null },
-    {
-      id: 'projects',
-      count: reachedProject.size,
-      rateFromPrevious: cohort.length === 0 ? null : (reachedProject.size / cohort.length) * 100,
-    },
-    {
-      id: 'sessions',
-      count: reachedSession.size,
-      rateFromPrevious: reachedProject.size === 0
-        ? null
-        : (reachedSession.size / reachedProject.size) * 100,
-    },
-  ];
+  const consulted = count(consultedEnquiryIds(projects, sessions));
+  const booked = count(convertedEnquiryIds(projects, sessions));
+  const completed = count(tattooCompletedEnquiryIds(projects, sessions));
+  const enquiryOfProject = enquiryOfProjectMap(projects);
 
   return {
-    stages,
+    stages: [
+      { id: 'enquiries', count: cohort.length, shareOfEnquiries: null },
+      { id: 'consultations', count: consulted, shareOfEnquiries: share(consulted) },
+      { id: 'booked', count: booked, shareOfEnquiries: share(booked) },
+      { id: 'completed', count: completed, shareOfEnquiries: share(completed) },
+    ],
     unlinkedProjects: projects.filter(
       (project) => !project.enquiry_id && within(period, project.created_at),
     ).length,
     unlinkedSessions: sessions.filter(
-      (session) => isBookedSession(session)
-        && !session.enquiry_id
-        && !(session.project_id && enquiryOfProject.has(session.project_id))
+      (session) => isTattooWork(session)
+        && isBookedSession(session)
+        && !enquiryOfSession(session, enquiryOfProject)
         && within(period, session.start_at),
     ).length,
   };
@@ -784,16 +1021,22 @@ export function localIsoDate(value: Date): string {
 // Finance
 // ---------------------------------------------------------------------------
 //
-// Four different quantities, never added together:
+// Three quantities, never added together:
 //
 //   received  - money the CRM has a succeeded, credit transaction for.
 //   refunded  - money that went back out, shown apart rather than netted off.
-//   requested - deposits asked for. A request is not a payment.
-//   estimated - the value of projects created. An estimate is not revenue.
+//   open      - payment requests still waiting to be paid, right now.
 //
 // Each is reported per currency. Adding GBP to anything else would produce a
 // number denominated in nothing, so currencies never merge - not even when only
 // one is present, which is why these are lists rather than scalars.
+//
+// Removed on 2026-10-15, and why:
+// - "Deposits requested" summed every deposit request whatever became of it.
+//   A cancelled request that was re-issued and paid was counted twice
+//   (production: £2,250 shown for £1,250 actually asked for and paid).
+// - "Quoted on new projects" was an estimate, present on 3 of 8 projects, and
+//   read next to real money as if it were money.
 
 export interface CurrencyAmount {
   currency: string;
@@ -804,8 +1047,11 @@ export interface CurrencyAmount {
 export interface FinanceTotals {
   received: CurrencyAmount[];
   refunded: CurrencyAmount[];
-  depositsRequested: CurrencyAmount[];
-  estimatedProjectValue: CurrencyAmount[];
+  /** Pending requests that have not expired: money still being asked for. */
+  open: CurrencyAmount[];
+  /** Requests part-paid so far. Their remainder is not known from the
+   *  projection, so they are counted, never summed into `open`. */
+  partiallyPaid: number;
 }
 
 const REFUND_TRANSACTION_TYPES = new Set(['refund', 'partial_refund']);
@@ -830,35 +1076,42 @@ function accumulate(rows: Array<{ currency: string; amount: number | string }>):
 }
 
 /**
+ * Whether a payment request is still open at `now`.
+ *
+ * `pending` and not expired. A cancelled request (re-issued, withdrawn) and an
+ * expired one are not money anybody is waiting for; a paid one is already in
+ * "received". This is what keeps one deposit from being counted twice.
+ */
+export function isOpenRequest(request: StatisticsPaymentRequest, now: Date): boolean {
+  if (request.status !== 'pending') return false;
+  return isUnexpired(request, now);
+}
+
+function isUnexpired(request: StatisticsPaymentRequest, now: Date): boolean {
+  if (!request.expires_at) return true;
+  const expires = Date.parse(request.expires_at);
+  return Number.isNaN(expires) || expires > now.getTime();
+}
+
+/**
  * The finance block.
  *
  * Received counts `payment_transactions` that are `succeeded` and `credit`,
- * placed in the period by `occurred_at` - when the money moved, not when the
- * row was written. Failed transactions are excluded entirely; a payment that
- * did not go through is not income.
+ * placed in the period by `occurred_at` - when the money moved. Failed
+ * transactions are excluded entirely.
  *
- * Deposits requested counts `payment_requests` with purpose `deposit` by
- * `created_at`, whatever became of them. It is a measure of asking, and the
- * screen labels it as such.
- *
- * Estimated project value sums `estimate_total` for projects created in the
- * period. It is what the work was quoted at. It is never presented as revenue,
- * and it is deliberately not netted against anything.
+ * Open is a statement about today, not about the period: every request that
+ * is pending and unexpired, whenever it was created.
  */
 export function financeTotals(
   transactions: StatisticsTransaction[],
-  requests: StatisticsPaymentRequest[],
-  projectEstimates: Array<{ project_id: string; currency: string; estimate_total: number | string | null }>,
-  projects: StatisticsProject[],
+  openRequests: StatisticsPaymentRequest[],
   period: Period,
+  now: Date,
 ): FinanceTotals {
   const succeeded = transactions.filter(
     (transaction) => transaction.status === 'succeeded' && within(period, transaction.occurred_at),
   );
-  const projectsInPeriod = new Set(
-    projects.filter((project) => within(period, project.created_at)).map((project) => project.id),
-  );
-
   return {
     received: accumulate(
       succeeded.filter(
@@ -872,16 +1125,12 @@ export function financeTotals(
           || REFUND_TRANSACTION_TYPES.has(transaction.transaction_type),
       ),
     ),
-    depositsRequested: accumulate(
-      requests.filter(
-        (request) => request.purpose === 'deposit' && within(period, request.created_at),
-      ),
-    ),
-    estimatedProjectValue: accumulate(
-      projectEstimates
-        .filter((row) => projectsInPeriod.has(row.project_id) && row.estimate_total !== null)
-        .map((row) => ({ currency: row.currency, amount: row.estimate_total as number | string })),
-    ),
+    open: accumulate(openRequests.filter((request) => isOpenRequest(request, now))),
+    // The payment workflow treats a part-paid request as open only while it
+    // has not expired, exactly like a pending one.
+    partiallyPaid: openRequests.filter(
+      (request) => request.status === 'partially_paid' && isUnexpired(request, now),
+    ).length,
   };
 }
 
@@ -906,19 +1155,23 @@ export interface Insight {
  */
 export const INSIGHT_MINIMUMS = {
   enquiryTrend: 5,
+  /** Mature enquiries in each cohort. */
   conversionTrend: 8,
-  weekday: 8,
-  source: 5,
+  /** Mature enquiries from one channel before saying it has not booked. */
+  channel: 8,
   cancellation: 8,
 } as const;
 
 export interface InsightInput {
+  /** False when the previous window predates the CRM's history. */
+  comparable: boolean;
   enquiries: Delta;
+  /** Mature-only conversion for both windows. */
   conversion: { current: ConversionResult; previous: ConversionResult };
   sessions: { current: SessionTotals; previous: SessionTotals };
-  weekday: number[];
-  topSource: SourceBreakdownRow | null;
-  topSourceLabel: string | null;
+  channels: ChannelRow[];
+  /** Resolves a channel to the label the reader sees. */
+  channelLabel: (channel: ChannelRow) => string;
 }
 
 /**
@@ -931,8 +1184,23 @@ export interface InsightInput {
 export function buildInsights(input: InsightInput): Insight[] {
   const insights: Insight[] = [];
 
+  // A channel whose mature enquiries have produced no tattoo at all. Placed
+  // first: it is the one sentence that asks for a decision (usually: is the
+  // advert worth its money).
+  for (const channel of input.channels) {
+    if (channel.kind === 'direct' || channel.kind === 'manual' || channel.kind === 'internal') continue;
+    if (channel.matured >= INSIGHT_MINIMUMS.channel && channel.maturedBooked === 0) {
+      insights.push({
+        id: 'insight.channelNoBookings',
+        params: { channel: input.channelLabel(channel), enquiries: channel.matured },
+        tone: 'bad',
+      });
+    }
+  }
+
   if (
-    input.enquiries.current >= INSIGHT_MINIMUMS.enquiryTrend
+    input.comparable
+    && input.enquiries.current >= INSIGHT_MINIMUMS.enquiryTrend
     && input.enquiries.previous >= INSIGHT_MINIMUMS.enquiryTrend
     && input.enquiries.percent !== null
     && Math.abs(input.enquiries.percent) >= 10
@@ -944,9 +1212,13 @@ export function buildInsights(input: InsightInput): Insight[] {
     });
   }
 
+  // Mature enquiries only, on both sides. Comparing a cohort that has had
+  // weeks to book with one that has had days reported every young period as a
+  // collapse.
   const { current, previous } = input.conversion;
   if (
-    current.denominator >= INSIGHT_MINIMUMS.conversionTrend
+    input.comparable
+    && current.denominator >= INSIGHT_MINIMUMS.conversionTrend
     && previous.denominator >= INSIGHT_MINIMUMS.conversionTrend
     && current.rate !== null
     && previous.rate !== null
@@ -954,49 +1226,21 @@ export function buildInsights(input: InsightInput): Insight[] {
   ) {
     insights.push({
       id: current.rate > previous.rate ? 'insight.conversionUp' : 'insight.conversionDown',
-      params: { from: Math.round(previous.rate), to: Math.round(current.rate) },
-      tone: current.rate > previous.rate ? 'good' : 'bad',
-    });
-  }
-
-  const weekdayTotal = input.weekday.reduce((sum, value) => sum + value, 0);
-  if (weekdayTotal >= INSIGHT_MINIMUMS.weekday) {
-    const best = input.weekday.reduce(
-      (top, value, index) => (value > top.value ? { index, value } : top),
-      { index: 0, value: input.weekday[0] },
-    );
-    // Only when one day genuinely leads. A tie has no busiest day, and naming
-    // either of them would be a coin toss presented as a finding.
-    const ties = input.weekday.filter((value) => value === best.value).length;
-    if (ties === 1 && best.value > 0) {
-      insights.push({
-        id: 'insight.busiestWeekday',
-        params: { weekday: best.index, count: best.value },
-        tone: 'neutral',
-      });
-    }
-  }
-
-  if (
-    input.topSource
-    && input.topSource.enquiries >= INSIGHT_MINIMUMS.source
-    && input.topSourceLabel
-  ) {
-    insights.push({
-      id: 'insight.topSource',
       params: {
-        source: input.topSourceLabel,
-        enquiries: input.topSource.enquiries,
-        converted: input.topSource.converted,
+        from: Math.round(previous.rate),
+        to: Math.round(current.rate),
+        mature: current.denominator,
+        pending: current.pending,
       },
-      tone: 'neutral',
+      tone: current.rate > previous.rate ? 'good' : 'bad',
     });
   }
 
   const sessionsNow = input.sessions.current;
   const sessionsBefore = input.sessions.previous;
   if (
-    sessionsNow.booked >= INSIGHT_MINIMUMS.cancellation
+    input.comparable
+    && sessionsNow.booked >= INSIGHT_MINIMUMS.cancellation
     && sessionsBefore.booked >= INSIGHT_MINIMUMS.cancellation
     && sessionsNow.cancelled !== sessionsBefore.cancelled
   ) {

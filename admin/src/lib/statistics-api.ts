@@ -26,7 +26,6 @@ import { describeApiFailure } from './api-errors';
 import { currentLanguage } from './i18n';
 import type {
   Period,
-  StatisticsBookingSource,
   StatisticsEnquiry,
   StatisticsPaymentRequest,
   StatisticsProject,
@@ -45,6 +44,13 @@ const PAGE_SIZE = 500;
  * an arbitrary prefix of the data.
  */
 const MAX_ROWS = 20000;
+/**
+ * Ids per `in.(...)` filter. Every id travels in the request URL; at ~40
+ * characters each, an unbounded list reached 2.8 KB at 70 ids in production
+ * and would pass gateway URL limits within months. Chunks keep every request
+ * small however long the period.
+ */
+const IN_CHUNK = 100;
 
 export interface StatisticsEnquiryWithDiscovery extends StatisticsEnquiry {
   discovery_source: string | null;
@@ -52,8 +58,8 @@ export interface StatisticsEnquiryWithDiscovery extends StatisticsEnquiry {
 
 export interface StatisticsFinance {
   transactions: StatisticsTransaction[];
-  requests: StatisticsPaymentRequest[];
-  projectEstimates: Array<{ project_id: string; currency: string; estimate_total: number | string | null }>;
+  /** Pending and part-paid requests, whenever created: what is still owed. */
+  openRequests: StatisticsPaymentRequest[];
 }
 
 export interface StatisticsDataset {
@@ -62,11 +68,12 @@ export interface StatisticsDataset {
   /** Projects created inside that window, plus every project a cohort enquiry
    *  produced later - conversion is answered by existence, not by date. */
   projects: StatisticsProject[];
-  /** Sessions inside the window, plus the forward window, plus the history the
-   *  repeat-client rule needs. */
+  /** Sessions inside the window, plus the forward window, plus bookings made
+   *  in the window, plus the history the repeat-client rule needs. */
   sessions: StatisticsSession[];
-  /** Empty when the viewer may not read the registry. Labels only. */
-  bookingSources: StatisticsBookingSource[];
+  /** The earliest enquiry the viewer may see, or null when there is none. A
+   *  previous window opening before it cannot be compared with. */
+  historyStart: string | null;
   /** null when the viewer holds no finance access, or the read was refused. */
   finance: StatisticsFinance | null;
   /** True when any read hit `MAX_ROWS`. The screen says so rather than lying. */
@@ -94,6 +101,7 @@ type PostgrestQuery = {
   lt: (column: string, value: unknown) => PostgrestQuery;
   order: (column: string, options: { ascending: boolean }) => PostgrestQuery;
   range: (from: number, to: number) => PostgrestQuery;
+  limit: (count: number) => PostgrestQuery;
 };
 
 /**
@@ -122,6 +130,25 @@ async function readAll<T>(
   return { rows, truncated: true };
 }
 
+/**
+ * `readAll` over an id list, one chunk of ids per query, so no request URL
+ * grows with the period.
+ */
+async function readAllIn<T>(
+  ids: string[],
+  build: (chunk: string[]) => PostgrestQuery,
+): Promise<{ rows: T[]; truncated: boolean }> {
+  const rows: T[] = [];
+  let truncated = false;
+  for (let index = 0; index < ids.length; index += IN_CHUNK) {
+    const chunk = ids.slice(index, index + IN_CHUNK);
+    const result = await readAll<T>(() => build(chunk), 'load statistics');
+    rows.push(...result.rows);
+    truncated = truncated || result.truncated;
+  }
+  return { rows, truncated };
+}
+
 /** A read whose refusal is a legitimate answer, not a failure. */
 async function readAllOptional<T>(build: () => PostgrestQuery): Promise<T[] | null> {
   try {
@@ -133,10 +160,10 @@ async function readAllOptional<T>(build: () => PostgrestQuery): Promise<T[] | nu
 }
 
 const ENQUIRY_COLUMNS =
-  'id, artist_id, client_id, status, source, booking_source_id, communication_channel, utm_source, discovery_source, created_at';
+  'id, artist_id, client_id, status, source, booking_source_id, communication_channel, utm_source, utm_medium, utm_campaign, referrer_host, discovery_source, created_at';
 const PROJECT_COLUMNS = 'id, artist_id, client_id, enquiry_id, status, created_at';
 const SESSION_COLUMNS =
-  'id, artist_id, client_id, project_id, enquiry_id, status, appointment_type, start_at, end_at, duration_hours, cancelled_at';
+  'id, artist_id, client_id, project_id, enquiry_id, status, appointment_type, start_at, end_at, duration_hours, cancelled_at, created_at';
 
 export function createStatisticsApi(client: CrmClient) {
   const scoped = (table: string, columns: string, artistId?: string) => {
@@ -153,10 +180,7 @@ export function createStatisticsApi(client: CrmClient) {
    * without the capability gets, which is the point: the screen has one code
    * path for "no finance block" and cannot be talked into a second.
    */
-  async function loadFinance(
-    request: StatisticsRequest,
-    projectIds: string[],
-  ): Promise<StatisticsFinance | null> {
+  async function loadFinance(request: StatisticsRequest): Promise<StatisticsFinance | null> {
     const { window, artistId } = request;
 
     const transactions = await readAllOptional<StatisticsTransaction>(
@@ -170,35 +194,44 @@ export function createStatisticsApi(client: CrmClient) {
         .order('occurred_at', { ascending: true }),
     );
 
-    const requests = await readAllOptional<StatisticsPaymentRequest>(
+    // What is still owed is a statement about today, so it is read without a
+    // date bound. Cancelled and paid requests are not read at all: a request
+    // that was cancelled and re-issued must not be counted next to the one
+    // that replaced it.
+    const openRequests = await readAllOptional<StatisticsPaymentRequest>(
       () => scoped(
         'statistics_payment_requests',
-        'id, artist_id, purpose, amount, currency, status, created_at',
+        'id, artist_id, purpose, amount, currency, status, created_at, expires_at',
         artistId,
       )
-        .gte('created_at', window.from)
-        .lt('created_at', window.to)
+        .in('status', ['pending', 'partially_paid'])
         .order('created_at', { ascending: true }),
     );
 
-    // `projects_finance` is a security_invoker view over the private finance
-    // source, so it is scoped by the same rule as the tables above rather than
-    // by anything this module does.
-    const projectEstimates = projectIds.length === 0
-      ? []
-      : await readAllOptional<{ project_id: string; currency: string; estimate_total: number | string | null }>(
-        () => (client.from('projects_finance') as PostgrestQuery)
-          .select('project_id, currency, estimate_total')
-          .in('project_id', projectIds),
-      ) ?? [];
-
-    if (transactions === null && requests === null) return null;
+    if (transactions === null && openRequests === null) return null;
 
     return {
       transactions: transactions ?? [],
-      requests: requests ?? [],
-      projectEstimates,
+      openRequests: openRequests ?? [],
     };
+  }
+
+  /**
+   * The earliest enquiry the viewer may see. One row; a failed read answers
+   * null, which only hides the period comparison - it never fails the page.
+   */
+  async function readHistoryStart(artistId?: string): Promise<string | null> {
+    try {
+      const result = await (scoped('statistics_enquiries', 'created_at', artistId)
+        .is('archived_at', null)
+        .eq('intake_state', 'complete')
+        .order('created_at', { ascending: true })
+        .limit(1) as unknown as Promise<{ data: Array<{ created_at: string }> | null; error: unknown }>);
+      if (result.error) return null;
+      return result.data?.[0]?.created_at ?? null;
+    } catch {
+      return null;
+    }
   }
 
   return {
@@ -254,6 +287,19 @@ export function createStatisticsApi(client: CrmClient) {
         ),
       ).rows;
 
+      // Bookings made in the window, whenever they are due. A booking made
+      // today for next spring is this period's sale, and the start_at read
+      // above would never see it.
+      const bookedInWindow = note(
+        await readAll<StatisticsSession>(
+          () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
+            .gte('created_at', window.from)
+            .lt('created_at', window.to)
+            .order('created_at', { ascending: true }),
+          'load statistics',
+        ),
+      ).rows;
+
       // Projects created in the window.
       const windowProjects = note(
         await readAll<StatisticsProject>(
@@ -269,87 +315,61 @@ export function createStatisticsApi(client: CrmClient) {
       // Conversion asks what became of a cohort, and what became of it may have
       // happened after the window closed. So the projects and sessions that
       // point back at a cohort enquiry are fetched by id, without a date bound.
-      // Without this, an enquiry converted last week would count as
-      // unconverted in a period that ended yesterday.
       const enquiryIds = enquiries.map((enquiry) => enquiry.id);
-      const linkedProjects = enquiryIds.length === 0
-        ? []
-        : note(
-          await readAll<StatisticsProject>(
-            () => scoped('statistics_projects', PROJECT_COLUMNS, artistId)
-              .is('archived_at', null)
-              .in('enquiry_id', enquiryIds)
-              .order('created_at', { ascending: true }),
-            'load statistics',
-          ),
-        ).rows;
-      const linkedSessions = enquiryIds.length === 0
-        ? []
-        : note(
-          await readAll<StatisticsSession>(
-            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
-              .in('enquiry_id', enquiryIds)
-              .order('start_at', { ascending: true }),
-            'load statistics',
-          ),
-        ).rows;
+      const linkedProjects = note(
+        await readAllIn<StatisticsProject>(enquiryIds, (chunk) =>
+          scoped('statistics_projects', PROJECT_COLUMNS, artistId)
+            .is('archived_at', null)
+            .in('enquiry_id', chunk)
+            .order('created_at', { ascending: true })),
+      ).rows;
+      const linkedSessions = note(
+        await readAllIn<StatisticsSession>(enquiryIds, (chunk) =>
+          scoped('statistics_sessions', SESSION_COLUMNS, artistId)
+            .in('enquiry_id', chunk)
+            .order('start_at', { ascending: true })),
+      ).rows;
 
       // A session belonging to a cohort enquiry only through its project.
       const projectIds = [...new Set(
         [...windowProjects, ...linkedProjects].map((project) => project.id),
       )];
-      const projectSessions = projectIds.length === 0
-        ? []
-        : note(
-          await readAll<StatisticsSession>(
-            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
-              .in('project_id', projectIds)
-              .order('start_at', { ascending: true }),
-            'load statistics',
-          ),
-        ).rows;
+      const projectSessions = note(
+        await readAllIn<StatisticsSession>(projectIds, (chunk) =>
+          scoped('statistics_sessions', SESSION_COLUMNS, artistId)
+            .in('project_id', chunk)
+            .order('start_at', { ascending: true })),
+      ).rows;
 
       // Repeat clients are a lifetime question, so it needs lifetime rows for
-      // the clients on screen - and only for them. Asking by client id keeps
-      // this proportional to the period rather than to the whole table.
+      // the clients on screen - and only for them.
       const clientIds = [...new Set(windowSessions.map((session) => session.client_id))];
-      const clientHistory = clientIds.length === 0
-        ? []
-        : note(
-          await readAll<StatisticsSession>(
-            () => scoped('statistics_sessions', SESSION_COLUMNS, artistId)
-              .in('client_id', clientIds)
-              .order('start_at', { ascending: true }),
-            'load statistics',
-          ),
-        ).rows;
+      const clientHistory = note(
+        await readAllIn<StatisticsSession>(clientIds, (chunk) =>
+          scoped('statistics_sessions', SESSION_COLUMNS, artistId)
+            .in('client_id', chunk)
+            .order('start_at', { ascending: true })),
+      ).rows;
 
       const sessions = dedupeById([
         ...windowSessions,
+        ...bookedInWindow,
         ...linkedSessions,
         ...projectSessions,
         ...clientHistory,
       ]);
       const projects = dedupeById([...windowProjects, ...linkedProjects]);
 
-      // Labels only, and entirely optional: `booking_sources` is readable to
-      // whoever may manage them, which a working artist need not be. Denied,
-      // the breakdown falls back to the enquiry's own recorded source and
-      // keeps every distinct form as its own row.
-      const bookingSources = await readAllOptional<StatisticsBookingSource>(
-        () => scoped('booking_sources', 'id, display_label', artistId)
-          .order('display_label', { ascending: true }),
-      );
+      // Where the viewer's visible history begins. One row.
+      const historyStart = await readHistoryStart(artistId);
 
-      const finance = request.includeFinance
-        ? await loadFinance(request, projects.map((project) => project.id))
-        : null;
+      const finance = request.includeFinance ? await loadFinance(request) : null;
 
       return {
         enquiries,
         projects,
         sessions,
-        bookingSources: bookingSources ?? [],
+        historyStart,
         finance,
         truncated,
       };

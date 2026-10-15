@@ -10,14 +10,18 @@ a bug — `admin/src/lib/statistics.ts` carries the same definitions in code, an
 
 ## Where the numbers come from
 
-Existing CRM tables, read through ordinary artist-scoped selects:
-`enquiries`, `projects`, `sessions`, `booking_sources`, and — behind finance
-access only — `payment_transactions`, `payment_requests`, `projects_finance`.
+Existing CRM tables, read through the security_invoker `statistics_*`
+projections: `statistics_enquiries`, `statistics_projects`,
+`statistics_sessions` and, behind finance access only,
+`statistics_payment_transactions` and `statistics_payment_requests`.
 
-There is no statistics migration. No view, no aggregate RPC, no index and no
-analytics table were added, because none was needed: the existing schema
-answers every question on the screen, and every row it returns is already
-scoped by the policies the rest of the CRM relies on.
+The projections remove explicitly excluded test lineage
+(`20260920185324_analytics_exclusion.sql`). On 2026-10-15
+(`20261015100000_statistics_projection_attribution.sql`) they gained columns,
+appended only: `utm_medium`, `utm_campaign` and `referrer_host` (the referrer's
+host, never its URL) on enquiries; `created_at` on sessions; `expires_at` on
+payment requests. Every one of them was already readable by `authenticated` on
+its base table, so no access was widened. There is no aggregate RPC yet.
 
 PostHog is not involved. The product-analytics workstream measures how the CRM
 itself is used and is deliberately not a source of business figures.
@@ -49,7 +53,8 @@ finance read is treated as "no money section", never as a page error, so a
 viewer without finance access sees a complete screen minus that block.
 
 Reads are paged (500 rows at a time, ceiling 20 000) rather than capped at the
-200–300 the working-queue reads use. A silently clipped page would produce a
+200–300 the working-queue reads use. Reads by id list are sent 100 ids per
+request, so no request URL grows with the period. A silently clipped page would produce a
 number that is simply false. Hitting the ceiling sets a flag and the screen
 says the figures are partial.
 
@@ -80,84 +85,96 @@ Rows in `enquiries` with `created_at` inside the period, `archived_at IS NULL`,
 `intake_state = 'complete'`. Half-finished intakes are excluded exactly as they
 are excluded from the working queue: nobody ever worked them.
 
-### Conversion
-Cohort-based.
+### Tattoo work and consultations
 
-- **Denominator** — enquiries created in the period, as above. Membership is
-  decided by `created_at` and no other timestamp.
-- **Converted** — an enquiry in that cohort referenced by at least one project
-  (`projects.enquiry_id`) or at least one non-draft session
-  (`sessions.enquiry_id`, or `sessions.project_id` → that project's
-  `enquiry_id`).
-- The project or session may have been created **after** the period ended. The
-  question is what became of the cohort, not what happened inside a window.
-- An enquiry counts once however many projects it produced.
-- Over an empty cohort the rate is **not shown**, rather than shown as 0%.
+`tattoo_session` and `touch_up` are tattoo work. `in_person_consultation` and
+`video_consultation` are consultations. The two are never added together
+anywhere on the screen: a consultation is not a conversion, not a session
+worked, not an hour tattooed and not a repeat visit. This is the database's
+own rule (`20260907070000_enquiry_auto_project_booking.sql`: booking a
+consultation "must not convert an enquiry into tattoo work").
 
-Because a young cohort has had less time to convert, the screen states how many
-of the period's enquiries are older than 14 days whenever some are not.
+### Conversion (enquiry to tattoo)
+Cohort-based, over mature enquiries only.
 
-### Projects created
-Rows in `projects` with `created_at` inside the period, `archived_at IS NULL`.
+- **Cohort** — enquiries created in the period. Membership is decided by
+  `created_at` and no other timestamp.
+- **Mature** — enquiries at least **14 days** old. Only these form the
+  denominator. Younger ones are reported as "pending", with how many of them
+  have already booked; they never count as unconverted.
+- **Converted** — an enquiry with at least one tattoo session or touch-up,
+  reached through `sessions.enquiry_id` or through the session's project, that
+  is neither `draft` nor `cancelled`. A no-show still counts.
+- **Not converted** — a consultation of any status, a project with no tattoo
+  session, a cancelled tattoo booking.
+- The booking may have been made after the period ended.
+- An enquiry counts once however many sessions it produced.
+- With no mature enquiry the rate is **not shown**.
+
+### Tattoo bookings made
+Tattoo sessions and touch-ups whose **booking** was made in the period
+(`sessions.created_at`), whatever date they are for, drafts excluded. A booking
+cancelled later stays counted and is shown as cancelled. This is the only
+figure that shows a week's sales while the work is months ahead.
+
+### Comparison with the previous period
+A change is stated only when the CRM holds complete history for the previous
+window: the earliest visible enquiry must be no later than the previous
+window's start. Otherwise the screen says there is no comparison and shows no
+change badge and no trend insight. A change in a rate is stated only when both
+windows have a rate.
 
 ### Sessions
 Period membership is decided by `start_at` throughout, **including for
-cancellations**. One timestamp on both sides of the division; using
-`cancelled_at` for the numerator and `start_at` for the denominator would
-divide two different populations.
+cancellations**. Every figure below is tattoo work only; consultations are
+reported apart (held, cancelled, and ahead).
 
-`draft` sessions are never counted anywhere — a draft is a half-written row.
+`draft` sessions are never counted anywhere.
 
-- **Sessions completed** — status `completed`.
-- **Sessions planned** — status `proposed` or `confirmed`.
+- **Tattoo sessions done** — status `completed`. Tattoo work is set to
+  `completed` automatically after its end time
+  (`crm_private.auto_complete_due_tattoo_sessions`) unless it was cancelled or
+  marked a no-show first, so this means "due and not called off" rather than
+  "confirmed in person".
 - **Cancellations** — status `cancelled`.
-- **No-shows** — status `no_show`, counted and displayed **separately**. A
-  client not arriving is not the booking being called off, and merging them
-  would make the cancellation rate unreadable.
-- **Cancellation rate** — cancelled ÷ every non-draft session due to start in
+- **No-shows** — status `no_show`, counted separately.
+- **Cancellation rate** — cancelled ÷ every non-draft tattoo session due in
   the period.
 
-### Hours worked
-Sum over `completed` sessions starting in the period. Length is
+### Hours tattooed
+Sum over `completed` tattoo sessions and touch-ups starting in the period. Consultations never count as hours. Length is
 `duration_hours` where the row carries it; where it does not — older rows
 predate the column being filled — the wall-clock span between `start_at` and
 `end_at` is used, which is the same quantity measured a different way. A row
 that yields neither contributes zero rather than a guess.
 
-### Repeat clients
-Identity is `client_id`. Never a matching name, email or phone string: the CRM
-already resolves intake to a client row, and that row is the answer.
+### Returning clients
+Identity is `client_id`.
 
-- **Active** — distinct clients with a completed or planned session starting in
-  the period.
-- **Repeat** — of those, the ones with **two or more** completed or planned
-  sessions with the **same artist** across their whole history (the history the
-  viewer is permitted to read). Pairing is (client, artist), so a client seen
-  once by each of two artists is a repeat client for neither.
+- **Active** — distinct (artist, client) pairs with a completed or planned
+  tattoo session or touch-up starting in the period.
+- **Returning** — of those, the ones with live tattoo work on **two or more
+  different projects** with the same artist across their visible history.
+  Several sessions of one piece are one project, not a return. A legacy
+  session with no project never adds a project.
 
-History outside the period is counted, or a client of three years would be
-called new because their second visit happens to be their only one this month.
+### Channels
+The technical source of each enquiry, first rule that applies:
 
-### Sources
-Exactly one rule fires per enquiry, in strict priority order:
+1. `communication_channel` — opened from a WhatsApp or Instagram conversation.
+2. `source = 'crm_manual'` — typed into the CRM.
+3. `utm_medium` is paid (`paid`, `cpc`, `ppc`, `cpm`, `paid_social`, ...) — a
+   paid campaign; Instagram and Facebook placements are one "Meta ads" channel.
+4. any other `utm_source` — a campaign tag.
+5. `referrer_host` — social, search, AI assistant or another site. The
+   studio's own sites are reported as "own website, origin unknown".
+6. nothing — "direct or not recorded". Never called organic.
 
-1. `booking_source_id` — a row in the booking source registry.
-2. `communication_channel` — WhatsApp or Instagram.
-3. `utm_source` — a campaign tag.
-4. `source` — the raw landing path or intake marker the form recorded.
-5. Nothing — reported as "No source recorded".
+The booking form (`booking_source_id`) is not a channel: every website enquiry
+carries it, and ranking it first hid every campaign tag behind one row.
 
-No two values are ever merged. Two registry forms sitting on the same landing
-page stay two rows, because they are two registry entries.
-
-Labels for registry forms come from `booking_sources.display_label`. That table
-is readable only to whoever may manage booking sources, which a working artist
-need not be; when the read is refused the enquiry's own `source` value is used
-instead — a second authoritative field on the same row, not a guess — and
-distinct forms remain distinct rows either way.
-
-Per source: enquiries in the period, how many converted (same rule as
-Conversion above), and the rate.
+Per channel: enquiries, how many had a consultation, how many booked tattoo
+work. No rate column: young enquiries have not failed to book.
 
 ### Self-reported discovery source
 
@@ -182,14 +199,11 @@ therefore cannot silently reach production with statistics or booking forms on
 a different vocabulary.
 
 ### Funnel
-Enquiry → Project → Session, as a cohort of the enquiries created in the
-period. Every stage counts **distinct enquiries**, not rows.
-
-Rows in the period carrying no link back up the chain — a project with no
-`enquiry_id`, a session with neither `enquiry_id` nor a linked project — are
-**reported separately, never counted as zero**. A project created before the
-CRM recorded `enquiry_id` did come from somewhere, and folding it into the
-cohort as unconverted would understate every historical period.
+Enquiry → had a consultation → booked a tattoo → tattoo done, as a cohort of
+the enquiries created in the period. Every stage counts **distinct enquiries**
+and is shown as a share of the enquiries, because a tattoo can be booked
+without a consultation. Tattoo work with no link to an enquiry is reported
+separately.
 
 ### Over time
 Enquiries by `created_at` and non-draft sessions by `start_at`, bucketed by
@@ -197,56 +211,44 @@ day (≤31 days), week starting Monday (≤120 days) or month. Every bucket in
 range is emitted, including empty ones, so a quiet week reads as a gap.
 
 ### Booked ahead
-Planned sessions starting in the next **90 days**, as a count and a total of
-hours.
+Planned tattoo sessions starting in the next **90 days**, as a count and hours,
+and the consultations in the same window as a separate count.
 
-**No utilisation percentage is shown.** A percentage needs a denominator, and
-the CRM holds no provable one: `artist_scheduling_policy` and
-`artist_availability_time_off` describe preferences and absences, not contracted
-capacity. A made-up denominator would make "73% booked" meaningless, so the
-figure is stated in hours instead.
-
-Ninety days rather than thirty because tattoo work is booked months ahead: the
-production diary at the time of writing held 60.5 hours between six and eleven
-weeks out and nothing inside a month. The window is named in every label.
+**No utilisation percentage is shown.** The CRM holds no provable capacity
+denominator.
 
 ### Money
-Shown only where the database returned finance rows. Four quantities, **never
-added together**, each reported **per currency** — adding GBP to anything else
-produces a number denominated in nothing:
+Shown only where the database returned finance rows. Three quantities, **never
+added together**, each **per currency**:
 
 | Figure | Definition |
 | --- | --- |
-| Payments received | `payment_transactions` with `status = 'succeeded'`, `direction = 'credit'`, excluding refund types, placed by `occurred_at` — when the money moved |
-| Refunded | Succeeded `debit` transactions and `refund` / `partial_refund` types. Shown apart, **never subtracted** from the figure above |
-| Deposits requested | `payment_requests` with `purpose = 'deposit'` by `created_at`, whatever became of them. A request is not a payment |
-| Quoted on new projects | `projects_finance.estimate_total` for projects created in the period. An estimate, explicitly **not revenue** |
+| Payments received | `succeeded` `credit` transactions, refund types excluded, by `occurred_at`. Deposits are included here |
+| Refunded | Succeeded `debit` or refund-type transactions. Shown apart, never subtracted |
+| Waiting to be paid | Requests with status `pending` and no past `expires_at`, read today whatever their creation date. Unexpired part-paid requests are counted, not summed, because their remainder is not in the projection |
 
-Failed transactions are excluded entirely: a payment that did not go through is
-not income. A project with no estimate is skipped, not counted as zero.
+Removed 2026-10-15: "Deposits requested" (summed cancelled and re-issued
+requests: £2,250 shown for £1,250 actually requested and paid) and "Quoted on
+new projects" (an estimate on 3 of 8 projects, read next to real money).
 
 ## Insights
 
-Deterministic sentences derived from the aggregates above. No model, no
-network, no customer data leaves the browser. The same aggregates always give
-the same sentences in the same order.
-
-Minimum denominators, below which a comparison is noise and nothing is said:
+Deterministic sentences derived from the aggregates above, shown directly under
+the period controls.
 
 | Insight | Requires |
 | --- | --- |
-| Enquiry trend | ≥5 enquiries in **both** windows and a change of ≥10% |
-| Conversion trend | ≥8 enquiries in both cohorts and a change of ≥5 points |
-| Busiest weekday | ≥8 sessions in the period **and** one day strictly ahead of the rest — a tie has no busiest day |
-| Leading source | ≥5 enquiries from that source |
-| Cancellations | ≥8 bookings due in **both** windows |
+| Channel with no bookings | ≥8 mature enquiries from one channel (not direct, manual or own site) and none booked |
+| Enquiry trend | comparable periods, ≥5 enquiries in both and a change of ≥10% |
+| Conversion trend | comparable periods, ≥8 mature enquiries in both and a change of ≥5 points |
+| Tattoo cancellations | comparable periods, ≥8 tattoo bookings due in both |
 
-These are floors, not significance tests, and the copy does not claim
-otherwise.
+These are floors, not significance tests.
 
 ## Deliberately not in the first version
 
 - **A utilisation or "load" percentage.** No provable denominator. See above.
+- **Server-side aggregation.** Planned as Statistics 2.0 (`specs/statistics-2/`).
 - **Session price and payment status as revenue.** `sessions_finance.price` is
   what a session is priced at, not what was collected; `payment_transactions`
   already answers what was collected. Adding a second, softer revenue figure
