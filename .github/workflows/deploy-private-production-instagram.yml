@@ -140,7 +140,11 @@ jobs:
       - name: Install and audit locked dependencies
         run: |
           npm ci
-          npm audit --audit-level=moderate
+          # Use the same narrowly scoped fail-closed auditor as the canonical
+          # production release. It permits only the two exact Tailwind 3
+          # dev-build advisories and blocks every additional advisory.
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Re-run Instagram security boundaries at the exact SHA
         run: |
