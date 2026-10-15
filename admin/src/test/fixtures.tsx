@@ -427,6 +427,8 @@ export interface FakeClientOptions {
    * but switched off, which is production's default.
    */
   todayPulse?: unknown;
+  /** What `get_statistics` answers. Omitted means STATISTICS_RESULT for the role. */
+  statistics?: unknown;
   /** What `get_conversation_link_suggestion` answers. Omitted means no match. */
   linkSuggestion?: unknown;
   /** The eligibility reason `get_session_booking_card_status` reports. */
@@ -756,6 +758,73 @@ function tableResult(
     default:
       return { data: [], error: null };
   }
+}
+
+/** One window of statistics_core, synthetic and aggregate-only. */
+export function statisticsCore(overrides: Record<string, unknown> = {}) {
+  return {
+    enquiries: 12,
+    unique_clients: 11,
+    discovery: { instagram: 5, ai: 4, not_recorded: 3 },
+    bookings_made: { tattoo: 3, tattoo_cancelled: 1, consultations: 2 },
+    conversion: { cohort: 12, mature: 9, converted: 3, pending: 3, pending_converted: 1, median_days_to_booking: 4.5 },
+    funnel: { enquiries: 12, answered: 10, consultations: 2, booked: 4, completed: 1 },
+    reply: { median_first_reply_hours: 6.5, timed: 7, answered_without_time: 3, unanswered: 2 },
+    channels: [
+      { key: 'paid:meta', kind: 'paid', value: 'meta', enquiries: 9, consulted: 1, booked: 0, matured: 8, matured_booked: 0 },
+      { key: 'manual', kind: 'manual', value: null, enquiries: 3, consulted: 1, booked: 3, matured: 1, matured_booked: 1 },
+    ],
+    sessions: { booked: 4, completed: 2, planned: 1, cancelled: 1, no_show: 0, hours: 12, consultations_held: 2, consultations_cancelled: 0 },
+    returning_clients: { active: 2, returning: 1 },
+    upcoming: {
+      weeks: Array.from({ length: 12 }, (_, index) => ({
+        week_start: new Date(Date.UTC(2026, 6, 20 + index * 7)).toISOString().slice(0, 10),
+        tattoo_sessions: index < 3 ? 2 : 0,
+        tattoo_hours: index < 3 ? 12 : 0,
+        consultations: index === 1 ? 1 : 0,
+      })),
+      tattoo_sessions_later: 4,
+    },
+    finance: null,
+    ...overrides,
+  };
+}
+
+export const STATISTICS_FINANCE = {
+  received: [{ currency: 'GBP', amount: 500, count: 2 }],
+  refunded: [],
+  open: [{ currency: 'GBP', amount: 250, count: 1 }],
+  partially_paid: 0,
+  forecast: {
+    confirmed_sessions: 10,
+    priced_sessions: 2,
+    booked_value: [{ currency: 'GBP', amount: 1960 }],
+    remaining_after_deposits: [{ currency: 'GBP', amount: 1460 }],
+  },
+  deposits_paid_by_channel: { manual: 2 },
+};
+
+export function statisticsResult(finance: boolean, comparable = true) {
+  return {
+    generated_at: '2026-07-20T12:00:00Z',
+    from: '2026-06-20T23:00:00Z',
+    to: '2026-07-20T23:00:00Z',
+    previous_from: '2026-05-21T23:00:00Z',
+    maturity_days: 14,
+    artists: [{
+      artist_id: VLADIMIR_ARTIST_ID,
+      finance,
+      history_start: '2026-01-01T00:00:00Z',
+      comparable,
+      current: statisticsCore({ finance: finance ? STATISTICS_FINANCE : null }),
+      previous: statisticsCore({
+        enquiries: 6,
+        bookings_made: { tattoo: 5, tattoo_cancelled: 0, consultations: 1 },
+        conversion: { cohort: 6, mature: 6, converted: 2, pending: 0, pending_converted: 0, median_days_to_booking: 3 },
+        finance: finance ? STATISTICS_FINANCE : null,
+      }),
+    }],
+  };
 }
 
 export function createFakeClient(options: FakeClientOptions): CrmClient {
@@ -1146,6 +1215,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       }
       if (name === 'list_capabilities') return { data: [], error: null };
       if (name === 'list_attention_acknowledgements') return { data: [], error: null };
+      if (name === 'get_statistics') {
+        return { data: options.statistics ?? statisticsResult(effectiveRole === 'owner'), error: null };
+      }
       if (name === 'get_today_pulse') {
         return {
           data: options.todayPulse ?? { generated_at: '2026-09-01T08:00:00Z', enabled: false, items: [], artists: [] },

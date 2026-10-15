@@ -297,3 +297,75 @@
 }
 .stats-definitions summary { cursor: pointer; color: var(--muted); }
 .stats-definitions .definition { margin-top: 12px; }
+
+/* Statistics 2.0 ------------------------------------------------------- */
+
+.stats-attention {
+  margin: 0 0 16px;
+  padding: 12px 14px 4px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 9%, var(--surface));
+  border-radius: var(--radius);
+}
+.stats-attention h2 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  color: var(--warn);
+}
+.stats-attention ul { list-style: none; margin: 0; padding: 0; }
+.stats-attention li + li { border-top: 1px solid color-mix(in srgb, var(--warn) 25%, transparent); }
+.stats-attention a {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.stats-subhead {
+  margin: 12px 0 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: none;
+}
+
+.stats-diary {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 4px;
+  align-items: end;
+}
+.stats-diary-week { display: flex; flex-direction: column; align-items: stretch; min-width: 0; }
+.stats-diary-bar-track { height: 110px; display: flex; align-items: flex-end; }
+.stats-diary-bar {
+  display: block;
+  width: 100%;
+  min-height: 3px;
+  background: var(--accent);
+  border-radius: 4px 4px 2px 2px;
+}
+.stats-diary-week.empty .stats-diary-bar { background: color-mix(in srgb, var(--danger) 45%, transparent); }
+.stats-diary-consult { min-height: 1.2em; font-size: 0.7rem; color: var(--warn); text-align: center; }
+.stats-diary-tick {
+  min-height: 1.3em;
+  font-size: 0.72rem;
+  color: var(--faint);
+  text-align: center;
+  white-space: nowrap;
+  overflow: visible;
+}
+.stats-diary-summary { margin: 10px 0 0; font-size: 0.9rem; line-height: 1.45; }
+
+.stats-details {
+  margin: 16px 0;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.stats-details summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; }
+.stats-money-pending .stats-kpi-detail { margin-top: 6px; }

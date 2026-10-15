@@ -1,25 +1,17 @@
-// Statistics - what the studio's own records say, and nothing else.
+// Statistics - how the business is going, readable on a phone in 15 seconds.
 //
-// Every figure on this screen comes from a CRM table the artist already works
-// in, aggregated by `src/lib/statistics.ts`, whose comments carry the formulas.
-// Four rules shaped what is here.
+// Every figure comes from one call to public.get_statistics, which reads
+// crm_private.statistics_core: the same definitions GPT answers with, and the
+// same reply evidence Today uses. This file formats; it does not define a
+// metric. Order follows how often a question is asked: what needs attention,
+// the four headline numbers, the diary ahead, the enquiry path, channels,
+// money, then detail.
 //
-// Tattoo work and consultations are never added together. A consultation is
-// not a conversion, not a session worked and not a repeat visit.
-//
-// Nothing is shown that cannot be defined. There is no utilisation percentage,
-// because a percentage needs a denominator and this CRM holds no provable one;
-// booked hours ahead are stated as hours instead. A conversion rate counts only
-// enquiries old enough to have booked, and no change is stated against a
-// period the CRM holds no history for.
-//
-// Nothing is filtered for security in this file. The artist selector narrows
-// the question; the database decides the answer. A finance block appears only
-// when the database returned finance rows.
-//
-// What asks for a decision comes first. The insights sit directly under the
-// period controls, because on a phone the bottom of this page is three screens
-// away.
+// Rules carried from the definitions: tattoo work and consultations are never
+// added together; conversion is judged only on enquiries old enough to book;
+// no change is stated against a window the CRM holds no history for; actual
+// money and expected money are never added together, and the expected figure
+// is shown only once most future sessions carry a price.
 
 import { useMemo, useState } from 'react';
 import { useAsync } from '../components/AsyncData';
@@ -32,61 +24,33 @@ import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import {
   CONVERSION_MATURITY_DAYS,
-  bookingsMade,
-  buildInsights,
-  channelBreakdown,
-  delta,
-  enquiryConversion,
-  financeTotals,
-  funnel,
-  granularityFor,
-  isTattooWork,
   periodForDates,
   periodForPreset,
-  previousPeriodComparable,
-  rateDelta,
-  repeatClients,
-  sessionTotals,
-  sessionsByWeekday,
-  timeSeries,
-  upcomingLoad,
-  within,
   type Channel,
-  type ChannelRow,
   type CurrencyAmount,
   type Delta,
   type PeriodPair,
 } from '../lib/statistics';
-import type { StatisticsDataset } from '../lib/statistics-api';
+import type { StatisticsChannelRow, StatisticsResult, StatisticsWeek } from '../lib/statistics-api';
+import { buildOverview, forecastReady, type StatisticsOverview } from '../lib/statistics-overview';
 import './StatisticsPage.css';
 
 const PRESETS = ['7d', '30d', '90d', '12m'] as const;
 type Preset = (typeof PRESETS)[number];
 
-/**
- * How far ahead the diary is read for the upcoming-load figures.
- *
- * Ninety days rather than thirty. Tattoo work is booked months out, so a
- * thirty-day horizon would report an empty diary for a studio that is fully
- * booked. The window is named in the label beside every figure it produces.
- */
-const FORWARD_DAYS = 90;
-
 export function StatisticsPage() {
   const api = useApi();
-  const { profile, memberships } = useSession();
   const { t, language, locale } = useLanguage();
-  const { selectedArtistId } = useArtistScope();
+  const { selectedArtistId, artists } = useArtistScope();
+  const { profile, memberships } = useSession();
+  // Payments opens only for finance managers; a view-only viewer still sees
+  // the count, without a link to a page that would refuse them.
+  const mayOpenPayments = canAccess(profile?.role, 'manageFinance', memberships);
 
   const [preset, setPreset] = useState<Preset>('30d');
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [customApplied, setCustomApplied] = useState<{ from: string; to: string } | null>(null);
-
-  // Finance is asked for only where the role could hold it. The database
-  // refuses it to everyone else regardless, so this decides what is requested,
-  // never what is permitted.
-  const mayViewFinance = canAccess(profile?.role, 'viewFinance', memberships);
 
   const period: PeriodPair = useMemo(() => {
     const now = new Date();
@@ -96,22 +60,14 @@ export function StatisticsPage() {
     return periodForPreset(preset, now);
   }, [preset, customApplied]);
 
-  const windowFrom = period.previous.from;
-  const windowTo = period.current.to;
-
-  const { data, loading, error, reload } = useAsync<StatisticsDataset>(
-    () => api.loadStatistics({
-      window: { from: windowFrom, to: windowTo },
-      forwardDays: FORWARD_DAYS,
-      artistId: selectedArtistId ?? undefined,
-      includeFinance: mayViewFinance,
-    }),
-    [api, windowFrom, windowTo, selectedArtistId, mayViewFinance],
+  const { data, loading, error, reload } = useAsync<StatisticsResult>(
+    () => api.loadStatistics({ window: period.current, artistId: selectedArtistId ?? undefined }),
+    [api, period.current.from, period.current.to, selectedArtistId],
   );
 
   const view = useMemo(
-    () => (data ? summarise(data, period, (row) => channelLabel(row, language)) : null),
-    [data, period, language],
+    () => (data ? buildOverview(data, (row) => channelLabel(row, language)) : null),
+    [data, language],
   );
 
   const controls = (
@@ -131,174 +87,195 @@ export function StatisticsPage() {
 
   if (loading) return <>{controls}<LoadingState label={t('stats.loading')} /></>;
   if (error) return <>{controls}<ErrorState message={error} onRetry={reload} /></>;
-  if (!view || !data) return <>{controls}<EmptyState title={t('stats.emptyTitle')} hint={t('stats.emptyHint')} /></>;
+  if (!view) return <>{controls}<EmptyState title={t('stats.emptyTitle')} hint={t('stats.emptyHint')} /></>;
 
-  const hasAnything = view.enquiries.current > 0
-    || view.sessions.current.booked > 0
-    || view.sessions.current.consultations.held > 0
-    || view.bookings.current.tattoo > 0;
-
-  // No change badge at all when the previous window predates the CRM's
-  // history: "+53, was 0" would claim growth from records that never existed.
+  const { current } = view;
   const change = (value: Delta) => (view.comparable ? value : undefined);
+  const nameOf = (id: string) => artists.find((artist) => artist.id === id)?.display_name ?? '';
+  const hasAnything = current.enquiries > 0 || current.bookings_made.tattoo > 0
+    || current.sessions.booked > 0 || current.sessions.consultations_held > 0;
 
   return (
     <>
       {controls}
 
       <p className="stats-context">
-        {view.comparable
-          ? t('stats.comparison', { days: period.days })
-          : t('stats.noComparison')}
+        {view.comparable ? t('stats.comparison', { days: period.days }) : t('stats.noComparison')}
       </p>
 
-      {data.truncated ? (
-        <div className="notice stats-notice" role="status">{t('stats.truncated')}</div>
-      ) : null}
-
-      {!hasAnything ? (
-        <EmptyState title={t('stats.emptyTitle')} hint={t('stats.emptyHint')} />
-      ) : null}
-
-      {view.insights.length > 0 ? (
-        <Section title={t('stats.insights')}>
-          <ul className="stats-insights">
-            {view.insights.map((insight) => (
-              <li key={`${insight.id}-${JSON.stringify(insight.params)}`} className={`stats-insight ${insight.tone}`}>
-                {t(insight.id, insight.params)}
-              </li>
-            ))}
+      {view.attention.length > 0 ? (
+        <section className="stats-attention" aria-labelledby="stats-attention-title">
+          <h2 id="stats-attention-title">{t('stats.attention')}</h2>
+          <ul>
+            {view.attention.map((item) => {
+              const text = t(`stats.attention.${item.id}`, {
+                ...item.params,
+                first: typeof item.params.first === 'string' ? dayMonth(item.params.first, locale) : '',
+              });
+              const linked = item.target !== '/payments' || mayOpenPayments;
+              return (
+                <li key={`${item.id}-${JSON.stringify(item.params)}`}>
+                  {linked ? (
+                    <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
+                  ) : (
+                    <span className="stats-attention-text">{text}</span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
-        </Section>
+        </section>
       ) : null}
+
+      {!hasAnything ? <EmptyState title={t('stats.emptyTitle')} hint={t('stats.emptyHint')} /> : null}
 
       <Section title={t('stats.headline')}>
         <div className="stats-kpis">
-          <Kpi label={t('stats.kpi.enquiries')} hint={t('stats.kpi.enquiriesHint')} value={format(view.enquiries.current, locale)} change={change(view.enquiries)} />
+          <Kpi label={t('stats.kpi.enquiries')} hint={t('stats.kpi.enquiriesHint')} value={format(current.enquiries, locale)} change={change(view.enquiries)} />
           <Kpi
             label={t('stats.kpi.booked')}
             hint={t('stats.kpi.bookedHint')}
-            value={format(view.bookings.current.tattoo, locale)}
-            detail={view.bookings.current.tattooCancelled > 0
-              ? t('stats.kpi.bookedDetail', { cancelled: view.bookings.current.tattooCancelled })
+            value={format(current.bookings_made.tattoo, locale)}
+            detail={current.bookings_made.tattoo_cancelled > 0
+              ? t('stats.kpi.bookedDetail', { cancelled: current.bookings_made.tattoo_cancelled })
               : undefined}
-            change={change(view.bookingsDelta)}
+            change={change(view.bookings)}
+          />
+          <Kpi
+            label={t('stats.kpi.reply')}
+            hint={t('stats.kpi.replyHint')}
+            value={replyValue(view, nameOf, locale)}
+            detail={t('stats.kpi.replyDetail', {
+              timed: current.reply.timed,
+              untimed: current.reply.answered_without_time,
+            })}
           />
           <Kpi
             label={t('stats.kpi.conversion')}
             hint={t('stats.kpi.conversionHint')}
-            value={percentOrDash(view.conversion.current.rate, locale)}
-            detail={view.conversion.current.denominator === 0
-              ? t('stats.kpi.conversionTooYoung', { pending: view.conversion.current.pending, days: CONVERSION_MATURITY_DAYS })
-              : t('stats.kpi.conversionDetail', {
-                converted: view.conversion.current.converted,
-                total: view.conversion.current.denominator,
-              })}
+            value={percentOrDash(view.conversion, locale)}
+            detail={current.conversion.mature === 0
+              ? t('stats.kpi.conversionTooYoung', { pending: current.conversion.pending, days: CONVERSION_MATURITY_DAYS })
+              : t('stats.kpi.conversionDetail', { converted: current.conversion.converted, total: current.conversion.mature })}
             change={view.comparable ? view.conversionDelta ?? undefined : undefined}
             changeIsPoints
           />
-          <Kpi label={t('stats.kpi.completed')} hint={t('stats.kpi.completedHint')} value={format(view.sessions.current.completed, locale)} change={change(view.completed)} />
-          <Kpi label={t('stats.kpi.hours')} hint={t('stats.kpi.hoursHint')} value={formatHours(view.sessions.current.hours, locale)} change={change(view.hours)} />
-          <Kpi
-            label={t('stats.kpi.repeat')}
-            hint={t('stats.kpi.repeatHint')}
-            value={format(view.repeat.repeat, locale)}
-            detail={t('stats.kpi.repeatDetail', {
-              active: view.repeat.active,
-              rate: percentOrDash(view.repeat.rate, locale),
-            })}
-          />
         </div>
-
-        {view.conversion.current.pending > 0 ? (
+        {current.conversion.pending > 0 ? (
           <p className="stats-caveat">
             {t('stats.conversionPending', {
-              pending: view.conversion.current.pending,
-              booked: view.conversion.current.pendingConverted,
+              pending: current.conversion.pending,
+              booked: current.conversion.pending_converted,
               days: CONVERSION_MATURITY_DAYS,
             })}
           </p>
         ) : null}
       </Section>
 
-      <Section title={t('stats.funnel')}>
-        <FunnelChart funnel={view.funnel} locale={locale} />
-        <p className="stats-caveat">{t('stats.funnelNote')}</p>
-        {view.funnel.unlinkedProjects > 0 || view.funnel.unlinkedSessions > 0 ? (
-          <p className="stats-caveat">
-            {t('stats.funnelUnlinked', {
-              projects: view.funnel.unlinkedProjects,
-              sessions: view.funnel.unlinkedSessions,
-            })}
-          </p>
-        ) : null}
-      </Section>
-
-      <Section title={t('stats.sources')}>
-        {view.channels.length === 0 ? (
-          <EmptyState compact title={t('stats.noSources')} />
-        ) : (
-          <ChannelTable rows={view.channels} locale={locale} language={language} />
-        )}
-      </Section>
-
-      <DiscoverySourceSection
-        enquiries={data.enquiries}
-        period={period.current}
-        language={language}
-        locale={locale}
-      />
-
-      <Section title={t('stats.trend')}>
-        <TrendChart points={view.series} granularity={view.granularity} locale={locale} />
-        <p className="stats-legend">
-          <span className="stats-swatch stats-swatch-enquiries" aria-hidden="true" />
-          {t('stats.legend.enquiries')}
-          <span className="stats-swatch stats-swatch-sessions" aria-hidden="true" />
-          {t('stats.legend.sessions')}
+      <Section title={t('stats.diary')}>
+        <DiaryChart weeks={current.upcoming.weeks} locale={locale} />
+        <p className="stats-diary-summary">
+          {t('stats.diarySummary', {
+            sessions: current.upcoming.weeks.reduce((total, week) => total + week.tattoo_sessions, 0),
+            hours: formatHours(current.upcoming.weeks.reduce((total, week) => total + Number(week.tattoo_hours), 0), locale),
+            later: current.upcoming.tattoo_sessions_later,
+          })}
         </p>
-      </Section>
-
-      <Section title={t('stats.sessionsSection')}>
-        <dl className="definition stats-definition">
-          <dt>{t('stats.upcomingSessions', { days: FORWARD_DAYS })}</dt>
-          <dd>{format(view.upcoming.sessions, locale)}</dd>
-          <dt>{t('stats.upcomingHours', { days: FORWARD_DAYS })}</dt>
-          <dd>{formatHours(view.upcoming.hours, locale)}</dd>
-          <dt>{t('stats.upcomingConsultations', { days: FORWARD_DAYS })}</dt>
-          <dd>{format(view.upcoming.consultations, locale)}</dd>
-          <dt>{t('stats.consultationsHeld')}</dt>
-          <dd>{format(view.sessions.current.consultations.held, locale)}</dd>
-          <dt>{t('stats.kpi.cancelled')}</dt>
-          <dd>
-            {format(view.sessions.current.cancelled, locale)}
-            {view.sessions.current.cancellationRate === null
-              ? ''
-              : ` · ${t('stats.kpi.cancelledDetail', { rate: percentOrDash(view.sessions.current.cancellationRate, locale) })}`}
-          </dd>
-          <dt>{t('stats.noShows')}</dt>
-          <dd>{format(view.sessions.current.noShow, locale)}</dd>
-          <dt>{t('stats.averageLength')}</dt>
-          <dd>{view.sessions.current.averageHours === null ? '—' : formatHours(view.sessions.current.averageHours, locale)}</dd>
-        </dl>
-        <WeekdayChart counts={view.weekday} locale={locale} />
         <p className="stats-caveat">{t('stats.noUtilisation')}</p>
       </Section>
 
-      {data.finance && view.finance ? (
+      <Section title={t('stats.funnel')}>
+        <FunnelChart overview={view} locale={locale} />
+        <p className="stats-caveat">{t('stats.funnelNote')}</p>
+        {bookingMedianText(view, nameOf) ? (
+          <p className="stats-caveat">{t('stats.daysToBooking', { days: bookingMedianText(view, nameOf) })}</p>
+        ) : null}
+        {!view.replyCoverage ? <p className="stats-caveat">{t('stats.replyCoverage')}</p> : null}
+      </Section>
+
+      <Section title={t('stats.sources')}>
+        <div id="stats-channels" />
+        {current.channels.length === 0 ? (
+          <EmptyState compact title={t('stats.noSources')} />
+        ) : (
+          <ChannelTable
+            rows={current.channels}
+            depositsPaid={current.finance ? current.finance.deposits_paid_by_channel : null}
+            locale={locale}
+            language={language}
+          />
+        )}
+      </Section>
+
+      <DiscoverySourceSection counts={current.discovery} language={language} locale={locale} />
+
+      {current.finance ? (
         <Section title={t('stats.finance')}>
+          <h3 className="stats-subhead">{t('stats.money.actual')}</h3>
           <div className="stats-money">
-            <MoneyBlock title={t('stats.money.received')} hint={t('stats.money.receivedHint')} amounts={view.finance.received} language={language} />
-            <MoneyBlock title={t('stats.money.refunded')} hint={t('stats.money.refundedHint')} amounts={view.finance.refunded} language={language} />
+            <MoneyBlock title={t('stats.money.received')} hint={t('stats.money.receivedHint')} amounts={current.finance.received} language={language} />
+            <MoneyBlock title={t('stats.money.refunded')} hint={t('stats.money.refundedHint')} amounts={current.finance.refunded} language={language} />
+          </div>
+          <h3 className="stats-subhead">{t('stats.money.expected')}</h3>
+          <div className="stats-money">
             <MoneyBlock
               title={t('stats.money.open')}
-              hint={view.finance.partiallyPaid > 0
-                ? `${t('stats.money.openHint')} ${t('stats.money.partiallyPaid', { count: view.finance.partiallyPaid })}`
+              hint={current.finance.partially_paid > 0
+                ? `${t('stats.money.openHint')} ${t('stats.money.partiallyPaid', { count: current.finance.partially_paid })}`
                 : t('stats.money.openHint')}
-              amounts={view.finance.open}
+              amounts={current.finance.open}
               language={language}
             />
+            {forecastReady(current.finance) ? (
+              <>
+                <MoneyBlock title={t('stats.money.bookedValue')} hint={t('stats.money.bookedValueHint')} amounts={current.finance.forecast.booked_value} language={language} />
+                <MoneyBlock title={t('stats.money.remaining')} hint={t('stats.money.remainingHint')} amounts={current.finance.forecast.remaining_after_deposits} language={language} />
+              </>
+            ) : (
+              <div className="card stats-money-block stats-money-pending">
+                <div className="stats-kpi-label">{t('stats.money.bookedValue')}</div>
+                <div className="stats-kpi-detail">
+                  {t('stats.money.forecastCoverage', {
+                    priced: current.finance.forecast.priced_sessions,
+                    total: current.finance.forecast.confirmed_sessions,
+                  })}
+                </div>
+              </div>
+            )}
           </div>
+        </Section>
+      ) : null}
+
+      <details className="stats-details">
+        <summary>{t('stats.detailsTitle')}</summary>
+        <dl className="definition stats-definition">
+          <dt>{t('stats.kpi.completed')}</dt>
+          <dd>{format(current.sessions.completed, locale)}{view.comparable ? ` · ${t('stats.change.previous', { value: format(view.completed.previous, locale) })}` : ''}</dd>
+          <dt>{t('stats.kpi.hours')}</dt>
+          <dd>{formatHours(Number(current.sessions.hours), locale)}</dd>
+          <dt>{t('stats.kpi.repeat')}</dt>
+          <dd>{t('stats.kpi.repeatDetail', {
+            rate: current.returning_clients.active === 0 ? '—' : percentOrDash((current.returning_clients.returning / current.returning_clients.active) * 100, locale),
+            active: current.returning_clients.active,
+          })} ({format(current.returning_clients.returning, locale)})</dd>
+          <dt>{t('stats.kpi.cancelled')}</dt>
+          <dd>{format(current.sessions.cancelled, locale)}</dd>
+          <dt>{t('stats.noShows')}</dt>
+          <dd>{format(current.sessions.no_show, locale)}</dd>
+          <dt>{t('stats.consultationsHeld')}</dt>
+          <dd>{format(current.sessions.consultations_held, locale)}</dd>
+          <dt>{t('stats.uniqueClients')}</dt>
+          <dd>{format(current.unique_clients, locale)}</dd>
+        </dl>
+      </details>
+
+      {view.insights.length > 0 ? (
+        <Section title={t('stats.insights')}>
+          <ul className="stats-insights">
+            {view.insights.map((insight) => (
+              <li key={insight.id} className={`stats-insight ${insight.tone}`}>{t(insight.id, insight.params)}</li>
+            ))}
+          </ul>
         </Section>
       ) : null}
 
@@ -307,9 +284,9 @@ export function StatisticsPage() {
         <dl className="definition">
           <dt>{t('stats.kpi.enquiries')}</dt><dd>{t('stats.def.enquiries')}</dd>
           <dt>{t('stats.kpi.booked')}</dt><dd>{t('stats.def.booked')}</dd>
+          <dt>{t('stats.kpi.reply')}</dt><dd>{t('stats.def.reply')}</dd>
           <dt>{t('stats.kpi.conversion')}</dt><dd>{t('stats.def.conversion')}</dd>
           <dt>{t('stats.kpi.completed')}</dt><dd>{t('stats.def.completed')}</dd>
-          <dt>{t('stats.kpi.hours')}</dt><dd>{t('stats.def.hours')}</dd>
           <dt>{t('stats.kpi.cancelled')}</dt><dd>{t('stats.def.cancelled')}</dd>
           <dt>{t('stats.kpi.repeat')}</dt><dd>{t('stats.def.repeat')}</dd>
           <dt>{t('stats.sources')}</dt><dd>{t('stats.def.sources')}</dd>
@@ -320,72 +297,23 @@ export function StatisticsPage() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Aggregation
-// ---------------------------------------------------------------------------
+function replyValue(view: StatisticsOverview, nameOf: (id: string) => string, locale: string): string {
+  const known = view.replyMedians.filter((entry) => entry.hours !== null);
+  if (known.length === 0) return '—';
+  if (view.replyMedians.length === 1) return formatHours(Number(known[0].hours), locale);
+  // Medians do not add up; one per artist, initial first.
+  return known.map((entry) => `${nameOf(entry.artistId).slice(0, 1)} ${formatHours(Number(entry.hours), locale)}`).join(' · ');
+}
 
-/**
- * Every figure the screen renders, computed once per load.
- *
- * Both windows come out of one dataset, so the comparison is between two slices
- * of the same read rather than two reads taken moments apart.
- */
-function summarise(
-  data: StatisticsDataset,
-  period: PeriodPair,
-  label: (row: ChannelRow) => string,
-) {
-  const now = new Date();
-  const { current, previous } = period;
-  const maturity = { now, days: CONVERSION_MATURITY_DAYS };
-  const comparable = previousPeriodComparable(period, data.historyStart);
+function bookingMedianText(view: StatisticsOverview, nameOf: (id: string) => string): string {
+  const known = view.bookingMedians.filter((entry) => entry.days !== null);
+  if (known.length === 0) return '';
+  if (view.bookingMedians.length === 1) return String(known[0].days);
+  return known.map((entry) => `${nameOf(entry.artistId).slice(0, 1)} ${entry.days}`).join(' · ');
+}
 
-  const enquiriesIn = (window: typeof current) =>
-    data.enquiries.filter((enquiry) => within(window, enquiry.created_at)).length;
-
-  const sessionsNow = sessionTotals(data.sessions, current);
-  const sessionsBefore = sessionTotals(data.sessions, previous);
-  const bookingsNow = bookingsMade(data.sessions, current);
-  const bookingsBefore = bookingsMade(data.sessions, previous);
-  const conversionNow = enquiryConversion(data.enquiries, data.projects, data.sessions, current, maturity);
-  const conversionBefore = enquiryConversion(data.enquiries, data.projects, data.sessions, previous, maturity);
-  const channels = channelBreakdown(data.enquiries, data.projects, data.sessions, current, maturity);
-  const granularity = granularityFor(period.days);
-  const enquiries = delta(enquiriesIn(current), enquiriesIn(previous));
-
-  return {
-    comparable,
-    enquiries,
-    bookings: { current: bookingsNow, previous: bookingsBefore },
-    bookingsDelta: delta(bookingsNow.tattoo, bookingsBefore.tattoo),
-    completed: delta(sessionsNow.completed, sessionsBefore.completed),
-    hours: delta(round1(sessionsNow.hours), round1(sessionsBefore.hours)),
-    // Conversion moves in percentage points. null whenever either side has no
-    // rate: a cohort with no mature enquiries has no conversion, not 0%.
-    conversionDelta: rateDelta(conversionNow.rate, conversionBefore.rate),
-    conversion: { current: conversionNow, previous: conversionBefore },
-    sessions: { current: sessionsNow, previous: sessionsBefore },
-    repeat: repeatClients(data.sessions, current),
-    upcoming: upcomingLoad(data.sessions, now, FORWARD_DAYS),
-    weekday: sessionsByWeekday(data.sessions, current),
-    funnel: funnel(data.enquiries, data.projects, data.sessions, current),
-    channels,
-    granularity,
-    // The sessions bar is tattoo work, the same population as every other
-    // session figure on the screen.
-    series: timeSeries(data.enquiries, data.sessions.filter(isTattooWork), current, granularity),
-    finance: data.finance
-      ? financeTotals(data.finance.transactions, data.finance.openRequests, current, now)
-      : null,
-    insights: buildInsights({
-      comparable,
-      enquiries,
-      conversion: { current: conversionNow, previous: conversionBefore },
-      sessions: { current: sessionsNow, previous: sessionsBefore },
-      channels,
-      channelLabel: label,
-    }),
-  };
+function dayMonth(isoDate: string, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(`${isoDate}T00:00:00`));
 }
 
 // ---------------------------------------------------------------------------
@@ -510,57 +438,47 @@ function ChangeBadge({
   );
 }
 
-function TrendChart({
-  points, granularity, locale,
-}: {
-  points: Array<{ bucket: string; enquiries: number; sessions: number }>;
-  granularity: 'day' | 'week' | 'month';
-  locale: string;
-}) {
+function DiaryChart({ weeks, locale }: { weeks: StatisticsWeek[]; locale: string }) {
   const { t } = useLanguage();
-  const peak = Math.max(1, ...points.map((point) => Math.max(point.enquiries, point.sessions)));
-
+  const peak = Math.max(1, ...weeks.map((week) => Number(week.tattoo_hours)));
   return (
-    <div className="stats-chart" role="list" aria-label={t('stats.trend')}>
-      {points.map((point) => (
+    <div className="stats-diary" role="list" aria-label={t('stats.diary')}>
+      {weeks.map((week, index) => (
         <div
-          key={point.bucket}
-          className="stats-chart-column"
+          key={week.week_start}
+          className={week.tattoo_sessions === 0 ? 'stats-diary-week empty' : 'stats-diary-week'}
           role="listitem"
-          aria-label={t('stats.trendPoint', {
-            bucket: bucketLabel(point.bucket, granularity, locale),
-            enquiries: point.enquiries,
-            sessions: point.sessions,
+          aria-label={t('stats.diaryWeek', {
+            week: dayMonth(week.week_start, locale),
+            hours: formatHours(Number(week.tattoo_hours), locale),
+            consultations: week.consultations,
           })}
         >
-          <div className="stats-chart-bars">
-            <span
-              className="stats-bar stats-bar-enquiries"
-              style={{ height: `${(point.enquiries / peak) * 100}%` }}
-            />
-            <span
-              className="stats-bar stats-bar-sessions"
-              style={{ height: `${(point.sessions / peak) * 100}%` }}
-            />
+          <div className="stats-diary-bar-track">
+            <span className="stats-diary-bar" style={{ height: `${(Number(week.tattoo_hours) / peak) * 100}%` }} />
           </div>
-          <div className="stats-chart-tick">{bucketLabel(point.bucket, granularity, locale)}</div>
+          <div className="stats-diary-consult" aria-hidden="true">{week.consultations > 0 ? `●${week.consultations}` : ''}</div>
+          <div className="stats-diary-tick" aria-hidden="true">{index % 2 === 0 ? dayMonth(week.week_start, locale) : ''}</div>
         </div>
       ))}
     </div>
   );
 }
 
-function FunnelChart({
-  funnel: stages, locale,
-}: {
-  funnel: ReturnType<typeof funnel>;
-  locale: string;
-}) {
+function FunnelChart({ overview, locale }: { overview: StatisticsOverview; locale: string }) {
   const { t } = useLanguage();
-  const top = Math.max(1, stages.stages[0].count);
+  const { funnel } = overview.current;
+  const stages: Array<{ id: string; count: number }> = [
+    { id: 'enquiries', count: funnel.enquiries },
+    { id: 'answered', count: funnel.answered },
+    { id: 'consultations', count: funnel.consultations },
+    { id: 'booked', count: funnel.booked },
+    { id: 'completed', count: funnel.completed },
+  ];
+  const top = Math.max(1, funnel.enquiries);
   return (
     <div className="stats-funnel">
-      {stages.stages.map((stage) => (
+      {stages.map((stage) => (
         <div key={stage.id} className="stats-funnel-stage">
           <div className="stats-funnel-head">
             <span>{t(`stats.funnel.${stage.id}`)}</span>
@@ -570,7 +488,9 @@ function FunnelChart({
             <span className="stats-funnel-fill" style={{ width: `${(stage.count / top) * 100}%` }} />
           </div>
           <div className="stats-funnel-rate">
-            {stage.shareOfEnquiries === null ? '' : t('stats.funnelRate', { rate: percentOrDash(stage.shareOfEnquiries, locale) })}
+            {stage.id === 'enquiries' || funnel.enquiries === 0 ? '' : t('stats.funnelRate', {
+              rate: percentOrDash((stage.count / funnel.enquiries) * 100, locale),
+            })}
           </div>
         </div>
       ))}
@@ -578,33 +498,11 @@ function FunnelChart({
   );
 }
 
-function WeekdayChart({ counts, locale }: { counts: number[]; locale: string }) {
-  const { t } = useLanguage();
-  const peak = Math.max(1, ...counts);
-  return (
-    <div className="stats-weekday" role="list" aria-label={t('stats.weekdayTitle')}>
-      {counts.map((count, index) => (
-        <div
-          key={index}
-          className="stats-weekday-row"
-          role="listitem"
-          aria-label={`${weekdayName(index, locale)}: ${count}`}
-        >
-          <span className="stats-weekday-name">{weekdayName(index, locale)}</span>
-          <span className="stats-weekday-track">
-            <span className="stats-weekday-fill" style={{ width: `${(count / peak) * 100}%` }} />
-          </span>
-          <span className="stats-weekday-count">{format(count, locale)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function ChannelTable({
-  rows, locale, language,
+  rows, depositsPaid, locale, language,
 }: {
-  rows: ChannelRow[];
+  rows: StatisticsChannelRow[];
+  depositsPaid: Record<string, number> | null;
   locale: string;
   language: Language;
 }) {
@@ -618,6 +516,7 @@ function ChannelTable({
             <th scope="col">{t('stats.enquiriesColumn')}</th>
             <th scope="col">{t('stats.consultedColumn')}</th>
             <th scope="col">{t('stats.bookedColumn')}</th>
+            {depositsPaid ? <th scope="col">{t('stats.depositColumn')}</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -627,6 +526,7 @@ function ChannelTable({
               <td>{format(row.enquiries, locale)}</td>
               <td>{format(row.consulted, locale)}</td>
               <td>{format(row.booked, locale)}</td>
+              {depositsPaid ? <td>{format(depositsPaid[row.key] ?? 0, locale)}</td> : null}
             </tr>
           ))}
         </tbody>
@@ -686,17 +586,6 @@ function signed(value: number, locale: string): string {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
-}
-
-function weekdayName(index: number, locale: string): string {
-  // 2026-01-05 is a Monday, so index 0 lands on it.
-  return new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(new Date(2026, 0, 5 + index));
-}
-
-function bucketLabel(bucket: string, granularity: 'day' | 'week' | 'month', locale: string): string {
-  const date = new Date(`${bucket}T00:00:00`);
-  if (granularity === 'month') return new Intl.DateTimeFormat(locale, { month: 'short' }).format(date);
-  return new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(date);
 }
 
 const PLATFORM_NAMES: Record<string, string> = {
