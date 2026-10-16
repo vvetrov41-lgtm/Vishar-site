@@ -33,9 +33,8 @@ from (values
   ('fa000000-0000-4000-8000-000000000004'::uuid,'tattoo_session','confirmed',interval '24 hours',interval '4 hours')
 ) v(id,appointment_type,status,lead,duration);
 
--- The tattoo sessions were booked before the consultation began, so none is
--- evidence that the consultation took place (20261015180000): the clock alone
--- must leave the consultation as it is.
+-- Booked before the consultation began. Nothing completes a consultation
+-- automatically (20261016090000); the dates are kept neutral regardless.
 update public.sessions set created_at = now() - interval '2 days'
 where id in ('fa000000-0000-4000-8000-000000000001',
              'fa000000-0000-4000-8000-000000000003',

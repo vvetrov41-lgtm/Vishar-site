@@ -1,28 +1,19 @@
 -- 1847_consultation_outcome.sql
 --
--- Consultations (20261015180000): a past date never makes a consultation
--- "held". It is held when the operator says so, or when a tattoo booking for
--- the same client made after it began proves the client came.
+-- Consultations (20261015180000, 20261016090000): neither a past date nor a
+-- later tattoo booking makes a consultation "held". Only the operator's
+-- recorded outcome does; anything else stays unverified.
 
 begin;
 select no_plan();
 
-select ok(
-  (select bool_and(not has_function_privilege(role, p.oid, 'EXECUTE'))
-   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   cross join unnest(array['anon', 'authenticated', 'service_role']) role
-   where n.nspname = 'crm_private' and p.proname = 'resolve_evidenced_consultations'),
-  'evidence resolution is not callable by any API role'
-);
+select is(
+  to_regprocedure('crm_private.resolve_evidenced_consultations(integer)'),
+  null, 'no function infers a consultation outcome');
 select ok(
   pg_get_functiondef('crm_private.auto_complete_due_tattoo_sessions(integer)'::regprocedure)
-    like '%crm_private.resolve_evidenced_consultations(p_limit)%',
-  'the automation tick step resolves evidenced consultations'
-);
-select ok(
-  pg_get_functiondef('public.service_run_automation_tick(integer)'::regprocedure)
-    like '%crm_private.auto_complete_due_tattoo_sessions(%',
-  'and the tick still runs that step'
+    not like '%consultation%',
+  'the automation tick step touches tattoo work only'
 );
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -47,7 +38,7 @@ insert into public.projects (id, client_id, status, title, artist_id)
 select ('5e3' || substr(c.id::text, 4))::uuid, c.id, 'active', 'Outcome project', '5e000001-0000-4000-8000-000000000001'
 from public.clients c where c.id::text like '5e1000%';
 
--- C1 ended; the client booked a tattoo after it  -> completed by evidence
+-- C1 ended; the client booked a tattoo after it  -> stays unverified (no proof)
 -- C2 ended; the tattoo was booked before it      -> stays unverified
 -- C3 ended; nothing booked                       -> stays unverified
 -- C4 cancelled                                   -> stays cancelled
@@ -88,39 +79,24 @@ select is((select (r ->> 'consultations_awaiting_outcome')::int from before_reso
 select is((select (r -> 'sessions' ->> 'consultations_cancelled')::int from before_resolve), 1,
   'a cancelled consultation stays cancelled and apart');
 
--- ------------------------------------------------------------ evidence
-
-select set_config('request.jwt.claims', '{"role":"authenticated"}', true);
-select throws_ok(
-  $$select crm_private.resolve_evidenced_consultations(100)$$,
-  '42501', null, 'evidence resolution refuses a non-backend caller');
+-- ---------------------------------------------- the tick infers nothing
 
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
-select is(crm_private.resolve_evidenced_consultations(100) >= 1, true, 'the backend resolves evidenced consultations');
-
-select is((select status::text from public.sessions where id = '5e400001-0000-4000-8000-000000000001'), 'completed',
-  'a tattoo booked after the consultation proves it took place');
+select lives_ok($$select crm_private.auto_complete_due_tattoo_sessions(100)$$, 'the tick step runs');
 select is(
-  (select metadata ->> 'completion_source' || ':' || (metadata ->> 'evidence_session_id')
-   from public.activity_log
-   where session_id = '5e400001-0000-4000-8000-000000000001' and event_type = 'appointment.status_changed'
-   order by occurred_at desc limit 1),
-  'follow_on_booking:5e500001-0000-4000-8000-000000000001',
-  'the completion is audited with its evidence');
-select is((select status::text from public.sessions where id = '5e400002-0000-4000-8000-000000000002'), 'confirmed',
-  'a tattoo booked before the consultation is no evidence');
-select is((select status::text from public.sessions where id = '5e400003-0000-4000-8000-000000000003'), 'confirmed',
-  'no booking, no outcome: the clock alone completes nothing');
+  (select count(*)::int from public.sessions
+   where artist_id = '5e000001-0000-4000-8000-000000000001'
+     and appointment_type = 'in_person_consultation' and status = 'completed'),
+  0, 'not even a later tattoo booking completes a consultation');
 select is((select status::text from public.sessions where id = '5e400004-0000-4000-8000-000000000004'), 'cancelled',
   'a cancelled consultation keeps its status');
 select is((select status::text from public.sessions where id = '5e400005-0000-4000-8000-000000000005'), 'confirmed',
   'an upcoming consultation is untouched');
-select is((select status::text from public.sessions where id = '5e400006-0000-4000-8000-000000000006'), 'confirmed',
-  'a cancelled tattoo booking is no evidence');
 
 -- --------------------------------------------- the operator records outcome
 
 -- The existing status path: "took place" and "client did not come".
+update public.sessions set status = 'completed' where id = '5e400001-0000-4000-8000-000000000001';
 update public.sessions set status = 'no_show' where id = '5e400003-0000-4000-8000-000000000003';
 
 create temporary table after_resolve on commit drop as
