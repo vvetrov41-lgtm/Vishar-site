@@ -54,6 +54,22 @@ describe('Statistics screen', () => {
     expect(within(kpis).getByText('3 of 9 judged')).toBeInTheDocument();
   });
 
+  it('jumps from the Meta attention alert to channels without changing the hash route', async () => {
+    await renderStatistics('owner');
+    const target = document.getElementById('stats-channels');
+    expect(target).not.toBeNull();
+    const scroll = vi.fn();
+    target!.scrollIntoView = scroll;
+    const originalHash = window.location.hash;
+
+    fireEvent.click(screen.getByRole('button', { name: /Meta ads: 8 enquiries old enough to judge, no tattoo booked/ }));
+
+    expect(scroll).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+    expect(window.location.hash).toBe(originalHash);
+    expect(screen.getByRole('heading', { level: 2, name: 'Headline' })).toBeInTheDocument();
+    expect(screen.queryByText('Page not found')).not.toBeInTheDocument();
+  });
+
   it('shows the diary ahead week by week, in hours, with no utilisation percentage', async () => {
     await renderStatistics('owner');
     expect(screen.getByRole('list', { name: 'Diary ahead' }).querySelectorAll('[role="listitem"]')).toHaveLength(12);
