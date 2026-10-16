@@ -7,11 +7,22 @@ value of upcoming sessions without a saved price, is labelled as such and
 kept apart from confirmed prices and money received (see Money).
 
 On a phone the first screen holds the four headline figures and "Needs
-attention" above the bottom navigation; charts follow. `npm run
-check:mobile-layout` (admin, run in CI's Private CRM job) renders the screen
-with every attention item at once and fails if either block reaches the tab
-bar, or anything scrolls sideways, at 390x844, 393x852 and 430x932, in
-English and Russian.
+attention" above the bottom navigation; what the changes compare against,
+the conversion caveat and the charts follow. The CRM has no web app manifest,
+so on an iPhone it runs inside Safari. `npm run check:mobile-layout` (admin,
+run in CI's Private CRM job) renders the screen with all five attention items
+at once (the worst case) and measures it in Chromium, in English and Russian:
+
+| Viewport | Must be above the tab bar |
+| --- | --- |
+| 390x844, 393x852, 430x932 (Safari toolbar collapsed) | the four figures and all five attention items |
+| 390x664, 393x659 (6.1" with Safari's toolbar showing) | the four figures, the heading and the first four items |
+| 430x746 (Pro Max with the toolbar showing) | the four figures and all five items |
+
+It also fails on any sideways scroll, a headline detail cut off, or a console
+error. Five 44px tap rows do not fit a 6.1" phone with the toolbar out, and
+tap targets are not shrunk for it; with the usual two or three items the
+whole block fits there too.
 
 This document is the contract. Where it and the screen disagree, one of them is
 a bug — `admin/src/lib/statistics.ts` carries the same definitions in code, and
