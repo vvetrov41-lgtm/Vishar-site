@@ -23,6 +23,7 @@ TELEGRAM_DRAIN_ENABLED = "true"
 GMAIL_SHARED_DRAIN_ENABLED = "true"
 AUTOMATION_TICK_ENABLED = "true"
 TELEGRAM_LINKING_ENABLED = "false"
+META_ADS_DRAIN_ENABLED = "false"
 
 [[services]]
 binding = "GMAIL_SERVICE"
@@ -256,4 +257,17 @@ for (const domain of ['telegram.vishartattoo.com', 'telegram.vishartattoo.com/we
   assert.ok(printed.includes('automation_tick_enabled'));
 }
 
-console.log('Telegram production preflight tests passed: Gmail shared drain, automation heartbeat, Cloudflare visibility and linking state transitions are explicitly gated.');
+{
+  const metaOn = parseDeployConfig(GENERATED.replace('META_ADS_DRAIN_ENABLED = "false"', 'META_ADS_DRAIN_ENABLED = "true"'));
+  assert.ok(evaluatePreflight({ live: READY_LIVE, desired: metaOn }).failures.some(f => f.includes('--allow-meta-ads')));
+  assert.ok(evaluatePreflight({ live: READY_LIVE, desired: metaOn, allowMetaAds: true }).failures.some(f => f.includes('META_ADS_VLADIMIR_ACCESS_TOKEN')));
+  const withToken = { ...READY_LIVE, secretNames: [...READY_LIVE.secretNames, 'META_ADS_VLADIMIR_ACCESS_TOKEN'] };
+  assert.equal(evaluatePreflight({ live: withToken, desired: metaOn, allowMetaAds: true }).ok, true);
+  const liveMeta = { ...withToken, bindings: [...withToken.bindings, { name: 'META_ADS_DRAIN_ENABLED', type: 'plain_text', text: 'true' }] };
+  assert.ok(evaluatePreflight({ live: liveMeta, desired }).failures.some(f => f.includes('--allow-meta-ads-disable')));
+  assert.equal(evaluatePreflight({ live: liveMeta, desired, allowMetaAdsDisable: true }).ok, true);
+  const missingFlag = parseDeployConfig(GENERATED.replace('META_ADS_DRAIN_ENABLED = "false"', ''));
+  assert.ok(evaluatePreflight({ live: READY_LIVE, desired: missingFlag }).failures.some(f => f.includes('explicitly set META_ADS_DRAIN_ENABLED')));
+}
+
+console.log('Telegram production preflight tests passed, including gated Meta CAPI enablement, required token and explicit rollback.');

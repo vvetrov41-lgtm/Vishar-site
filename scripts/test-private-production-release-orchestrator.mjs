@@ -195,4 +195,23 @@ expectIncludes(telegramRollback, 'disable_linking:', 'Telegram rollback');
 expectIncludes(telegramRollback, 'DISABLE_TELEGRAM_LINKING', 'Telegram rollback');
 expectIncludes(telegramRollback, 'legacy_artist_fallback_retained: true', 'Telegram rollback');
 
+// Every full release redeploys the shared scheduler. Generating its config
+// without --enable-meta-ads silently set META_ADS_DRAIN_ENABLED=false on
+// 2026-10-15 and left Meta CAPI conversions pending. Both release paths must
+// keep the Meta drain on and pass the matching preflight gate.
+const backendAuthScheduler = read('.github/workflows/backend-auth-scheduler-release.yml');
+for (const [label, text] of [['full release', workflow], ['backend-auth scheduler release', backendAuthScheduler]]) {
+  for (const line of text.split('\n')) {
+    if (line.includes('generate-telegram-production-deploy-config.mjs "$')) {
+      expectIncludes(line, '--enable-meta-ads', `${label} Telegram config generation`);
+    }
+    if (line.includes('preflight-telegram-production.mjs "$')) {
+      expectIncludes(line, '--allow-meta-ads', `${label} Telegram preflight`);
+    }
+  }
+  expectIncludes(text, `grep -Fq 'META_ADS_DRAIN_ENABLED = "true"' "$deploy_config"`, `${label} Meta drain readback`);
+}
+expectIncludes(telegramRollback, 'disable_meta_ads:', 'Telegram Meta CAPI rollback');
+expectIncludes(telegramRollback, 'DISABLE_META_ADS_CAPI', 'Telegram Meta CAPI rollback');
+
 console.log('Private production release orchestrator boundaries: passed');
