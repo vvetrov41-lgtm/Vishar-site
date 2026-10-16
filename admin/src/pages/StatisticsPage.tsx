@@ -155,7 +155,18 @@ export function StatisticsPage() {
               return (
                 <li key={`${item.id}-${JSON.stringify(item.params)}`}>
                   {linked ? (
-                    <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
+                    // The CRM uses the URL hash for routes. A native href="#stats-channels"
+                    // replaces #/statistics with an unknown route; scroll inside the page instead.
+                    item.target === '#stats-channels' ? (
+                      <button
+                        type="button"
+                        onClick={() => document.getElementById('stats-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                      >
+                        <span>{text}</span><span aria-hidden="true">›</span>
+                      </button>
+                    ) : (
+                      <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
+                    )
                   ) : (
                     <span className="stats-attention-text">{text}</span>
                   )}
