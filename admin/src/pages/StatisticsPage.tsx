@@ -607,7 +607,12 @@ function ForecastPanel({
         </div>
       </div>
       <div className="stats-forecast-remaining">
-        <div className="stats-kpi-label">{t('stats.forecast.remaining')}</div>
+        {/* Once any estimate is in it, the remainder is a forecast, not an
+            amount anyone has agreed to pay: it says so, and the part resting
+            on confirmed prices alone is given beside it. */}
+        <div className="stats-kpi-label">
+          {t(forecast.estimated.sessions > 0 ? 'stats.forecast.remainingForecast' : 'stats.forecast.remainingConfirmed')}
+        </div>
         {lines(forecast.remaining_after_deposits, forecast.estimated.sessions > 0)}
         <div className="stats-kpi-detail">
           {forecast.deposits_paid.length > 0
@@ -616,6 +621,15 @@ function ForecastPanel({
             })
             : t('stats.forecast.remainingNoDeposits')}
         </div>
+        {forecast.estimated.sessions > 0 ? (
+          <div className="stats-kpi-detail">
+            {t('stats.forecast.remainingConfirmedPart', {
+              amount: forecast.confirmed.remaining_after_deposits.length === 0
+                ? '—'
+                : forecast.confirmed.remaining_after_deposits.map((entry) => formatMoney(entry.amount, entry.currency, language)).join(' · '),
+            })}
+          </div>
+        ) : null}
       </div>
       <p className="stats-caveat">
         {t('stats.forecast.coverage', { confirmed: forecast.confirmed.sessions, total: forecast.sessions })}
