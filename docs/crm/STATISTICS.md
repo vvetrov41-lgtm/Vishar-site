@@ -7,7 +7,11 @@ value of upcoming sessions without a saved price, is labelled as such and
 kept apart from confirmed prices and money received (see Money).
 
 On a phone the first screen holds the four headline figures and "Needs
-attention" above the bottom navigation (checked at 390x844); charts follow.
+attention" above the bottom navigation; charts follow. `npm run
+check:mobile-layout` (admin, run in CI's Private CRM job) renders the screen
+with every attention item at once and fails if either block reaches the tab
+bar, or anything scrolls sideways, at 390x844, 393x852 and 430x932, in
+English and Russian.
 
 This document is the contract. Where it and the screen disagree, one of them is
 a bug — `admin/src/lib/statistics.ts` carries the same definitions in code, and
@@ -259,6 +263,14 @@ not typed, the amount follows the chosen length; a typed amount is kept.
 session until a price is saved. Editing an existing session never replaces
 its saved price; it only offers a one-tap suggestion.
 
+Changes after booking, read on the next load (no stored copy to go stale):
+a reschedule counts the session at its new date and new length, so its
+estimate follows; a cancelled session leaves the forecast and its deposit is
+no longer taken off; a saved price never changes when the session is moved,
+lengthened or shortened, or when the artist's rates change. Checked through
+the CRM's own `reschedule_appointment` and `set_appointment_status` in
+`1846_statistics_session_value.sql`.
+
 An artist without rates has no basis for an estimate. Another artist's rates
 are never borrowed: those sessions are counted with their hours as "without a
 basis", and the screen says the rates are missing.
@@ -271,7 +283,7 @@ basis", and the screen says the rates are missing.
 | Confirmed price | Sum of `sessions.price` of those sessions, with their count |
 | Estimated from rates | For each session without a saved price: the project's hourly rate × length; at the artist's standard rate a session of at least the configured day length is the day price; without a project rate, the artist's day price or hourly rate × length. Shown with "≈" and a dashed outline |
 | Expected value | Confirmed plus estimated |
-| Still to collect | Expected value minus the paid deposit `crm_private.booking_card_deposit_for_session` allocates to each session, once, never below zero per session. The confirmed-only balance is also returned |
+| Forecast still to collect | Expected value minus the paid deposit `crm_private.booking_card_deposit_for_session` allocates to each session, once, never below zero per session. While any estimate is in it, it is labelled a forecast ("Прогнозируемый остаток к получению"), shown with "≈", and the part at confirmed prices alone is printed beside it. Only when every price is confirmed is it labelled "Still to collect at confirmed prices" |
 | Completeness | "{confirmed} of {total} sessions have a confirmed price", always shown. The former rule that hid the forecast below 80% coverage was removed on 2026-10-15 |
 | Waiting to be paid | Requests with status `pending` and no past `expires_at`, read today whatever their creation date. Unexpired part-paid requests are counted, not summed, because their remainder is not in the projection |
 
@@ -338,6 +350,8 @@ These are floors, not significance tests.
   two answers through the status RPC.
 - `admin/src/test/session-pricing.test.ts` — the same estimate cases against
   the CRM's price suggestion.
+- `admin/scripts/check-mobile-layout.mjs` — the first phone screen, measured
+  in Chromium (see the top of this document).
 - `admin/src/test/statistics-api.test.ts` — one RPC call, artist scope left to
   the database, refusal surfaced as an error.
 - `admin/src/test/statistics-page.test.tsx` — order on a phone, money for

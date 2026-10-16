@@ -189,6 +189,10 @@ jobs:
       - name: Production build
         run: npm run build
 
+      - name: Statistics first screen fits a phone (390x844, 393x852, 430x932; EN and RU)
+        # playwright-core downloads no browser; the runner's Google Chrome is used.
+        run: npm run check:mobile-layout
+
       - name: Verify private CRM artifact contains no staging endpoints or privileged credentials
         working-directory: .
         run: node scripts/check-private-crm-artifact.mjs admin/dist

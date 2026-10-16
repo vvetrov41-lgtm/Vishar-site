@@ -87,9 +87,35 @@ describe('Statistics screen', () => {
     expect(within(confirmed).getByText('£5,880.00')).toBeInTheDocument();
     const estimated = within(money).getByText('Estimated from rates').closest('.stats-forecast-part') as HTMLElement;
     expect(within(estimated).getByText('≈ £11,340.00')).toBeInTheDocument();
-    expect(within(money).getByText('≈ £15,720.00')).toBeInTheDocument();
+    // The remainder rests partly on estimates: it is labelled a forecast,
+    // marked approximate, and the confirmed-only part is given beside it.
+    const remaining = within(money).getByText('Forecast still to collect').closest('.stats-forecast-remaining') as HTMLElement;
+    expect(within(remaining).getByText('≈ £15,720.00')).toBeInTheDocument();
+    expect(within(remaining).getByText('Includes estimated prices. At confirmed prices alone: £4,380.00.')).toBeInTheDocument();
     expect(within(money).getByText('6 of 19 sessions have a confirmed price.')).toBeInTheDocument();
     expect(within(money).queryByText(/without a basis/)).not.toBeInTheDocument();
+  });
+
+  it('calls the remainder plain money owed only when every price is confirmed', async () => {
+    const statistics = statisticsResult(true) as any;
+    statistics.artists[0].current.finance = {
+      ...statistics.artists[0].current.finance,
+      forecast: {
+        sessions: 2,
+        pricing_configured: true,
+        confirmed: { sessions: 2, value: [{ currency: 'GBP', amount: 1960 }], remaining_after_deposits: [{ currency: 'GBP', amount: 1460 }] },
+        estimated: { sessions: 0, full_day: 0, hourly: 0, from_project_rate: 0, value: [] },
+        no_basis: { sessions: 0, hours: 0 },
+        expected_value: [{ currency: 'GBP', amount: 1960 }],
+        deposits_paid: [{ currency: 'GBP', amount: 500 }],
+        remaining_after_deposits: [{ currency: 'GBP', amount: 1460 }],
+      },
+    };
+    await renderStatistics('owner', statistics);
+    const remaining = (await screen.findByText('Still to collect at confirmed prices')).closest('.stats-forecast-remaining') as HTMLElement;
+    expect(within(remaining).getByText('£1,460.00')).toBeInTheDocument();
+    expect(within(remaining).queryByText(/≈/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Forecast still to collect')).not.toBeInTheDocument();
   });
 
   it('says plainly when an artist has no rates, and links to them for a finance manager', async () => {

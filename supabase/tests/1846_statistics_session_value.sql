@@ -207,6 +207,66 @@ select is(
   (select count(*)::int from public.sessions where artist_id = '5d000001-0000-4000-8000-000000000001' and price is not null),
   2, 'no estimate was ever written into sessions.price');
 
+-- ------------------------------------- through the CRM's own RPCs, as staff
+-- A member who manages sessions and views finance moves, shortens and
+-- cancels sessions the way the CRM does. The forecast follows on the next
+-- read; a confirmed price never moves.
+
+insert into auth.users (id, email) values ('5d900001-0000-4000-8000-000000000001', 'value-staff@example.test');
+insert into public.profiles (id, email, display_name, role, is_active)
+values ('5d900001-0000-4000-8000-000000000001', 'value-staff@example.test', 'Value staff', 'booking_manager', true);
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level, can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active
+) values ('5d900001-0000-4000-8000-000000000001', '5d000001-0000-4000-8000-000000000001', 'manager', true, false, true, false, true);
+
+create function pg_temp.value_forecast() returns jsonb language sql as $$
+  select crm_private.statistics_core('5d000001-0000-4000-8000-000000000001', now() - interval '30 days', now(), now(), true)
+    -> 'finance' -> 'forecast';
+$$;
+create function pg_temp.claims(p text) returns void language sql as $$
+  select set_config('request.jwt.claims', p, true)::void;
+$$;
+grant execute on function pg_temp.claims(text) to authenticated;
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"5d900001-0000-4000-8000-000000000001","role":"authenticated"}');
+
+-- V2 (estimated, 5 h) moved to another day and shortened to 3 h.
+select lives_ok(
+  $$select public.reschedule_appointment('5d400002-0000-4000-8000-000000000002',
+      date_trunc('day', now()) + interval '40 days 10 hours', date_trunc('day', now()) + interval '40 days 13 hours')$$,
+  'staff reschedule an estimated session to a shorter slot');
+-- V4 (confirmed £1,234, 6 h) moved and lengthened to 8 h.
+select lives_ok(
+  $$select public.reschedule_appointment('5d400004-0000-4000-8000-000000000004',
+      date_trunc('day', now()) + interval '41 days 9 hours', date_trunc('day', now()) + interval '41 days 17 hours')$$,
+  'staff reschedule a confirmed-price session to a longer slot');
+-- V1 (estimated day, £250 deposit paid) cancelled.
+select lives_ok(
+  $$select public.set_appointment_status('5d400001-0000-4000-8000-000000000001', 'cancelled')$$,
+  'staff cancel a session');
+
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+
+select is((select duration_hours from public.sessions where id = '5d400002-0000-4000-8000-000000000002'), 3.00::numeric,
+  'the reschedule recorded the new length');
+select is((select price from public.sessions where id = '5d400004-0000-4000-8000-000000000004'), 1234.00::numeric,
+  'a reschedule to a longer slot keeps the confirmed price');
+select is((pg_temp.value_forecast() ->> 'sessions')::int, 5, 'the cancelled session leaves the forecast');
+select is(pg_temp.value_forecast() -> 'estimated' -> 'value', '[{"amount": 2030.00, "currency": "GBP"}]'::jsonb,
+  'estimates follow: 450 (3 h x 150) + 600 (project rate) + 980 (day); the cancelled day is gone');
+select is(pg_temp.value_forecast() -> 'confirmed' -> 'value', '[{"amount": 1334.00, "currency": "GBP"}]'::jsonb,
+  'confirmed value unchanged by moving or lengthening');
+select is(pg_temp.value_forecast() -> 'deposits_paid', '[{"amount": 250, "currency": "GBP"}]'::jsonb,
+  'the cancelled session''s deposit is no longer taken off the forecast');
+select is(pg_temp.value_forecast() -> 'remaining_after_deposits', '[{"amount": 3114.00, "currency": "GBP"}]'::jsonb,
+  'forecast remainder: 2030 + (1234 - 250) + 100');
+select is(
+  (select count(*)::int from public.sessions where artist_id = '5d000001-0000-4000-8000-000000000001' and price is not null),
+  2, 'still no estimate written into sessions.price');
+
 -- Without finance access there is no money at all.
 select is(
   crm_private.statistics_core('5d000001-0000-4000-8000-000000000001', now() - interval '30 days', now(), now(), false) -> 'finance',
