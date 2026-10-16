@@ -8,9 +8,10 @@ import type { Appointment } from '../lib/appointment-api';
 import type { Client } from '../lib/types';
 
 /**
- * Ended consultations whose outcome is not known yet. A past date does not
- * prove the client came, so Statistics counts none of these as held until the
- * operator answers here, or a later tattoo booking answers on the server.
+ * Ended consultations whose outcome is not known yet. Neither a past date nor
+ * a later tattoo booking proves the client came, so Statistics counts none of
+ * these as held until the operator answers here. A later booking is shown as
+ * a hint only.
  */
 export function ConsultationOutcomes({
   artistId,
@@ -27,11 +28,16 @@ export function ConsultationOutcomes({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const state = useAsync<{ rows: Appointment[]; clients: Client[] }>(async () => {
-    if (!mayManage) return { rows: [], clients: [] };
+  const state = useAsync<{ rows: Appointment[]; clients: Client[]; bookings: Array<{ client_id: string; artist_id: string; created_at: string }> }>(async () => {
+    if (!mayManage) return { rows: [], clients: [], bookings: [] };
     const rows = await api.listConsultationsAwaitingOutcome({ artistId: artistId ?? undefined });
-    const clients = rows.length > 0 ? await api.listClientsByIds(rows.map((row) => row.client_id)) : [];
-    return { rows, clients };
+    if (rows.length === 0) return { rows, clients: [], bookings: [] };
+    const ids = rows.map((row) => row.client_id);
+    const [clients, bookings] = await Promise.all([
+      api.listClientsByIds(ids),
+      api.listTattooBookingsForClients(ids).catch(() => []),
+    ]);
+    return { rows, clients, bookings };
   }, [api, artistId, mayManage]);
 
   // Most recent first, so the one just finished is at the top.
@@ -61,9 +67,13 @@ export function ConsultationOutcomes({
           {rows.map((appointment) => {
             const client = state.data?.clients.find((entry) => entry.id === appointment.client_id);
             const name = `${client?.full_name ?? copy.client} · ${formatDateTime(appointment.start_at, language)}`;
+            const bookedAfter = (state.data?.bookings ?? []).some((booking) => booking.client_id === appointment.client_id
+              && booking.artist_id === appointment.artist_id
+              && Date.parse(booking.created_at) >= Date.parse(appointment.start_at));
             return (
               <div key={appointment.id} className="row">
                 <div className="title">{name}</div>
+                {bookedAfter ? <p className="meta">{copy.bookedAfter}</p> : null}
                 <div className="actions">
                   <button type="button" disabled={busyId !== null} aria-label={`${copy.held}: ${name}`}
                     onClick={() => { void record(appointment, 'completed'); }}>{copy.held}</button>
@@ -82,7 +92,8 @@ export function ConsultationOutcomes({
 const COPY: Record<Language, Record<string, string>> = {
   en: {
     title: 'Consultations: did they take place?',
-    hint: 'These consultations have ended. Until you answer, Statistics does not count them as held. A tattoo booked for the client afterwards answers for you.',
+    hint: 'These consultations have ended. Until you answer, Statistics does not count them as held.',
+    bookedAfter: 'The client booked a tattoo after this consultation. A hint only: it does not prove the consultation took place.',
     held: 'Took place',
     noShow: 'Client did not come',
     client: 'Client',
@@ -90,7 +101,8 @@ const COPY: Record<Language, Record<string, string>> = {
   },
   ru: {
     title: 'Консультации: состоялись?',
-    hint: 'Эти консультации уже прошли. Пока ты не ответишь, Statistics не считает их состоявшимися. Если клиент после консультации забронировал тату, ответ ставится сам.',
+    hint: 'Эти консультации уже прошли. Пока ты не ответишь, Statistics не считает их состоявшимися.',
+    bookedAfter: 'После этой консультации клиент забронировал тату. Это подсказка, а не доказательство, что консультация состоялась.',
     held: 'Состоялась',
     noShow: 'Клиент не пришёл',
     client: 'Клиент',

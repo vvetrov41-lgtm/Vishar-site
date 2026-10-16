@@ -96,10 +96,11 @@ jobs:
         run: |
           set -euo pipefail
           deploy_config="$RUNNER_TEMP/telegram.deploy.toml"
-          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config" --enable-linking
+          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config" --enable-linking --enable-meta-ads
           grep -Fq 'TELEGRAM_DRAIN_ENABLED = "true"' "$deploy_config"
           grep -Fq 'GMAIL_SHARED_DRAIN_ENABLED = "true"' "$deploy_config"
           grep -Fq 'TELEGRAM_LINKING_ENABLED = "true"' "$deploy_config"
+          grep -Fq 'META_ADS_DRAIN_ENABLED = "true"' "$deploy_config"
           grep -Fq 'binding = "GMAIL_SERVICE"' "$deploy_config"
           grep -Fq 'service = "vishar-gmail-production"' "$deploy_config"
           grep -Fq 'crons = ["*/5 * * * *"]' "$deploy_config"
@@ -128,12 +129,12 @@ jobs:
           deploy_config="$RUNNER_TEMP/telegram.deploy.toml"
           deploy_output="$RUNNER_TEMP/telegram-production-wrangler-output.ndjson"
           trap 'rm -f "$deploy_config" "$deploy_output"' EXIT
-          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config" --enable-linking
-          node scripts/preflight-telegram-production.mjs "$deploy_config" --allow-linking
+          node scripts/generate-telegram-production-deploy-config.mjs "$deploy_config" --enable-linking --enable-meta-ads
+          node scripts/preflight-telegram-production.mjs "$deploy_config" --allow-linking --allow-meta-ads
           rm -f "$deploy_output"
           WRANGLER_OUTPUT_FILE_PATH="$deploy_output" \
             npx wrangler deploy --config "$deploy_config" --name "$WORKER_NAME" --tag "$APPROVED_SHA"
-          node scripts/preflight-telegram-production.mjs "$deploy_config" --allow-linking
+          node scripts/preflight-telegram-production.mjs "$deploy_config" --allow-linking --allow-meta-ads
           node <<'NODE'
           const fs = require('fs');
           const lines = fs.readFileSync(process.env.RUNNER_TEMP + '/telegram-production-wrangler-output.ndjson', 'utf8')

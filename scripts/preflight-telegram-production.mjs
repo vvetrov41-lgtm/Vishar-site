@@ -109,6 +109,8 @@ export function evaluatePreflight({
   hostname = HOSTNAME,
   allowLinking = false,
   allowLinkingDisable = false,
+  allowMetaAds = false,
+  allowMetaAdsDisable = false,
 }) {
   const failures = [];
   const warnings = [];
@@ -218,6 +220,20 @@ export function evaluatePreflight({
     failures.push('deploy would disable live Telegram linking; use the explicit --allow-linking-disable rollback gate');
   }
 
+  const desiredMetaAds = desired.vars.META_ADS_DRAIN_ENABLED;
+  if (!['false', 'true'].includes(desiredMetaAds)) {
+    failures.push('deploy config must explicitly set META_ADS_DRAIN_ENABLED to true or false');
+  } else if (desiredMetaAds === 'true') {
+    if (!allowMetaAds) failures.push('Meta CAPI enable requires the explicit --allow-meta-ads preflight gate');
+    if (!liveSecretNames.includes('META_ADS_VLADIMIR_ACCESS_TOKEN')) {
+      failures.push('Meta CAPI enable requires META_ADS_VLADIMIR_ACCESS_TOKEN to be provisioned');
+    }
+  }
+  const liveMetaAds = (live.bindings || []).find((b) => b.name === 'META_ADS_DRAIN_ENABLED');
+  if (liveMetaAds?.text === 'true' && desiredMetaAds === 'false' && !allowMetaAdsDisable) {
+    failures.push('deploy would disable live Meta CAPI; use the explicit --allow-meta-ads-disable rollback gate');
+  }
+
   if (desired.vars.TELEGRAM_DRAIN_ENABLED !== 'true') {
     failures.push('generated deploy config must enable the drain');
   }
@@ -253,6 +269,7 @@ export function evaluatePreflight({
       desired_bindings: desired.replaceableBindings,
       desired_crons: desired.crons,
       desired_linking_enabled: desiredLinking === 'true',
+      desired_meta_ads_enabled: desiredMetaAds === 'true',
       automation_tick_enabled: desired.vars.AUTOMATION_TICK_ENABLED === 'true',
       gmail_shared_drain_preserved: desired.services.GMAIL_SERVICE === GMAIL_SERVICE
         && desired.vars.GMAIL_SHARED_DRAIN_ENABLED === 'true',
@@ -317,7 +334,9 @@ if (invokedDirectly) {
   const reportOnly = args.includes('--report-only');
   const allowLinking = args.includes('--allow-linking');
   const allowLinkingDisable = args.includes('--allow-linking-disable');
-  const knownFlags = new Set(['--report-only', '--allow-linking', '--allow-linking-disable']);
+  const allowMetaAds = args.includes('--allow-meta-ads');
+  const allowMetaAdsDisable = args.includes('--allow-meta-ads-disable');
+  const knownFlags = new Set(['--report-only', '--allow-linking', '--allow-linking-disable', '--allow-meta-ads', '--allow-meta-ads-disable']);
   for (const arg of args.filter((a) => a.startsWith('--'))) {
     if (!knownFlags.has(arg)) {
       console.error(`unknown option: ${arg}`);
@@ -328,7 +347,7 @@ if (invokedDirectly) {
   if (!configPath) {
     console.error(
       'usage: preflight-telegram-production.mjs <generated-deploy-config.toml> '
-      + '[--report-only] [--allow-linking] [--allow-linking-disable]',
+      + '[--report-only] [--allow-linking] [--allow-linking-disable] [--allow-meta-ads] [--allow-meta-ads-disable]',
     );
     process.exit(1);
   }
@@ -346,6 +365,8 @@ if (invokedDirectly) {
     desired,
     allowLinking,
     allowLinkingDisable,
+    allowMetaAds,
+    allowMetaAdsDisable,
   });
 
   console.log(JSON.stringify(verdict.summary, null, 2));
