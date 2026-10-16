@@ -1,6 +1,13 @@
 // Statistics on a phone: the four headline figures and "Needs attention"
-// must be fully visible above the bottom tab bar, in English and Russian, on
-// the iPhone sizes the studio uses, with no horizontal scroll anywhere.
+// above the bottom tab bar, in English and Russian, with no horizontal scroll.
+//
+// The fixture raises all five attention items at once, the worst case.
+// * Full height (Safari's toolbar collapsed): every item must fit.
+// * Safari's toolbar showing (visible area about 664 / 659 / 746 px tall on
+//   iPhone 13-14 / 15-16 / Pro Max): the figures, the heading and the first
+//   four items must fit (all five on Pro Max). Five 44px tap rows do not fit
+//   a 6.1" phone with the toolbar out, and tap targets are not shrunk for it.
+// The CRM has no web app manifest, so it always runs inside Safari.
 //
 // Renders layout-check/ (the real App over the test fixtures) with Vite and
 // measures it in Chromium. Uses playwright-core, which downloads no browser:
@@ -22,9 +29,12 @@ const shots = shotsArg > 0 ? resolve(process.argv[shotsArg + 1]) : null;
 if (shots) mkdirSync(shots, { recursive: true });
 
 const DEVICES = [
-  { name: 'iPhone 13/14', width: 390, height: 844 },
-  { name: 'iPhone 15/16', width: 393, height: 852 },
-  { name: 'iPhone Pro Max', width: 430, height: 932 },
+  { name: 'iPhone 13/14', width: 390, height: 844, items: 5 },
+  { name: 'iPhone 15/16', width: 393, height: 852, items: 5 },
+  { name: 'iPhone Pro Max', width: 430, height: 932, items: 5 },
+  { name: 'iPhone 13/14 Safari toolbar', width: 390, height: 664, items: 4 },
+  { name: 'iPhone 15/16 Safari toolbar', width: 393, height: 659, items: 4 },
+  { name: 'iPhone Pro Max Safari toolbar', width: 430, height: 746, items: 5 },
 ];
 // The "Needs attention" heading proves which language actually rendered.
 const LANGUAGES = [
@@ -100,7 +110,11 @@ try {
           kpiBottom: Math.max(...kpis.map((el) => rect(el).bottom)),
           attentionTop: attention ? rect(attention).top : null,
           attentionBottom: attention ? rect(attention).bottom : null,
+          clamped: [...document.querySelectorAll('.stats-headline .stats-kpi-detail')]
+            .filter((el) => el.scrollHeight > el.clientHeight + 1).map((el) => el.textContent),
           attentionItems: items.length,
+          itemsAboveFold: items.filter((el) => rect(el).bottom <= fold).length,
+          headingAboveFold: attention ? rect(attention.querySelector('h2')).bottom <= fold : false,
           attentionHeading: attention?.querySelector('h2')?.textContent ?? '',
           kpisBeforeAttention: attention ? Math.max(...kpis.map((el) => rect(el).bottom)) <= rect(attention).top : false,
           scrollWidth: document.documentElement.scrollWidth,
@@ -116,15 +130,17 @@ try {
       if (m.kpiCount !== 4) problems.push(`${m.kpiCount} headline figures instead of 4`);
       if (m.kpiBottom > m.fold) problems.push(`headline figures end at ${Math.round(m.kpiBottom)}px, below the tab bar at ${Math.round(m.fold)}px`);
       if (m.attentionItems < 5) problems.push(`only ${m.attentionItems} attention items rendered; the fixture has 5`);
-      if (m.attentionBottom === null || m.attentionBottom > m.fold) {
-        problems.push(`Needs attention ends at ${Math.round(m.attentionBottom ?? -1)}px, below the tab bar at ${Math.round(m.fold)}px`);
+      if (m.clamped.length > 0) problems.push(`headline detail cut off: ${m.clamped.join(' | ')}`);
+      if (!m.headingAboveFold) problems.push('the Needs attention heading is below the tab bar');
+      if (m.itemsAboveFold < device.items) {
+        problems.push(`${m.itemsAboveFold} attention items above the tab bar at ${Math.round(m.fold)}px; ${device.items} required`);
       }
       if (!m.kpisBeforeAttention) problems.push('the headline figures do not come before Needs attention');
       if (m.scrollWidth > m.innerWidth) problems.push(`horizontal scroll: page is ${m.scrollWidth}px wide in a ${m.innerWidth}px viewport`);
       if (m.tooWide.length > 0) problems.push(`elements past the screen edge: ${m.tooWide.join(', ')}`);
       if (errors.length > 0) problems.push(`console errors: ${errors.slice(0, 3).join(' | ')}`);
 
-      console.log(`${problems.length === 0 ? 'ok  ' : 'FAIL'} ${label}: figures end ${Math.round(m.kpiBottom)}px, attention ${Math.round(m.attentionTop)}-${Math.round(m.attentionBottom)}px, tab bar ${Math.round(m.fold)}px, width ${m.scrollWidth}/${m.innerWidth}`);
+      console.log(`${problems.length === 0 ? 'ok  ' : 'FAIL'} ${label}: figures end ${Math.round(m.kpiBottom)}px, attention ${Math.round(m.attentionTop)}-${Math.round(m.attentionBottom)}px (${m.itemsAboveFold}/${m.attentionItems} items visible), tab bar ${Math.round(m.fold)}px, width ${m.scrollWidth}/${m.innerWidth}`);
       for (const problem of problems) {
         console.log(`     - ${problem}`);
         failures.push(`${label}: ${problem}`);

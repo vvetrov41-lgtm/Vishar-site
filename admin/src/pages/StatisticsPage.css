@@ -393,9 +393,27 @@
 @media (max-width: 719px) {
   .stats-context { margin-bottom: 8px; }
   .stats-kpis { gap: 8px; }
-  .stats-headline .stats-kpi { padding: 10px; margin: 0; }
-  .stats-headline .stats-kpi-value { font-size: 1.3rem; }
-  .stats-headline .stats-change { margin-top: 2px; }
+  /* Label; value and change on one line; at most two lines of detail. */
+  .stats-headline .stats-kpi {
+    padding: 8px 10px;
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 8px;
+    align-items: baseline;
+  }
+  .stats-headline .stats-kpi-label,
+  .stats-headline .stats-kpi-detail { grid-column: 1 / -1; }
+  .stats-headline .stats-kpi-detail {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+  }
+  .stats-headline .stats-kpi-value { font-size: 1.3rem; grid-column: 1; grid-row: 2; }
+  .stats-headline .stats-change { margin-top: 0; grid-column: 2; grid-row: 2; min-width: 0; flex-wrap: wrap; }
+  .stats-headline .stats-kpi-detail { grid-row: 3; }
+  .stats-attention h2 { margin-bottom: 0; }
   .stats-attention { padding: 8px 12px 2px; margin-bottom: 12px; }
   .stats-attention a,
   .stats-attention-text { font-size: 0.86rem; line-height: 1.3; }

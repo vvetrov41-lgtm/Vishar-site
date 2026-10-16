@@ -101,10 +101,6 @@ export function StatisticsPage() {
     <>
       {controls}
 
-      <p className="stats-context">
-        {view.comparable ? t('stats.comparison', { days: period.days }) : t('stats.noComparison')}
-      </p>
-
       {!hasAnything ? <EmptyState title={t('stats.emptyTitle')} hint={t('stats.emptyHint')} /> : null}
 
       {/* First screen on a phone: the four headline figures, then what needs
@@ -142,15 +138,6 @@ export function StatisticsPage() {
             changeIsPoints
           />
         </div>
-        {current.conversion.pending > 0 ? (
-          <p className="stats-caveat">
-            {t('stats.conversionPending', {
-              pending: current.conversion.pending,
-              booked: current.conversion.pending_converted,
-              days: CONVERSION_MATURITY_DAYS,
-            })}
-          </p>
-        ) : null}
       </section>
 
       {view.attention.length > 0 ? (
@@ -177,6 +164,22 @@ export function StatisticsPage() {
             })}
           </ul>
         </section>
+      ) : null}
+
+      {/* What the changes compare against, and the conversion caveat, follow
+          "Needs attention" so both first-screen blocks stay above the tab bar
+          in Safari on a phone, with its toolbar showing. */}
+      <p className="stats-context">
+        {view.comparable ? t('stats.comparison', { days: period.days }) : t('stats.noComparison')}
+      </p>
+      {current.conversion.pending > 0 ? (
+        <p className="stats-caveat stats-conversion-caveat">
+          {t('stats.conversionPending', {
+            pending: current.conversion.pending,
+            booked: current.conversion.pending_converted,
+            days: CONVERSION_MATURITY_DAYS,
+          })}
+        </p>
       ) : null}
 
       <Section title={t('stats.diary')}>
