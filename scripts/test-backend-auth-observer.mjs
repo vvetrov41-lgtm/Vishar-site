@@ -52,11 +52,11 @@ assert.equal(OBSERVE_MS, 1200000);
 assert.ok(tailArguments(version).includes(version));
 assert.ok(tailArguments(version).includes('supabase_backend_response'));
 const secrets = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION', 'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
-  'SUPABASE_SECRET_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'].map(name => ({ name, value: pii }));
+  'META_ADS_VLADIMIR_ACCESS_TOKEN', 'SUPABASE_SECRET_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'].map(name => ({ name, value: pii }));
 const values = {
   '/settings': { bindings: [
     { name: 'SUPABASE_URL', text: 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' },
-    ...['AUTOMATION_TICK_ENABLED', 'TELEGRAM_DRAIN_ENABLED', 'GMAIL_SHARED_DRAIN_ENABLED'].map(name => ({ name, text: 'true' })),
+    ...['AUTOMATION_TICK_ENABLED', 'TELEGRAM_DRAIN_ENABLED', 'GMAIL_SHARED_DRAIN_ENABLED', 'META_ADS_DRAIN_ENABLED'].map(name => ({ name, text: 'true' })),
     { name: 'GMAIL_SERVICE', service: 'vishar-gmail-production' } ] },
   '/secrets': secrets, '/deployments': { deployments: [{ versions: [{ version_id: version, percentage: 100 }] }] },
   '/schedules': { schedules: [{ cron: '*/5 * * * *' }] }, '/subdomain': { enabled: false, previews_enabled: false },
@@ -75,6 +75,14 @@ const state = await snapshot(env, mockFetch);
 assert.equal(calls, 6);
 assert.equal(state.source_sha, sha);
 assert.ok(!JSON.stringify(state).includes(pii));
+// The observer must fail closed if another deploy removes the Meta token or switches the drain off.
+values['/secrets'] = secrets.filter(item => item.name !== 'META_ADS_VLADIMIR_ACCESS_TOKEN');
+await assert.rejects(snapshot(env, mockFetch), /observer_contract/);
+values['/secrets'] = secrets;
+const metaBinding = values['/settings'].bindings.find(item => item.name === 'META_ADS_DRAIN_ENABLED');
+metaBinding.text = 'false';
+await assert.rejects(snapshot(env, mockFetch), /observer_contract/);
+metaBinding.text = 'true';
 values['/subdomain'].enabled = true;
 await assert.rejects(snapshot(env, mockFetch), /observer_contract/);
 const workflow = readFileSync('.github/workflows/backend-auth-scheduler-release.yml', 'utf8');
