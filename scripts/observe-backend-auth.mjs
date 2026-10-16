@@ -8,7 +8,7 @@ export const OBSERVE_MS = 20 * 60 * 1000;
 export const MAX_RECORDS = 250;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const SECRET_NAMES = ['ARTIST_TELEGRAM_KRISTINA_HPRODUCTION', 'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
-  'SUPABASE_SECRET_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'].sort();
+  'META_ADS_VLADIMIR_ACCESS_TOKEN', 'SUPABASE_SECRET_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET'].sort();
 
 // The operation comes from the first, anchored subtype, never from its suffix.
 export function operationFromRef(ref) {
@@ -134,6 +134,7 @@ export async function snapshot(env, fetchImpl = fetch) {
     || binding('AUTOMATION_TICK_ENABLED')?.text !== 'true'
     || binding('TELEGRAM_DRAIN_ENABLED')?.text !== 'true'
     || binding('GMAIL_SHARED_DRAIN_ENABLED')?.text !== 'true'
+    || binding('META_ADS_DRAIN_ENABLED')?.text !== 'true'
     || binding('GMAIL_SERVICE')?.service !== 'vishar-gmail-production') throw new Error('observer_contract');
   const version = versions[0].version_id;
   const metadata = await get(`/versions/${version}`);
