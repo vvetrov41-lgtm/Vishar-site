@@ -84,6 +84,30 @@ describe('consultation outcome', () => {
     });
   });
 
+  it('shows a later tattoo booking as a hint only, leaving the answer to the operator', async () => {
+    const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: '/appointments',
+      rpcCalls,
+      extraSessions: [
+        consultation('c0000000-0000-4000-8000-000000000001', 'confirmed', '2026-09-08T10:00:00Z'),
+        {
+          ...consultation('c0000000-0000-4000-8000-000000000009', 'confirmed', '2026-10-01T10:00:00Z', 420),
+          appointment_type: 'tattoo_session',
+          created_at: '2026-09-08T12:00:00Z',
+        },
+      ],
+    });
+    const heading = await screen.findByRole('heading', { level: 2, name: 'Consultations: did they take place?' });
+    const section = heading.closest('section') as HTMLElement;
+    expect(await within(section).findByText(/A hint only: it does not prove the consultation took place/)).toBeInTheDocument();
+    // Both answers are still offered, and nothing was recorded on its own.
+    expect(within(section).getByRole('button', { name: /^Took place:/ })).toBeInTheDocument();
+    expect(within(section).getByRole('button', { name: /^Client did not come:/ })).toBeInTheDocument();
+    expect(rpcCalls.some((call) => call.name === 'set_appointment_status')).toBe(false);
+  });
+
   it('shows nothing to a viewer who cannot change appointments', async () => {
     renderWithSession(<App />, {
       role: 'read_only',

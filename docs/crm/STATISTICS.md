@@ -85,17 +85,16 @@ the clock, never stored, so no new session status exists and calendar sync,
 cards and reminders are unchanged. It is never counted as held. Cancelled
 consultations keep their status; `no_show` is reported apart.
 
-The outcome is recorded:
-
-- by the operator, in Calendar's "Consultations: did they take place?" list
-  ("Took place" = `completed`, "Client did not come" = `no_show`), through the
-  existing `set_appointment_status`; Statistics' "Needs attention" links there;
-- automatically on evidence: a tattoo session or touch-up for the same client
-  and artist, not draft and not cancelled, created at or after the
-  consultation started, completes it
-  (`crm_private.resolve_evidenced_consultations`, run in the automation tick;
-  `activity_log` `completion_source = follow_on_booking` with the evidence
-  session id). The clock alone completes nothing.
+The outcome is recorded only by a person: in Calendar's "Consultations: did
+they take place?" list ("Took place" = `completed`, "Client did not come" =
+`no_show`), through the existing `set_appointment_status`; Statistics' "Needs
+attention" links there. Nothing infers it. A tattoo booked by the same client
+after the consultation is shown next to the buttons as a hint, because it is
+not proof that the consultation took place (the client may have booked by
+message after missing it). Where the fact cannot be established, the
+consultation stays unverified. (20261015180000 briefly completed such
+consultations automatically; 20261016090000 removed that before it ever
+changed a production row.)
 
 The funnel's "had a consultation" step and each channel's consulted count use
 held consultations only.
@@ -330,12 +329,12 @@ These are floors, not significance tests.
   free touch-up/past sessions out, a reschedule, a longer session, a new
   artist rate (saved prices untouched, nothing written to `sessions.price`),
   an artist without rates, the GPT forecast from the same core.
-- `supabase/tests/1847_consultation_outcome.sql` — a past date is not held,
-  evidence completes (and is audited), no evidence / earlier booking /
-  cancelled booking / cancelled or upcoming consultation stay as they are,
-  held / no-show / awaiting counted apart, backend-only resolution.
-- `admin/src/test/consultation-outcomes.test.tsx` — the outcome list and its
-  two answers through the status RPC.
+- `supabase/tests/1847_consultation_outcome.sql` — neither a past date nor a
+  later tattoo booking makes a consultation held; the tick touches tattoo
+  work only; cancelled and upcoming consultations stay as they are; held /
+  no-show / awaiting counted apart.
+- `admin/src/test/consultation-outcomes.test.tsx` — the outcome list, its two
+  answers through the status RPC, a later booking shown as a hint only.
 - `admin/src/test/session-pricing.test.ts` — the same estimate cases against
   the CRM's price suggestion.
 - `admin/src/test/statistics-api.test.ts` — one RPC call, artist scope left to

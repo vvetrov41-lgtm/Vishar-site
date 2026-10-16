@@ -195,8 +195,7 @@ export function createAppointmentApi(client: CrmClient) {
 
     /**
      * Ended consultations still `confirmed`: their outcome is unknown until the
-     * operator records it (completed / no_show) or a later tattoo booking
-     * proves the client came (crm_private.resolve_evidenced_consultations).
+     * operator records it (completed / no_show). Nothing records it for them.
      * Row level security limits them to the artists the caller may see.
      */
     async listConsultationsAwaitingOutcome(filters: { artistId?: string } = {}): Promise<Appointment[]> {
@@ -214,6 +213,25 @@ export function createAppointmentApi(client: CrmClient) {
         'load appointments'
       );
       return rows.map(normaliseAppointment);
+    },
+
+    /**
+     * Tattoo work booked for these clients, with when it was booked. Shown as a
+     * hint next to a consultation's outcome buttons; it never decides one.
+     */
+    async listTattooBookingsForClients(clientIds: string[]): Promise<Array<{ client_id: string; artist_id: string; status: string; created_at: string }>> {
+      const ids = [...new Set(clientIds.filter(Boolean))];
+      if (ids.length === 0) return [];
+      const rows = unwrap<Array<{ client_id: string; artist_id: string; status: string; created_at: string }>>(
+        await client
+          .from('sessions')
+          .select('client_id, artist_id, status, created_at')
+          .in('client_id', ids)
+          .in('appointment_type', ['tattoo_session', 'touch_up'])
+          .limit(500),
+        'load appointments'
+      );
+      return rows.filter((row) => row.status !== 'draft' && row.status !== 'cancelled');
     },
 
     async scheduleAppointment(input: ScheduleAppointmentInput): Promise<ScheduledAppointment> {
