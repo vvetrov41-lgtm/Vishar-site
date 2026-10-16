@@ -26,7 +26,11 @@ const DEVICES = [
   { name: 'iPhone 15/16', width: 393, height: 852 },
   { name: 'iPhone Pro Max', width: 430, height: 932 },
 ];
-const LANGUAGES = ['en', 'ru'];
+// The "Needs attention" heading proves which language actually rendered.
+const LANGUAGES = [
+  { code: 'en', attention: 'Needs attention' },
+  { code: 'ru', attention: 'Требует внимания' },
+];
 
 async function launch() {
   try {
@@ -50,7 +54,7 @@ const browser = await launch();
 const failures = [];
 try {
   for (const device of DEVICES) {
-    for (const language of LANGUAGES) {
+    for (const { code: language, attention: attentionHeading } of LANGUAGES) {
       const label = `${device.name} ${device.width}x${device.height} ${language}`;
       const context = await browser.newContext({
         viewport: { width: device.width, height: device.height },
@@ -97,6 +101,7 @@ try {
           attentionTop: attention ? rect(attention).top : null,
           attentionBottom: attention ? rect(attention).bottom : null,
           attentionItems: items.length,
+          attentionHeading: attention?.querySelector('h2')?.textContent ?? '',
           kpisBeforeAttention: attention ? Math.max(...kpis.map((el) => rect(el).bottom)) <= rect(attention).top : false,
           scrollWidth: document.documentElement.scrollWidth,
           innerWidth: window.innerWidth,
@@ -106,6 +111,7 @@ try {
       if (shots) await page.screenshot({ path: join(shots, `statistics-${device.width}x${device.height}-${language}.png`) });
 
       const problems = [];
+      if (m.attentionHeading !== attentionHeading) problems.push(`rendered "${m.attentionHeading}", not the ${language} screen`);
       if (!m.tabbarVisible) problems.push('the bottom tab bar is not shown');
       if (m.kpiCount !== 4) problems.push(`${m.kpiCount} headline figures instead of 4`);
       if (m.kpiBottom > m.fold) problems.push(`headline figures end at ${Math.round(m.kpiBottom)}px, below the tab bar at ${Math.round(m.fold)}px`);
