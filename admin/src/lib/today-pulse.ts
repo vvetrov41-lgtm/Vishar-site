@@ -10,7 +10,7 @@
 
 import { apiMessage, ApiError, friendlyMessage, type CrmClient } from './api';
 import type { AttentionAcknowledgementKind, AttentionItemRef } from './attention-api';
-import type { TodayItem, TodayItemKind } from './today-workspace';
+import type { SilenceContext, TodayItem, TodayItemKind } from './today-workspace';
 
 export interface PulseAiSuggestion {
   id: string;
@@ -32,6 +32,8 @@ export interface PulseItem {
   sla_state: string | null;
   ai_suggestion: PulseAiSuggestion | null;
   acknowledgement: { kind: AttentionAcknowledgementKind; entity_id: string; observed_at: string } | null;
+  /** Waiting-on-client rows only: the studio message the client has not answered. */
+  context?: SilenceContext | null;
   urgent: boolean;
 }
 
@@ -97,6 +99,7 @@ export function pulseToTodayItems(pulse: TodayPulse): TodayItem[] {
       acknowledgement: ack,
       reason: item.reason,
       aiSuggestion: item.ai_suggestion,
+      silence: item.context ?? null,
     });
   }
   return items;

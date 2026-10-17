@@ -24,6 +24,15 @@ error. Five 44px tap rows do not fit a 6.1" phone with the toolbar out, and
 tap targets are not shrunk for it; with the usual two or three items the
 whole block fits there too.
 
+The last line of "Needs attention" is "Clients to follow up now: N", the
+count of Today's "Waiting on clients" block from
+`public.get_waiting_on_clients_count` (the same `pulse_items` rows, see
+`specs/client-silence-follow-up`). It is current state, so it ignores the
+period picker, loads after the figures, and links to `#/?waiting=1`. When
+the server pulse is off it reads "temporarily unavailable" rather than 0. It
+comes last so the five period items keep their place; the layout check
+renders it too (six rows), and the first five still fit as above.
+
 This document is the contract. Where it and the screen disagree, one of them is
 a bug — `admin/src/lib/statistics.ts` carries the same definitions in code, and
 `admin/src/test/statistics.test.ts` pins them.

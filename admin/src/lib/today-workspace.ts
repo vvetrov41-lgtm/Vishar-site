@@ -82,7 +82,24 @@ export interface TodayItem {
   reason?: string;
   /** Server pulse only: an open AI next action, shown as a labelled suggestion. */
   aiSuggestion?: { id: string; action_type: string; reason: string | null } | null;
+  /** Server pulse only, waiting-on-client rows: the studio's last message. */
+  silence?: SilenceContext | null;
 }
+
+/** The studio message a waiting-on-client row is about. */
+export interface SilenceContext {
+  conversation_id: string | null;
+  /** whatsapp, instagram or email. */
+  channel: string | null;
+  message_type: string | null;
+  /** The first characters of a text message or an email subject. */
+  preview: string | null;
+  /** The client reacted after it, without writing back. */
+  client_reacted: boolean;
+}
+
+/** Rows about a client the studio is waiting on, rather than one waiting on the studio. */
+export const WAITING_ON_CLIENT_KINDS: TodayItemKind[] = ['client_follow_up_due', 'client_cold'];
 
 export interface TodaySnapshot {
   needsYou: TodayItem[];

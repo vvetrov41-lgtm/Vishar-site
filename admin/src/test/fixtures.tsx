@@ -427,6 +427,11 @@ export interface FakeClientOptions {
    * but switched off, which is production's default.
    */
   todayPulse?: unknown;
+  /**
+   * What `get_waiting_on_clients_count` answers. Omitted means it counts the
+   * waiting-on-client rows of `todayPulse`, or is unavailable while the pulse is off.
+   */
+  waitingCount?: unknown;
   /** What `get_artist_session_pricing` answers. Omitted means not configured. */
   artistPricing?: unknown;
   /** Rows of `projects_finance` for an owner. Omitted means PROJECT_FINANCE. */
@@ -1081,7 +1086,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       // Role checks live in the database. The fake enforces the same ones, so a
       // component test cannot "pass" by calling something the real RPC refuses.
       const ownerOnly = ['list_profiles', 'list_team_memberships', 'set_profile_role', 'set_profile_active', 'upsert_artist_membership', 'approve_email_draft', 'update_project_deposit', 'update_project_estimate', 'update_retention_policy'];
-      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles', 'acknowledge_attention_item'];
+      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles', 'acknowledge_attention_item', 'snooze_attention_item', 'clear_attention_acknowledgement'];
 
       if (ownerOnly.includes(name) && effectiveRole !== 'owner') return { data: null, error: DENIED };
       if (managerOrOwner.includes(name) && effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
@@ -1256,6 +1261,22 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       }
       if (name === 'get_statistics') {
         return { data: options.statistics ?? statisticsResult(effectiveRole === 'owner'), error: null };
+      }
+      if (name === 'get_waiting_on_clients_count') {
+        if (options.waitingCount !== undefined) return { data: options.waitingCount, error: null };
+        const pulse = options.todayPulse as { enabled?: boolean; items?: { section?: string }[] } | undefined;
+        return {
+          data: pulse?.enabled
+            ? {
+              status: 'ok', generated_at: '2026-09-01T08:00:00Z', artists: [],
+              count: (pulse.items ?? []).filter((item) => item.section === 'waiting_on_clients').length,
+            }
+            : { status: 'unavailable', reason: 'pulse_disabled' },
+          error: null,
+        };
+      }
+      if (name === 'snooze_attention_item' || name === 'clear_attention_acknowledgement') {
+        return { data: { acknowledged: true }, error: null };
       }
       if (name === 'get_today_pulse') {
         return {

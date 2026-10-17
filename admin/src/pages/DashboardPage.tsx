@@ -20,7 +20,8 @@ import { Link } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
 import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
-import { summariseToday, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
+import { summariseToday, WAITING_ON_CLIENT_KINDS, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
+import { WaitingOnClients } from '../components/WaitingOnClients';
 import { pulseToTodayItems, type TodayPulse } from '../lib/today-pulse';
 import { typeLabel } from './AppointmentsPage';
 import { daysAgoIso } from '../lib/appointment-api';
@@ -244,12 +245,16 @@ export function DashboardPage() {
   });
   // One engine for Today and Telegram once the server pulse is switched on.
   // The schedule below still comes from the appointments read here.
-  const needsYou = enquiryTargetsForToday(
+  const triage = enquiryTargetsForToday(
     serverPulse ? pulseToTodayItems(serverPulse) : fallbackReady ? snapshot.needsYou : [],
     data.enquiries,
     conversations,
     data.emailThreads,
   );
+  // Clients the studio waits on are not waiting on anyone here: they get their
+  // own folded block below the schedule, so they never push urgent work down.
+  const needsYou = triage.filter((item) => !WAITING_ON_CLIENT_KINDS.includes(item.kind));
+  const waitingOnClients = triage.filter((item) => WAITING_ON_CLIENT_KINDS.includes(item.kind));
 
   async function dismissAttention(item: AttentionItemRef, key: string) {
     setDismissing(key);
@@ -325,6 +330,16 @@ export function DashboardPage() {
           </div>
         )}
       </Section>
+
+      <WaitingOnClients
+        // A new artist scope is a new list: no undo carried over from another artist.
+        key={selectedArtistId ?? 'all'}
+        items={waitingOnClients}
+        now={now}
+        canDecide={mayDismissAttention}
+        unavailable={!serverPulse && !pulseState.loading}
+        onChanged={() => pulseState.reload()}
+      />
 
       <Section title={t('today.ahead')}>
         {!scheduleState.data ? (

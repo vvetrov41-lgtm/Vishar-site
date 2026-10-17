@@ -211,6 +211,104 @@ describe('today workspace', () => {
       expect(within(needsYou).queryByText('Waiting for your reply')).not.toBeInTheDocument();
     });
 
+    describe('clients waiting on a reply', () => {
+      const silent = {
+        key: 'silent-c9', kind: 'client_follow_up_due', section: 'waiting_on_clients',
+        reason: 'client_follow_up_due', artist_id: 'a1', client_id: 'c9', subject: 'Quiet Client',
+        href: '/inbox/v9', at: '2026-08-20T08:00:00Z', detail: 'awaiting_artist_review', sla_state: 'due',
+        ai_suggestion: null, urgent: false,
+        acknowledgement: { kind: 'client_silence', entity_id: 'c9', observed_at: '2026-08-20T08:00:00Z' },
+        context: {
+          conversation_id: 'v9', channel: 'instagram', message_type: 'text',
+          preview: 'I can offer Saturday or Sunday', client_reacted: true,
+        },
+      };
+      const withSilent = () => {
+        const base = pulse(true);
+        return { ...base, items: [...base.items, silent] };
+      };
+      const waitingSection = async () => {
+        const heading = await screen.findByRole('heading', { level: 2, name: 'Waiting on clients · 1' });
+        return heading.closest('section') as HTMLElement;
+      };
+
+      it('keeps them out of "Needs you now" in their own folded block', async () => {
+        renderWithSession(<App />, { role: 'owner', path: '/', todayPulse: withSilent() });
+        const needsYou = (await screen.findByRole('heading', { level: 2, name: 'Needs you now' }))
+          .closest('section') as HTMLElement;
+        await within(needsYou).findByText('Server Pulse Client');
+        expect(within(needsYou).queryByText('Quiet Client')).not.toBeInTheDocument();
+
+        const section = await waitingSection();
+        expect(within(section).getByText('up to 12 d')).toBeInTheDocument();
+        expect(within(section).queryByText('Quiet Client')).not.toBeInTheDocument();
+        fireEvent.click(within(section).getByRole('button', { expanded: false }));
+        const row = within(section).getByText('Quiet Client').closest('.row') as HTMLElement;
+        expect(within(row).getByText('12 d without a reply')).toBeInTheDocument();
+        expect(within(row).getByText(/Instagram/)).toBeInTheDocument();
+        expect(within(row).getByText(/client reacted/)).toBeInTheDocument();
+        expect(within(row).getByText('You: I can offer Saturday or Sunday')).toBeInTheDocument();
+        expect(within(row).getByText('Quiet Client').closest('a')).toHaveAttribute('href', '#/inbox/v9');
+      });
+
+      it('opens the block when Statistics links to it', async () => {
+        renderWithSession(<App />, { role: 'owner', path: '/?waiting=1', todayPulse: withSilent() });
+        const section = await waitingSection();
+        expect(within(section).getByText('Quiet Client')).toBeInTheDocument();
+      });
+
+      it('hides a client for the cycle and can undo it', async () => {
+        const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+        renderWithSession(<App />, { role: 'owner', path: '/?waiting=1', todayPulse: withSilent(), rpcCalls });
+        const section = await waitingSection();
+        fireEvent.click(within(section).getByRole('button', { name: "Don't remind" }));
+        await waitFor(() => expect(rpcCalls.some((call) => call.name === 'acknowledge_attention_item')).toBe(true));
+        expect(rpcCalls.find((call) => call.name === 'acknowledge_attention_item')?.args).toEqual({
+          p_artist_id: 'a1', p_item_kind: 'client_silence', p_entity_id: 'c9', p_observed_at: '2026-08-20T08:00:00Z',
+        });
+        fireEvent.click(await within(section).findByRole('button', { name: 'Undo' }));
+        await waitFor(() => expect(rpcCalls.some((call) => call.name === 'clear_attention_acknowledgement')).toBe(true));
+        expect(rpcCalls.find((call) => call.name === 'clear_attention_acknowledgement')?.args).toEqual({
+          p_artist_id: 'a1', p_item_kind: 'client_silence', p_entity_id: 'c9',
+        });
+        // Nothing about the enquiry, booking or conversation changes.
+        expect(rpcCalls.some((call) => call.name === 'transition_enquiry_status')).toBe(false);
+        expect(rpcCalls.some((call) => call.name === 'queue_communication_message')).toBe(false);
+      });
+
+      it('postpones a client by three days, a week or a month', async () => {
+        const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+        renderWithSession(<App />, { role: 'owner', path: '/?waiting=1', todayPulse: withSilent(), rpcCalls });
+        const section = await waitingSection();
+        fireEvent.click(within(section).getByRole('button', { name: 'Later' }));
+        const choices = within(section).getByRole('group', { name: 'Later' });
+        expect(within(choices).getByRole('button', { name: 'In a week' })).toBeInTheDocument();
+        expect(within(choices).getByRole('button', { name: 'In a month' })).toBeInTheDocument();
+        fireEvent.click(within(choices).getByRole('button', { name: 'In 3 days' }));
+        await waitFor(() => expect(rpcCalls.some((call) => call.name === 'snooze_attention_item')).toBe(true));
+        const args = rpcCalls.find((call) => call.name === 'snooze_attention_item')?.args as Record<string, string>;
+        expect(args.p_item_kind).toBe('client_silence');
+        expect(args.p_observed_at).toBe('2026-08-20T08:00:00Z');
+        const days = (new Date(args.p_resurface_at).getTime() - Date.now()) / 86_400_000;
+        expect(days).toBeGreaterThan(2.9);
+        expect(days).toBeLessThan(3.1);
+        expect(await within(section).findByText(/Quiet Client is hidden until/)).toBeInTheDocument();
+      });
+
+      it('offers no decisions to a read-only viewer', async () => {
+        renderWithSession(<App />, { role: 'read_only', path: '/?waiting=1', todayPulse: withSilent() });
+        const section = await waitingSection();
+        expect(within(section).getByText('Quiet Client')).toBeInTheDocument();
+        expect(within(section).queryByRole('button', { name: 'Later' })).not.toBeInTheDocument();
+        expect(within(section).queryByRole('button', { name: "Don't remind" })).not.toBeInTheDocument();
+      });
+
+      it('says when it cannot tell who is waiting, instead of an empty block', async () => {
+        renderWithSession(<App />, { role: 'owner', path: '/?waiting=1', todayPulse: pulse(false) });
+        expect(await screen.findByText(/Who is waiting cannot be worked out right now/)).toBeInTheDocument();
+      });
+    });
+
     it('renders an enabled server pulse even when a supplemental read fails', async () => {
       renderWithSession(<App />, {
         role: 'owner',
