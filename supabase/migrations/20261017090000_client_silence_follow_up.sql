@@ -89,13 +89,16 @@ as $$
     and coalesce(r.sent_at, r.provider_timestamp, r.created_at) > coalesce(i.provider_timestamp, i.created_at)
     -- A question stays open whatever the reaction.
     and coalesce(i.body, '') !~ '[?？]'
-    -- The classifier may keep it open; it never closes it on its own.
+    -- The classifier may keep it open; it never closes it on its own. A mark
+    -- names the exact inbound it classified (service_record_client_reply_state
+    -- stores its time), so a mark on a later message elsewhere does not
+    -- reopen this one.
     and not exists (
       select 1 from crm_private.client_reply_marks m
       where c.client_id is not null
         and m.artist_id = c.artist_id
         and m.client_id = c.client_id
-        and m.message_at >= coalesce(i.provider_timestamp, i.created_at)
+        and m.message_at = coalesce(i.provider_timestamp, i.created_at)
         and m.reply_state = 'reply_required');
 $$;
 
@@ -839,6 +842,13 @@ as $$
       where e.client_id = p_client_id and e.artist_id = p_artist_id
         and e.status = 'sent' and e.sent_at is not null
         and e.created_by_kind is distinct from 'system'
+      -- Mail the artist sent from Gmail, which pulse_attention_batch also
+      -- counts as the studio's turn.
+      union all
+      select null::uuid, 'email', 'email', g.subject, g.occurred_at, g.id::text
+      from crm_private.gmail_client_ai_excerpts g
+      where g.client_id = p_client_id and g.artist_id = p_artist_id
+        and g.direction = 'outbound' and g.occurred_at is not null
     ) x
     order by x.at desc, x.id desc
     limit 1

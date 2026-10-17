@@ -234,6 +234,35 @@ select pg_temp.msg(10, 'outbound', interval '-8 days', 'Here it is, let me know 
 select is((pg_temp.silent(10) -> 'acknowledgement' ->> 'observed_at')::timestamptz, (select at from t0) - interval '8 days',
   'after a reaction, the artist''s message starts the cycle');
 
+-- A reply_required mark on a later message in another channel does not
+-- reopen an older message the artist already acknowledged with a reaction.
+select pg_temp.add_client(21);
+insert into public.communication_conversations (
+  id, artist_id, channel, client_id, link_state, integration_key, external_contact_id, state
+) values (pg_temp.conv(21, 'instagram'), pg_temp.vlad(), 'instagram', pg_temp.client(21), 'linked', 'silence-339-ig', '33918000021', 'open');
+select pg_temp.msg(21, 'inbound', interval '-9 days', 'Thank you!');
+select pg_temp.msg(21, 'outbound', interval '-8 days', null, 'reaction');
+select pg_temp.msg(21, 'inbound', interval '-3 days', 'Could you also look at my arm', 'text', null, 'instagram');
+insert into crm_private.client_reply_marks (artist_id, client_id, message_at, reply_state, source)
+values (pg_temp.vlad(), pg_temp.client(21), (select at from t0) - interval '3 days', 'reply_required', 'classifier');
+select is(pg_temp.reply(21), null, 'a mark on a later Instagram message leaves the acknowledged WhatsApp one closed');
+select isnt((select i from jsonb_array_elements(pg_temp.items(pg_temp.vlad())) i
+             where i ->> 'key' = 'reply-' || pg_temp.conv(21, 'instagram')), null,
+  'the Instagram message itself waits for an answer');
+
+-- A cycle started by mail sent from Gmail shows that mail.
+select pg_temp.add_client(22);
+select pg_temp.msg(22, 'inbound', interval '-10 days', 'Can we talk about the design');
+insert into crm_private.gmail_client_ai_excerpts (
+  artist_id, workspace_id, client_id, provider_thread_id, provider_message_id, direction, subject, body_excerpt, occurred_at
+) values (pg_temp.vlad(), (select workspace_id from public.artists where id = pg_temp.vlad()), pg_temp.client(22),
+  'thread-339-22', 'message-339-22', 'outbound', 'Design draft attached', 'Synthetic body', (select at from t0) - interval '8 days');
+select is((pg_temp.silent(22) -> 'acknowledgement' ->> 'observed_at')::timestamptz, (select at from t0) - interval '8 days',
+  'the Gmail message starts the cycle');
+select is(pg_temp.silent(22) -> 'context' ->> 'channel', 'email', 'the row says it was an email');
+select is(pg_temp.silent(22) -> 'context' ->> 'preview', 'Design draft attached', 'with its subject');
+select is(pg_temp.silent(22) ->> 'href', '/inbox/email/client-' || pg_temp.client(22), 'and opens the email thread');
+
 -- Clearing a Today reply item answers the client but starts no clock.
 select pg_temp.add_client(11);
 select pg_temp.msg(11, 'inbound', interval '-9 days', 'I will think about it');

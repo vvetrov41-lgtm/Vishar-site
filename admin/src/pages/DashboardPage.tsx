@@ -332,6 +332,8 @@ export function DashboardPage() {
       </Section>
 
       <WaitingOnClients
+        // A new artist scope is a new list: no undo carried over from another artist.
+        key={selectedArtistId ?? 'all'}
         items={waitingOnClients}
         now={now}
         canDecide={mayDismissAttention}
