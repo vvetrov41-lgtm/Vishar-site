@@ -831,6 +831,8 @@ insert into expected_function_acl values
   -- Today pulse (20260924050000). CRM read under the caller's capabilities;
   -- Telegram read for the backend only.
   ('public.get_today_pulse(uuid)', false, true, false),
+  ('public.get_waiting_on_clients_count(uuid)', false, true, false),
+  ('public.snooze_attention_item(uuid,text,uuid,timestamp with time zone,timestamp with time zone)', false, true, false),
   -- Statistics 2.0 aggregates; per-artist capability checked inside.
   ('public.get_statistics(uuid[],timestamptz,timestamptz)', false, true, false),
   ('public.service_telegram_today_pulse(text,integer)', false, false, true),

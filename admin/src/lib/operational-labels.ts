@@ -5,6 +5,7 @@ export type OperationalLabelGroup = 'event' | 'integrationKind' | 'integrationEr
 
 export const ACTIVITY_EVENT_TYPES = [
   'attention.dismissed',
+  'attention.snoozed',
   'appointment.rescheduled',
   'appointment.scheduled',
   'appointment.status_changed',
@@ -97,6 +98,7 @@ const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, stri
       'settings.retention_updated': 'Data retention settings updated',
       'attention.dismissed': 'Attention item removed',
       'attention.restored': 'Attention item returned',
+      'attention.snoozed': 'Reminder postponed',
       'appointment.rescheduled': 'Appointment rescheduled',
       'appointment.scheduled': 'Appointment scheduled',
       'appointment.status_changed': 'Appointment status changed',
@@ -232,6 +234,7 @@ const LABELS: Record<Language, Record<OperationalLabelGroup, Record<string, stri
       'settings.retention_updated': 'Настройки хранения данных изменены',
       'attention.dismissed': 'Карточка убрана из внимания',
       'attention.restored': 'Карточка возвращена во внимание',
+      'attention.snoozed': 'Напоминание отложено',
       'appointment.rescheduled': 'Запись перенесена',
       'appointment.scheduled': 'Запись запланирована',
       'appointment.status_changed': 'Статус записи изменён',

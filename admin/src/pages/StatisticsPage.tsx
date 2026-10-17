@@ -22,6 +22,8 @@ import { useLanguage, type Language } from '../lib/i18n';
 import { can, canAccess } from '../lib/permissions';
 import { useApi, useSession } from '../lib/session';
 import { useArtistScope } from '../lib/artist-scope';
+import { Link } from '../lib/router';
+import type { WaitingOnClientsCount } from '../lib/attention-api';
 import {
   CONVERSION_MATURITY_DAYS,
   periodForDates,
@@ -71,6 +73,21 @@ export function StatisticsPage() {
     () => (data ? buildOverview(data, (row) => channelLabel(row, language)) : null),
     [data, language],
   );
+
+  // Today's "waiting on clients" block, counted by the same server function.
+  // Current state, not a period figure: it does not follow the period picker
+  // and never waits for, or delays, the statistics themselves.
+  const waiting = useAsync<WaitingOnClientsCount | null>(
+    () => api.getWaitingOnClientsCount(selectedArtistId ?? undefined).catch(() => null),
+    [api, selectedArtistId],
+  );
+  const waitingLine = waiting.loading
+    ? null
+    : !waiting.data || waiting.data.status !== 'ok'
+      ? { text: t('stats.attention.waitingOnClientsUnavailable'), linked: false }
+      : waiting.data.count > 0
+        ? { text: t('stats.attention.waitingOnClients', { count: waiting.data.count }), linked: true }
+        : null;
 
   const controls = (
     <PeriodControls
@@ -140,7 +157,7 @@ export function StatisticsPage() {
         </div>
       </section>
 
-      {view.attention.length > 0 ? (
+      {view.attention.length > 0 || waitingLine ? (
         <section className="stats-attention" aria-labelledby="stats-attention-title">
           <h2 id="stats-attention-title">{t('stats.attention')}</h2>
           <ul>
@@ -165,7 +182,9 @@ export function StatisticsPage() {
                         <span>{text}</span><span aria-hidden="true">›</span>
                       </button>
                     ) : (
-                      <a href={item.target}><span>{text}</span><span aria-hidden="true">›</span></a>
+                      // Routes go through the hash router; a plain href="/payments"
+                      // left the CRM's hash route and landed on Today.
+                      <Link to={item.target.split('#')[0]}><span>{text}</span><span aria-hidden="true">›</span></Link>
                     )
                   ) : (
                     <span className="stats-attention-text">{text}</span>
@@ -173,6 +192,16 @@ export function StatisticsPage() {
                 </li>
               );
             })}
+            {/* Last, so the period figures above keep their place on a phone's first screen. */}
+            {waitingLine ? (
+              <li key="waiting-on-clients">
+                {waitingLine.linked ? (
+                  <Link to="/?waiting=1"><span>{waitingLine.text}</span><span aria-hidden="true">›</span></Link>
+                ) : (
+                  <span className="stats-attention-text">{waitingLine.text}</span>
+                )}
+              </li>
+            ) : null}
           </ul>
         </section>
       ) : null}

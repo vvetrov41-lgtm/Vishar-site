@@ -171,7 +171,52 @@ describe('Statistics screen', () => {
   it('links waiting payments for a finance manager', async () => {
     await renderStatistics('owner');
     const item = screen.getByText('Payment requests waiting to be paid: 1');
-    expect(item.closest('a')?.getAttribute('href')).toBe('/payments');
+    // Through the hash router: a plain "/payments" left the CRM route for Today.
+    expect(item.closest('a')?.getAttribute('href')).toBe('#/payments');
+  });
+
+  describe('clients waiting on a reply', () => {
+    const waitingRow = (n: number) => ({
+      key: `silent-c${n}`, kind: 'client_follow_up_due', section: 'waiting_on_clients',
+      reason: 'client_follow_up_due', artist_id: 'a1', client_id: `c${n}`, subject: `Client ${n}`,
+      href: `/inbox/v${n}`, at: '2026-07-10T12:00:00Z', detail: 'awaiting_artist_review', sla_state: 'due',
+      ai_suggestion: null, urgent: false,
+      acknowledgement: { kind: 'client_silence', entity_id: `c${n}`, observed_at: '2026-07-10T12:00:00Z' },
+    });
+    const pulse = (enabled: boolean, rows: number) => ({
+      generated_at: '2026-07-20T12:00:00Z', enabled, artists: [],
+      items: Array.from({ length: rows }, (_, index) => waitingRow(index + 1)),
+    });
+
+    it('counts the Today block and links to it', async () => {
+      const { rpcCalls } = renderWithSession(<App />, { role: 'owner', path: '/statistics', todayPulse: pulse(true, 3) });
+      const item = await screen.findByText('Clients to follow up now: 3 · no reply for 7+ days');
+      expect(item.closest('a')?.getAttribute('href')).toBe('#/?waiting=1');
+      const calls = rpcCalls.filter((call) => call.name === 'get_waiting_on_clients_count');
+      expect(calls).toHaveLength(1);
+      expect(calls[0].args).toEqual({ p_artist_id: null });
+    });
+
+    it('does not follow the period picker', async () => {
+      const { rpcCalls } = renderWithSession(<App />, { role: 'owner', path: '/statistics', todayPulse: pulse(true, 2) });
+      await screen.findByText('Clients to follow up now: 2 · no reply for 7+ days');
+      fireEvent.click(screen.getByRole('button', { name: '90 days' }));
+      await waitFor(() => expect(rpcCalls.filter((call) => call.name === 'get_statistics')).toHaveLength(2));
+      expect(rpcCalls.filter((call) => call.name === 'get_waiting_on_clients_count')).toHaveLength(1);
+    });
+
+    it('says the number is unavailable instead of showing zero', async () => {
+      renderWithSession(<App />, { role: 'owner', path: '/statistics', todayPulse: pulse(false, 0) });
+      const item = await screen.findByText('Clients to follow up: temporarily unavailable');
+      expect(item.closest('a')).toBeNull();
+    });
+
+    it('stays out of the way when nobody is waiting', async () => {
+      renderWithSession(<App />, { role: 'owner', path: '/statistics', todayPulse: pulse(true, 0) });
+      await screen.findByRole('heading', { level: 2, name: 'Headline' });
+      await waitFor(() => expect(screen.queryByText(/temporarily unavailable/)).not.toBeInTheDocument());
+      expect(screen.queryByText(/Clients to follow up now/)).not.toBeInTheDocument();
+    });
   });
 
   it('shows no money at all where the database returned none', async () => {
