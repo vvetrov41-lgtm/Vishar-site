@@ -37,7 +37,8 @@ $guard$;
 
 -- True only for a short message that says thanks or goodbye and nothing more.
 -- Every word must come from the closing vocabulary, at least one of them must
--- be gratitude or a goodbye, and anything left after the words, spaces and
+-- be gratitude, a goodbye or kisses (a message without words needs an
+-- affectionate emoji; bare punctuation is not a goodbye), and anything left after the words, spaces and
 -- punctuation must be an affectionate emoji. A question mark is never
 -- removed, so a question never qualifies. Agreement words (ok, yes, sure,
 -- great, perfect, lovely, sounds good, хорошо, договорились) are left out on
@@ -93,13 +94,16 @@ as $$
       'дуже', 'щиро', 'вам', 'тобі', 'beaucoup', 'muchas', 'mille', 'schön', 'vielen', 'muito'
     ]
     and (
-      cardinality((select w from words)) = 0
+      -- no words: at least one affectionate emoji, not bare punctuation
+      (cardinality((select w from words)) = 0
+       and (select t from norm) ~ '[❤♥☺🙏😊🙂🥰😍🤗😘😚😀😃😄😁😇🥹🫶💓💕💖💗💘💙💚💛💜💝💞🧡🤍🖤🤎🌹🌸💐✨]')
       or (select w from words) && array[
         'thanks', 'thank', 'thankyou', 'thanx', 'thnx', 'thx', 'ty', 'tysm', 'cheers', 'appreciate',
         'appreciated', 'grateful', 'спасибо', 'спасиб', 'спс', 'благодарю', 'благодарим', 'дякую',
         'merci', 'gracias', 'danke', 'grazie', 'obrigado', 'obrigada', 'mulțumesc', 'multumesc',
         'mersi', 'dziękuję', 'dzięki', 'köszönöm',
-        'bye', 'goodbye', 'byebye', 'cya', 'пока', 'свидания', 'встречи', 'зустрічі'
+        'bye', 'goodbye', 'byebye', 'cya', 'пока', 'свидания', 'встречи', 'зустрічі',
+        'x', 'xx', 'xxx', 'xo', 'xoxo'
       ]
     ),
     false);

@@ -302,12 +302,12 @@ select is(pg_temp.silent(36, interval '30 days'), null, 'and never becomes a rem
 -- The vocabulary itself.
 select ok(crm_private.is_closing_message(b), 'closing: ' || b) from (values
   ('Thank you!'), ('thanks'), ('Thanks a lot 🙏🏻'), ('Thank you, have a nice day!'), ('Bye! xx'),
-  ('❤️'), ('Спасибо ❤️'), ('Дякую!'), ('Thanks again, see you soon')) v(b);
+  ('❤️'), ('Спасибо ❤️'), ('Дякую!'), ('Thanks again, see you soon'), ('xx'), ('Xoxo 💕')) v(b);
 select ok(not crm_private.is_closing_message(b), 'not closing: ' || coalesce(b, '<null>')) from (values
   ('I''d like to book Saturday. Please let me know if that''s possible.'), ('Can I book Saturday?'),
   ('Saturday works'), ('Ok'), ('Perfect'), ('Sounds good, thanks'), ('Yes please'), ('👍'), ('👌'),
   ('Thank you! See you Saturday'), ('Thanks?'), ('Хорошо, спасибо'), ('Спасибо, а можно в субботу'),
-  ('so much'), (''), (null)) v(b);
+  ('so much'), ('...'), ('!'), ('🏻'), (''), (null)) v(b);
 
 -- A cycle started by mail sent from Gmail shows that mail.
 select pg_temp.add_client(22);
