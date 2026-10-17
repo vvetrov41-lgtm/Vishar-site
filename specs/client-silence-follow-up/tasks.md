@@ -28,10 +28,11 @@
 ## Fail-safe reaction rule (migration 20261017140000)
 
 - [x] A reaction closes only a plain thank-you or goodbye, or a message with an exact `no_reply_needed` mark; requests without a question mark, agreements, thumbs-up and photos stay open; no classifier mark means open
-- [x] pgTAP 339 scenarios and vocabulary checks; 326 fixture says "Thank you!"; full suite 214 files / 6015 checks; `db lint`
-- [x] Production impact measured before release (rolled back): 9 conversations closed only by a reaction; 3 have `no_reply_needed` on that message and stay closed; 6 return to "reply" (5 texts the rule cannot read as thanks, 1 photo)
-- [ ] Exact-head CI, merge, private production release
-- [ ] Production readback after release: function md5, reply rows as measured, waiting count, counter equals Today
+- [x] pgTAP 339 scenarios and vocabulary checks; 326 fixture says "Thank you!"; full suite 214 files / 6020 checks; `db lint`
+- [x] Production impact measured before release (rolled back): 9 conversations closed only by a reaction; 3 have `no_reply_needed` on that message and stay closed; 6 open again (5 texts the rule cannot read as thanks, 1 photo); the release readback below shows where they land in Today
+- [x] Exact-head CI on `26af220d` (two Codex findings fixed before merge: kisses close, bare punctuation does not), merge `badd4886`, private production release (run 39047768953, all jobs green, no migrations left)
+- [x] Production readback after release: 300 migrations, latest `20261017140000`; md5 of `is_closing_message` and `studio_reaction_acknowledged_at` equal the merge; no grant to anon, authenticated or service_role; "Thank you!" and "xx" close, the Saturday request and "..." do not
+- [x] Effect: 12 conversations answered only by a reaction; 3 stay closed (exact `no_reply_needed`); 9 open: 2 linked clients already in "reply" (reply_required), 7 unknown senders counted in the grouped "unmatched inbound" card (Vladimir 6, Kristina 4), no new per-row noise; counter equals Today (15/15)
 
 ## Not in scope
 
