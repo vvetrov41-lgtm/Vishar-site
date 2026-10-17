@@ -111,6 +111,9 @@ select is(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000
 -- (20261004190000); an edit is not a turn, and a new message waits again.
 select pg_temp.conv('d3260000-0000-4000-8000-00000000000f', '447700326006');
 select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'inbound', 'text', now() - interval '3 hours');
+-- Only a plain thank-you or goodbye is closed by a reaction (20261017140000).
+update public.communication_messages set body = 'Thank you!'
+where conversation_id = 'd3260000-0000-4000-8000-00000000000f' and direction = 'inbound';
 select pg_temp.msg('d3260000-0000-4000-8000-00000000000f', 'outbound', 'edit', now() - interval '150 minutes', 'sent');
 select ok(crm_private.conversation_awaiting_reply_since('d3260000-0000-4000-8000-00000000000f') is not null,
   'an edit from the studio is not a reply');
