@@ -3,9 +3,12 @@
 -- Client silence follow-up (20261017090000):
 --   * the clock starts only from a person's studio message: not a reaction,
 --     an automation, a system email or clearing a Today item;
---   * a studio reaction acknowledges the client's message unless it asks
---     something (question mark, or classifier reply_required); the classifier
---     alone never hides a reply;
+--   * a studio reaction acknowledges the client's message only when it is a
+--     plain thank-you or goodbye, or the classifier marked that exact message
+--     no_reply_needed (20261017140000); a request without a question mark, an
+--     agreement, a thumbs-up or a photo stays open, and so does anything when
+--     the classifier left no mark; reply_required always keeps it open; the
+--     classifier alone never hides a reply;
 --   * one acknowledgement per cycle covers the 7-day and the 21-day item;
 --     "not now" returns it, a new message from either side starts a new cycle;
 --   * a manual follow-up hides the item while open and closes the cycle when
@@ -249,6 +252,62 @@ select is(pg_temp.reply(21), null, 'a mark on a later Instagram message leaves t
 select isnt((select i from jsonb_array_elements(pg_temp.items(pg_temp.vlad())) i
              where i ->> 'key' = 'reply-' || pg_temp.conv(21, 'instagram')), null,
   'the Instagram message itself waits for an answer');
+
+-- Fail-safe (20261017140000): a reaction closes only what is plainly a
+-- thank-you or a goodbye. A request needs no question mark to be a request.
+select pg_temp.add_client(31);
+select pg_temp.msg(31, 'inbound', interval '-9 days', 'I''d like to book Saturday. Please let me know if that''s possible.');
+select pg_temp.msg(31, 'outbound', interval '-8 days', null, 'reaction');
+select isnt(pg_temp.reply(31), null, 'a heart on a request without a question mark leaves it to answer');
+select is(pg_temp.silent(31), null, 'and nobody is waiting on that client');
+select is((select reply_state from crm_private.attention_comm_facts(pg_temp.vlad(), pg_temp.client(31))),
+  'unknown', 'the facts do not call it handled');
+
+-- The classifier failed, timed out or was unsure: no mark, still open. Its
+-- no_reply_needed on that exact message plus the reaction closes it.
+select pg_temp.add_client(32);
+select pg_temp.msg(32, 'inbound', interval '-9 days', 'Got the sketch, all good on my side');
+select pg_temp.msg(32, 'outbound', interval '-8 days', null, 'reaction');
+select isnt(pg_temp.reply(32), null, 'without a classifier mark the reaction does not close a message it cannot read');
+insert into crm_private.client_reply_marks (artist_id, client_id, message_at, reply_state, source)
+values (pg_temp.vlad(), pg_temp.client(32), (select at from t0) - interval '10 days', 'no_reply_needed', 'classifier');
+select isnt(pg_temp.reply(32), null, 'a no_reply_needed mark on an older message does not count');
+insert into crm_private.client_reply_marks (artist_id, client_id, message_at, reply_state, source)
+values (pg_temp.vlad(), pg_temp.client(32), (select at from t0) - interval '9 days', 'no_reply_needed', 'classifier');
+select is(pg_temp.reply(32), null, 'the reaction and a no_reply_needed mark on that message together close it');
+select is(pg_temp.silent(32), null, 'and do not start waiting on the client');
+
+-- An agreement, a thumbs-up or a photo after an offer is a choice to act on.
+select pg_temp.add_client(33);
+select pg_temp.msg(33, 'outbound', interval '-11 days', 'I can do Saturday at 2pm');
+select pg_temp.msg(33, 'inbound', interval '-9 days', 'Perfect, thank you!');
+select pg_temp.msg(33, 'outbound', interval '-8 days', null, 'reaction');
+select isnt(pg_temp.reply(33), null, '"Perfect, thank you!" after an offer stays to answer');
+select pg_temp.add_client(34);
+select pg_temp.msg(34, 'inbound', interval '-9 days', '👍');
+select pg_temp.msg(34, 'outbound', interval '-8 days', null, 'reaction');
+select isnt(pg_temp.reply(34), null, 'a thumbs-up message stays to answer');
+select pg_temp.add_client(35);
+select pg_temp.msg(35, 'inbound', interval '-9 days', null, 'image');
+select pg_temp.msg(35, 'outbound', interval '-8 days', null, 'reaction');
+select isnt(pg_temp.reply(35), null, 'a photo with a heart stays to answer');
+
+-- A plain thank-you in Russian closes like the English one.
+select pg_temp.add_client(36);
+select pg_temp.msg(36, 'inbound', interval '-9 days', 'Спасибо большое! 🙏');
+select pg_temp.msg(36, 'outbound', interval '-8 days', null, 'reaction');
+select is(pg_temp.reply(36), null, 'a heart on "Спасибо большое!" leaves nothing to answer');
+select is(pg_temp.silent(36, interval '30 days'), null, 'and never becomes a reminder');
+
+-- The vocabulary itself.
+select ok(crm_private.is_closing_message(b), 'closing: ' || b) from (values
+  ('Thank you!'), ('thanks'), ('Thanks a lot 🙏🏻'), ('Thank you, have a nice day!'), ('Bye! xx'),
+  ('❤️'), ('Спасибо ❤️'), ('Дякую!'), ('Thanks again, see you soon'), ('xx'), ('Xoxo 💕')) v(b);
+select ok(not crm_private.is_closing_message(b), 'not closing: ' || coalesce(b, '<null>')) from (values
+  ('I''d like to book Saturday. Please let me know if that''s possible.'), ('Can I book Saturday?'),
+  ('Saturday works'), ('Ok'), ('Perfect'), ('Sounds good, thanks'), ('Yes please'), ('👍'), ('👌'),
+  ('Thank you! See you Saturday'), ('Thanks?'), ('Хорошо, спасибо'), ('Спасибо, а можно в субботу'),
+  ('so much'), ('...'), ('!'), ('🏻'), (''), (null)) v(b);
 
 -- A cycle started by mail sent from Gmail shows that mail.
 select pg_temp.add_client(22);

@@ -1,7 +1,7 @@
 # Plan
 
 1. Migration `20261017090000_client_silence_follow_up.sql`, fail-closed on the md5 of every replaced function as measured on production 2026-10-17:
-   - `crm_private.studio_reaction_acknowledged_at`;
+   - `crm_private.studio_reaction_acknowledged_at` (narrowed by 20261017140000 to `crm_private.is_closing_message` or an exact `no_reply_needed` mark);
    - `conversation_last_studio_reply_at` (person's message only) and `conversation_awaiting_reply_since` (acknowledging reaction);
    - `attention_comm_facts`, `client_attention`, `pulse_client_attention`, `pulse_attention_batch` on the same turn and reaction rules; `handled` without a studio message is nothing pending;
    - `attention_acknowledgements.resurface_at`, kind `client_silence`; `crm_private.record_attention_acknowledgement`; `acknowledge_attention_item` (unchanged signature), new `snooze_attention_item`, `clear_attention_acknowledgement`;
