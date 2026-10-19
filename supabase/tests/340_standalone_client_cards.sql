@@ -103,6 +103,11 @@ select public.record_communication_inbound_message(
   'text', 'Fourth sender'
 );
 select public.record_communication_inbound_message(
+  'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'vladimir-production',
+  '447700934005', 'wamid.STANDALONE0005', '2026-10-19 18:13:00+00',
+  'text', 'Fifth sender'
+);
+select public.record_communication_inbound_message(
   'a2222222-2222-4222-8222-222222222222', 'whatsapp', 'kristina-production',
   '447700934009', 'wamid.STANDALONE0009', '2026-10-19 18:15:00+00',
   'text', 'Kristina sender'
@@ -288,6 +293,29 @@ select throws_ok(
       'Synthetic Adelino', 'someone.else@example.test', '+44 7700 934001', null, false)$$,
   '23514', null,
   'a retry with different identifiers is not treated as a replay'
+);
+select is(
+  public.create_client_from_communication(
+    pg_temp.conversation_for('447700934005'),
+    'Synthetic National Phone', null, '07700 900111', null, false
+  ) ->> 'replayed',
+  'false',
+  'a card can keep a phone that does not normalise'
+);
+select is(
+  public.create_client_from_communication(
+    pg_temp.conversation_for('447700934005'),
+    'Synthetic National Phone', null, '07700 900111', null, false
+  ) ->> 'replayed',
+  'true',
+  'the same unnormalised phone is a replay'
+);
+select throws_ok(
+  $$select public.create_client_from_communication(
+      pg_temp.conversation_for('447700934005'),
+      'Synthetic National Phone', null, '07123 456789', null, true)$$,
+  '23514', null,
+  'a different unnormalised phone is not a replay'
 );
 select throws_ok(
   $$select public.create_client_from_communication(

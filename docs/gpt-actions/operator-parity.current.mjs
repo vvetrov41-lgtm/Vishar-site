@@ -64,7 +64,7 @@ export const PARITY_METADATA = Object.freeze({
     request_enquiry_translation: 'Reading aid on the enquiry page: a cached machine translation of the client text. The assistant translates itself and needs no CRM operation.',
     get_enquiry_translation: 'Reading aid on the enquiry page: reads the cached translation back. The assistant translates itself and needs no CRM operation.',
     get_privacy_notice_version: 'Lets the client card tell whether the current notice was acknowledged; the assistant gets the version back from communications.client.create.',
-    record_client_privacy_acknowledgement: 'Staff-confirmed privacy acknowledgement on an existing client card. The assistant records the same acknowledgement when it creates the card (communications.client.create privacy_acknowledged).',
+    record_client_privacy_acknowledgement: 'Staff confirm on an existing card that the client acknowledged the privacy notice. The assistant records it only when it creates the card (communications.client.create privacy_acknowledged); recording it on an existing card stays a staff step in the CRM.',
   }),
   // Authenticated RPCs present in production that the CRM no longer calls.
   // They are not current operator actions, so parity neither exposes nor

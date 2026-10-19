@@ -643,7 +643,8 @@ begin
     if v_existing.archived_at is not null
        or lower(v_existing.full_name) <> lower(v_full_name)
        or v_existing.email_normalized is distinct from v_email_norm
-       or v_existing.phone_normalized is distinct from v_phone_norm
+       or coalesce(v_existing.phone_normalized, nullif(btrim(coalesce(v_existing.phone, '')), ''))
+          is distinct from coalesce(v_phone_norm, v_phone)
        or not exists (
          select 1 from public.activity_log l
          where l.client_id = v_existing.id

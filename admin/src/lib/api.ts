@@ -540,10 +540,13 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     },
 
     /** Direct client/artist links for cards that have no enquiry or project yet. */
-    async listClientArtistLinks(clientId?: string): Promise<ClientArtistLink[]> {
-      let query = client.from('client_artist_links').select('client_id, artist_id').limit(1000);
-      if (clientId) query = query.eq('client_id', clientId);
-      return unwrap<ClientArtistLink[]>(await query, 'load clients');
+    async listClientArtistLinks(clientIds: string | string[]): Promise<ClientArtistLink[]> {
+      const ids = [...new Set(Array.isArray(clientIds) ? clientIds : [clientIds])].filter(Boolean);
+      if (ids.length === 0) return [];
+      return unwrap<ClientArtistLink[]>(
+        await client.from('client_artist_links').select('client_id, artist_id').in('client_id', ids),
+        'load clients'
+      );
     },
 
     async listClientPrivacyAcknowledgements(clientId: string): Promise<ClientPrivacyAcknowledgement[]> {
