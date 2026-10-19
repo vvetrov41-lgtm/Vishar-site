@@ -42,8 +42,8 @@ select ok(
   'only a signed-in CRM session can create a client from a conversation'
 );
 select ok(
-  not has_function_privilege('anon', 'public.record_client_privacy_acknowledgement(uuid)', 'EXECUTE')
-  and has_function_privilege('authenticated', 'public.record_client_privacy_acknowledgement(uuid)', 'EXECUTE'),
+  not has_function_privilege('anon', 'public.record_client_privacy_acknowledgement(uuid,uuid)', 'EXECUTE')
+  and has_function_privilege('authenticated', 'public.record_client_privacy_acknowledgement(uuid,uuid)', 'EXECUTE'),
   'only a signed-in CRM session can record a privacy acknowledgement'
 );
 select ok(
@@ -284,6 +284,13 @@ select throws_ok(
 );
 select throws_ok(
   $$select public.create_client_from_communication(
+      pg_temp.conversation_for('447700934001'),
+      'Synthetic Adelino', 'someone.else@example.test', '+44 7700 934001', null, false)$$,
+  '23514', null,
+  'a retry with different identifiers is not treated as a replay'
+);
+select throws_ok(
+  $$select public.create_client_from_communication(
       pg_temp.conversation_for('447700934002'),
       'Duplicate By Email', 'ADELINO.synthetic@live.co.uk', null, null, false)$$,
   '23505', null,
@@ -416,6 +423,13 @@ select is(
   1,
   're-linking does not write a second audit row'
 );
+select throws_ok(
+  $$select public.create_client_from_communication(
+      pg_temp.conversation_for('447700934003'),
+      'Synthetic Adelino', 'adelino.synthetic@live.co.uk', '+44 7700 934001', null, true)$$,
+  '23514', null,
+  'a stale create on a conversation linked to an existing card is refused, not replayed'
+);
 
 reset role;
 
@@ -528,6 +542,14 @@ select throws_ok(
   '42501', null,
   'Kristina cannot record consent on Vladimir''s card'
 );
+select is(
+  public.create_client_from_communication(
+    pg_temp.conversation_for('447700934009'),
+    'Synthetic Kristina Client', null, null, null, true
+  ) ->> 'privacy_notice_version',
+  '2026-10-12',
+  'a Kristina card records Kristina''s own privacy notice version'
+);
 select throws_ok(
   format($q$select public.link_communication_conversation_client(%L, %L)$q$,
          pg_temp.conversation_for('447700934009'),
@@ -619,6 +641,44 @@ select throws_ok(
   '23514', null,
   'a client cannot be linked to an artist in another workspace'
 );
+
+insert into auth.users (id, email) values
+  ('fa033333-3333-4333-8333-333333333333', 'standalone.studio@example.test');
+insert into public.profiles (id, email, display_name, role, is_active) values
+  ('fa033333-3333-4333-8333-333333333333', 'standalone.studio@example.test',
+   'Standalone Studio Manager', 'booking_manager', true);
+insert into public.artist_memberships (
+  profile_id, artist_id, access_level,
+  can_view_finance, can_manage_finance,
+  can_manage_sessions, can_manage_integrations, is_active, grant_source
+) values
+  ('fa033333-3333-4333-8333-333333333333', 'fa300000-0000-4000-8000-000000000001',
+   'manager', false, false, true, false, true, 'explicit'),
+  ('fa033333-3333-4333-8333-333333333333', 'fa300000-0000-4000-8000-000000000002',
+   'manager', false, false, true, false, true, 'explicit');
+
+set local role authenticated;
+select pg_temp.claims('{"sub":"fa033333-3333-4333-8333-333333333333","role":"authenticated"}');
+select throws_ok(
+  $$select public.record_client_privacy_acknowledgement('fa400000-0000-4000-8000-000000000001')$$,
+  '22023', null,
+  'a shared card needs the artist whose notice is acknowledged'
+);
+select is(
+  public.record_client_privacy_acknowledgement(
+    'fa400000-0000-4000-8000-000000000001', 'fa300000-0000-4000-8000-000000000002'
+  ) ->> 'privacy_acknowledgement_replayed',
+  'false',
+  'a manager of both artists records the acknowledgement for the named artist'
+);
+select throws_ok(
+  $$select public.record_client_privacy_acknowledgement(
+      'fa400000-0000-4000-8000-000000000001', 'a1111111-1111-4111-8111-111111111111')$$,
+  '42501', null,
+  'an artist the client is not linked to cannot be named'
+);
+reset role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 -- ---------------------------------------------------------------------------
 -- 10. The backfill covers cards that existed only through a conversation

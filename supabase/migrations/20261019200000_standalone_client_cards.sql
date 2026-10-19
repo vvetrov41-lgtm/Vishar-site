@@ -397,17 +397,25 @@ create trigger client_privacy_acknowledgements_immutable
   before update on public.client_privacy_acknowledgements
   for each row execute function crm_private.client_privacy_acknowledgement_immutable();
 
--- The staff-confirmed notice version is the one manual CRM intake records.
-create or replace function crm_private.staff_privacy_notice_version()
+-- The notice the artist's own booking form currently shows: Kristina's own
+-- notice (workers/lib/validation.js KRISTINA_PRIVACY_NOTICE_VERSION), else the
+-- version manual CRM intake records.
+create or replace function crm_private.staff_privacy_notice_version(p_artist_id uuid)
 returns text
 language sql
-immutable
-set search_path = pg_catalog
+stable
+set search_path = pg_catalog, public
 as $$
-  select '2026-07-29'::text;
+  select case
+    when exists (
+      select 1 from public.artists a
+      where a.id = p_artist_id and a.slug = 'kristina'
+    ) then '2026-10-12'
+    else '2026-07-29'
+  end;
 $$;
 
-revoke all on function crm_private.staff_privacy_notice_version()
+revoke all on function crm_private.staff_privacy_notice_version(uuid)
   from public, anon, authenticated, service_role;
 
 create or replace function crm_private.record_client_privacy_acknowledgement(
@@ -422,7 +430,7 @@ security definer
 set search_path = pg_catalog, public, crm_private
 as $$
 declare
-  v_version text := crm_private.staff_privacy_notice_version();
+  v_version text := crm_private.staff_privacy_notice_version(p_artist_id);
   v_row public.client_privacy_acknowledgements%rowtype;
   v_replayed boolean := false;
 begin
@@ -472,7 +480,11 @@ revoke all on function crm_private.record_client_privacy_acknowledgement(uuid, u
 
 -- Operator action on an existing card: the staff member confirms that the
 -- client acknowledged the privacy notice. Time and actor are recorded now.
-create or replace function public.record_client_privacy_acknowledgement(p_client_id uuid)
+-- A card shared by several artists names the artist whose notice it is.
+create or replace function public.record_client_privacy_acknowledgement(
+  p_client_id uuid,
+  p_artist_id uuid default null
+)
 returns jsonb
 language plpgsql
 security definer
@@ -493,7 +505,13 @@ begin
     raise exception 'client not found' using errcode = 'P0002';
   end if;
 
-  v_artist_id := crm_private.workflow_artist_from_links(p_client_id, null, null, null);
+  if p_artist_id is null then
+    v_artist_id := crm_private.workflow_artist_from_links(p_client_id, null, null, null);
+  elsif crm_private.client_in_artist_scope(p_client_id, p_artist_id) then
+    v_artist_id := p_artist_id;
+  else
+    raise exception 'client is not linked to that artist' using errcode = '42501';
+  end if;
   perform crm_private.require_artist_access(v_artist_id, 'manage');
 
   return jsonb_build_object('client_id', p_client_id)
@@ -503,12 +521,12 @@ begin
 end;
 $$;
 
-revoke all on function public.record_client_privacy_acknowledgement(uuid)
+revoke all on function public.record_client_privacy_acknowledgement(uuid, uuid)
   from public, anon, authenticated, service_role;
-grant execute on function public.record_client_privacy_acknowledgement(uuid)
+grant execute on function public.record_client_privacy_acknowledgement(uuid, uuid)
   to authenticated;
 
-comment on function public.record_client_privacy_acknowledgement(uuid) is
+comment on function public.record_client_privacy_acknowledgement(uuid, uuid) is
   'Records that staff confirmed the client acknowledged the current privacy notice. Idempotent; never replaces or back-dates an earlier acknowledgement.';
 
 -- ---------------------------------------------------------------------------
@@ -597,8 +615,20 @@ begin
     select cl.* into v_existing
     from public.clients cl
     where cl.id = v_conversation.client_id;
+    -- Only a card this conversation's own create action produced, with the
+    -- same name and normalised identifiers, is a retry. A conversation
+    -- linked to an existing client keeps being refused.
     if v_existing.archived_at is not null
-       or lower(v_existing.full_name) <> lower(v_full_name) then
+       or lower(v_existing.full_name) <> lower(v_full_name)
+       or v_existing.email_normalized is distinct from v_email_norm
+       or v_existing.phone_normalized is distinct from v_phone_norm
+       or not exists (
+         select 1 from public.activity_log l
+         where l.client_id = v_existing.id
+           and l.artist_id = v_conversation.artist_id
+           and l.event_type = 'communication.client_created'
+           and l.metadata ->> 'conversation' = v_conversation.id::text
+       ) then
       raise exception 'this conversation is already linked to a client'
         using errcode = '23514';
     end if;

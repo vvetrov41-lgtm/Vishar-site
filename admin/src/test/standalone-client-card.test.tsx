@@ -125,7 +125,7 @@ describe('standalone client card', () => {
 
     await waitFor(() => {
       const call = rpcCalls.find((entry) => entry.name === 'record_client_privacy_acknowledgement');
-      expect(call?.args).toEqual({ p_client_id: CLIENT_ID });
+      expect(call?.args).toEqual({ p_client_id: CLIENT_ID, p_artist_id: VLADIMIR_ARTIST_ID });
     });
   });
 

@@ -275,10 +275,13 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               <dt>{t('client.privacy')}</dt>
               <dd>
                 <ClientPrivacyStatus
-                  acknowledgements={privacyAcknowledgements}
-                  mayRecord={can(role, 'editClient')}
+                  acknowledgements={bookingArtistId
+                    ? privacyAcknowledgements.filter((row) => row.artist_id === bookingArtistId)
+                    : privacyAcknowledgements}
+                  mayRecord={can(role, 'editClient') && Boolean(bookingArtistId)}
                   onRecord={async () => {
-                    await api.recordClientPrivacyAcknowledgement(clientId);
+                    if (!bookingArtistId) return;
+                    await api.recordClientPrivacyAcknowledgement(clientId, bookingArtistId);
                     reload();
                   }}
                 />
