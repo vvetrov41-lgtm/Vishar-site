@@ -63,6 +63,7 @@ export const PARITY_METADATA = Object.freeze({
     bootstrap_artist_account: 'Step of signup.tenant.bootstrap, before any CRM profile exists.',
     request_enquiry_translation: 'Reading aid on the enquiry page: a cached machine translation of the client text. The assistant translates itself and needs no CRM operation.',
     get_enquiry_translation: 'Reading aid on the enquiry page: reads the cached translation back. The assistant translates itself and needs no CRM operation.',
+    record_client_privacy_acknowledgement: 'Staff-confirmed privacy acknowledgement on an existing client card. The assistant records the same acknowledgement when it creates the card (communications.client.create privacy_acknowledged).',
   }),
   // Authenticated RPCs present in production that the CRM no longer calls.
   // They are not current operator actions, so parity neither exposes nor
