@@ -359,16 +359,32 @@ export function createCommunicationsApi(client: CrmClient) {
       email?: string;
       phone?: string;
       instagram?: string;
-    }) {
+      privacyAcknowledged?: boolean;
+    }): Promise<{ client_id: string; conversation_id: string; link_state: 'linked' }> {
       const result = await client.rpc('create_client_from_communication', {
         p_conversation_id: conversationId,
         p_full_name: details.fullName,
         p_email: details.email || null,
         p_phone: details.phone || null,
         p_instagram: details.instagram || null,
+        p_privacy_acknowledged: details.privacyAcknowledged === true,
       });
-      if (result.error) throw new ApiError(apiMessage('Could not create that client.'), result.error);
-      return result.data;
+      if (result.error) {
+        const code = (result.error as { code?: string }).code;
+        const message = String((result.error as { message?: string }).message ?? '');
+        if (code === '23505') {
+          throw new ApiError(apiMessage('A client with this email or phone already exists. Link that client to the conversation instead.'), result.error);
+        }
+        if (code === '22023' && message.includes('email')) {
+          throw new ApiError(apiMessage('That email address is not valid.'), result.error);
+        }
+        throw new ApiError(apiMessage('Could not create that client.'), result.error);
+      }
+      const data = result.data as { client_id?: unknown } | null;
+      if (!data || typeof data.client_id !== 'string') {
+        throw new ApiError(apiMessage('Could not create that client.'));
+      }
+      return data as { client_id: string; conversation_id: string; link_state: 'linked' };
     },
 
     async createEnquiry(conversationId: string, payload: {

@@ -34,6 +34,8 @@ import type {
   Artist,
   ArtistMembership,
   Client,
+  ClientArtistLink,
+  ClientPrivacyAcknowledgement,
   CrmRole,
   CrmSession,
   Enquiry,
@@ -534,6 +536,44 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
           .select('id, full_name, email, phone, instagram, preferred_contact, travelling_from, notes_summary, created_at, updated_at, archived_at')
           .in('id', unique),
         'load client names'
+      );
+    },
+
+    /** Direct client/artist links for cards that have no enquiry or project yet. */
+    async listClientArtistLinks(clientIds: string | string[]): Promise<ClientArtistLink[]> {
+      const ids = [...new Set(Array.isArray(clientIds) ? clientIds : [clientIds])].filter(Boolean);
+      if (ids.length === 0) return [];
+      return unwrap<ClientArtistLink[]>(
+        await client.from('client_artist_links').select('client_id, artist_id').in('client_id', ids),
+        'load clients'
+      );
+    },
+
+    async listClientPrivacyAcknowledgements(clientId: string): Promise<ClientPrivacyAcknowledgement[]> {
+      return unwrap<ClientPrivacyAcknowledgement[]>(
+        await client
+          .from('client_privacy_acknowledgements')
+          .select('id, artist_id, privacy_notice_version, acknowledged_at, source')
+          .eq('client_id', clientId)
+          .order('acknowledged_at', { ascending: true }),
+        'load the privacy acknowledgement'
+      );
+    },
+
+    async getPrivacyNoticeVersion(artistId: string): Promise<string> {
+      return unwrap<string>(
+        await client.rpc('get_privacy_notice_version', { p_artist_id: artistId }),
+        'load the privacy acknowledgement'
+      );
+    },
+
+    async recordClientPrivacyAcknowledgement(clientId: string, artistId: string) {
+      return unwrap(
+        await client.rpc('record_client_privacy_acknowledgement', {
+          p_client_id: clientId,
+          p_artist_id: artistId,
+        }),
+        'record the privacy acknowledgement'
       );
     },
 

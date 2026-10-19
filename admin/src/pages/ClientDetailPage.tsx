@@ -37,6 +37,7 @@ import {
 import { formatDate, formatDateTime, localiseKnownValue, relativeDue } from '../lib/format';
 import { createGmailClientHistoryCache } from '../lib/gmail-client-cache';
 import type { LiveGmailClientHistory } from '../lib/email-api';
+import type { Api } from '../lib/api';
 import { useLanguage } from '../lib/i18n';
 import { formatPhoneForDisplay } from '../lib/phone';
 import { Link } from '../lib/router';
@@ -45,7 +46,15 @@ import { typeLabel } from './AppointmentsPage';
 import type { Appointment } from '../lib/appointment-api';
 import type { ClientConversation, ConversationMessage } from '../lib/communications-api';
 import { enquiryHeadline } from '../lib/enquiry-summary';
-import type { Client, Enquiry, FollowUp, InternalNote, Project } from '../lib/types';
+import type {
+  Client,
+  ClientArtistLink,
+  ClientPrivacyAcknowledgement,
+  Enquiry,
+  FollowUp,
+  InternalNote,
+  Project,
+} from '../lib/types';
 
 interface ClientData {
   client: Client | null;
@@ -56,6 +65,8 @@ interface ClientData {
   followUps: FollowUp[];
   conversations: ClientConversation[];
   latestMessages: ConversationMessage[];
+  artistLinks: ClientArtistLink[];
+  privacyAcknowledgements: ClientPrivacyAcknowledgement[];
 }
 
 const CHANNEL_LABELS: Record<'en' | 'ru', Record<ClientConversation['channel'], string>> = {
@@ -83,19 +94,26 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
         followUps: [],
         conversations: [],
         latestMessages: [],
+        artistLinks: [],
+        privacyAcknowledgements: [],
       };
     }
 
     // Each read is asked for only when the role could plausibly be allowed it.
     // The database still decides: a permitted request can legitimately return
     // nothing, and that is not an error.
-    const [enquiries, projects, notes, appointments, followUps, conversations] = await Promise.all([
+    const [
+      enquiries, projects, notes, appointments, followUps, conversations,
+      artistLinks, privacyAcknowledgements,
+    ] = await Promise.all([
       api.listEnquiries({ clientId }),
       api.listProjects(clientId),
       can(role, 'viewNotes') ? api.listNotes({ clientId }) : Promise.resolve([]),
       can(role, 'viewSessions') ? api.listAppointments({ clientId }) : Promise.resolve([]),
       can(role, 'viewFollowUps') ? api.listFollowUps({ clientId }) : Promise.resolve([]),
       can(role, 'viewEnquiries') ? api.listConversationsForClient(clientId) : Promise.resolve([]),
+      api.listClientArtistLinks(clientId),
+      api.listClientPrivacyAcknowledgements(clientId),
     ]);
 
     // Only the most recent thread is expanded. "What did we last say?" is
@@ -104,7 +122,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       .sort((left, right) => timeOf(right.last_message_at) - timeOf(left.last_message_at))[0] ?? null;
     const latestMessages = newest ? await api.listMessages(newest.id) : [];
 
-    return { client, enquiries, projects, notes, appointments, followUps, conversations, latestMessages };
+    return {
+      client, enquiries, projects, notes, appointments, followUps, conversations, latestMessages,
+      artistLinks, privacyAcknowledgements,
+    };
   }, [api, clientId, role]);
 
   useAppointmentResponseRefresh(reload);
@@ -113,7 +134,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (!data?.client) return <EmptyState title={t('client.notFound')} />;
 
-  const { client, enquiries, projects, notes, appointments, followUps, conversations, latestMessages } = data;
+  const {
+    client, enquiries, projects, notes, appointments, followUps, conversations, latestMessages,
+    artistLinks, privacyAcknowledgements,
+  } = data;
   const snapshot = summariseClientWorkspace({
     clientId,
     enquiries,
@@ -124,9 +148,13 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
     now: new Date(),
   });
 
+  // A card created from a conversation has no enquiry or project yet; its
+  // direct link and conversations still say which artist it belongs to.
   const artistIds = Array.from(new Set([
     ...enquiries.map((enquiry) => enquiry.artist_id),
     ...projects.map((project) => project.artist_id),
+    ...artistLinks.map((link) => link.artist_id),
+    ...conversations.map((conversation) => conversation.artist_id),
   ]));
   // One artist in this client's work means no choice to make. More than one,
   // or none, and the scope selector decides - the same control every other
@@ -203,6 +231,14 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
 
         {can(role, 'viewNotes') ? (
           <Section title={t('client.notes')}>
+            {can(role, 'createNotes') ? (
+              <ClientNoteComposer
+                onSave={async (body) => {
+                  await api.createNote(body, { clientId });
+                  reload();
+                }}
+              />
+            ) : null}
             {notes.length === 0 ? <EmptyState compact title={t('client.noNotes')} /> : (
               <ul className="timeline">
                 {notes.map((note) => (
@@ -237,12 +273,143 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               <dt>{t('artistScope.label')}</dt>
               <dd><ArtistRelationship artistIds={artistIds} showEmpty /></dd>
               <dt>{t('client.firstSeen')}</dt><dd>{formatDate(client.created_at, language)}</dd>
+              <dt>{t('client.privacy')}</dt>
+              <dd>
+                <ClientPrivacyStatus
+                  api={api}
+                  artistId={bookingArtistId && artistIds.includes(bookingArtistId) ? bookingArtistId : null}
+                  acknowledgements={privacyAcknowledgements}
+                  mayRecord={can(role, 'editClient')}
+                  onRecord={async () => {
+                    if (!bookingArtistId) return;
+                    await api.recordClientPrivacyAcknowledgement(clientId, bookingArtistId);
+                    reload();
+                  }}
+                />
+              </dd>
             </dl>
             <ClientEditPanel client={client} role={role} api={api} language={language} onSaved={reload} />
             <p className="notice" style={{ marginTop: 12 }}>{t('client.mergeNotice')}</p>
           </details>
         </section>
       </ClientMobileTabPanel>
+    </>
+  );
+}
+
+function ClientNoteComposer({ onSave }: { onSave: (body: string) => Promise<void> }) {
+  const { t } = useLanguage();
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  return (
+    <div className="client-note-composer">
+      <label htmlFor="client-note-body">{t('enquiry.addNote')}</label>
+      <textarea
+        id="client-note-body" value={body}
+        onChange={(event) => setBody(event.target.value)}
+        placeholder={t('enquiry.notePlaceholder')}
+      />
+      {failure ? <p className="notice warn" role="alert">{failure}</p> : null}
+      <div className="actions">
+        <button
+          type="button" disabled={busy || body.trim().length === 0}
+          onClick={async () => {
+            setBusy(true);
+            setFailure(null);
+            try {
+              await onSave(body.trim());
+              setBody('');
+            } catch (cause) {
+              setFailure(cause instanceof Error ? cause.message : t('client.actionFailed'));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {t('enquiry.saveNote')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Staff-confirmed privacy acknowledgement on the card itself. Recording it is
+ * an explicit operator action, stamped with the current time; an earlier
+ * acknowledgement is shown as it was and never replaced. Only the artist's
+ * current notice counts as recorded, so a new notice version can be added.
+ */
+function ClientPrivacyStatus({
+  api, artistId, acknowledgements, mayRecord, onRecord,
+}: {
+  api: Api;
+  artistId: string | null;
+  acknowledgements: ClientPrivacyAcknowledgement[];
+  mayRecord: boolean;
+  onRecord: () => Promise<void>;
+}) {
+  const { t, language } = useLanguage();
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  // Undefined while loading, null when the lookup failed.
+  const [currentVersion, setCurrentVersion] = useState<string | null | undefined>(undefined);
+
+  useEffect(() => {
+    let active = true;
+    setCurrentVersion(undefined);
+    if (artistId) {
+      api.getPrivacyNoticeVersion(artistId)
+        .then((version) => { if (active) setCurrentVersion(version); })
+        .catch(() => { if (active) setCurrentVersion(null); });
+    }
+    return () => { active = false; };
+  }, [api, artistId]);
+
+  const forArtist = artistId
+    ? acknowledgements.filter((row) => row.artist_id === artistId)
+    : acknowledgements;
+  const current = forArtist.find((row) => row.privacy_notice_version === currentVersion) ?? null;
+  const latest = forArtist[forArtist.length - 1] ?? null;
+
+  // Without one of the client's own artists there is no notice to check.
+  if (!artistId) {
+    return <>{latest ? t('client.privacyRecorded', { date: formatDateTime(latest.acknowledged_at, language) }) : t('client.privacyMissing')}</>;
+  }
+  if (currentVersion === undefined) return <>…</>;
+  if (currentVersion === null) {
+    return <p className="notice warn" role="alert">{t('client.privacyCheckFailed')}</p>;
+  }
+  if (current) {
+    return <>{t('client.privacyRecorded', { date: formatDateTime(current.acknowledged_at, language) })}</>;
+  }
+  return (
+    <>
+      {latest
+        ? t('client.privacyOutdated', { date: formatDateTime(latest.acknowledged_at, language) })
+        : t('client.privacyMissing')}
+      {mayRecord ? (
+        <div className="actions">
+          <button
+            type="button" disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setFailure(null);
+              try {
+                await onRecord();
+              } catch (cause) {
+                setFailure(cause instanceof Error ? cause.message : t('client.actionFailed'));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            {t('client.recordPrivacy')}
+          </button>
+        </div>
+      ) : null}
+      {failure ? <p className="notice warn" role="alert">{failure}</p> : null}
     </>
   );
 }

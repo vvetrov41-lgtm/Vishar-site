@@ -500,14 +500,21 @@ export function routeForFullGptAction(request, url, body) {
   if (match && method === 'POST') {
     // Narrower than the manual-intake client payload: the underlying CRM
     // contract accepts exactly these four canonical identity fields.
-    exactObject(body, ['full_name', 'email', 'phone', 'instagram']);
-    return { rpc: 'gpt_create_client_from_communication', payload: {
+    // privacy_acknowledged records a staff-confirmed acknowledgement on the
+    // new client card; it is optional because a card may exist without one.
+    // Sent only when supplied, so a call without it keeps resolving to the
+    // five-argument database contract.
+    exactObject(body, ['full_name', 'email', 'phone', 'instagram', 'privacy_acknowledged']);
+    const payload = {
       p_conversation_id: match[1],
       p_full_name: string(body.full_name, 'full_name', { required: true, max: 160 }),
       p_email: string(body.email, 'email', { max: 320 }),
       p_phone: string(body.phone, 'phone', { max: 80 }),
       p_instagram: string(body.instagram, 'instagram', { max: 80 }),
-    }, responseKind: 'object' };
+    };
+    const privacyAcknowledged = booleanValue(body.privacy_acknowledged, 'privacy_acknowledged');
+    if (privacyAcknowledged !== null) payload.p_privacy_acknowledged = privacyAcknowledged;
+    return { rpc: 'gpt_create_client_from_communication', payload, responseKind: 'object' };
   }
 
   match = new RegExp(`^/v1/communications/conversations/(${UUID})/enquiry$`).exec(path);

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
@@ -18,17 +19,21 @@ export function ClientsPage() {
     () => api.listClients(debouncedSearch || undefined),
     [api, debouncedSearch]
   );
+  const shownClientIds = useMemo(() => (data ?? []).map((client) => client.id), [data]);
   const {
     data: clientArtistIds,
     error: relationshipError,
     reload: reloadRelationships,
   } = useAsync<Map<string, string[]>>(async () => {
-    const [enquiries, projects] = await Promise.all([
+    const [enquiries, projects, links] = await Promise.all([
       api.listEnquiries(),
       api.listProjects(),
+      // Links only for the cards on screen, so a large workspace cannot
+      // truncate the one relationship a standalone card has.
+      api.listClientArtistLinks(shownClientIds),
     ]);
-    return collectClientArtistIds(enquiries, projects);
-  }, [api]);
+    return collectClientArtistIds(enquiries, projects, links);
+  }, [api, shownClientIds]);
 
   return (
     <>

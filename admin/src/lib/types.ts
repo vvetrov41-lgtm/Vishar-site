@@ -253,6 +253,19 @@ export interface SessionFinance {
   payment_status: PaymentStatus;
 }
 
+export interface ClientArtistLink {
+  client_id: string;
+  artist_id: string;
+}
+
+export interface ClientPrivacyAcknowledgement {
+  id: string;
+  artist_id: string;
+  privacy_notice_version: string;
+  acknowledged_at: string;
+  source: 'communication_client_created' | 'client_card';
+}
+
 export interface InternalNote {
   id: string;
   author_profile_id: string;
