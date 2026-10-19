@@ -277,7 +277,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               <dd>
                 <ClientPrivacyStatus
                   api={api}
-                  artistId={bookingArtistId}
+                  artistId={bookingArtistId && artistIds.includes(bookingArtistId) ? bookingArtistId : null}
                   acknowledgements={privacyAcknowledgements}
                   mayRecord={can(role, 'editClient')}
                   onRecord={async () => {
@@ -353,11 +353,12 @@ function ClientPrivacyStatus({
   const { t, language } = useLanguage();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
+  // Undefined while loading, null when the lookup failed.
+  const [currentVersion, setCurrentVersion] = useState<string | null | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
-    setCurrentVersion(null);
+    setCurrentVersion(undefined);
     if (artistId) {
       api.getPrivacyNoticeVersion(artistId)
         .then((version) => { if (active) setCurrentVersion(version); })
@@ -372,12 +373,16 @@ function ClientPrivacyStatus({
   const current = forArtist.find((row) => row.privacy_notice_version === currentVersion) ?? null;
   const latest = forArtist[forArtist.length - 1] ?? null;
 
-  if (current || (!artistId && latest)) {
-    const shown = current ?? latest!;
-    return <>{t('client.privacyRecorded', { date: formatDateTime(shown.acknowledged_at, language) })}</>;
-  }
-  if (!currentVersion) {
+  // Without one of the client's own artists there is no notice to check.
+  if (!artistId) {
     return <>{latest ? t('client.privacyRecorded', { date: formatDateTime(latest.acknowledged_at, language) }) : t('client.privacyMissing')}</>;
+  }
+  if (currentVersion === undefined) return <>…</>;
+  if (currentVersion === null) {
+    return <p className="notice warn" role="alert">{t('client.privacyCheckFailed')}</p>;
+  }
+  if (current) {
+    return <>{t('client.privacyRecorded', { date: formatDateTime(current.acknowledged_at, language) })}</>;
   }
   return (
     <>
