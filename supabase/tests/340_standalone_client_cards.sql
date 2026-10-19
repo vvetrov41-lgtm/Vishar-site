@@ -543,6 +543,16 @@ select throws_ok(
   'Kristina cannot record consent on Vladimir''s card'
 );
 select is(
+  public.get_privacy_notice_version('a2222222-2222-4222-8222-222222222222'),
+  '2026-10-12',
+  'the card reads Kristina''s current notice version'
+);
+select throws_ok(
+  $$select public.get_privacy_notice_version('a1111111-1111-4111-8111-111111111111')$$,
+  '42501', null,
+  'Kristina cannot read another artist''s notice settings'
+);
+select is(
   public.create_client_from_communication(
     pg_temp.conversation_for('447700934009'),
     'Synthetic Kristina Client', null, null, null, true

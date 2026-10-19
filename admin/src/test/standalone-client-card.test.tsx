@@ -148,4 +148,28 @@ describe('standalone client card', () => {
     expect(await screen.findByText(/Client acknowledged it · confirmed by staff/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'The client acknowledged the privacy notice' })).not.toBeInTheDocument();
   });
+
+  it('offers to record a new notice version when only an earlier one was acknowledged', async () => {
+    const { rpcCalls } = renderWithSession(<App />, {
+      role: 'owner',
+      path: `/clients/${CLIENT_ID}`,
+      privacyNoticeVersion: '2026-11-01',
+      tableRows: {
+        ...STANDALONE,
+        client_privacy_acknowledgements: [{
+          id: 'ack-1',
+          artist_id: VLADIMIR_ARTIST_ID,
+          privacy_notice_version: '2026-07-29',
+          acknowledged_at: '2026-10-19T19:30:00Z',
+          source: 'communication_client_created',
+        }],
+      },
+    });
+
+    expect(await screen.findByText(/for an earlier notice/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'The client acknowledged the privacy notice' }));
+    await waitFor(() => {
+      expect(rpcCalls.some((entry) => entry.name === 'record_client_privacy_acknowledgement')).toBe(true);
+    });
+  });
 });

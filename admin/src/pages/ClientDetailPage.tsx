@@ -37,6 +37,7 @@ import {
 import { formatDate, formatDateTime, localiseKnownValue, relativeDue } from '../lib/format';
 import { createGmailClientHistoryCache } from '../lib/gmail-client-cache';
 import type { LiveGmailClientHistory } from '../lib/email-api';
+import type { Api } from '../lib/api';
 import { useLanguage } from '../lib/i18n';
 import { formatPhoneForDisplay } from '../lib/phone';
 import { Link } from '../lib/router';
@@ -275,10 +276,10 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
               <dt>{t('client.privacy')}</dt>
               <dd>
                 <ClientPrivacyStatus
-                  acknowledgements={bookingArtistId
-                    ? privacyAcknowledgements.filter((row) => row.artist_id === bookingArtistId)
-                    : privacyAcknowledgements}
-                  mayRecord={can(role, 'editClient') && Boolean(bookingArtistId)}
+                  api={api}
+                  artistId={bookingArtistId}
+                  acknowledgements={privacyAcknowledgements}
+                  mayRecord={can(role, 'editClient')}
                   onRecord={async () => {
                     if (!bookingArtistId) return;
                     await api.recordClientPrivacyAcknowledgement(clientId, bookingArtistId);
@@ -337,11 +338,14 @@ function ClientNoteComposer({ onSave }: { onSave: (body: string) => Promise<void
 /**
  * Staff-confirmed privacy acknowledgement on the card itself. Recording it is
  * an explicit operator action, stamped with the current time; an earlier
- * acknowledgement is shown as it was and never replaced.
+ * acknowledgement is shown as it was and never replaced. Only the artist's
+ * current notice counts as recorded, so a new notice version can be added.
  */
 function ClientPrivacyStatus({
-  acknowledgements, mayRecord, onRecord,
+  api, artistId, acknowledgements, mayRecord, onRecord,
 }: {
+  api: Api;
+  artistId: string | null;
   acknowledgements: ClientPrivacyAcknowledgement[];
   mayRecord: boolean;
   onRecord: () => Promise<void>;
@@ -349,14 +353,37 @@ function ClientPrivacyStatus({
   const { t, language } = useLanguage();
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const first = acknowledgements[0] ?? null;
+  const [currentVersion, setCurrentVersion] = useState<string | null>(null);
 
-  if (first) {
-    return <>{t('client.privacyRecorded', { date: formatDateTime(first.acknowledged_at, language) })}</>;
+  useEffect(() => {
+    let active = true;
+    setCurrentVersion(null);
+    if (artistId) {
+      api.getPrivacyNoticeVersion(artistId)
+        .then((version) => { if (active) setCurrentVersion(version); })
+        .catch(() => { if (active) setCurrentVersion(null); });
+    }
+    return () => { active = false; };
+  }, [api, artistId]);
+
+  const forArtist = artistId
+    ? acknowledgements.filter((row) => row.artist_id === artistId)
+    : acknowledgements;
+  const current = forArtist.find((row) => row.privacy_notice_version === currentVersion) ?? null;
+  const latest = forArtist[forArtist.length - 1] ?? null;
+
+  if (current || (!artistId && latest)) {
+    const shown = current ?? latest!;
+    return <>{t('client.privacyRecorded', { date: formatDateTime(shown.acknowledged_at, language) })}</>;
+  }
+  if (!currentVersion) {
+    return <>{latest ? t('client.privacyRecorded', { date: formatDateTime(latest.acknowledged_at, language) }) : t('client.privacyMissing')}</>;
   }
   return (
     <>
-      {t('client.privacyMissing')}
+      {latest
+        ? t('client.privacyOutdated', { date: formatDateTime(latest.acknowledged_at, language) })
+        : t('client.privacyMissing')}
       {mayRecord ? (
         <div className="actions">
           <button

@@ -451,6 +451,7 @@ export interface FakeClientOptions {
   rpcBarrier?: Record<string, Promise<void>>;
   /** Rows for a table the default fixtures leave empty, keyed by table name. */
   tableRows?: Record<string, Record<string, unknown>[]>;
+  privacyNoticeVersion?: string;
   /**
    * An RPC the database refuses. Used to exercise a fail-closed path that the
    * database owns - a booking whose slot went stale under the schedule lock,
@@ -1095,6 +1096,10 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (ownerOnly.includes(name) && effectiveRole !== 'owner') return { data: null, error: DENIED };
       if (managerOrOwner.includes(name) && effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
         return { data: null, error: DENIED };
+      }
+
+      if (name === 'get_privacy_notice_version') {
+        return { data: options.privacyNoticeVersion ?? '2026-07-29', error: null };
       }
 
       if (name === 'create_client_from_communication') {

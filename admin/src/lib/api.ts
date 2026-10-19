@@ -557,6 +557,13 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       );
     },
 
+    async getPrivacyNoticeVersion(artistId: string): Promise<string> {
+      return unwrap<string>(
+        await client.rpc('get_privacy_notice_version', { p_artist_id: artistId }),
+        'load the privacy acknowledgement'
+      );
+    },
+
     async recordClientPrivacyAcknowledgement(clientId: string, artistId: string) {
       return unwrap(
         await client.rpc('record_client_privacy_acknowledgement', {

@@ -418,6 +418,28 @@ $$;
 revoke all on function crm_private.staff_privacy_notice_version(uuid)
   from public, anon, authenticated, service_role;
 
+-- Lets the card tell whether the current notice, not an earlier one, has
+-- been acknowledged.
+create or replace function public.get_privacy_notice_version(p_artist_id uuid)
+returns text
+language plpgsql
+stable
+security definer
+set search_path = pg_catalog, public, crm_private
+as $$
+begin
+  if p_artist_id is null or not public.can_access_artist(p_artist_id) then
+    raise exception 'artist access denied' using errcode = '42501';
+  end if;
+  return crm_private.staff_privacy_notice_version(p_artist_id);
+end;
+$$;
+
+revoke all on function public.get_privacy_notice_version(uuid)
+  from public, anon, authenticated, service_role;
+grant execute on function public.get_privacy_notice_version(uuid)
+  to authenticated;
+
 create or replace function crm_private.record_client_privacy_acknowledgement(
   p_client_id uuid,
   p_artist_id uuid,
