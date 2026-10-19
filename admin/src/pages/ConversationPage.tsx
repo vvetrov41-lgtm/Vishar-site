@@ -362,7 +362,12 @@ export function ConversationPage({ conversationId }: { conversationId: string })
                   ? `@${conversation.external_username}`
                   : ''
               }
-              onCreate={(details) => run(() => api.createClient(conversationId, details))}
+              onCreate={(details) => run(async () => {
+                // The card is usable on its own, so the operator lands on it.
+                const created = await api.createClient(conversationId, details);
+                navigate(`/clients/${created.client_id}`);
+                return created;
+              })}
             />
           ) : null}
 
@@ -503,19 +508,21 @@ function CreateClientPanel({
   defaultInstagram: string;
   onCreate: (details: {
     fullName: string; email?: string; phone?: string; instagram?: string;
+    privacyAcknowledged: boolean;
   }) => void;
 }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [instagram, setInstagram] = useState(defaultInstagram);
+  const [privacy, setPrivacy] = useState(false);
 
   return (
     <form
       className="conversation-panel"
       onSubmit={(event) => {
         event.preventDefault();
-        onCreate({ fullName, email, phone, instagram });
+        onCreate({ fullName, email, phone, instagram, privacyAcknowledged: privacy });
       }}
     >
       <p className="notice">{copy.createClientHint}</p>
@@ -537,6 +544,10 @@ function CreateClientPanel({
           <input value={instagram} maxLength={80} onChange={(event) => setInstagram(event.target.value)} />
         </label>
       </div>
+      <label className="field-row">
+        <input type="checkbox" checked={privacy} onChange={(event) => setPrivacy(event.target.checked)} />
+        <span>{copy.privacy}</span>
+      </label>
       <div className="actions">
         <button type="submit" className="primary" disabled={busy || !fullName.trim()}>
           {copy.create}

@@ -345,6 +345,31 @@ for (const forbidden of [
 
 {
   const { captured } = await capture(new Request(
+    `https://gpt.example/v1/communications/conversations/${A}/client`,
+    {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({
+        full_name: 'Inbox Client',
+        email: 'inbox@example.test',
+        phone: '+447700900123',
+        privacy_acknowledged: true,
+      }),
+    },
+  ));
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_create_client_from_communication');
+  assert.deepEqual(captured.payload, {
+    p_conversation_id: A,
+    p_full_name: 'Inbox Client',
+    p_email: 'inbox@example.test',
+    p_phone: '+447700900123',
+    p_instagram: null,
+    p_privacy_acknowledged: true,
+  });
+}
+
+{
+  const { captured } = await capture(new Request(
     `https://gpt.example/v1/communications/conversations/${A}/enquiry`,
     {
       method: 'POST',

@@ -23,11 +23,12 @@ export function ClientsPage() {
     error: relationshipError,
     reload: reloadRelationships,
   } = useAsync<Map<string, string[]>>(async () => {
-    const [enquiries, projects] = await Promise.all([
+    const [enquiries, projects, links] = await Promise.all([
       api.listEnquiries(),
       api.listProjects(),
+      api.listClientArtistLinks(),
     ]);
-    return collectClientArtistIds(enquiries, projects);
+    return collectClientArtistIds(enquiries, projects, links);
   }, [api]);
 
   return (

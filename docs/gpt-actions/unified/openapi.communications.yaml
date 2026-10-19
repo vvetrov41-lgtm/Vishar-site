@@ -304,7 +304,7 @@ paths:
     post:
       operationId: createClientFromCommunication
       summary: Create a CRM client from one unmatched inbox conversation
-      description: Use only when no existing client matches. Confirm the details with the user first.
+      description: Creates a client card linked to this conversation; no enquiry or project needed. Use only when no client matches (duplicate email or phone is refused). Confirm details with the user. Set privacy_acknowledged only when the user confirms the client accepted the privacy notice.
       x-openai-isConsequential: true
       parameters:
         - {name: conversation_id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -321,6 +321,7 @@ paths:
                 email: {type: string, maxLength: 320}
                 phone: {type: string, maxLength: 80}
                 instagram: {type: string, maxLength: 80}
+                privacy_acknowledged: {type: boolean}
       responses: {'200': {description: Created client}}
   /v1/communications/conversations/{conversation_id}/enquiry:
     post:

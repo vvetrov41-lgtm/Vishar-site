@@ -34,6 +34,8 @@ import type {
   Artist,
   ArtistMembership,
   Client,
+  ClientArtistLink,
+  ClientPrivacyAcknowledgement,
   CrmRole,
   CrmSession,
   Enquiry,
@@ -534,6 +536,31 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
           .select('id, full_name, email, phone, instagram, preferred_contact, travelling_from, notes_summary, created_at, updated_at, archived_at')
           .in('id', unique),
         'load client names'
+      );
+    },
+
+    /** Direct client/artist links for cards that have no enquiry or project yet. */
+    async listClientArtistLinks(clientId?: string): Promise<ClientArtistLink[]> {
+      let query = client.from('client_artist_links').select('client_id, artist_id').limit(1000);
+      if (clientId) query = query.eq('client_id', clientId);
+      return unwrap<ClientArtistLink[]>(await query, 'load clients');
+    },
+
+    async listClientPrivacyAcknowledgements(clientId: string): Promise<ClientPrivacyAcknowledgement[]> {
+      return unwrap<ClientPrivacyAcknowledgement[]>(
+        await client
+          .from('client_privacy_acknowledgements')
+          .select('id, artist_id, privacy_notice_version, acknowledged_at, source')
+          .eq('client_id', clientId)
+          .order('acknowledged_at', { ascending: true }),
+        'load the privacy acknowledgement'
+      );
+    },
+
+    async recordClientPrivacyAcknowledgement(clientId: string) {
+      return unwrap(
+        await client.rpc('record_client_privacy_acknowledgement', { p_client_id: clientId }),
+        'record the privacy acknowledgement'
       );
     },
 

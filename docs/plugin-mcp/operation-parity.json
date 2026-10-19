@@ -1144,7 +1144,7 @@
       "operationId": "createClientFromCommunication",
       "mcpTool": "crm_create_client_from_communication",
       "domain": "Communications",
-      "description": "Use only when no existing client matches. Confirm the details with the user first.",
+      "description": "Creates a client card linked to this conversation; no enquiry or project needed. Use only when no client matches (duplicate email or phone is refused). Confirm details with the user. Set privacy_acknowledged only when the user confirms the client accepted the privacy notice.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -1168,6 +1168,9 @@
           "instagram": {
             "type": "string",
             "maxLength": 80
+          },
+          "privacy_acknowledged": {
+            "type": "boolean"
           }
         },
         "required": [

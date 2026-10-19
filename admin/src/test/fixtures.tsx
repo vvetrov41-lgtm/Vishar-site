@@ -449,6 +449,8 @@ export interface FakeClientOptions {
   /** Controlled pending reads for critical-path regression tests. */
   tableBarrier?: Record<string, Promise<void>>;
   rpcBarrier?: Record<string, Promise<void>>;
+  /** Rows for a table the default fixtures leave empty, keyed by table name. */
+  tableRows?: Record<string, Record<string, unknown>[]>;
   /**
    * An RPC the database refuses. Used to exercise a fail-closed path that the
    * database owns - a booking whose slot went stale under the schedule lock,
@@ -942,6 +944,8 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
   function builder(table: string): any {
     const result = table === 'artist_memberships'
       ? artistMembershipsResult()
+      : options.tableRows?.[table]
+        ? { data: options.tableRows[table], error: null }
       : tableResult(
         table,
         effectiveRole,
@@ -1086,11 +1090,18 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       // Role checks live in the database. The fake enforces the same ones, so a
       // component test cannot "pass" by calling something the real RPC refuses.
       const ownerOnly = ['list_profiles', 'list_team_memberships', 'set_profile_role', 'set_profile_active', 'upsert_artist_membership', 'approve_email_draft', 'update_project_deposit', 'update_project_estimate', 'update_retention_policy'];
-      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles', 'acknowledge_attention_item', 'snooze_attention_item', 'clear_attention_acknowledgement'];
+      const managerOrOwner = ['queue_communication_message', 'link_communication_conversation_client', 'create_client_from_communication', 'record_client_privacy_acknowledgement', 'create_enquiry_from_communication', 'set_communication_conversation_state', 'transition_enquiry_status', 'assign_enquiry', 'convert_enquiry_to_project', 'schedule_session', 'set_session_status', 'create_internal_note', 'create_follow_up', 'complete_follow_up', 'create_email_draft', 'list_assignable_profiles', 'acknowledge_attention_item', 'snooze_attention_item', 'clear_attention_acknowledgement'];
 
       if (ownerOnly.includes(name) && effectiveRole !== 'owner') return { data: null, error: DENIED };
       if (managerOrOwner.includes(name) && effectiveRole !== 'owner' && effectiveRole !== 'booking_manager') {
         return { data: null, error: DENIED };
+      }
+
+      if (name === 'create_client_from_communication') {
+        return {
+          data: { client_id: CLIENT_ID, conversation_id: (args as any)?.p_conversation_id, link_state: 'linked', replayed: false },
+          error: null,
+        };
       }
 
       if (name === 'list_communication_conversations') {
