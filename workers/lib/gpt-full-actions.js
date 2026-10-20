@@ -126,7 +126,12 @@ export function routeForFullGptAction(request, url, body) {
     return { rpc: 'gpt_get_client', payload: { p_client_id: match[1] }, responseKind: 'single-row', notFoundError: 'client_not_found' };
   }
   if (match && method === 'PATCH') {
-    const patch = clientPayload(body);
+    const { privacy_acknowledged: privacyAcknowledged, ...fields } = body && typeof body === 'object' ? body : {};
+    const patch = clientPayload(body && typeof body === 'object' && !Array.isArray(body) ? fields : body);
+    if (privacyAcknowledged !== undefined) {
+      if (privacyAcknowledged !== true) throw new Error('invalid_field:privacy_acknowledged');
+      patch.privacy_acknowledged = true;
+    }
     if (Object.keys(patch).length === 0) throw new Error('required_field:client');
     return { rpc: 'gpt_update_client', payload: { p_client_id: match[1], p_client: patch }, responseKind: 'object' };
   }

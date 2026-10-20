@@ -64,7 +64,6 @@ export const PARITY_METADATA = Object.freeze({
     request_enquiry_translation: 'Reading aid on the enquiry page: a cached machine translation of the client text. The assistant translates itself and needs no CRM operation.',
     get_enquiry_translation: 'Reading aid on the enquiry page: reads the cached translation back. The assistant translates itself and needs no CRM operation.',
     get_privacy_notice_version: 'Lets the client card tell whether the current notice was acknowledged; the assistant gets the version back from communications.client.create.',
-    record_client_privacy_acknowledgement: 'Staff confirm on an existing card that the client acknowledged the privacy notice. The assistant records it only when it creates the card (communications.client.create privacy_acknowledged); recording it on an existing card stays a staff step in the CRM.',
   }),
   // Authenticated RPCs present in production that the CRM no longer calls.
   // They are not current operator actions, so parity neither exposes nor
@@ -145,7 +144,7 @@ export const OPERATOR_PARITY = Object.freeze([
   row('clients.list', 'CRM Core', 'view_clients', 'read', A, 'listClients', ['public.gpt_list_clients']),
   row('clients.search_for_appointment', 'CRM Core', 'view_clients', 'read', A, 'searchAppointmentClients', ['public.gpt_search_clients']),
   row('clients.get', 'CRM Core', 'view_clients', 'read', A, 'getClient', ['public.gpt_get_client']),
-  row('clients.update', 'CRM Core', 'manage_clients', 'write', A, 'updateClient', ['public.gpt_update_client', 'public.update_client_details']),
+  row('clients.update', 'CRM Core', 'manage_clients', 'write', A, 'updateClient', ['public.gpt_update_client', 'public.update_client_details', 'public.record_client_privacy_acknowledgement']),
   row('clients.archive', 'CRM Core', 'manage_clients', 'write', A, 'archiveClient', ['public.update_client_details']),
   row('clients.ai_state.get', 'CRM Core', 'view_clients', 'read', A, 'getClientAiState', ['public.get_client_ai_state']),
   row('enquiries.list', 'CRM Core', 'view_enquiries', 'read', A, 'listEnquiries', ['public.gpt_list_enquiries']),

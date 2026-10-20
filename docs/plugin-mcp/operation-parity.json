@@ -8072,7 +8072,7 @@
       "operationId": "updateClient",
       "mcpTool": "crm_update_client",
       "domain": "CRM Core",
-      "description": "Shared cross-artist clients fail closed and must be edited in the CRM UI.",
+      "description": "Shared cross-artist clients fail closed and must be edited in the CRM UI. privacy_acknowledged true records the client's privacy acknowledgement for the active artist.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -8104,6 +8104,13 @@
           "travelling_from": {
             "type": "string",
             "maxLength": 160
+          },
+          "privacy_acknowledged": {
+            "type": "boolean",
+            "enum": [
+              true
+            ],
+            "description": "Set only when the user confirms the client accepted the privacy notice. Recorded once with the current time."
           }
         },
         "required": [
@@ -8139,6 +8146,11 @@
             "required": [
               "travelling_from"
             ]
+          },
+          {
+            "required": [
+              "privacy_acknowledged"
+            ]
           }
         ]
       },
@@ -8154,7 +8166,8 @@
       ],
       "handler": [
         "public.gpt_update_client",
-        "public.update_client_details"
+        "public.update_client_details",
+        "public.record_client_privacy_acknowledgement"
       ],
       "compatibility": "existing_action_adapter",
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",

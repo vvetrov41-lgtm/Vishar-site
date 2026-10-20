@@ -498,6 +498,28 @@ select is(
   (select id::text from standalone_ids where key = 'client'),
   'crm_update_client edits the standalone card'
 );
+select is(
+  public.gpt_update_client(
+    (select id from standalone_ids where key = 'client'),
+    jsonb_build_object('privacy_acknowledged', true)
+  ) ->> 'privacy_acknowledgement_replayed',
+  'true',
+  'crm_update_client can confirm the acknowledgement and keeps the original record'
+);
+select throws_ok(
+  format($q$select public.gpt_update_client(%L, '{"privacy_acknowledged":false}'::jsonb)$q$,
+         (select id from standalone_ids where key = 'client')),
+  '22023', null,
+  'the GPT cannot withdraw an acknowledgement'
+);
+select is(
+  public.gpt_update_client(
+    (select id from public.clients where full_name = 'Synthetic National Phone'),
+    jsonb_build_object('privacy_acknowledged', true)
+  ) ->> 'privacy_acknowledgement_replayed',
+  'false',
+  'crm_update_client records a first acknowledgement on an existing card'
+);
 select ok(
   (public.gpt_create_internal_note(
     'Synthetic GPT note',
