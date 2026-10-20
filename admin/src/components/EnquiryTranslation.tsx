@@ -2,6 +2,9 @@
 // request only. The original stays above it, untouched and always visible;
 // the translation is labelled as a machine translation and can be hidden.
 // Nothing here runs on page load, and a failure is shown here only.
+//
+// Every request is bounded: in-app browsers such as Telegram's can leave a
+// request unanswered, and the button must never stay on "Translating…".
 
 import { useState } from 'react';
 import { ClientBrief } from './ClientBrief';
@@ -9,8 +12,19 @@ import type { AiIntakeApi, EnquiryTranslation as Translation } from '../lib/ai-i
 
 const POLL_INTERVAL_MS = 2500;
 const POLL_ATTEMPTS = 16;
+const REQUEST_TIMEOUT_MS = 15000;
+const RUN_TIMEOUT_MS = 25000;
+const TOTAL_TIMEOUT_MS = 45000;
 
 const wait = (ms: number) => new Promise((resolve) => { setTimeout(resolve, ms); });
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error('translation_timeout')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 type Api = Pick<AiIntakeApi, 'requestEnquiryTranslation' | 'getEnquiryTranslation' | 'runEnquiryTranslation'>;
 
@@ -27,15 +41,19 @@ export function EnquiryTranslation({
     setBusy(true);
     setError(null);
     setHidden(false);
+    const deadline = Date.now() + TOTAL_TIMEOUT_MS;
     try {
-      let current = await api.requestEnquiryTranslation(enquiryId);
+      let current = await withTimeout(api.requestEnquiryTranslation(enquiryId), REQUEST_TIMEOUT_MS);
       if ((current.status === 'pending' || current.status === 'processing') && current.job_id) {
         // The Worker reports only a status; the text is read back under the
-        // artist's own session.
-        await api.runEnquiryTranslation(current.job_id).catch(() => undefined);
-        for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt += 1) {
-          current = await api.getEnquiryTranslation(enquiryId);
+        // artist's own session. A slow or lost run request still falls
+        // through to polling, which sees the job finish either way.
+        await withTimeout(api.runEnquiryTranslation(current.job_id), RUN_TIMEOUT_MS).catch(() => undefined);
+        for (let attempt = 0; attempt < POLL_ATTEMPTS && Date.now() < deadline; attempt += 1) {
+          const remaining = Math.max(1, Math.min(REQUEST_TIMEOUT_MS, deadline - Date.now()));
+          current = await withTimeout(api.getEnquiryTranslation(enquiryId), remaining).catch(() => current);
           if (current.status !== 'pending' && current.status !== 'processing') break;
+          if (Date.now() + POLL_INTERVAL_MS >= deadline) break;
           await wait(POLL_INTERVAL_MS);
         }
       }

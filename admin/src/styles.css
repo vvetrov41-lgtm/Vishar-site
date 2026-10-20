@@ -510,6 +510,31 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-size: 0.72rem;
   background: rgba(0, 0, 0, 0.76);
 }
+/* Full-size reference shown inside the CRM where a new tab is unavailable. */
+.reference-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.92);
+}
+.reference-viewer img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 0;
+  border-radius: 0;
+}
+.reference-viewer-close {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  min-height: var(--tap);
+  background: rgba(0, 0, 0, 0.76);
+}
 /* Deleting a client's reference image is destructive and sits on top of the
    image itself, so on a finger it needs a real target rather than the compact
    size that suits a mouse. */

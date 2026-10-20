@@ -332,6 +332,7 @@ const EN = {
   'image.alt': 'Reference image submitted with this enquiry{filename}',
   'image.openOriginal': 'Open full-size reference{filename}',
   'image.remove': 'Remove',
+  'image.close': 'Close',
 
   'clients.searchByName': 'Search clients',
   'clients.namePlaceholder': 'Name, phone, email or Instagram',
@@ -1016,6 +1017,7 @@ const RU: Record<TranslationKey, string> = {
   'image.alt': 'Референс, отправленный с этой заявкой{filename}',
   'image.openOriginal': 'Открыть референс в полном размере{filename}',
   'image.remove': 'Удалить',
+  'image.close': 'Закрыть',
 
   'clients.searchByName': 'Поиск клиентов',
   'clients.namePlaceholder': 'Имя, телефон, email или Instagram',
