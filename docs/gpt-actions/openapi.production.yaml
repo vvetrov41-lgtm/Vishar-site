@@ -78,7 +78,7 @@ paths:
     patch:
       operationId: updateClient
       summary: Update one non-shared client
-      description: Shared cross-artist clients fail closed and must be edited in the CRM UI.
+      description: Shared cross-artist clients fail closed and must be edited in the CRM UI. privacy_acknowledged true records the client's privacy acknowledgement for the active artist.
       x-openai-isConsequential: true
       parameters:
         - {name: client_id, in: path, required: true, schema: {type: string, format: uuid}}
@@ -995,6 +995,7 @@ components:
         instagram: {type: string, maxLength: 80}
         preferred_contact: {type: string, maxLength: 40}
         travelling_from: {type: string, maxLength: 160}
+        privacy_acknowledged: {type: boolean, enum: [true], description: Set only when the user confirms the client accepted the privacy notice. Recorded once with the current time.}
     ManualClient:
       type: object
       additionalProperties: false

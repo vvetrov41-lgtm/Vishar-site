@@ -66,6 +66,31 @@ async function capture(request, upstreamBody = {}) {
   assert.equal(called, false);
 }
 
+// A privacy acknowledgement rides updateClient and can only be recorded, never withdrawn.
+{
+  const { result, captured } = await capture(new Request(`https://gpt.example/v1/clients/${C}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify({ privacy_acknowledged: true }),
+  }));
+  assert.equal(result.status, 200);
+  assert.equal(captured.url, 'https://exampleproject.supabase.co/rest/v1/rpc/gpt_update_client');
+  assert.deepEqual(captured.payload, { p_client_id: C, p_client: { privacy_acknowledged: true } });
+}
+
+{
+  let called = false;
+  const response = await handleGptActionsRequest(new Request(`https://gpt.example/v1/clients/${C}`, {
+    method: 'PATCH',
+    headers: jsonHeaders,
+    body: JSON.stringify({ privacy_acknowledged: false }),
+  }), env, async () => { called = true; throw new Error('unexpected'); });
+  const failed = await parsed(response);
+  assert.equal(failed.status, 400);
+  assert.equal(failed.body.error, 'invalid_field');
+  assert.equal(called, false);
+}
+
 // Manual enquiry creation derives artist in SQL. Edge forwards no artist_id.
 {
   const { result, captured } = await capture(new Request('https://gpt.example/v1/enquiries/manual', {
