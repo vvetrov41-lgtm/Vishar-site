@@ -13,8 +13,9 @@ export function assessBookingSurface(snapshot) {
   if (!snapshot.fileInputs.length) missing.push('file_control_missing');
   if (!snapshot.stylesheets) missing.push('stylesheet_missing');
   if (snapshot.pageErrors) missing.push('browser_runtime_error');
-  if (snapshot.assetErrors) missing.push('script_or_stylesheet_error');
-  return { verdict: missing.length ? 'INCOMPLETE' : 'SURFACE_PASS', missing,
+  if (snapshot.assetErrors > (snapshot.optionalAssetErrors ?? 0)) missing.push('script_or_stylesheet_error');
+  const warnings = snapshot.optionalAssetErrors ? ['cloudflare_analytics_asset_failed'] : [];
+  return { verdict: missing.length ? 'INCOMPLETE' : warnings.length ? 'SURFACE_PASS_WITH_WARNINGS' : 'SURFACE_PASS', missing, warnings,
     delivery: 'NOT_TESTED_BY_BROWSER', submit: 'BLOCKED' };
 }
 
@@ -27,6 +28,8 @@ if (process.argv.includes('--self-test')) {
   assert.equal(assessBookingSurface({ ...good, status: 500 }).verdict, 'INCOMPLETE');
   assert.equal(assessBookingSurface({ ...good, fileInputs: [] }).verdict, 'INCOMPLETE');
   assert.equal(assessBookingSurface({ ...good, pageErrors: 1 }).verdict, 'INCOMPLETE');
+  assert.equal(assessBookingSurface({ ...good, assetErrors: 1 }).verdict, 'INCOMPLETE');
+  assert.equal(assessBookingSurface({ ...good, assetErrors: 1, optionalAssetErrors: 1 }).verdict, 'SURFACE_PASS_WITH_WARNINGS');
   assert.equal(assessBookingSurface(good).delivery, 'NOT_TESTED_BY_BROWSER');
   console.log('Booking browser verdict tests passed');
 } else {
@@ -54,10 +57,14 @@ if (process.argv.includes('--self-test')) {
       const page = await context.newPage();
       let pageErrors = 0;
       let assetErrors = 0;
+      let optionalAssetErrors = 0;
       const assetErrorDetails = [];
       const safeAsset = (request, status) => {
         const parsed = new URL(request.url());
-        return { url: parsed.origin + parsed.pathname, type: request.resourceType(), status };
+        const optional = parsed.origin === 'https://static.cloudflareinsights.com'
+          && /^\/beacon\.min\.js(?:\/|$)/.test(parsed.pathname);
+        if (optional) optionalAssetErrors++;
+        return { url: parsed.origin + parsed.pathname, type: request.resourceType(), status, optional };
       };
       page.on('pageerror', () => { pageErrors++; });
       page.on('response', response => {
@@ -84,7 +91,7 @@ if (process.argv.includes('--self-test')) {
           actions: [...document.forms].map(e => ({ method: e.method,
             action: new URL(e.action).origin + new URL(e.action).pathname })),
         }));
-        Object.assign(snapshot, { status: response?.status(), pageErrors, assetErrors });
+        Object.assign(snapshot, { status: response?.status(), pageErrors, assetErrors, optionalAssetErrors });
         const final = new URL(page.url());
         results.push({ artist, url, finalUrl: final.origin + final.pathname,
           ...assessBookingSurface(snapshot), snapshot, assetErrorDetails, blockedMethods,
@@ -101,5 +108,5 @@ if (process.argv.includes('--self-test')) {
     sha: process.env.GITHUB_SHA ?? null, checkedAt: new Date().toISOString(), results,
   }, null, 2));
   for (const result of results) console.log(JSON.stringify(result));
-  if (results.some(r => r.verdict !== 'SURFACE_PASS')) process.exitCode = 1;
+  if (results.some(r => !['SURFACE_PASS', 'SURFACE_PASS_WITH_WARNINGS'].includes(r.verdict))) process.exitCode = 1;
 }
