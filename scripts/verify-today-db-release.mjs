@@ -11,6 +11,8 @@ export function verifyTodayLineage(source) {
     ['20261010080000', '20261010170000'],
     // Reliability PR #1118: only the attention report body changes.
     ['20261020090000', '20261021074511'],
+    // Placement reconciliation PR #1119, only after the reliability migration is live.
+    ['20261021074511', '20261021090000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
