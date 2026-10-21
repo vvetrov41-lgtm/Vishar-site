@@ -1,0 +1,44 @@
+name: Independent production booking browser validation
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/check-production-booking-browser.mjs'
+      - '.github/workflows/production-booking-browser-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  booking-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - name: Install existing pinned Playwright dependency
+        working-directory: admin
+        run: npm ci --ignore-scripts
+      - name: Check verdict logic and syntax
+        run: |
+          node --check scripts/check-production-booking-browser.mjs
+          node scripts/check-production-booking-browser.mjs --self-test
+      - name: Independently inspect both forms without submission
+        shell: bash
+        run: |
+          export CHROME_PATH="$(command -v google-chrome)"
+          test -n "$CHROME_PATH"
+          node scripts/check-production-booking-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-booking-browser-results
+          path: booking-browser-results/results.json
+          if-no-files-found: warn
