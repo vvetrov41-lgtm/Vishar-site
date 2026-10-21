@@ -18,9 +18,9 @@ const placementTransition = [
   ' 20261020090000 | 20261020090000 | t',
   ' 20261021074511 | 20261021074511 | t',
   ' 20261021090000 | | t',
-].join('\\n');
+].join('\n');
 assert.equal(verifyTodayLineage(placementTransition), '20261021090000');
-assert.throws(() => verifyTodayLineage(placementTransition + '\\n 20261021090100 | | t'));
+assert.throws(() => verifyTodayLineage(placementTransition + '\n 20261021090100 | | t'));
 assert.throws(() => verifyTodayLineage(placementTransition.replace(
   '20261021074511 | 20261021074511', '20261021074511 | '
 )));
