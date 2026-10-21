@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SignedImage } from '../components/SignedImage';
+import { SignedImage, isEmbeddedBrowser } from '../components/SignedImage';
 import type { EnquiryFile } from '../lib/types';
 
 const { api, signedFileUrl, confirmDialog } = vi.hoisted(() => {
@@ -122,5 +122,57 @@ describe('SignedImage', () => {
     fireEvent.click(remove);
     await waitFor(() => expect(onRemove).toHaveBeenCalledTimes(1));
     expect(confirmDialog).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the original inside the CRM when the popup is blocked', async () => {
+    signedFileUrl
+      .mockResolvedValueOnce('https://storage.example/preview-token')
+      .mockResolvedValueOnce('https://storage.example/fresh-token');
+    vi.spyOn(window, 'open').mockReturnValue(null);
+
+    render(<SignedImage file={FILE} />);
+
+    await screen.findByRole('img');
+    fireEvent.click(screen.getByRole('button', { name: 'image.openOriginal' }));
+
+    const viewer = await screen.findByRole('dialog');
+    expect(viewer.querySelector('img')).toHaveAttribute('src', 'https://storage.example/fresh-token');
+    expect(screen.queryByText('image.openFailed')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'image.close' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('never calls window.open inside the Telegram in-app browser', async () => {
+    signedFileUrl
+      .mockResolvedValueOnce('https://storage.example/preview-token')
+      .mockResolvedValueOnce('https://storage.example/fresh-token');
+    const open = vi.spyOn(window, 'open');
+    (window as unknown as Record<string, unknown>).TelegramWebviewProxy = {};
+    try {
+      render(<SignedImage file={FILE} />);
+      await screen.findByRole('img');
+      fireEvent.click(screen.getByRole('button', { name: 'image.openOriginal' }));
+      const viewer = await screen.findByRole('dialog');
+      expect(viewer.querySelector('img')).toHaveAttribute('src', 'https://storage.example/fresh-token');
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      delete (window as unknown as Record<string, unknown>).TelegramWebviewProxy;
+    }
+  });
+});
+
+describe('isEmbeddedBrowser', () => {
+  const plain = {} as Window;
+  it('recognises in-app browsers', () => {
+    expect(isEmbeddedBrowser(plain, 'Mozilla/5.0 (Linux; Android 14; Pixel 8 Build/AP2A; wv) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36 Telegram-Android/11.2.0')).toBe(true);
+    expect(isEmbeddedBrowser({ TelegramWebviewProxy: {} } as unknown as Window, 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148')).toBe(true);
+    expect(isEmbeddedBrowser(plain, 'Mozilla/5.0 (iPhone) AppleWebKit/605.1.15 Mobile/15E148 Instagram 350.0')).toBe(true);
+  });
+
+  it('leaves ordinary browsers on the new-tab path', () => {
+    expect(isEmbeddedBrowser(plain, 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1')).toBe(false);
+    expect(isEmbeddedBrowser(plain, 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/129.0 Mobile Safari/537.36')).toBe(false);
+    expect(isEmbeddedBrowser(plain, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/129.0 Safari/537.36')).toBe(false);
   });
 });

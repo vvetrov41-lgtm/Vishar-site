@@ -4,12 +4,27 @@
 // preview stays inside the CRM. A deliberate click mints a fresh short-lived
 // URL before opening the original so a page left open cannot reuse an expired
 // token.
+//
+// In-app browsers (Telegram, Instagram, Facebook, Android WebViews) either
+// block window.open or hand back a window that never navigates, so there the
+// original is shown in a full-screen viewer inside the CRM instead of a tab.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLanguage } from '../lib/i18n';
 import { useApi } from '../lib/session';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
+import { useModalBehaviour } from '../lib/modal-behaviour';
 import type { EnquiryFile } from '../lib/types';
+
+/** True inside an embedded browser where a new tab cannot be relied on. */
+export function isEmbeddedBrowser(
+  win: Window = window,
+  userAgent: string = typeof navigator === 'undefined' ? '' : navigator.userAgent
+): boolean {
+  const injected = win as unknown as Record<string, unknown>;
+  if (injected.TelegramWebviewProxy || injected.TelegramWebview) return true;
+  return /Telegram|FBAN|FBAV|Instagram|; wv\)/.test(userAgent);
+}
 
 export function SignedImage({
   file,
@@ -25,6 +40,7 @@ export function SignedImage({
   const [url, setUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [openFailed, setOpenFailed] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,8 +56,27 @@ export function SignedImage({
     return () => { cancelled = true; };
   }, [api, file.storage_path, file.upload_state]);
 
+  async function openInViewer() {
+    try {
+      const freshUrl = await api.signedFileUrl(file.storage_path);
+      if (!freshUrl) {
+        setOpenFailed(true);
+        return;
+      }
+      setUrl(freshUrl);
+      setViewerUrl(freshUrl);
+    } catch {
+      setOpenFailed(true);
+    }
+  }
+
   async function openOriginal() {
     setOpenFailed(false);
+
+    if (isEmbeddedBrowser()) {
+      await openInViewer();
+      return;
+    }
 
     // Open synchronously while the click still owns Safari's user gesture.
     // `noopener` would intentionally hide the returned Window handle, so clear
@@ -49,7 +84,8 @@ export function SignedImage({
     // fresh signed URL arrives.
     const opened = window.open('about:blank', '_blank');
     if (!opened) {
-      setOpenFailed(true);
+      // A blocked popup: show the original here rather than an error.
+      await openInViewer();
       return;
     }
     opened.opener = null;
@@ -114,6 +150,14 @@ export function SignedImage({
         />
       </button>
       {openFailed ? <div className="notice">{t('image.openFailed')}</div> : null}
+      {viewerUrl ? (
+        <ReferenceViewer
+          url={viewerUrl}
+          alt={t('image.alt', { filename })}
+          closeLabel={t('image.close')}
+          onClose={() => setViewerUrl(null)}
+        />
+      ) : null}
       {onRemove ? (
         <button
           type="button"
@@ -126,6 +170,29 @@ export function SignedImage({
           ⋯
         </button>
       ) : null}
+    </div>
+  );
+}
+
+function ReferenceViewer({
+  url, alt, closeLabel, onClose,
+}: { url: string; alt: string; closeLabel: string; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const close = useCallback(() => onClose(), [onClose]);
+  useModalBehaviour(true, ref, close);
+  return (
+    <div
+      ref={ref}
+      className="reference-viewer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt}
+      onClick={(event) => { if (event.target === event.currentTarget) close(); }}
+    >
+      <button type="button" className="reference-viewer-close" onClick={close}>
+        {closeLabel}
+      </button>
+      <img src={url} alt={alt} />
     </div>
   );
 }
