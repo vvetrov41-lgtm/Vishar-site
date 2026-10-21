@@ -23,3 +23,14 @@ console.log('Today database-only lineage and release boundaries passed');
 const operator = readFileSync('.github/workflows/crm-host-split-operator.yml','utf8');
 assert.ok(operator.includes('VITE_POSTHOG_HOST: eu.i.posthog.com'));
 assert.ok(!operator.includes('vars.CRM_PRODUCTION_POSTHOG_HOST'));
+
+// The reliability release cannot carry an extra migration or hide remote drift.
+const shadow = ' Local | Remote | Time\n 20261020090000 | 20261020090000 | t\n 20261021074511 | | t';
+assert.equal(verifyTodayLineage(shadow), '20261021074511');
+for (const invalid of [
+  shadow.replaceAll('20261020090000', '20261019200000'),
+  shadow.replace('20261021074511', '20261021080000'),
+  shadow + '\n 20261022090000 | | t',
+  shadow + '\n | 20261020120000 | t',
+  shadow.replace('20261021074511', '20261010170000'),
+]) assert.throws(() => verifyTodayLineage(invalid));
