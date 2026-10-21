@@ -12,6 +12,19 @@ assert.throws(() => verifyTodayLineage(markdown+'\n `20261010180000` | ` ` | tim
 for (const invalid of ['', valid.replaceAll('20261010080000','20261009230000'), valid+'\n 20261010180000 | | t', valid+'\n | 20261006140000 | t', valid.replace('20261010170000','20261005093649')]) {
   assert.throws(() => verifyTodayLineage(invalid));
 }
+
+const placementTransition = [
+  ' Local | Remote | Time',
+  ' 20261020090000 | 20261020090000 | t',
+  ' 20261021074511 | 20261021074511 | t',
+  ' 20261021090000 | | t',
+].join('\\n');
+assert.equal(verifyTodayLineage(placementTransition), '20261021090000');
+assert.throws(() => verifyTodayLineage(placementTransition + '\\n 20261021090100 | | t'));
+assert.throws(() => verifyTodayLineage(placementTransition.replace(
+  '20261021074511 | 20261021074511', '20261021074511 | '
+)));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);
