@@ -54,12 +54,23 @@ if (process.argv.includes('--self-test')) {
       const page = await context.newPage();
       let pageErrors = 0;
       let assetErrors = 0;
+      const assetErrorDetails = [];
+      const safeAsset = (request, status) => {
+        const parsed = new URL(request.url());
+        return { url: parsed.origin + parsed.pathname, type: request.resourceType(), status };
+      };
       page.on('pageerror', () => { pageErrors++; });
       page.on('response', response => {
-        if (response.status() >= 400 && ['script', 'stylesheet'].includes(response.request().resourceType())) assetErrors++;
+        if (response.status() >= 400 && ['script', 'stylesheet'].includes(response.request().resourceType())) {
+          assetErrors++;
+          assetErrorDetails.push(safeAsset(response.request(), response.status()));
+        }
       });
       page.on('requestfailed', request => {
-        if (['script', 'stylesheet'].includes(request.resourceType())) assetErrors++;
+        if (['script', 'stylesheet'].includes(request.resourceType())) {
+          assetErrors++;
+          assetErrorDetails.push(safeAsset(request, 'network_failed'));
+        }
       });
       try {
         const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 45000 });
@@ -76,7 +87,7 @@ if (process.argv.includes('--self-test')) {
         Object.assign(snapshot, { status: response?.status(), pageErrors, assetErrors });
         const final = new URL(page.url());
         results.push({ artist, url, finalUrl: final.origin + final.pathname,
-          ...assessBookingSurface(snapshot), snapshot, blockedMethods,
+          ...assessBookingSurface(snapshot), snapshot, assetErrorDetails, blockedMethods,
           unproved: ['step_transitions', 'file_size_validation', 'server_validation',
             'artist_routing', 'crm_storage_telegram_delivery'] });
       } catch {
