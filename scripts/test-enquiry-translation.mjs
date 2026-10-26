@@ -40,6 +40,7 @@ await test('covering an area is not mistaken for a cover-up of an old tattoo', (
   const translated = 'Хочу чёрно-серую татуировку на большей части внутреннего предплечья.';
   assert.deepEqual(translationFidelityFailures(source, translated), []);
   assert.equal(validateTranslation({ translation: translated }, source), translated);
+  assert.ok(!translationFidelityFailures('Please cover most of my forearm with clouds.', 'Пожалуйста, покройте почти всё предплечье облаками.').includes('cover_up'));
   assert.ok(!translationFidelityFailures('cover the cost of a session', 'оплатить стоимость сеанса').includes('cover_up'));
 });
 
