@@ -28,6 +28,7 @@ jobs:
           npm install --package-lock-only --ignore-scripts
           # npm 10 crashes with edgesOut when incrementally upgrading this admin lock.
           # Re-resolve it from the existing, pinned package.json under the same npm version.
+          npm install --global npm@11
           (cd admin && npm pkg set 'devDependencies.vitest=4.1.12' && rm package-lock.json && npm install --package-lock-only --ignore-scripts)
       - name: Verify dependency audits and locked installs
         run: |
