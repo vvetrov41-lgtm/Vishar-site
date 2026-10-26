@@ -24,7 +24,7 @@ jobs:
       - name: Refresh pinned root and admin dependencies
         run: |
           set -euo pipefail
-          npm pkg set 'devDependencies.wrangler=4.153.0' 'overrides.undici=7.31.0' 'overrides.postcss-selector-parser=6.1.5'
+          npm pkg set 'devDependencies.wrangler=4.153.0' 'overrides.undici=7.30.1' 'overrides.postcss-selector-parser=6.1.5'
           npm install --package-lock-only --ignore-scripts
           (cd admin && npm pkg set 'devDependencies.vitest=4.1.12' && npm install --package-lock-only --ignore-scripts)
       - name: Verify dependency audits and locked installs
