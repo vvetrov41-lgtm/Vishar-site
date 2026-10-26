@@ -25,8 +25,8 @@ jobs:
         run: |
           set -euo pipefail
           npm ci
-          npm install --save-dev --save-exact wrangler@4.152.0
-          npm audit fix --package-lock-only
+          npm install --save-dev --save-exact wrangler@4.153.0
+          npm audit fix
           (cd admin && npm ci && npm install --save-dev --save-exact vitest@4.1.12)
       - name: Verify dependency audits and locked installs
         run: |
@@ -40,7 +40,15 @@ jobs:
           git diff --exit-code -- .github
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git switch -c fix/security-deps-20261026
+          # Store only approved dependency manifests before returning to canonical base.
+          mkdir -p "$RUNNER_TEMP/dep-refresh/admin"
+          cp package.json package-lock.json "$RUNNER_TEMP/dep-refresh/"
+          cp admin/package.json admin/package-lock.json "$RUNNER_TEMP/dep-refresh/admin/"
+          git fetch origin refs/heads/fix/security-deps-20261026
+          git switch -C fix/security-deps-20261026 FETCH_HEAD
+          cp "$RUNNER_TEMP/dep-refresh/package.json" "$RUNNER_TEMP/dep-refresh/package-lock.json" ./
+          cp "$RUNNER_TEMP/dep-refresh/admin/package.json" "$RUNNER_TEMP/dep-refresh/admin/package-lock.json" ./admin/
+          test ! -e .github/workflows/dependency-lock-refresh-20261026.yml
           git add -- package.json package-lock.json admin/package.json admin/package-lock.json
           git diff --cached --quiet && { echo "Nothing changed"; exit 1; }
           git commit -m "fix(security): update vulnerable Wrangler and Vitest dependencies"
