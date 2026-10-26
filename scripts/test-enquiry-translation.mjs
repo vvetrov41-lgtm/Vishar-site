@@ -35,6 +35,27 @@ await test('side, placement, size, negation, uncertainty and question changes ar
   assert.equal(validateTranslation({ translation: bad }, SOURCE), null);
 });
 
+await test('covering an area is not mistaken for a cover-up of an old tattoo', () => {
+  const source = 'I want a black-and-grey tattoo covering most of my inner forearm.';
+  const translated = 'Хочу чёрно-серую татуировку на большей части внутреннего предплечья.';
+  assert.deepEqual(translationFidelityFailures(source, translated), []);
+  assert.equal(validateTranslation({ translation: translated }, source), translated);
+  assert.ok(!translationFidelityFailures('cover the cost of a session', 'оплатить стоимость сеанса').includes('cover_up'));
+});
+
+await test('real cover-up intent still requires a faithful translation', () => {
+  for (const source of [
+    'Can you cover up the old tattoo?',
+    'I want a cover-up on my arm.',
+    'Please cover my existing tattoo.',
+    'Could you cover it up?',
+    'Covering an old tattoo is the goal.',
+  ]) {
+    assert.ok(translationFidelityFailures(source, 'Хочу новый рисунок.').includes('cover_up'), source);
+    assert.ok(!translationFidelityFailures(source, 'Хочу перекрыть старую татуировку.').includes('cover_up'), source);
+  }
+});
+
 await test('a changed or invented number is caught', () => {
   assert.ok(translationFidelityFailures('About 10cm, budget £800', 'Около 12 см, бюджет £800').includes('number:10'));
   assert.ok(translationFidelityFailures('Forearm piece', 'Предплечье, 20 см').some((f) => f.startsWith('invented_number')));
