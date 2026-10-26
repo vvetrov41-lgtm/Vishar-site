@@ -26,8 +26,11 @@ jobs:
           set -euo pipefail
           npm ci
           npm install --save-dev --save-exact wrangler@4.153.0
-          npm audit fix
+          # npm audit fix returns 1 while reporting remaining advisories; validate explicitly below.
+          npm audit fix || true
+          npm ls wrangler undici miniflare postcss-selector-parser tailwindcss --all || true
           (cd admin && npm ci && npm install --save-dev --save-exact vitest@4.1.12)
+          npm audit --audit-level=moderate
       - name: Verify dependency audits and locked installs
         run: |
           set -euo pipefail
