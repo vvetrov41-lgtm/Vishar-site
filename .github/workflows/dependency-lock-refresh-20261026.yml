@@ -1,0 +1,45 @@
+name: Temporary dependency lock refresh
+
+on:
+  push:
+    branches:
+      - ops/dependency-lock-refresh-20261026
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.repository == 'vvetrov41-lgtm/Vishar-site' && github.ref == 'refs/heads/ops/dependency-lock-refresh-20261026'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Refresh pinned root and admin dependencies
+        run: |
+          set -euo pipefail
+          npm install --save-dev --save-exact --package-lock-only wrangler@4.152.0
+          (cd admin && npm install --save-dev --save-exact --package-lock-only vitest@4.1.12)
+      - name: Verify dependency audits and locked installs
+        run: |
+          set -euo pipefail
+          npm ci
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
+          (cd admin && npm ci && npm audit --audit-level=moderate)
+      - name: Commit only dependency files to an isolated branch
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- .github
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c fix/security-deps-20261026
+          git add -- package.json package-lock.json admin/package.json admin/package-lock.json
+          git diff --cached --quiet && { echo "Nothing changed"; exit 1; }
+          git commit -m "fix(security): update vulnerable Wrangler and Vitest dependencies"
+          git push origin HEAD:refs/heads/fix/security-deps-20261026
