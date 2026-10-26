@@ -62,7 +62,9 @@ const ANCHORS = Object.freeze([
   { fact: 'wrist', source: /\bwrists?\b/i, target: /запяст/i },
   { fact: 'sleeve', source: /\bsleeves?\b/i, target: /рукав/i },
   { fact: 'half_sleeve', source: /\bhalf[\s-]?sleeves?\b/i, target: /полрукав|пол-рукав|пол\s+рукав|половин/i },
-  { fact: 'cover_up', source: /\bcover(?:[\s-]?up|ing)?\b(?!\s+(?:the\s+)?(?:cost|price|deposit|fee))/i, target: /перекр|кавер|закр|cover/i },
+  // "covering most of the forearm" describes coverage of an area, not a cover-up.
+  // Require explicit "cover-up" or a tattoo/ink object before demanding the Russian cover-up term.
+  { fact: 'cover_up', source: /\bcover(?:ed|ing)?[\s-]?up\b|\bcover\s+(?:it|them)\s+up\b|\bcover(?:ing)?\s+(?:(?:the|my|an?|old|existing|previous|faded|unwanted|current)\s+){0,4}(?:tattoos?|ink|designs?|piece|work)\b/i, target: /перекр|кавер|закр|cover/i },
   { fact: 'colour', source: /\bcolou?r(?:s|ed|ful)?\b/i, target: /цвет/i },
   { fact: 'black_and_grey', source: /\bblack\s*(?:and|&|n)\s*gr[ae]y\b|\bb\s*&\s*g\b|\bblack[\s-]?work\b/i, target: /ч[её]рн|сер|ч\/б/i },
   // JavaScript \b is ASCII-only, so Russian words are delimited explicitly.
