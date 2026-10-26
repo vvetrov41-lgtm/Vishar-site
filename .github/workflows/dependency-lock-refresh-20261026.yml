@@ -24,8 +24,10 @@ jobs:
       - name: Refresh pinned root and admin dependencies
         run: |
           set -euo pipefail
-          npm install --save-dev --save-exact --package-lock-only wrangler@4.152.0
-          (cd admin && npm install --save-dev --save-exact --package-lock-only vitest@4.1.12)
+          npm ci
+          npm install --save-dev --save-exact wrangler@4.152.0
+          npm audit fix --package-lock-only
+          (cd admin && npm ci && npm install --save-dev --save-exact vitest@4.1.12)
       - name: Verify dependency audits and locked installs
         run: |
           set -euo pipefail
