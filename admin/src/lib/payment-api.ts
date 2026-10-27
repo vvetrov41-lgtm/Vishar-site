@@ -199,6 +199,16 @@ export interface MonzoReconciliationRequestSummary {
   is_matched?: boolean;
 }
 
+export interface RecordedMonzoReceiptOption {
+  payment_transaction_id: string;
+  payment_request_id: string;
+  client_name: string;
+  invoice_number: string;
+  occurred_at: string;
+  amount: number;
+  currency: string;
+}
+
 export interface MonzoReconciliationCandidate {
   id: string;
   amount: number;
@@ -209,6 +219,8 @@ export interface MonzoReconciliationCandidate {
   suggested_payment_request: MonzoReconciliationRequestSummary | null;
   matched_payment_request: MonzoReconciliationRequestSummary | null;
   match_options: MonzoReconciliationRequestSummary[];
+  recorded_receipt_options?: RecordedMonzoReceiptOption[];
+  linked_existing_receipt?: boolean;
 }
 
 export interface MonzoReconciliationActionResult {
@@ -496,6 +508,23 @@ export function createPaymentApi(client: CrmClient) {
           p_payment_request_id: input.paymentRequestId,
         }),
         'match that Monzo payment'
+      );
+    },
+
+    /**
+     * Associates verified bank evidence with a human-recorded invoice payment.
+     * The RPC never posts a second credit to the immutable payment ledger.
+     */
+    async linkMonzoRecordedReceipt(input: {
+      candidateId: string;
+      paymentTransactionId: string;
+    }): Promise<MonzoReconciliationActionResult> {
+      return unwrap<MonzoReconciliationActionResult>(
+        await client.rpc('link_monzo_recorded_receipt', {
+          p_candidate_id: input.candidateId,
+          p_payment_transaction_id: input.paymentTransactionId,
+        }),
+        'link the bank transfer to an already recorded payment'
       );
     },
 
