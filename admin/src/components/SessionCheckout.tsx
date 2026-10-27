@@ -125,7 +125,8 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
   const [priceInput, setPriceInput] = useState('');
   const [paymentInput, setPaymentInput] = useState('');
   const [refresh, setRefresh] = useState(0);
-  const paymentAttempt = useRef<string | null>(null);
+  const paymentAttempt = useRef<{ key: string; scope: string } | null>(null);
+  const invoiceCreation = useRef<{ key: string; scope: string } | null>(null);
 
   const scopedMemberships = memberships.filter((member) => member.artist_id === appointment.artist_id);
   const canView = canAccess(profile?.role, 'viewFinance', scopedMemberships);
@@ -219,6 +220,11 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
     }
   }
 
+  function idempotencyKey(ref: typeof paymentAttempt, scope: string): string {
+    if (ref.current?.scope !== scope) ref.current = { scope, key: crypto.randomUUID() };
+    return ref.current.key;
+  }
+
   async function recordReceived() {
     const amount = parseAmount(paymentInput);
     if (!balance || !projectId || amount == null || !canRecord) {
@@ -238,17 +244,17 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
     try {
       const invoiceId = balance.payableInvoice?.invoice.id;
       if (invoiceId) {
-        paymentAttempt.current ??= crypto.randomUUID();
         await api.recordInvoicePayment({
           invoiceId,
           amount,
-          idempotencyKey: paymentAttempt.current,
+          idempotencyKey: idempotencyKey(paymentAttempt, `${invoiceId}:${amount}`),
         });
       } else if (balance.sessionInvoices.length === 0) {
         // The invoice is exclusively for the post-deposit balance. If any step
         // fails, reload existing invoices rather than silently creating another.
         const created = await api.createInvoice({
           projectId,
+          idempotencyKey: idempotencyKey(invoiceCreation, `${appointment.id}:${balance.due}`),
           notes: 'Balance for one tattoo session. Deposit recorded separately.',
         });
         await api.setInvoiceLineItem({
@@ -259,16 +265,16 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
           unitAmount: balance.due ?? 0,
         });
         await api.issueInvoice(created.invoice_id);
-        paymentAttempt.current ??= crypto.randomUUID();
         await api.recordInvoicePayment({
           invoiceId: created.invoice_id,
           amount,
-          idempotencyKey: paymentAttempt.current,
+          idempotencyKey: idempotencyKey(paymentAttempt, `${created.invoice_id}:${amount}`),
         });
       } else {
         throw new Error(copy.unknown);
       }
       paymentAttempt.current = null;
+      invoiceCreation.current = null;
       setNotice(copy.success);
       setRefresh((value) => value + 1);
     } catch (reason) {
