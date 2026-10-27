@@ -6,7 +6,9 @@ export type CheckoutWarning =
   | 'unlinked_invoice'
   | 'mixed_invoice'
   | 'currency_mismatch'
-  | 'overpaid';
+  | 'overpaid'
+  | 'credited_invoice'
+  | 'incomplete_history';
 
 export interface SessionCheckoutBalance {
   price: number | null;
@@ -52,11 +54,14 @@ export function calculateSessionCheckout(
 
   for (const document of activeInvoices) {
     if (document.line_items.length === 0 || document.line_items.some((item) => item.session_id == null)) {
-      // An invoice without a session link could belong to this session.
-      if (document.invoice.amount_paid > 0) warnings.add('unlinked_invoice');
+      // The invoice may be for this session. Do not create an extra invoice.
+      warnings.add('unlinked_invoice');
     }
     if (!sessionInvoices.includes(document)) continue;
     if (!currencyMatches(document.invoice.currency)) warnings.add('currency_mismatch');
+    if (document.invoice.amount_credited > 0 || document.invoice.discount_amount > 0) {
+      warnings.add('credited_invoice');
+    }
     if (document.line_items.some((item) => item.session_id !== sessionId)) warnings.add('mixed_invoice');
   }
 
