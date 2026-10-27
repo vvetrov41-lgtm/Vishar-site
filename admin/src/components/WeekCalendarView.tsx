@@ -28,6 +28,7 @@ import {
 } from '../lib/calendar-week';
 import { timeOffLabel } from './MonthCalendarView';
 import { typeLabel } from './AppointmentRow';
+import { Link } from '../lib/router';
 
 export interface WeekMoveRequest {
   appointment: Appointment;
@@ -439,6 +440,9 @@ function EntryBlock({
       {project ? <span className="week-event-meta">{project.title}</span> : null}
       {artistName ? <span className="week-event-meta">{artistName}</span> : null}
       <span className="week-event-meta">{statusLabelFor(appointment)}</span>
+      <Link className="week-event-meta" to={`/appointments/${appointment.id}`}>
+        {language === 'ru' ? 'Открыть запись и расчёт' : 'Open appointment and checkout'}
+      </Link>
       {movable ? (
         <button
           type="button"
