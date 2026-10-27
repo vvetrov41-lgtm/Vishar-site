@@ -9,6 +9,7 @@ import { BookingPanel } from '../components/BookingPanel';
 import { ProjectAppointmentEditor } from '../components/ProjectAppointmentEditor';
 import { BookingCardStatusLine } from '../components/BookingCardStatusLine';
 import { SessionPricesPanel } from '../components/SessionPricesPanel';
+import { SessionCheckout } from '../components/SessionCheckout';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { ProjectInvoicesPanel } from '../components/ProjectInvoicesPanel';
 import { ProjectDepositRequirementControl } from '../components/ProjectDepositRequirementControl';
@@ -257,6 +258,8 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
                     {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
+                  <SessionCheckout appointment={appointment} />
+
                   {active ? (
                     <BookingCardStatusLine
                       sessionId={appointment.id}
