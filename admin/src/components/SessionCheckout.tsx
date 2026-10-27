@@ -167,7 +167,8 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
         requests,
         invoices: documents,
       });
-      setPriceInput(storedPrice == null ? String(suggestion?.price ?? '') : String(storedPrice));
+      const validSuggestion = suggestion?.currency === appointment.currency ? suggestion.price : null;
+      setPriceInput(storedPrice == null ? String(validSuggestion ?? '') : String(storedPrice));
     }).catch((reason) => {
       if (!cancelled) {
         setData(null);
@@ -312,13 +313,13 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
               {canManage && (data.price == null || data.price > 0) ? (
                 <div className="actions" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <label style={{ flex: '1 1 145px', minWidth: 0 }}>
-                    <span>{copy.enterPrice}</span>
+                    <span>{copy.enterPrice.replace('GBP', appointment.currency)}</span>
                     <input
                       type="text"
                       inputMode="decimal"
                       value={priceInput}
                       onChange={(event) => setPriceInput(event.target.value)}
-                      aria-label={copy.enterPrice}
+                      aria-label={`${copy.enterPrice} (${appointment.currency})`}
                       disabled={busy}
                     />
                   </label>
@@ -357,7 +358,7 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
               {canManage && due != null && due > 0 ? (
                 <div className="actions" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
                   <label style={{ flex: '1 1 145px', minWidth: 0 }}>
-                    <span>{copy.received}</span>
+                    <span>{copy.received.replace('GBP', appointment.currency)}</span>
                     <input
                       type="text"
                       inputMode="decimal"
