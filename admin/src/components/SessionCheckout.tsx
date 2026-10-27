@@ -26,6 +26,7 @@ const CHECKOUT_COPY = {
     failed: 'Не удалось загрузить финансы. Проверь подключение и попробуй ещё раз.',
     missingPrice: 'Цена сеанса ещё не подтверждена. Ниже лишь предложение по ставке.',
     terminalPrice: 'Сеанс уже завершён: текущие правила CRM не позволяют изменить его цену. Для сверки используй счёт и историю платежей.',
+    estimateDue: 'Предварительный остаток по ставке (не подтверждён)',
     enterPrice: 'Цена сеанса, GBP',
     price: 'Цена сеанса',
     estimated: 'Предлагаемая цена',
@@ -68,6 +69,7 @@ const CHECKOUT_COPY = {
     failed: 'Could not load finance data. Check the connection and try again.',
     missingPrice: 'The session price has not been confirmed. The rate-based figure is only a suggestion.',
     terminalPrice: 'This appointment is already closed: CRM currently blocks session-price edits. Review the linked invoice and payment ledger.',
+    estimateDue: 'Provisional amount based on the rate (unconfirmed)',
     enterPrice: 'Session price, GBP',
     price: 'Session price',
     estimated: 'Suggested price',
@@ -190,6 +192,9 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
     : null, [appointment.id, appointment.currency, data]);
 
   const due = balance?.due ?? null;
+  const provisionalDue = data?.price == null && data?.suggestion != null && balance?.warnings.length === 0
+    ? Math.max(0, Math.round((data.suggestion - balance.depositPaid - balance.invoicedPaid) * 100) / 100)
+    : null;
   const validReceipt = parseAmount(paymentInput);
   const canRecord = canManage && !busy && due != null && due > 0
     && validReceipt != null && validReceipt <= due
@@ -340,6 +345,9 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
               {!canEditPrice && data.price == null ? <p className="meta">{copy.terminalPrice}</p> : null}
               {data.price == null && data.suggestion != null ? (
                 <p className="meta">{copy.estimated}: {formatMoney(data.suggestion, appointment.currency, language)}</p>
+              ) : null}
+              {provisionalDue != null ? (
+                <p className="notice warn">{copy.estimateDue}: <strong>{formatMoney(provisionalDue, appointment.currency, language)}</strong></p>
               ) : null}
               <dl style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: '6px 12px', margin: '12px 0', alignItems: 'baseline' }}>
                 <dt>{copy.price}</dt>
