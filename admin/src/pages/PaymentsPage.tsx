@@ -157,6 +157,7 @@ export function PaymentsPage() {
   const [clientNames, setClientNames] = useState<Map<string, string>>(new Map());
   const [reconciliationCandidates, setReconciliationCandidates] = useState<MonzoReconciliationCandidate[]>([]);
   const [matchSelection, setMatchSelection] = useState<Record<string, string>>({});
+  const [recordedReceiptSelection, setRecordedReceiptSelection] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busySession, setBusySession] = useState<string | null>(null);
@@ -742,6 +743,8 @@ export function PaymentsPage() {
                 {visibleReconciliationCandidates.map((candidate) => {
                   const matched = candidate.matched_payment_request;
                   const selectedRequestId = matchSelection[candidate.id] ?? '';
+                  const recordedOptions = candidate.recorded_receipt_options ?? [];
+                  const selectedRecordedReceiptId = recordedReceiptSelection[candidate.id] ?? '';
                   const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
                   const isHistory = candidate.confirmed || candidate.status === 'ignored';
                   return (
@@ -757,7 +760,9 @@ export function PaymentsPage() {
                           <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
                         ) : null}
                         {candidate.confirmed ? (
-                          <span className="payment-status-pill ok">{copy.confirmedLedger}</span>
+                          <span className="payment-status-pill ok">{candidate.linked_existing_receipt
+                            ? (language === 'ru' ? 'Сверено с уже учтённой оплатой' : 'Linked to recorded payment')
+                            : copy.confirmedLedger}</span>
                         ) : candidate.status === 'ignored' ? (
                           <span className="payment-status-pill">{copy.ignoredNoChange}</span>
                         ) : null}
@@ -829,7 +834,7 @@ export function PaymentsPage() {
                               ))}
                             </select>
                           </label>
-                          {candidate.match_options.length === 0 ? (
+                          {candidate.match_options.length === 0 && recordedOptions.length === 0 ? (
                             <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
                           ) : null}
                           <div className="button-row field-wide">
