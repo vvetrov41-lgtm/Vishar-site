@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { calendarSyncLabel } from '../lib/calendar-sync';
+import { SessionCheckout } from './SessionCheckout';
 import { appointmentDisplayStatus } from '../lib/appointment-display-status';
 import { formatDateTime } from '../lib/format';
 import type { Language } from '../lib/i18n';
@@ -72,6 +73,7 @@ export function AppointmentRow({
           <span className="badge">{copy.noProject}</span>
         )}
       </div>
+      <SessionCheckout appointment={appointment} />
       {mayManage && isActive ? (
         <>
           <div className="actions">
