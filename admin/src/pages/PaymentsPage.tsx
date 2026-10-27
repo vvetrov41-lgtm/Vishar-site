@@ -876,6 +876,44 @@ export function PaymentsPage() {
                               ))}
                             </select>
                           </label>
+                          {!matched && recordedOptions.length > 0 ? (
+                            <div className="field-wide">
+                              <p className="muted">
+                                {language === 'ru'
+                                  ? 'Уже записал эту оплату в CRM? Выбери клиента и счёт. Второго платежа не будет.'
+                                  : 'Already recorded this transfer on an invoice? Select that receipt. No duplicate payment is created.'}
+                              </p>
+                              <label className="field">
+                                <span>{language === 'ru' ? 'Уже записанная оплата' : 'Existing recorded payment'}</span>
+                                <select
+                                  value={selectedRecordedReceiptId}
+                                  onChange={(event) => setRecordedReceiptSelection((current) => ({
+                                    ...current,
+                                    [candidate.id]: event.target.value,
+                                  }))}
+                                >
+                                  <option value="">{language === 'ru' ? 'Выбери клиента и счёт' : 'Choose client and invoice'}</option>
+                                  {recordedOptions.map((option) => (
+                                    <option key={option.payment_transaction_id} value={option.payment_transaction_id}>
+                                      {option.client_name} · {option.invoice_number} · {money(option.amount, option.currency, locale)} · {new Date(option.occurred_at).toLocaleString(locale)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <div className="button-row">
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  disabled={busyCandidate === candidate.id || !selectedRecordedReceiptId}
+                                  onClick={() => void linkRecordedReceipt(candidate)}
+                                >
+                                  {busyCandidate === candidate.id
+                                    ? copy.working
+                                    : (language === 'ru' ? 'Сопоставить с уже учтённой оплатой' : 'Link to existing receipt')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                           {candidate.match_options.length === 0 && recordedOptions.length === 0 ? (
                             <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
                           ) : null}
