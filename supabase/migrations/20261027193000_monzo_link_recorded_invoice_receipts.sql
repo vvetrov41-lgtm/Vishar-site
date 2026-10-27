@@ -43,7 +43,7 @@ as $function$
      and pt.status = 'succeeded'
      and pt.amount = c.amount
      and pt.currency = c.currency
-     and abs(pt.occurred_at - c.occurred_at) <= interval '7 days'
+     and abs(extract(epoch from (pt.occurred_at - c.occurred_at))) <= 604800
     join public.payment_requests r
       on r.id = pt.payment_request_id
      and r.artist_id = c.artist_id
@@ -159,7 +159,7 @@ begin
      or v_receipt.webhook_event_id is not null
      or v_receipt.amount <> v_candidate.amount
      or v_receipt.currency <> v_candidate.currency
-     or abs(v_receipt.occurred_at - v_candidate.occurred_at) > interval '7 days' then
+     or abs(extract(epoch from (v_receipt.occurred_at - v_candidate.occurred_at))) > 604800 then
     raise exception 'recorded receipt does not match bank evidence' using errcode='22023';
   end if;
 
