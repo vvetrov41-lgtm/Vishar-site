@@ -12,7 +12,7 @@ create table public.monzo_recorded_receipt_links (
 
 -- Only SECURITY DEFINER RPCs may read/write this reconciliation index.
 alter table public.monzo_recorded_receipt_links enable row level security;
-revoke all on table public.monzo_recorded_receipt_links from public, anon, authenticated;
+revoke all on table public.monzo_recorded_receipt_links from public, anon, authenticated, service_role;
 
 create or replace function crm_private.monzo_recorded_receipt_options(p_candidate_id uuid)
 returns jsonb
