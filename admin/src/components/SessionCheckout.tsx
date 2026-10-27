@@ -16,6 +16,7 @@ interface CheckoutData {
   suggestion: number | null;
   requests: ProjectPaymentRequest[];
   invoices: InvoiceDocument[];
+  legacyUnallocatedDeposit: boolean;
 }
 
 const CHECKOUT_COPY = {
@@ -172,6 +173,9 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
         suggestion: suggestion?.currency === appointment.currency ? suggestion.price : null,
         requests,
         invoices: documents,
+        legacyUnallocatedDeposit: projectFinance?.deposit_status === 'paid'
+          && (projectFinance.deposit_amount ?? 0) > 0
+          && !requests.some((request) => request.purpose === 'deposit' && request.net_paid > 0),
       });
       const validSuggestion = suggestion?.currency === appointment.currency ? suggestion.price : null;
       setPriceInput(storedPrice == null ? String(validSuggestion ?? '') : String(storedPrice));
@@ -187,9 +191,17 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
   }, [api, open, canView, projectId, appointment.id, appointment.artist_id,
     appointment.currency, appointment.duration_hours, appointment.start_at, appointment.end_at, refresh, language]);
 
-  const balance = useMemo(() => data
-    ? calculateSessionCheckout(appointment.id, appointment.currency, data.price, data.requests, data.invoices)
-    : null, [appointment.id, appointment.currency, data]);
+  const balance = useMemo(() => {
+    if (!data) return null;
+    const calculated = calculateSessionCheckout(appointment.id, appointment.currency, data.price, data.requests, data.invoices);
+    if (!data.legacyUnallocatedDeposit) return calculated;
+    return {
+      ...calculated,
+      due: null,
+      payableInvoice: null,
+      warnings: [...new Set([...calculated.warnings, 'unallocated_deposit' as const])],
+    };
+  }, [appointment.id, appointment.currency, data]);
 
   const due = balance?.due ?? null;
   const provisionalDue = data?.price == null && data?.suggestion != null && balance?.warnings.length === 0
