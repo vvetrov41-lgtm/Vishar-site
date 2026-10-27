@@ -602,6 +602,48 @@ export function PaymentsPage() {
     }
   }
 
+
+  /** Link verified Monzo evidence to a human-recorded invoice payment. No extra credit. */
+  async function linkRecordedReceipt(candidate: MonzoReconciliationCandidate) {
+    if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
+    const transactionId = recordedReceiptSelection[candidate.id];
+    const selected = candidate.recorded_receipt_options?.find(
+      (option) => option.payment_transaction_id === transactionId
+    );
+    if (!selected) return;
+
+    const approved = await confirmDialog({
+      title: language === 'ru' ? 'Связать с уже записанной оплатой?' : 'Link bank transfer to recorded payment?',
+      message: language === 'ru'
+        ? 'Monzo ' + money(candidate.amount, candidate.currency, locale) + ' будет связан с уже записанной оплатой клиента ' + selected.client_name + ' (счёт ' + selected.invoice_number + '). Новые деньги в CRM не добавятся.'
+        : 'Link Monzo ' + money(candidate.amount, candidate.currency, locale) + ' to ' + selected.client_name + ' existing receipt (invoice ' + selected.invoice_number + '). No second payment is created.',
+      confirmLabel: language === 'ru' ? 'Сопоставить без повторной оплаты' : 'Link without adding another payment',
+      cancelLabel: cancelLabelFor(language),
+      tone: 'primary',
+    });
+    if (!approved) return;
+
+    setBusyCandidate(candidate.id);
+    setError(null);
+    setReconciliationNotice(null);
+    try {
+      await api.linkMonzoRecordedReceipt({
+        candidateId: candidate.id,
+        paymentTransactionId: transactionId,
+      });
+      setReconciliationNotice(language === 'ru'
+        ? 'Перевод Monzo связан с уже учтённой оплатой. Повторного начисления нет.'
+        : 'Monzo transfer linked to an already-booked receipt. No duplicate credit.');
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : (
+        language === 'ru' ? 'Не получилось связать уже записанную оплату.' : 'Could not link the recorded receipt.'
+      ));
+    } finally {
+      setBusyCandidate(null);
+    }
+  }
+
   async function ignoreCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
     const approvedIgnore = await confirmDialog({
