@@ -226,7 +226,7 @@ begin
 end;
 $function$;
 
-revoke all on function public.link_monzo_recorded_receipt(uuid, uuid) from public, anon;
+revoke all on function public.link_monzo_recorded_receipt(uuid, uuid) from public, anon, service_role;
 grant execute on function public.link_monzo_recorded_receipt(uuid, uuid) to authenticated;
 
 -- Preserve deposit reconciliation; supplement it with the existence of a
