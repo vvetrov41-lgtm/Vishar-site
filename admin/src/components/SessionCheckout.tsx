@@ -25,6 +25,7 @@ const CHECKOUT_COPY = {
     loading: 'Сверяю цену, депозит и платежи…',
     failed: 'Не удалось загрузить финансы. Проверь подключение и попробуй ещё раз.',
     missingPrice: 'Цена сеанса ещё не подтверждена. Ниже лишь предложение по ставке.',
+    terminalPrice: 'Сеанс уже завершён: текущие правила CRM не позволяют изменить его цену. Для сверки используй счёт и историю платежей.',
     enterPrice: 'Цена сеанса, GBP',
     price: 'Цена сеанса',
     estimated: 'Предлагаемая цена',
@@ -66,6 +67,7 @@ const CHECKOUT_COPY = {
     loading: 'Checking price, deposit and payments…',
     failed: 'Could not load finance data. Check the connection and try again.',
     missingPrice: 'The session price has not been confirmed. The rate-based figure is only a suggestion.',
+    terminalPrice: 'This appointment is already closed: CRM currently blocks session-price edits. Review the linked invoice and payment ledger.',
     enterPrice: 'Session price, GBP',
     price: 'Session price',
     estimated: 'Suggested price',
@@ -131,6 +133,7 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
   const scopedMemberships = memberships.filter((member) => member.artist_id === appointment.artist_id);
   const canView = canAccess(profile?.role, 'viewFinance', scopedMemberships);
   const canManage = canAccess(profile?.role, 'manageFinance', scopedMemberships);
+  const canEditPrice = canManage && !['completed', 'cancelled', 'no_show'].includes(appointment.status);
   const projectId = appointment.project_id;
 
   useEffect(() => {
@@ -316,7 +319,7 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
               {data.price == null ? (
                 <p className="notice warn">{copy.missingPrice}</p>
               ) : null}
-              {canManage && (data.price == null || data.price > 0) ? (
+              {canEditPrice && (data.price == null || data.price > 0) ? (
                 <div className="actions" style={{ flexWrap: 'wrap', alignItems: 'flex-end' }}>
                   <label style={{ flex: '1 1 145px', minWidth: 0 }}>
                     <span>{copy.enterPrice.replace('GBP', appointment.currency)}</span>
@@ -334,6 +337,7 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
                   </button>
                 </div>
               ) : null}
+              {!canEditPrice && data.price == null ? <p className="meta">{copy.terminalPrice}</p> : null}
               {data.price == null && data.suggestion != null ? (
                 <p className="meta">{copy.estimated}: {formatMoney(data.suggestion, appointment.currency, language)}</p>
               ) : null}
