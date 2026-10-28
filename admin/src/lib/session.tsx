@@ -492,6 +492,13 @@ export function SessionProvider({
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
+/** Optional session context for reusable read-only row components.
+ * A row rendered outside SessionProvider must never attempt a finance fetch.
+ */
+export function useOptionalSession(): SessionValue | null {
+  return useContext(SessionContext);
+}
+
 export function useSession(): SessionValue {
   const value = useContext(SessionContext);
   if (!value) throw new Error('useSession must be used inside SessionProvider');
