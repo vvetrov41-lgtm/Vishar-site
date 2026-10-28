@@ -6,7 +6,7 @@ import { canAccess } from '../lib/permissions';
 import { Link } from '../lib/router';
 import { calculateSessionCheckout, type CheckoutWarning } from '../lib/session-checkout';
 import { suggestSessionPrice } from '../lib/session-pricing';
-import { useApi, useSession } from '../lib/session';
+import { useApi, useOptionalSession, useSession } from '../lib/session';
 import type { Appointment } from '../lib/appointment-api';
 import type { InvoiceDocument } from '../lib/invoice-api';
 import type { ProjectPaymentRequest } from '../lib/payment-api';
@@ -115,13 +115,39 @@ function parseAmount(raw: string): number | null {
   return Number.isFinite(amount) && amount > 0 && amount <= 100000 ? amount : null;
 }
 
-/** Lazy-loaded so the calendar never enumerates client finance or invoices. */
+/** Render only a capability-scoped toggle; no API access until it is opened.
+ * Isolated calendar rows in tests can render without a SessionProvider.
+ */
 export function SessionCheckout({ appointment }: { appointment: Appointment }) {
+  const session = useOptionalSession();
+  const { language } = useLanguage();
+  const [opened, setOpened] = useState(false);
+  const memberScope = session?.memberships.filter((member) => member.artist_id === appointment.artist_id) ?? [];
+  const canView = session != null && canAccess(session.profile?.role, 'viewFinance', memberScope);
+  if (!appointment.project_id || !canView || !['tattoo_session', 'touch_up'].includes(appointment.appointment_type)) {
+    return null;
+  }
+  if (!opened) {
+    return (
+      <div className="session-checkout" style={{ marginTop: 12 }}>
+        <button type="button" className="secondary" aria-expanded={false}
+          aria-controls={`session-checkout-${appointment.id}`}
+          onClick={() => setOpened(true)}>
+          {CHECKOUT_COPY[language].toggle}
+        </button>
+      </div>
+    );
+  }
+  return <SessionCheckoutDetails appointment={appointment} />;
+}
+
+/** Authentication and all ledger reads happen only after opening. */
+function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
   const api = useApi();
   const { profile, memberships } = useSession();
   const { language } = useLanguage();
   const copy = CHECKOUT_COPY[language];
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [data, setData] = useState<CheckoutData | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
