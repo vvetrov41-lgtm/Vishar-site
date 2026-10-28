@@ -234,13 +234,13 @@ jobs:
       # pgTAP needs Postgres plus the services that own the auth, storage and
       # realtime schemas. The dashboard, edge runtime, image proxy, logging and
       # mail containers are never used here, and pulling them from ghcr.io is
-      # what hits its rate limit. The same images are mirrored on
-      # public.ecr.aws; a throttled pull alternates registries with backoff.
+      # what hits its rate limit. Docker Hub is a third official Supabase
+      # image registry. Try it first, then fallback to the existing mirrors.
       - name: Start local Supabase stack
         shell: bash
         run: |
           set -uo pipefail
-          registries=(public.ecr.aws ghcr.io public.ecr.aws)
+          registries=(docker.io ghcr.io public.ecr.aws)
           for attempt in 1 2 3; do
             export SUPABASE_INTERNAL_IMAGE_REGISTRY="${registries[$((attempt - 1))]}"
             echo "Starting Supabase from $SUPABASE_INTERNAL_IMAGE_REGISTRY (attempt $attempt)"
@@ -256,6 +256,21 @@ jobs:
 
       - name: Reset canonical test database without development seed
         run: supabase db reset --local --no-seed
+
+      # Same pinned pg_prove 3.36 image, official Docker Hub mirror.
+      # GHCR/Public ECR throttle shared runners. Pre-cache the exact amd64
+      # image by digest, then tag for the Supabase CLI's configured registry.
+      # This does not skip or weaken any pgTAP assertions.
+      - name: Pre-cache verified pgTAP test runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='sha256:715739e7fdd07a8631c36ea2f1c88fc0144f99a8f5eaa6c3a9799be377f94f2c'
+          source="docker.io/supabase/pg_prove@${expected}"
+          docker pull --platform linux/amd64 "$source"
+          for registry in ghcr.io public.ecr.aws; do
+            docker tag "$source" "$registry/supabase/pg_prove:3.36"
+          done
 
       - name: Run pgTAP suite
         run: supabase test db

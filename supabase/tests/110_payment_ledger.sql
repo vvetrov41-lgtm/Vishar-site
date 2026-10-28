@@ -739,8 +739,13 @@ select throws_ok(
 );
 select throws_ok(
   $$truncate public.payment_transactions$$,
+  '0A000', null,
+  'FK evidence link prevents ledger-only truncation, even with no link rows'
+);
+select throws_ok(
+  $$truncate public.payment_transactions cascade$$,
   '42501', null,
-  'the immutable payment ledger cannot be truncated'
+  'the immutable ledger rejects CASCADE truncation even including evidence links'
 );
 
 -- ---------------------------------------------------------------------------

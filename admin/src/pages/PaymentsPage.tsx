@@ -157,6 +157,7 @@ export function PaymentsPage() {
   const [clientNames, setClientNames] = useState<Map<string, string>>(new Map());
   const [reconciliationCandidates, setReconciliationCandidates] = useState<MonzoReconciliationCandidate[]>([]);
   const [matchSelection, setMatchSelection] = useState<Record<string, string>>({});
+  const [recordedReceiptSelection, setRecordedReceiptSelection] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busySession, setBusySession] = useState<string | null>(null);
@@ -601,6 +602,48 @@ export function PaymentsPage() {
     }
   }
 
+
+  /** Link verified Monzo evidence to a human-recorded invoice payment. No extra credit. */
+  async function linkRecordedReceipt(candidate: MonzoReconciliationCandidate) {
+    if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
+    const transactionId = recordedReceiptSelection[candidate.id];
+    const selected = candidate.recorded_receipt_options?.find(
+      (option) => option.payment_transaction_id === transactionId
+    );
+    if (!selected) return;
+
+    const approved = await confirmDialog({
+      title: language === 'ru' ? 'Связать с уже записанной оплатой?' : 'Link bank transfer to recorded payment?',
+      message: language === 'ru'
+        ? 'Monzo ' + money(candidate.amount, candidate.currency, locale) + ' будет связан с уже записанной оплатой клиента ' + selected.client_name + ' (счёт ' + selected.invoice_number + '). Новые деньги в CRM не добавятся.'
+        : 'Link Monzo ' + money(candidate.amount, candidate.currency, locale) + ' to ' + selected.client_name + ' existing receipt (invoice ' + selected.invoice_number + '). No second payment is created.',
+      confirmLabel: language === 'ru' ? 'Сопоставить без повторной оплаты' : 'Link without adding another payment',
+      cancelLabel: cancelLabelFor(language),
+      tone: 'primary',
+    });
+    if (!approved) return;
+
+    setBusyCandidate(candidate.id);
+    setError(null);
+    setReconciliationNotice(null);
+    try {
+      await api.linkMonzoRecordedReceipt({
+        candidateId: candidate.id,
+        paymentTransactionId: transactionId,
+      });
+      setReconciliationNotice(language === 'ru'
+        ? 'Перевод Monzo связан с уже учтённой оплатой. Повторного начисления нет.'
+        : 'Monzo transfer linked to an already-booked receipt. No duplicate credit.');
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : (
+        language === 'ru' ? 'Не получилось связать уже записанную оплату.' : 'Could not link the recorded receipt.'
+      ));
+    } finally {
+      setBusyCandidate(null);
+    }
+  }
+
   async function ignoreCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
     const approvedIgnore = await confirmDialog({
@@ -742,6 +785,8 @@ export function PaymentsPage() {
                 {visibleReconciliationCandidates.map((candidate) => {
                   const matched = candidate.matched_payment_request;
                   const selectedRequestId = matchSelection[candidate.id] ?? '';
+                  const recordedOptions = candidate.recorded_receipt_options ?? [];
+                  const selectedRecordedReceiptId = recordedReceiptSelection[candidate.id] ?? '';
                   const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
                   const isHistory = candidate.confirmed || candidate.status === 'ignored';
                   return (
@@ -757,7 +802,9 @@ export function PaymentsPage() {
                           <div className="muted">{copy.suggested}: {requestSummaryLabel(candidate.suggested_payment_request, locale, copy)}</div>
                         ) : null}
                         {candidate.confirmed ? (
-                          <span className="payment-status-pill ok">{copy.confirmedLedger}</span>
+                          <span className="payment-status-pill ok">{candidate.linked_existing_receipt
+                            ? (language === 'ru' ? 'Сверено с уже учтённой оплатой' : 'Linked to recorded payment')
+                            : copy.confirmedLedger}</span>
                         ) : candidate.status === 'ignored' ? (
                           <span className="payment-status-pill">{copy.ignoredNoChange}</span>
                         ) : null}
@@ -829,7 +876,45 @@ export function PaymentsPage() {
                               ))}
                             </select>
                           </label>
-                          {candidate.match_options.length === 0 ? (
+                          {!matched && recordedOptions.length > 0 ? (
+                            <div className="field-wide">
+                              <p className="muted">
+                                {language === 'ru'
+                                  ? 'Уже записал эту оплату в CRM? Выбери клиента и счёт. Второго платежа не будет.'
+                                  : 'Already recorded this transfer on an invoice? Select that receipt. No duplicate payment is created.'}
+                              </p>
+                              <label className="field">
+                                <span>{language === 'ru' ? 'Уже записанная оплата' : 'Existing recorded payment'}</span>
+                                <select
+                                  value={selectedRecordedReceiptId}
+                                  onChange={(event) => setRecordedReceiptSelection((current) => ({
+                                    ...current,
+                                    [candidate.id]: event.target.value,
+                                  }))}
+                                >
+                                  <option value="">{language === 'ru' ? 'Выбери клиента и счёт' : 'Choose client and invoice'}</option>
+                                  {recordedOptions.map((option) => (
+                                    <option key={option.payment_transaction_id} value={option.payment_transaction_id}>
+                                      {option.client_name} · {option.invoice_number} · {money(option.amount, option.currency, locale)} · {new Date(option.occurred_at).toLocaleString(locale)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <div className="button-row">
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  disabled={busyCandidate === candidate.id || !selectedRecordedReceiptId}
+                                  onClick={() => void linkRecordedReceipt(candidate)}
+                                >
+                                  {busyCandidate === candidate.id
+                                    ? copy.working
+                                    : (language === 'ru' ? 'Сопоставить с уже учтённой оплатой' : 'Link to existing receipt')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {candidate.match_options.length === 0 && recordedOptions.length === 0 ? (
                             <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
                           ) : null}
                           <div className="button-row field-wide">
