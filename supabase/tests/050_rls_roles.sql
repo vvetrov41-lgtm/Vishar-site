@@ -666,6 +666,9 @@ insert into expected_function_acl values
   ('public.match_monzo_reconciliation_candidate(uuid,uuid)', false, true, false),
   ('public.ignore_monzo_reconciliation_candidate(uuid)', false, true, false),
   ('public.confirm_monzo_reconciliation_candidate(uuid)', false, true, false),
+  -- Evidence-only matching to an already paid manual invoice. Artist-finance gated,
+  -- no access for the anonymous or service backend role.
+  ('public.link_monzo_recorded_receipt(uuid,uuid)', false, true, false),
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
   ('public.queue_communication_message(uuid,text,uuid)', false, true, false),
@@ -937,7 +940,8 @@ select ok(
        'message_template_purposes', 'message_template_variables',
        'message_templates', 'client_marketing_consent',
        'communication_suppressions',
-       'invoices', 'invoice_line_items', 'credit_notes')),
+       'invoices', 'invoice_line_items', 'credit_notes',
+      'monzo_recorded_receipt_links')),
   'every CRM table has row level security enabled and forced'
 );
 
