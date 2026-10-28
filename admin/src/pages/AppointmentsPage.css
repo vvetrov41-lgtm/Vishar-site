@@ -21,11 +21,11 @@
 .calendar-event-attendance.attendance-reschedule_requested { background: rgba(255,107,107,0.95); }
 .calendar-event-attendance.attendance-outcome_pending { background: rgba(170,170,170,0.8); }
 .calendar-event { flex-wrap: wrap; }
-.calendar-event-client { display: none; margin-left: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-event-client { display: block; margin-left: 0; overflow: hidden; text-overflow: clip; white-space: nowrap; }
 .calendar-more { border-color: transparent; background: transparent; color: var(--muted); }
 .calendar-selected-day .row + .row { margin-top: 10px; }
 .calendar-time-off-detail { border-style: dashed; }
-@media (min-width: 640px) { .calendar-toolbar h3 { font-size: 1.08rem; } .calendar-weekday { padding: 8px 4px; font-size: 0.7rem; } .calendar-day { min-height: 112px; padding: 6px; } .calendar-day-number { width: 30px; height: 30px; font-size: 0.78rem; } .calendar-event,.calendar-more { padding: 4px 6px; font-size: 0.68rem; } .calendar-event { display: flex; align-items: baseline; } .calendar-event-client { display: inline; } }
+@media (min-width: 640px) { .calendar-toolbar h3 { font-size: 1.08rem; } .calendar-weekday { padding: 8px 4px; font-size: 0.7rem; } .calendar-day { min-height: 112px; padding: 6px; } .calendar-day-number { width: 30px; height: 30px; font-size: 0.78rem; } .calendar-event,.calendar-more { padding: 4px 6px; font-size: 0.68rem; } .calendar-event { display: flex; align-items: baseline; } .calendar-event-client { display: inline; margin-left: 3px; text-overflow: ellipsis; } }
 
 /* Week and day grid. One slot row is --week-slot-height tall, so an entry can
    state its length as a multiple of a slot rather than in pixels. */
