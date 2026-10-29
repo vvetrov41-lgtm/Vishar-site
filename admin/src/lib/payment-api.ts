@@ -209,6 +209,16 @@ export interface RecordedMonzoReceiptOption {
   currency: string;
 }
 
+export interface LegacyPaidDepositOption {
+  project_id: string;
+  session_id: string;
+  client_name: string;
+  project_title: string;
+  session_start_at: string;
+  amount: number;
+  currency: string;
+}
+
 export interface MonzoReconciliationCandidate {
   id: string;
   amount: number;
@@ -220,6 +230,7 @@ export interface MonzoReconciliationCandidate {
   matched_payment_request: MonzoReconciliationRequestSummary | null;
   match_options: MonzoReconciliationRequestSummary[];
   recorded_receipt_options?: RecordedMonzoReceiptOption[];
+  legacy_paid_deposit_options?: LegacyPaidDepositOption[];
   linked_existing_receipt?: boolean;
 }
 
@@ -525,6 +536,21 @@ export function createPaymentApi(client: CrmClient) {
           p_payment_transaction_id: input.paymentTransactionId,
         }),
         'link the bank transfer to an already recorded payment'
+      );
+    },
+
+    /** Attach a verified bank transfer to a previously marked-paid project,
+     * creating its missing immutable ledger receipt exactly once. */
+    async reconcileMonzoLegacyPaidDeposit(input: {
+      candidateId: string;
+      sessionId: string;
+    }): Promise<MonzoReconciliationActionResult> {
+      return unwrap<MonzoReconciliationActionResult>(
+        await client.rpc('reconcile_monzo_legacy_paid_deposit', {
+          p_candidate_id: input.candidateId,
+          p_session_id: input.sessionId,
+        }),
+        'match that Monzo payment'
       );
     },
 

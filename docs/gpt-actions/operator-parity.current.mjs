@@ -250,6 +250,7 @@ export const OPERATOR_PARITY = Object.freeze([
   row('monzo.reconciliation.ignore', 'Billing & Reconciliation', 'manage_finance', 'write', A, 'ignoreMonzoReconciliationCandidate', ['public.ignore_monzo_reconciliation_candidate']),
   row('monzo.reconciliation.confirm', 'Billing & Reconciliation', 'record_payments', 'money', A, 'confirmMonzoReconciliationCandidate', ['public.confirm_monzo_reconciliation_candidate']),
   row('monzo.reconciliation.link_recorded_receipt', 'Billing & Reconciliation', 'manage_finance', 'money', N, 'linkMonzoRecordedReceipt', ['public.link_monzo_recorded_receipt'], { note: 'Ledger-safe evidence association for a verified Monzo transfer and an already-recorded invoice receipt; requires explicit human confirmation.' }),
+  row('monzo.reconciliation.legacy_paid_deposit', 'Billing & Reconciliation', 'manage_finance', 'money', N, 'reconcileMonzoLegacyPaidDeposit', ['public.reconcile_monzo_legacy_paid_deposit'], { note: 'Verified bank transfer for a previously marked-paid project deposit, after explicit operator selection of the existing client and session; creates one immutable receipt without duplicate notification.' }),
 
   // ---------------------------------------------------------- Communications
   row('whatsapp.conversation.get', 'Communications', 'view_communications', 'read', A, 'getWhatsAppConversation', ['public.gpt_get_whatsapp_conversation_for_enquiry']),
