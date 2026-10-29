@@ -550,7 +550,7 @@ export function createPaymentApi(client: CrmClient) {
           p_candidate_id: input.candidateId,
           p_session_id: input.sessionId,
         }),
-        'reconcile the already paid deposit without a second charge'
+        'match that Monzo payment'
       );
     },
 
