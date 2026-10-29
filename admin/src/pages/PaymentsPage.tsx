@@ -158,6 +158,7 @@ export function PaymentsPage() {
   const [reconciliationCandidates, setReconciliationCandidates] = useState<MonzoReconciliationCandidate[]>([]);
   const [matchSelection, setMatchSelection] = useState<Record<string, string>>({});
   const [recordedReceiptSelection, setRecordedReceiptSelection] = useState<Record<string, string>>({});
+  const [legacyDepositSelection, setLegacyDepositSelection] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [busySession, setBusySession] = useState<string | null>(null);
@@ -644,6 +645,40 @@ export function PaymentsPage() {
     }
   }
 
+  /** Recover verified Monzo money missing from the ledger of a project already marked paid. */
+  async function reconcileLegacyDeposit(candidate: MonzoReconciliationCandidate) {
+    if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
+    const sessionId = legacyDepositSelection[candidate.id];
+    const selected = candidate.legacy_paid_deposit_options?.find((option) => option.session_id === sessionId);
+    if (!selected) return;
+    const approved = await confirmDialog({
+      title: language === 'ru' ? 'Записать уже полученный депозит?' : 'Record the received deposit?',
+      message: language === 'ru'
+        ? `Monzo ${money(candidate.amount, candidate.currency, locale)} будет сопоставлен с ${selected.client_name} (${new Date(selected.session_start_at).toLocaleString(locale)}). Проект уже отмечен оплаченным, но в денежном журнале нет этого перевода. CRM внесёт ровно одну операцию, без нового списания или сообщения клиенту.`
+        : `Link Monzo ${money(candidate.amount, candidate.currency, locale)} to ${selected.client_name} (${new Date(selected.session_start_at).toLocaleString(locale)}). The project already shows a paid deposit but the receipt is missing from the ledger. This records the verified transfer once, without charging or messaging the client.`,
+      confirmLabel: language === 'ru' ? 'Записать перевод один раз' : 'Record transfer once',
+      cancelLabel: cancelLabelFor(language),
+      tone: 'primary',
+    });
+    if (!approved) return;
+    setBusyCandidate(candidate.id);
+    setError(null);
+    setReconciliationNotice(null);
+    try {
+      await api.reconcileMonzoLegacyPaidDeposit({ candidateId: candidate.id, sessionId });
+      setReconciliationNotice(language === 'ru'
+        ? 'Существующий депозит сопоставлен с клиентом и записан в денежный журнал без дубликата.'
+        : 'The existing deposit is matched and recorded in the ledger without duplication.');
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : (
+        language === 'ru' ? 'Не удалось безопасно сопоставить старый депозит.' : 'Could not safely match the existing deposit.'
+      ));
+    } finally {
+      setBusyCandidate(null);
+    }
+  }
+
   async function ignoreCandidate(candidate: MonzoReconciliationCandidate) {
     if (!selectedArtistId || !canManageReconciliation || candidate.confirmed) return;
     const approvedIgnore = await confirmDialog({
@@ -786,7 +821,9 @@ export function PaymentsPage() {
                   const matched = candidate.matched_payment_request;
                   const selectedRequestId = matchSelection[candidate.id] ?? '';
                   const recordedOptions = candidate.recorded_receipt_options ?? [];
+                  const legacyOptions = candidate.legacy_paid_deposit_options ?? [];
                   const selectedRecordedReceiptId = recordedReceiptSelection[candidate.id] ?? '';
+                  const selectedLegacySessionId = legacyDepositSelection[candidate.id] ?? '';
                   const canMutate = canManageReconciliation && !candidate.confirmed && candidate.status !== 'ignored';
                   const isHistory = candidate.confirmed || candidate.status === 'ignored';
                   return (
@@ -914,7 +951,41 @@ export function PaymentsPage() {
                               </div>
                             </div>
                           ) : null}
-                          {candidate.match_options.length === 0 && recordedOptions.length === 0 ? (
+                          {!matched && legacyOptions.length > 0 ? (
+                            <div className="field-wide">
+                              <p className="muted">{language === 'ru'
+                                ? 'Депозит уже отмечен оплаченным в проекте, но не попал в денежный журнал? Выбери клиента и сеанс. CRM запишет подтверждённый Monzo перевод один раз.'
+                                : 'Deposit marked paid on a project but missing from the ledger? Choose the client and session to record this verified Monzo transfer once.'}</p>
+                              <label className="field">
+                                <span>{language === 'ru' ? 'Ранее полученный депозит' : 'Previously paid deposit'}</span>
+                                <select
+                                  value={selectedLegacySessionId}
+                                  onChange={(event) => setLegacyDepositSelection((current) => ({
+                                    ...current, [candidate.id]: event.target.value,
+                                  }))}
+                                >
+                                  <option value="">{language === 'ru' ? 'Выбери клиента и сеанс' : 'Choose client and session'}</option>
+                                  {legacyOptions.map((option) => (
+                                    <option key={option.session_id} value={option.session_id}>
+                                      {option.client_name} · {new Date(option.session_start_at).toLocaleString(locale)} · {money(option.amount, option.currency, locale)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
+                              <div className="button-row">
+                                <button
+                                  type="button"
+                                  className="primary-button"
+                                  disabled={busyCandidate === candidate.id || !selectedLegacySessionId}
+                                  onClick={() => void reconcileLegacyDeposit(candidate)}
+                                >
+                                  {busyCandidate === candidate.id ? copy.working : (language === 'ru'
+                                    ? 'Сопоставить депозит и записать перевод' : 'Match deposit and record transfer')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                          {candidate.match_options.length === 0 && recordedOptions.length === 0 && legacyOptions.length === 0 ? (
                             <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
                           ) : null}
                           <div className="button-row field-wide">
