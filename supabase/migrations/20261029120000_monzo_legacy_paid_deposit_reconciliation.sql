@@ -24,8 +24,22 @@ as $function$
     join public.clients cl on cl.id=p.client_id
     join public.sessions s on s.project_id=p.id and s.artist_id=p.artist_id
       and s.status='confirmed' and s.appointment_type='tattoo_session'
-    join lateral crm_private.resolve_session_deposit_tier(p.artist_id,s.id) tier
-      on tier.amount=c.amount and tier.currency=c.currency
+    -- Query options without calling the throwing policy resolver for every
+    -- unrelated project. The mutation RPC revalidates using the resolver.
+    join lateral (
+      select t.amount,t.currency
+      from public.artist_payment_policies ap
+      join public.artist_payment_policy_session_tiers t
+        on t.policy_id=ap.id and t.artist_id=ap.artist_id
+       and t.policy_version=ap.version
+      where ap.artist_id=p.artist_id and ap.is_active
+        and ap.effective_from<=now() and (ap.effective_until is null or ap.effective_until>now())
+        and ap.deposit_mode='per_session_fixed' and ap.fixed_amount=250.00
+        and ap.transfer_allowed and ap.refund_policy_version='monzo-ebt-duration-v1'
+        and (t.max_minutes is null
+             or ceil(extract(epoch from (s.end_at-s.start_at))/60.0)::integer<=t.max_minutes)
+      order by t.tier_order limit 1
+    ) tier on tier.amount=c.amount and tier.currency=c.currency
     where c.id=p_candidate_id
       and c.provider='monzo_easy_bank_transfer'
       and c.status in ('unmatched','ambiguous','candidate')
