@@ -669,6 +669,7 @@ insert into expected_function_acl values
   -- Evidence-only matching to an already paid manual invoice. Artist-finance gated,
   -- no access for the anonymous or service backend role.
   ('public.link_monzo_recorded_receipt(uuid,uuid)', false, true, false),
+  ('public.reconcile_monzo_legacy_paid_deposit(uuid,uuid)', false, true, false),
   ('public.ensure_whatsapp_conversation_for_enquiry(uuid)', false, true, false),
   ('public.queue_whatsapp_message(uuid,text,uuid)', false, true, false),
   ('public.queue_communication_message(uuid,text,uuid)', false, true, false),
