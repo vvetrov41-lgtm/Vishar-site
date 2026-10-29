@@ -30,7 +30,7 @@ insert into public.artist_payment_policy_session_tiers(
  ('f7511111-1111-4111-8111-111111111111','a1111111-1111-4111-8111-111111111111',1,3,300,150,'GBP'),
  ('f7511111-1111-4111-8111-111111111111','a1111111-1111-4111-8111-111111111111',1,4,null,250,'GBP');
 
-create function pg_temp.claims(p text) returns void language sql as $
+create function pg_temp.claims(p text) returns void language sql as $$
  select set_config('request.jwt.claims',p,true)::void;
 $$;
 grant execute on function pg_temp.claims(text) to authenticated, service_role;
