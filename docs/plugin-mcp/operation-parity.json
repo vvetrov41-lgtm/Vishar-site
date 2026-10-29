@@ -9,7 +9,7 @@
     "requiringSchemaChange": 0,
     "uiOnly": 16,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 8,
+    "excludedStage2Candidates": 9,
     "unresolved": 0
   },
   "operations": [
@@ -9122,6 +9122,11 @@
       "operationId": "linkMonzoRecordedReceipt",
       "status": "excluded_initial_release",
       "reason": "Ledger-safe evidence association for a verified Monzo transfer and an already-recorded invoice receipt; requires explicit human confirmation. Not in the current 13 OpenAPI schemas."
+    },
+    {
+      "operationId": "reconcileMonzoLegacyPaidDeposit",
+      "status": "excluded_initial_release",
+      "reason": "Verified bank transfer for a previously marked-paid project deposit, after explicit operator selection of the existing client and session; creates one immutable receipt without duplicate notification. Not in the current 13 OpenAPI schemas."
     },
     {
       "operationId": "snoozeAttentionItem",
