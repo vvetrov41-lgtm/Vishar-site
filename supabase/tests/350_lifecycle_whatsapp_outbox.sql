@@ -14,13 +14,13 @@ insert into public.projects(id,client_id,artist_id,title) values
  (select id from wa_lifecycle_artist),'WhatsApp lifecycle integration');
 insert into public.artist_integrations(
  artist_id,integration_type,provider,integration_key,external_account_label,is_enabled)
-select id,'whatsapp','meta_cloud_api','wa-lifecycle-test','Synthetic WhatsApp',true
+select id,'whatsapp','meta_cloud_api','vladimir-wa-lifecycle-test','Synthetic WhatsApp',true
 from wa_lifecycle_artist;
 insert into public.communication_conversations(
  id,artist_id,channel,integration_key,external_contact_id,client_id,
  link_state,state)
 select 'f9703333-3333-4333-8333-333333333333',id,
- 'whatsapp','wa-lifecycle-test','447700900888',
+ 'whatsapp','vladimir-wa-lifecycle-test','447700900888',
  'f9701111-1111-4111-8111-111111111111','linked','open'
 from wa_lifecycle_artist;
 insert into public.communication_messages(
