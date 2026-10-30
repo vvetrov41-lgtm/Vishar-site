@@ -11,11 +11,12 @@ from (values
  ('f9500000-0000-4000-8000-000000000002'::uuid, date_trunc('day',now())+interval '31 days 12 hours')
 ) v(id,at);
 select is(crm_private.enrol_booked_session_in_lifecycle('f9500000-0000-4000-8000-000000000001','block_test'),'enrolled','first booked day enrolled');
-select is(crm_private.enrol_booked_session_in_lifecycle('f9500000-0000-4000-8000-000000000002','block_test'),'enrolled','second booked day enrolled');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,'jobs materialise');
 reset role;
+select is((select count(*)::int from public.automation_events where entity_id='f9500000-0000-4000-8000-000000000002' and event_type='appointment.scheduled'),1,'missing future appointment is enrolled exactly once');
+
 
 -- Make both 72-hour reminders due while preserving consecutive local days.
 update public.sessions set start_at=start_at-interval '29 days', end_at=end_at-interval '29 days'

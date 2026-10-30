@@ -359,6 +359,7 @@ declare
   v_notified integer := 0;
   v_client_job record;
   v_client_result text;
+  v_recovery_session uuid;
 begin
   if not crm_private.is_service_backend() then
     raise exception 'automation ticks are backend-only' using errcode = '42501';
@@ -370,6 +371,23 @@ begin
 
   -- Complete eligible tattoo sessions before selecting due client lifecycle emails.
   perform crm_private.auto_complete_due_tattoo_sessions(100);
+
+  -- Re-enrol confirmed future tattoos that predate lifecycle activation. The
+  -- existing private helper locks and rechecks the session, refuses anything
+  -- within 72 hours and refuses a session with an event or any job already.
+  -- Bounded work keeps one sweep from starving other automation.
+  for v_recovery_session in
+    select s.id from public.sessions s
+    join crm_private.artist_state a on a.artist_id=s.artist_id and a.is_active
+    where s.status='confirmed' and s.appointment_type in ('tattoo_session','touch_up')
+      and s.start_at>now()+interval '72 hours'
+      and not exists (select 1 from public.automation_events e
+        where e.entity_kind='session' and e.entity_id=s.id and e.event_type='appointment.scheduled')
+      and not exists (select 1 from public.automation_jobs j where j.session_id=s.id)
+    order by s.start_at,s.id limit 25
+  loop
+    perform crm_private.enrol_booked_session_in_lifecycle(v_recovery_session,'lifecycle_reconciliation');
+  end loop;
 
   with pairs as (
     select r.id as rule_id, r.version, e.id as event_id, e.artist_id,
