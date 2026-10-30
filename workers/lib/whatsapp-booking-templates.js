@@ -548,7 +548,7 @@ function lifecycleAdminBinding(env, target) {
     ? selected.credentials.wabaId.trim() : '';
   const accessToken = typeof selected.credentials.accessToken === 'string'
     ? selected.credentials.accessToken : '';
-  if (!PROVIDER_ID.test(wabaId) || accessToken.length < 20 || /\\s/.test(accessToken)) {
+  if (!PROVIDER_ID.test(wabaId) || accessToken.length < 20 || /\s/.test(accessToken)) {
     throw Object.assign(new Error('invalid lifecycle Meta binding'), {
       code: 'provider_binding_invalid',
     });
