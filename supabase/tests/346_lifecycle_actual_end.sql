@@ -27,7 +27,13 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'real booked session is enrolled before any timing changes');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select lives_ok($$select * from public.service_run_automation_tick(500)$$,
+select lives_ok($select public.service_set_gmail_integration(
+  (select id from public.artists where slug='vladimir'),
+  'google_gmail_actual_end_test','lifecycle-actual@example.test',
+  array['https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/gmail.send']::text[]
+)$,'synthetic Gmail route for rollback-only test');
+select lives_ok($select * from public.service_run_automation_tick(500)$,
  'lifecycle jobs are materialized');
 reset role;
 select is((select j.scheduled_at from public.automation_jobs j
