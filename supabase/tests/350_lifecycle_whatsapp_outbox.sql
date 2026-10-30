@@ -141,7 +141,7 @@ select is((select status::text from public.automation_jobs
  where session_id='f9705555-5555-4555-8555-555555555555'
  and message_purpose='session_reminder_72h' and lifecycle_revision=2),
  'pending','replacement WhatsApp job remains pending for the new date');
-select is((select status::text from public.communication_messages m
+select is((select m.status::text from public.communication_messages m
  join crm_private.lifecycle_whatsapp_payloads p on p.communication_message_id=m.id
  join public.automation_jobs j on j.id=p.automation_job_id
  where j.session_id='f9705555-5555-4555-8555-555555555555'
