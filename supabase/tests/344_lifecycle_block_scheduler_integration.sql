@@ -25,5 +25,11 @@ select lives_ok($$select * from public.service_run_automation_tick(500)$$,'due j
 select is((select status::text from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'pending','non-anchor reminder is kept for potential later split');
 select is((select count(*)::int from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000002' and j.message_purpose='session_reminder_72h'),0,'second-day reminder does not queue an email');
 select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor independently rejects a non-anchor even when called directly');
+-- Moving the second day out of the block makes it the anchor of a new
+-- block, but the old due timestamp must not trigger an early message.
+update public.sessions set start_at=start_at+interval '10 days',end_at=end_at+interval '10 days'
+where id='f9500000-0000-4000-8000-000000000002';
+select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'eligible','moved session is a new block anchor');
+select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor refuses obsolete due time after move');
 select * from finish();
 rollback;

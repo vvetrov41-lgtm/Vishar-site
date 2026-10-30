@@ -85,6 +85,17 @@ begin
     return 'pending';
   end if;
 
+  -- An independently invoked executor must not trust a stale job timestamp
+  -- after an appointment is moved. The scheduler normally reconciles this.
+  if v_job.schedule_anchor = 'session_start'::public.automation_schedule_anchor
+     and v_session.start_at + make_interval(mins => v_job.anchor_offset_minutes) > now() then
+    return 'pending';
+  end if;
+  if v_job.schedule_anchor = 'session_end'::public.automation_schedule_anchor
+     and v_session.end_at + make_interval(mins => v_job.anchor_offset_minutes) > now() then
+    return 'pending';
+  end if;
+
   -- Recheck immediately before materialising a message. Full serialization
   -- against schedule mutation and in-flight delivery is still required.
   if crm_private.lifecycle_block_disposition(p_job_id) not in ('eligible','unmanaged') then
