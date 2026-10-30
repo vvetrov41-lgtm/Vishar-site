@@ -55,5 +55,24 @@ select is((select count(*)::integer from crm_private.lifecycle_whatsapp_template
  and approval_status='APPROVED'),1,
  'only the one recorded purpose is approved');
 
+-- Template status and delivery activation are independent state.
+select is((select count(*)::integer from crm_private.lifecycle_whatsapp_delivery_gates
+ where artist_id in (select id from lifecycle_registry_artists) and not enabled),2,
+ 'both artists start with WhatsApp lifecycle delivery disabled');
+select ok(not has_function_privilege('authenticated',
+ 'public.service_set_lifecycle_whatsapp_delivery_enabled(uuid,boolean)','execute')
+ and not has_function_privilege('anon',
+ 'public.service_set_lifecycle_whatsapp_delivery_enabled(uuid,boolean)','execute'),
+ 'clients cannot open the lifecycle WhatsApp delivery gate');
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+set local role service_role;
+select throws_ok($select public.service_set_lifecycle_whatsapp_delivery_enabled(
+ (select id from lifecycle_registry_artists where slug='vladimir'),true)$,
+ '23514',null,'one approved template is insufficient to activate delivery');
+reset role;
+select is((select enabled from crm_private.lifecycle_whatsapp_delivery_gates
+ where artist_id=(select id from lifecycle_registry_artists where slug='vladimir')),
+ false,'failed activation cannot turn on Vladimir');
+
 select * from finish();
 rollback;
