@@ -74,5 +74,26 @@ select is((select enabled from crm_private.lifecycle_whatsapp_delivery_gates
  where artist_id=(select id from lifecycle_registry_artists where slug='vladimir')),
  false,'failed activation cannot turn on Vladimir');
 
+-- A Meta API policy denial is stored only as a safe error class; the
+-- failed target is not claimed again by the next five-minute scheduler.
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+set local role service_role;
+select lives_ok($select public.service_record_lifecycle_whatsapp_template_failure(
+ (select id from lifecycle_registry_artists where slug='kristina'),
+ 'session_reminder_72h','vishar_lifecycle_reminder_72h_v1',
+ 'en_GB','whatsapp_template_api_unavailable_for_account')$,
+ 'Meta account restriction is deferred safely');
+reset role;
+select ok((select next_retry_at>now()+interval '5 hours'
+ from crm_private.lifecycle_whatsapp_template_registry t
+ where t.artist_id=(select id from lifecycle_registry_artists where slug='kristina')
+ and t.purpose='session_reminder_72h'),
+ 'API restriction backs off for six hours');
+select is((select last_failure_code from crm_private.lifecycle_whatsapp_template_registry t
+ where t.artist_id=(select id from lifecycle_registry_artists where slug='kristina')
+ and t.purpose='session_reminder_72h'),
+ 'whatsapp_template_api_unavailable_for_account',
+ 'only the sanitized failure category is persisted');
+
 select * from finish();
 rollback;
