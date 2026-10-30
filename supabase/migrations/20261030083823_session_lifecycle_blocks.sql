@@ -1,6 +1,15 @@
 -- Foundation only: this function does not alter jobs, send messages or change
 -- lifecycle execution. Dispatch integration and historical deduplication are
 -- required before this migration can be considered a release-ready feature.
+-- Evidence-based actual finish time is optional. Automatic schedule-based
+-- completion must leave it NULL; the scheduled end remains the fallback.
+alter table public.sessions
+  add column if not exists actual_end_at timestamptz;
+alter table public.sessions
+  add constraint sessions_actual_end_completed
+  check (actual_end_at is null or
+    (status = 'completed'::public.session_status and actual_end_at >= start_at));
+
 create or replace function crm_private.session_lifecycle_block(p_session_id uuid)
 returns table(session_id uuid, local_day date, start_at timestamptz, end_at timestamptz)
 language sql stable security invoker
