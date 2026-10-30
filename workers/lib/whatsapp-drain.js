@@ -257,7 +257,7 @@ export async function processClaimedWhatsappJob(env, {
         throw new WhatsappDrainError('whatsapp_booking_card_resolution_invalid');
       }
       const payloadEnvelope = payloadList[0];
-      const bookingTemplate = validateBookingTemplatePayload(payloadEnvelope, job);
+      bookingTemplate = validateBookingTemplatePayload(payloadEnvelope, job);
       if (payloadEnvelope?.is_booking_card === true && !bookingTemplate) {
         throw new WhatsappDrainError('whatsapp_booking_card_payload_invalid');
       }
