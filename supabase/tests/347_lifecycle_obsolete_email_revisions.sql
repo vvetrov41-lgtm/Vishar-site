@@ -19,8 +19,8 @@ values (
  'f9603333-3333-4333-8333-333333333333',(select id from rev_artist),
  'f9601111-1111-4111-8111-111111111111',
  'f9602222-2222-4222-8222-222222222222',
- 'tattoo_session','confirmed',now()+interval '30 days',
- now()+interval '30 days 4 hours'
+ 'tattoo_session','confirmed',date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '30 days',
+ date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '30 days 4 hours'
 );
 select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9603333-3333-4333-8333-333333333333','revision_test'),'enrolled',
@@ -40,8 +40,8 @@ select is((select lifecycle_revision from public.automation_jobs
  and message_purpose='session_reminder_72h'),1,'initial revision is one');
 
 -- Make initial 72h reminder due, then prove that it was only QUEUED.
-update public.sessions set start_at=now()+interval '48 hours',
- end_at=now()+interval '52 hours'
+update public.sessions set start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '48 hours',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '52 hours'
 where id='f9603333-3333-4333-8333-333333333333';
 set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,
@@ -58,8 +58,8 @@ select is((select count(*)::integer from revision_old_outbox),1,
 reset role;
 
 -- Moving the appointment invalidates the leased snapshot before any provider send.
-update public.sessions set start_at=now()+interval '40 days',
- end_at=now()+interval '40 days 4 hours'
+update public.sessions set start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '40 days',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '40 days 4 hours'
 where id='f9603333-3333-4333-8333-333333333333';
 set local role service_role;
 select ok((select not delivery_allowed
@@ -101,8 +101,8 @@ select is((select count(*)::integer from public.automation_jobs
  'repeated scheduler tick remains idempotent');
 
 -- Bring the new 72h reminder due. It uses a distinct email/outbox identity.
-update public.sessions set start_at=now()+interval '72 hours'-interval '1 minute',
- end_at=now()+interval '76 hours'-interval '1 minute'
+update public.sessions set start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '72 hours',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '76 hours'
 where id='f9603333-3333-4333-8333-333333333333';
 set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,
@@ -132,8 +132,8 @@ select is((public.record_email_outbox_result(
  'SYNTHETIC_ACCEPTED_001',null)->>'status'),'succeeded',
  'replacement delivery is acknowledged');
 reset role;
-update public.sessions set start_at=now()+interval '50 days',
- end_at=now()+interval '50 days 4 hours'
+update public.sessions set start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '50 days',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '50 days 4 hours'
 where id='f9603333-3333-4333-8333-333333333333';
 set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,
