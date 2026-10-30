@@ -62,8 +62,7 @@ from wa_lifecycle_artist;
 update crm_private.lifecycle_whatsapp_template_registry
  set approval_status='APPROVED',provider_template_id='123456789012345',
      verified_at=now()
- where artist_id=(select id from wa_lifecycle_artist)
- and purpose='session_reminder_72h';
+ where artist_id=(select id from wa_lifecycle_artist);
 select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9705555-5555-4555-8555-555555555555','wa_lifecycle_test'),
  'enrolled','WhatsApp-first session enrolled');
@@ -79,7 +78,29 @@ update public.sessions set
  end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '75 hours 55 minutes'
 where id='f9705555-5555-4555-8555-555555555555';
 set local role service_role;
-select lives_ok($$select * from public.service_run_automation_tick(500)$$,
+select lives_ok($select * from public.service_run_automation_tick(500)$,
+ 'delivery gate off leaves the due WhatsApp job pending');
+reset role;
+select is((select count(*)::integer from crm_private.lifecycle_whatsapp_payloads
+ where session_id='f9705555-5555-4555-8555-555555555555'),0,
+ 'no WhatsApp payload is queued while the artist gate is disabled');
+select is((select status::text from public.automation_jobs
+ where session_id='f9705555-5555-4555-8555-555555555555'
+ and message_purpose='session_reminder_72h'),'pending',
+ 'due reminder stays pending until delivery is enabled');
+set local role service_role;
+select lives_ok($select public.service_set_lifecycle_whatsapp_delivery_enabled(
+ (select id from wa_lifecycle_artist),true)$,
+ 'all four synthetic Meta approvals permit Vladimir-only activation');
+reset role;
+select is((select enabled from crm_private.lifecycle_whatsapp_delivery_gates
+ where artist_id=(select id from wa_lifecycle_artist)),true,
+ 'Vladimir WhatsApp lifecycle gate is enabled');
+select is((select enabled from crm_private.lifecycle_whatsapp_delivery_gates g
+ join public.artists a on a.id=g.artist_id where a.slug='kristina'),false,
+ 'activation does not enable Kristina');
+set local role service_role;
+select lives_ok($select * from public.service_run_automation_tick(500)$,
  'WhatsApp reminder materializes without sending an email');
 reset role;
 select is((select count(*)::integer from public.email_messages
@@ -111,6 +132,16 @@ select ok((select delivery_allowed
  from public.service_resolve_whatsapp_lifecycle_payload(
  (select id from wa_lifecycle_outbox),'wa-lifecycle-worker')),
  'current block and approved template are deliverable at provider boundary');
+select lives_ok($select public.service_set_lifecycle_whatsapp_delivery_enabled(
+ (select id from wa_lifecycle_artist),false)$,
+ 'artist can disable queued delivery immediately');
+select ok((select not delivery_allowed
+ from public.service_resolve_whatsapp_lifecycle_payload(
+ (select id from wa_lifecycle_outbox),'wa-lifecycle-worker')),
+ 'already leased Meta payload is blocked when artist gate closes');
+select lives_ok($select public.service_set_lifecycle_whatsapp_delivery_enabled(
+ (select id from wa_lifecycle_artist),true)$,
+ 'reactivation restores the approved provider route');
 reset role;
 select is((select jsonb_array_length(body_parameters)
  from crm_private.lifecycle_whatsapp_payloads where session_id=
