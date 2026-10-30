@@ -616,10 +616,22 @@ export async function maintainWhatsappLifecycleTemplates(env, {
       });
       summary.checked += 1;
       if (status === 'APPROVED') summary.approved += 1;
-    } catch {
-      // No approval is written if Meta cannot be reached. The database's
-      // short-lived readback requirement keeps sending fail-closed.
+    } catch (error) {
+      // Never log raw Meta messages, template body, tokens or credentials.
+      // Failed Meta operations are deferred by the backend claim, not
+      // retried on every scheduled WhatsApp drain.
       summary.failed += 1;
+      try {
+        await db.rpc('service_record_lifecycle_whatsapp_template_failure', {
+          p_artist_id: target.artist_id,
+          p_purpose: target.purpose,
+          p_template_name: target.template_name,
+          p_template_language: target.template_language,
+          p_error_code: safeErrorCode(error),
+        });
+      } catch {
+        // A failed backoff record must not affect ordinary WhatsApp replies.
+      }
     }
   }
   return summary;
