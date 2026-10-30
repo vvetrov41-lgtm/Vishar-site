@@ -37,6 +37,22 @@ begin
   if s.id is null or a.id is null
      or crm_private.lifecycle_block_disposition(j.id)<>'eligible'
   then return 'pending'; end if;
+  -- A template can be approved while this artist's rollout is still off.
+  -- Keep a near-due job pending rather than changing its channel or losing
+  -- it permanently. An overdue message becomes an actionable failed job
+  -- instead of being back-sent to a client days later.
+  if not exists (
+    select 1 from crm_private.lifecycle_whatsapp_delivery_gates g
+    where g.artist_id=j.artist_id and g.enabled
+  ) then
+    if j.scheduled_at<now()-interval '15 minutes' then
+      update public.automation_jobs set status='failed',
+        attempt_count=attempt_count+1,
+        last_error_category='integration_unavailable' where id=j.id;
+      return 'failed';
+    end if;
+    return 'pending';
+  end if;
   if crm_private.client_send_block_reason(s.client_id,'whatsapp','service') is not null then
     update public.automation_jobs set status='cancelled',cancelled_at=now(),
       last_error_category='client_blocked' where id=j.id;
