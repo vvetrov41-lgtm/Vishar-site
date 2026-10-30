@@ -69,7 +69,7 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'enrolled','WhatsApp-first session enrolled');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'initial future lifecycle jobs materialize');
 reset role;
 -- Preserve a valid booking at enrolment, then advance its reminder to
@@ -79,7 +79,7 @@ update public.sessions set
  end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '75 hours 55 minutes'
 where id='f9705555-5555-4555-8555-555555555555';
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'WhatsApp reminder materializes without sending an email');
 reset role;
 select is((select count(*)::integer from public.email_messages
