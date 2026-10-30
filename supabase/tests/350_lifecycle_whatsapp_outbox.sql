@@ -91,8 +91,8 @@ select is((select jsonb_array_length(body_parameters)
  3,'72-hour message contains name, artist and grouped dates');
 
 update public.sessions
- set start_at=date_trunc('hour',now())+interval '72 hours',
-     end_at=date_trunc('hour',now())+interval '76 hours'
+ set start_at=date_trunc('hour',now())+interval '96 hours',
+     end_at=date_trunc('hour',now())+interval '100 hours'
  where id='f9705555-5555-4555-8555-555555555555';
 set local role service_role;
 select ok((select not delivery_allowed
@@ -100,5 +100,34 @@ select ok((select not delivery_allowed
  (select id from wa_lifecycle_outbox),'wa-lifecycle-worker')),
  'rescheduling invalidates the leased Meta template before send intent');
 reset role;
+set local role service_role;
+select is((public.record_whatsapp_outbox_result(
+ (select id from wa_lifecycle_outbox),'wa-lifecycle-worker',
+ false,null,'whatsapp_lifecycle_obsolete')->>'status'),'dead',
+ 'definitively obsolete Meta template is dead-lettered before send');
+reset role;
+select is((select count(*)::integer from public.automation_jobs
+ where session_id='f9705555-5555-4555-8555-555555555555'
+ and message_purpose='session_reminder_72h'),2,
+ 'one new reminder revision is issued after pre-send obsolete acknowledgement');
+select is((select status::text from public.automation_jobs
+ where session_id='f9705555-5555-4555-8555-555555555555'
+ and message_purpose='session_reminder_72h' and lifecycle_revision=2),
+ 'pending','replacement WhatsApp job remains pending for the new date');
+select is((select status::text from public.communication_messages m
+ join crm_private.lifecycle_whatsapp_payloads p on p.communication_message_id=m.id
+ join public.automation_jobs j on j.id=p.automation_job_id
+ where j.session_id='f9705555-5555-4555-8555-555555555555'
+ and j.message_purpose='session_reminder_72h' and j.lifecycle_revision=1),
+ 'failed','obsolete Meta message never appears delivered');
+
+set local role service_role;
+select lives_ok($select * from public.service_run_automation_tick(500)$,
+ 'repeated scheduler tick does not duplicate WhatsApp replacement');
+reset role;
+select is((select count(*)::integer from public.automation_jobs
+ where session_id='f9705555-5555-4555-8555-555555555555'
+ and message_purpose='session_reminder_72h'),2,
+ 'one revision per definitive obsolete response');
 select * from finish();
 rollback;
