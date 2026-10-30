@@ -19,6 +19,7 @@ const required = [
   'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"',
   'WHATSAPP_DRAIN_ENABLED = "false"',
   'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"',
+  'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"',
 ];
 for (const needle of required) {
   if (!text.includes(needle)) throw new Error(`production template is missing ${needle}`);
@@ -52,8 +53,13 @@ text = text.replace(
   'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"',
   'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"',
 );
+text = text.replace(
+  'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"',
+  'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "true"',
+);
 if (!text.includes('WHATSAPP_DRAIN_ENABLED = "true"')
-    || !text.includes('WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"')) {
+    || !text.includes('WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"')
+    || !text.includes('WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "true"')) {
   throw new Error('failed to enable the production drain/template maintenance in generated config');
 }
 
