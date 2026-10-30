@@ -122,7 +122,7 @@ select is((select status::text from public.communication_messages m
  'failed','obsolete Meta message never appears delivered');
 
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'repeated scheduler tick does not duplicate WhatsApp replacement');
 reset role;
 select is((select count(*)::integer from public.automation_jobs
