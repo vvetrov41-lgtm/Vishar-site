@@ -55,6 +55,16 @@ select ok(not crm_private.lifecycle_delivery_snapshot_current((select m.id from 
 select ok((select not delivery_allowed from public.service_resolve_gmail_outbox_target(
  (select outbox_id from block_delivery),'lifecycle-block-suite')),
  'the leased Gmail reminder is refused after another block day moves');
+select is((select configuration->>'lifecycle_email' from public.service_resolve_gmail_outbox_target(
+ (select outbox_id from block_delivery),'lifecycle-block-suite')),'true',
+ 'the Gmail worker receives a scoped lifecycle obsolete reason');
+select is((public.record_email_outbox_result(
+ (select outbox_id from block_delivery),'lifecycle-block-suite',false,null,
+ 'gmail_lifecycle_email_obsolete')->>'status'),'dead',
+ 'a stale lifecycle message is terminal, without repeated provider attempts');
+select is((select status::text from public.email_messages m join public.integration_outbox o
+ on o.email_message_id=m.id where o.id=(select outbox_id from block_delivery)),
+ 'cancelled','the withdrawn email is recorded as cancelled rather than sent');
 select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'eligible','moved session is a new block anchor');
 select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor refuses obsolete due time after move');
 -- Both real dates have ended: only the last check-in is sent and it
