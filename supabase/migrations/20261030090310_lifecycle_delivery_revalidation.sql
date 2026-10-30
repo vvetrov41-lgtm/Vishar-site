@@ -14,7 +14,7 @@ create or replace function crm_private.lifecycle_email_members(p_session_id uuid
 returns jsonb language sql stable security invoker
 set search_path=pg_catalog,public,crm_private as $function$
  select coalesce(jsonb_agg(jsonb_build_object('id',s.id,'version',s.calendar_version,
-   'start',s.start_at,'end',s.end_at,'status',s.status) order by s.id),'[]'::jsonb)
+   'start',s.start_at,'end',s.end_at,'actual_end',s.actual_end_at,'status',s.status) order by s.id),'[]'::jsonb)
  from crm_private.session_lifecycle_block(p_session_id) b
  join public.sessions s on s.id=b.session_id
  where p_purpose<>'post_session_aftercare' or s.id=p_session_id;
