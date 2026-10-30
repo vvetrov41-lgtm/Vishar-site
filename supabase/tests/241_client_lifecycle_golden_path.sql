@@ -420,6 +420,13 @@ select is(
 -- consulted before the send does not.
 -- ---------------------------------------------------------------------------
 
+insert into public.projects (id, client_id, artist_id, title, description) values
+  ('e6044444-4444-4444-8444-444444444444',
+   'e7011111-1111-4111-8111-111111111111',
+   (select id from t_artist),
+   'Independent suppression fixture',
+   'Keep the recipient gate test independent of earlier appointment blocks');
+
 select pg_temp.lifecycle_artist();
 set local role authenticated;
 create temporary table t_blocked_session as
@@ -432,7 +439,7 @@ select (
     (select base_at + interval '146 hours' from t_clock),
     'confirmed'::public.session_status,
     null,
-    'e6011111-1111-4111-8111-111111111111',
+    'e6044444-4444-4444-8444-444444444444',
     'Lifecycle suppression fixture'
   ) ->> 'appointment_id'
 )::uuid as id;
