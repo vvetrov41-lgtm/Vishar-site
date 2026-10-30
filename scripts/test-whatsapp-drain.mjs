@@ -108,6 +108,7 @@ function makeFetch({
   resolvedRoute = [route()],
   routesByOutbox = {},
   bookingPayloadsByOutbox = {},
+  lifecyclePayloadsByOutbox = {},
   graphStatus = 200,
   graphBody = { messages: [{ id: 'wamid.SYNTHETICSEND0001' }] },
   acknowledgementStatus = 200,
@@ -128,6 +129,17 @@ function makeFetch({
       if (name === 'claim_whatsapp_outbox') return Response.json(automaticClaim);
       if (name === 'resolve_outbox_route') {
         return Response.json(routesByOutbox[args.p_outbox_id] ?? resolvedRoute);
+      }
+      if (name === 'service_resolve_whatsapp_lifecycle_payload') {
+        if (Object.prototype.hasOwnProperty.call(lifecyclePayloadsByOutbox, args.p_outbox_id)) {
+          return Response.json(lifecyclePayloadsByOutbox[args.p_outbox_id]);
+        }
+        const job = [...automaticClaim, ...claim].find((entry) => entry?.outbox_id === args.p_outbox_id);
+        return Response.json([{
+          is_lifecycle: false, communication_message_id: job?.whatsapp_message_id ?? null,
+          artist_id: job?.artist_id ?? null, template_name: null, template_language: null,
+          purpose: null, body_parameters: null, delivery_allowed: false,
+        }]);
       }
       if (name === 'service_resolve_whatsapp_booking_card_payload') {
         if (Object.prototype.hasOwnProperty.call(bookingPayloadsByOutbox, args.p_outbox_id)) {
@@ -552,6 +564,51 @@ await test('invalid lifecycle template is refused before contacting Meta', async
     assert.deepEqual(result, { delivered: false, errorCode: 'whatsapp_template_invalid' });
   }
   assert.equal(graphCalls.length, 0);
+});
+
+await test('lifecycle Utility payload passes current-snapshot guard and sends one body-only template', async () => {
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
+    lifecyclePayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_lifecycle: true,
+        communication_message_id: claimedJob().whatsapp_message_id,
+        artist_id: claimedJob().artist_id,
+        purpose: 'post_session_checkin',
+        template_name: 'vishar_lifecycle_checkin_v1',
+        template_language: 'en_GB',
+        body_parameters: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
+        delivery_allowed: true,
+      }],
+    },
+  });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(result.outcome, 'succeeded');
+  assert.equal(graphCalls.length, 1);
+  assert.equal(graphCalls[0].body.type, 'template');
+  assert.equal(graphCalls[0].body.template.components.length, 1);
+  assert.deepEqual(graphCalls[0].body.template.components[0].parameters.map(x => x.text),
+    ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/']);
+  assert.equal(rpcCalls.some(x => x.name === 'service_resolve_whatsapp_booking_card_payload'), false);
+  assert.equal(rpcCalls.filter(x => x.name === 'service_begin_communication_send').length, 1);
+});
+
+await test('stale lifecycle block never records send intent or contacts Meta', async () => {
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
+    lifecyclePayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_lifecycle: true, communication_message_id: claimedJob().whatsapp_message_id,
+        artist_id: claimedJob().artist_id, purpose: 'post_session_aftercare',
+        template_name: 'vishar_lifecycle_aftercare_v1', template_language: 'en_GB',
+        body_parameters: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
+        delivery_allowed: false,
+      }],
+    },
+  });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'whatsapp_lifecycle_obsolete');
+  assert.equal(graphCalls.length, 0);
+  assert.equal(rpcCalls.some(x => x.name === 'service_begin_communication_send'), false);
 });
 
 if (failures > 0) {
