@@ -38,7 +38,7 @@ select is(crm_private.execute_client_lifecycle_job((select id from public.automa
 select ok(crm_private.lifecycle_delivery_snapshot_current((select m.id from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_72h')),'unchanged reminder remains deliverable');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 create temporary table block_delivery as
-select c.outbox_id from public.claim_email_outbox('lifecycle-block-suite',500,120) c
+select c.outbox_id from public.claim_email_outbox('lifecycle-block-suite',20,120) c
 join public.email_messages m on m.id=c.email_message_id
 join public.automation_jobs j on j.id=m.automation_job_id
 where j.session_id='f9500000-0000-4000-8000-000000000001'
