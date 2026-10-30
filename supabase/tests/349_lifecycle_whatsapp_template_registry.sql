@@ -66,8 +66,8 @@ select ok(not has_function_privilege('authenticated',
  'clients cannot open the lifecycle WhatsApp delivery gate');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select throws_ok($select public.service_set_lifecycle_whatsapp_delivery_enabled(
- (select id from lifecycle_registry_artists where slug='vladimir'),true)$,
+select throws_ok($$select public.service_set_lifecycle_whatsapp_delivery_enabled(
+ (select id from lifecycle_registry_artists where slug='vladimir'),true)$$,
  '23514',null,'one approved template is insufficient to activate delivery');
 reset role;
 select is((select enabled from crm_private.lifecycle_whatsapp_delivery_gates
