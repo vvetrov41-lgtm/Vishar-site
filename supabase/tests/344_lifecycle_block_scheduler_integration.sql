@@ -36,11 +36,25 @@ select is((select status::text from public.automation_jobs where session_id='f95
 select is((select count(*)::int from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000002' and j.message_purpose='session_reminder_72h'),0,'second-day reminder does not queue an email');
 select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor independently rejects a non-anchor even when called directly');
 select ok(crm_private.lifecycle_delivery_snapshot_current((select m.id from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_72h')),'unchanged reminder remains deliverable');
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+create temporary table block_delivery as
+select c.outbox_id from public.claim_email_outbox('lifecycle-block-suite',500,120) c
+join public.email_messages m on m.id=c.email_message_id
+join public.automation_jobs j on j.id=m.automation_job_id
+where j.session_id='f9500000-0000-4000-8000-000000000001'
+  and j.message_purpose='session_reminder_72h';
+select is((select count(*)::int from block_delivery),1,'the block reminder reaches a leased Gmail outbox item');
+select ok((select delivery_allowed from public.service_resolve_gmail_outbox_target(
+ (select outbox_id from block_delivery),'lifecycle-block-suite')),
+ 'the unchanged block reminder is permitted at the provider boundary');
 -- Moving the second day out of the block makes it the anchor of a new
 -- block, but the old due timestamp must not trigger an early message.
 update public.sessions set start_at=start_at+interval '10 days',end_at=end_at+interval '10 days'
 where id='f9500000-0000-4000-8000-000000000002';
 select ok(not crm_private.lifecycle_delivery_snapshot_current((select m.id from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_72h')),'queued reminder is no longer deliverable after a block member is moved');
+select ok((select not delivery_allowed from public.service_resolve_gmail_outbox_target(
+ (select outbox_id from block_delivery),'lifecycle-block-suite')),
+ 'the leased Gmail reminder is refused after another block day moves');
 select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'eligible','moved session is a new block anchor');
 select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor refuses obsolete due time after move');
 -- Both real dates have ended: only the last check-in is sent and it
@@ -58,5 +72,19 @@ select is((select count(*)::integer from public.email_messages m join public.aut
  where m.client_id='f9511111-1111-4111-8111-111111111111' and j.message_purpose='post_session_checkin'),1,
  'only one check-in is queued for the block');
 select ok(not has_function_privilege('authenticated','crm_private.lifecycle_delivery_snapshot_current(uuid)','execute') and not has_function_privilege('service_role','crm_private.lifecycle_delivery_snapshot_current(uuid)','execute'),'delivery revalidation remains private');
+update public.automation_jobs set status='failed',last_error_category='destination_unavailable'
+where session_id='f9500000-0000-4000-8000-000000000002'
+  and message_purpose='post_session_aftercare' and status='pending';
+select is((select count(*)::int from public.notifications n where n.dedupe_key like
+ 'lifecycle_destination:' || (select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='post_session_aftercare')::text || ':%'),
+ (select count(*)::int from crm_private.automation_notification_recipients((select id from block_artist))),
+ 'one unavailable destination alerts each authorized artist recipient');
+update public.automation_jobs set last_error_category='destination_unavailable'
+where session_id='f9500000-0000-4000-8000-000000000002'
+  and message_purpose='post_session_aftercare' and status='failed';
+select is((select count(*)::int from public.notifications n where n.dedupe_key like
+ 'lifecycle_destination:' || (select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='post_session_aftercare')::text || ':%'),
+ (select count(*)::int from crm_private.automation_notification_recipients((select id from block_artist))),
+ 'retrying a failed job does not duplicate the alert');
 select * from finish();
 rollback;
