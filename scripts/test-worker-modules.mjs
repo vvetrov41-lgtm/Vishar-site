@@ -340,6 +340,7 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'service_claim_booking_card_template_targets',
     'service_claim_lifecycle_whatsapp_template_targets',
     'service_record_booking_card_template_status',
+    'service_record_lifecycle_whatsapp_template_failure',
     'service_record_lifecycle_whatsapp_template_status',
     // Leased, backend-only structured payloads for booking and lifecycle Utility templates.
     'service_resolve_whatsapp_booking_card_payload',
