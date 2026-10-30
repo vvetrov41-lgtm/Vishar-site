@@ -62,7 +62,7 @@ select is((public.record_email_outbox_result(
  (select outbox_id from block_delivery),'lifecycle-block-suite',false,null,
  'gmail_lifecycle_email_obsolete')->>'status'),'dead',
  'a stale lifecycle message is terminal, without repeated provider attempts');
-select is((select status::text from public.email_messages m join public.integration_outbox o
+select is((select m.status::text from public.email_messages m join public.integration_outbox o
  on o.email_message_id=m.id where o.id=(select outbox_id from block_delivery)),
  'cancelled','the withdrawn email is recorded as cancelled rather than sent');
 select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'eligible','moved session is a new block anchor');
