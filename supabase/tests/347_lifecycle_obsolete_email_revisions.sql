@@ -46,6 +46,7 @@ where id='f9603333-3333-4333-8333-333333333333';
 set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'first revision is enqueued');
+reset role;
 create temporary table revision_old_outbox as
 select c.outbox_id from public.claim_email_outbox('revision-worker',20,120) c
 join public.email_messages m on m.id=c.email_message_id
@@ -118,7 +119,7 @@ select is((select status::text from public.integration_outbox
  'old outbox stays terminal');
 
 -- A provider-accepted replacement cannot be regenerated after another move.
-set local role service_role;
+reset role;
 create temporary table revision_new_outbox as
 select c.outbox_id from public.claim_email_outbox('revision-worker-2',20,120) c
 join public.email_messages m on m.id=c.email_message_id
