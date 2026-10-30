@@ -9,7 +9,7 @@
 
 import { ProviderRouteError } from './provider-routing.js';
 import { createSupabaseClient } from './supabase.js';
-import { sendWhatsappMessage, sendWhatsappTemplate } from './whatsapp.js';
+import { sendWhatsappMessage, sendWhatsappTemplate, sendWhatsappUtilityTemplate } from './whatsapp.js';
 
 const WHATSAPP_KIND = 'whatsapp_message';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -137,6 +137,35 @@ function validateBookingTemplatePayload(payload, job) {
   };
 }
 
+const LIFECYCLE_PURPOSES = new Set([
+  'session_reminder_72h', 'session_reminder_24h',
+  'post_session_aftercare', 'post_session_checkin',
+]);
+function validateLifecycleTemplatePayload(payload, job) {
+  if (!payload || payload.is_lifecycle !== true) return null;
+  if (payload.communication_message_id !== job.whatsapp_message_id
+      || payload.artist_id !== job.artist_id
+      || typeof payload.delivery_allowed !== 'boolean'
+      || !LIFECYCLE_PURPOSES.has(payload.purpose)
+      || typeof payload.template_name !== 'string'
+      || !/^[a-z0-9_]{1,512}$/.test(payload.template_name)
+      || typeof payload.template_language !== 'string'
+      || !/^[a-z]{2}(?:_[A-Z]{2})?$/.test(payload.template_language)
+      || !Array.isArray(payload.body_parameters)
+      || payload.body_parameters.length < 1 || payload.body_parameters.length > 10
+      || payload.body_parameters.some((v) =>
+        typeof v !== 'string' || !v.trim() || v.length > 1024)) {
+    throw new WhatsappDrainError('whatsapp_lifecycle_payload_invalid');
+  }
+  return {
+    purpose: payload.purpose,
+    templateName: payload.template_name,
+    language: payload.template_language,
+    bodyParameters: payload.body_parameters,
+    deliveryAllowed: payload.delivery_allowed,
+  };
+}
+
 function safeErrorCode(error) {
   const code = error instanceof WhatsappDrainError || error instanceof ProviderRouteError
     ? error.code
@@ -193,25 +222,49 @@ export async function processClaimedWhatsappJob(env, {
     });
     const route = validateWhatsappRoute(firstRow(resolved), job);
 
-    const payloadRows = await supabase.rpc('service_resolve_whatsapp_booking_card_payload', {
+    // A lifecycle Utility notification is a first-class template. Resolve it
+    // before the booking-card resolver, which otherwise treats any template
+    // communication message as an invalid booking card.
+    const lifecycleRows = await supabase.rpc('service_resolve_whatsapp_lifecycle_payload', {
       p_outbox_id: job.outbox_id,
       p_worker_id: workerId,
     });
-    const payloadList = Array.isArray(payloadRows)
-      ? payloadRows
-      : payloadRows == null
-        ? []
-        : [payloadRows];
-    if (payloadList.length !== 1) {
-      throw new WhatsappDrainError('whatsapp_booking_card_resolution_invalid');
+    const lifecycleList = Array.isArray(lifecycleRows) ? lifecycleRows
+      : lifecycleRows == null ? [] : [lifecycleRows];
+    if (lifecycleList.length !== 1) {
+      throw new WhatsappDrainError('whatsapp_lifecycle_resolution_invalid');
     }
-    const payloadEnvelope = payloadList[0];
-    const bookingTemplate = validateBookingTemplatePayload(payloadEnvelope, job);
-    if (payloadEnvelope?.is_booking_card === true && !bookingTemplate) {
-      throw new WhatsappDrainError('whatsapp_booking_card_payload_invalid');
+    const lifecycleEnvelope = lifecycleList[0];
+    const lifecycleTemplate = validateLifecycleTemplatePayload(lifecycleEnvelope, job);
+    if (lifecycleEnvelope?.is_lifecycle === true && !lifecycleTemplate) {
+      throw new WhatsappDrainError('whatsapp_lifecycle_payload_invalid');
     }
-    if (bookingTemplate && bookingTemplate.deliveryAllowed !== true) {
-      return recordFailure(supabase, job.outbox_id, workerId, 'whatsapp_booking_card_obsolete');
+    if (lifecycleTemplate && !lifecycleTemplate.deliveryAllowed) {
+      return recordFailure(supabase, job.outbox_id, workerId, 'whatsapp_lifecycle_obsolete');
+    }
+    let bookingTemplate = null;
+    if (!lifecycleTemplate) {
+      const payloadRows = await supabase.rpc('service_resolve_whatsapp_booking_card_payload', {
+        p_outbox_id: job.outbox_id,
+        p_worker_id: workerId,
+      });
+      const payloadList = Array.isArray(payloadRows)
+        ? payloadRows
+        : payloadRows == null
+          ? []
+          : [payloadRows];
+      if (payloadList.length !== 1) {
+        throw new WhatsappDrainError('whatsapp_booking_card_resolution_invalid');
+      }
+      const payloadEnvelope = payloadList[0];
+      const bookingTemplate = validateBookingTemplatePayload(payloadEnvelope, job);
+      if (payloadEnvelope?.is_booking_card === true && !bookingTemplate) {
+        throw new WhatsappDrainError('whatsapp_booking_card_payload_invalid');
+      }
+      if (bookingTemplate && bookingTemplate.deliveryAllowed !== true) {
+        return recordFailure(supabase, job.outbox_id, workerId, 'whatsapp_booking_card_obsolete');
+      }
+
     }
 
     // Durable send intent (audit M-2). A job that already carries one came
@@ -225,8 +278,21 @@ export async function processClaimedWhatsappJob(env, {
       return recordFailure(supabase, job.outbox_id, workerId, 'communication_send_result_unknown');
     }
 
-    delivery = bookingTemplate
-      ? await sendWhatsappTemplate(
+    delivery = lifecycleTemplate
+      ? await sendWhatsappUtilityTemplate(
+        env,
+        route,
+        {
+          to: job.contact_wa_id,
+          purpose: lifecycleTemplate.purpose,
+          templateName: lifecycleTemplate.templateName,
+          language: lifecycleTemplate.language,
+          bodyParameters: lifecycleTemplate.bodyParameters,
+        },
+        fetchImpl
+      )
+      : bookingTemplate
+        ? await sendWhatsappTemplate(
         env,
         route,
         {
