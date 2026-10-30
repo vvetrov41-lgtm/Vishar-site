@@ -27,13 +27,13 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'real booked session is enrolled before any timing changes');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select lives_ok($select public.service_set_gmail_integration(
+select lives_ok($check$select public.service_set_gmail_integration(
   (select id from public.artists where slug='vladimir'),
   'google_gmail_actual_end_test','lifecycle-actual@example.test',
   array['https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.send']::text[]
-)$,'synthetic Gmail route for rollback-only test');
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+)$check$,'synthetic Gmail route for rollback-only test');
+select lives_ok($check$select * from public.service_run_automation_tick(500)$check$,
  'lifecycle jobs are materialized');
 reset role;
 select is((select j.scheduled_at from public.automation_jobs j
@@ -102,7 +102,7 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9595555-5555-4555-8555-555555555555','actual_end_test'),'enrolled',
  'last consecutive day enrolled');
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($check$select * from public.service_run_automation_tick(500)$check$,
  'consecutive-day jobs materialize');
 reset role;
 update public.sessions set
@@ -116,11 +116,11 @@ update public.sessions set
  end_at=date_trunc('day',now())-interval '2 days'+interval '14 hours'
 where id='f9595555-5555-4555-8555-555555555555';
 set local role service_role;
-select lives_ok($select public.service_record_session_actual_end(
+select lives_ok($check$select public.service_record_session_actual_end(
  'f9595555-5555-4555-8555-555555555555',
- date_trunc('day',now())-interval '2 days'+interval '13 hours')$,
+ date_trunc('day',now())-interval '2 days'+interval '13 hours')$check$,
  'last day records its actual finish separately');
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($check$select * from public.service_run_automation_tick(500)$check$,
  'check-in reconciles last-day actual finish');
 reset role;
 select is((select j.scheduled_at from public.automation_jobs j
