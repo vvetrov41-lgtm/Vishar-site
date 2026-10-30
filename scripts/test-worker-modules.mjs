@@ -338,11 +338,11 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'service_begin_communication_send',
     // Template maintenance is backend-only and provider credentials stay in Worker bindings.
     'service_claim_booking_card_template_targets',
-    'service_record_booking_card_template_status',
-    // Leased, backend-only structured payload for booking-card Utility templates.
-    'service_resolve_whatsapp_booking_card_payload',
     'service_claim_lifecycle_whatsapp_template_targets',
+    'service_record_booking_card_template_status',
     'service_record_lifecycle_whatsapp_template_status',
+    // Leased, backend-only structured payloads for booking and lifecycle Utility templates.
+    'service_resolve_whatsapp_booking_card_payload',
     'service_resolve_whatsapp_lifecycle_payload',
   ]);
 });
