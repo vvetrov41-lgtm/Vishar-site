@@ -35,10 +35,12 @@ select is((select count(*)::int from public.email_messages m join public.automat
 select is((select status::text from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'pending','non-anchor reminder is kept for potential later split');
 select is((select count(*)::int from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000002' and j.message_purpose='session_reminder_72h'),0,'second-day reminder does not queue an email');
 select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor independently rejects a non-anchor even when called directly');
+select ok(crm_private.lifecycle_delivery_snapshot_current((select m.id from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_72h')),'unchanged reminder remains deliverable');
 -- Moving the second day out of the block makes it the anchor of a new
 -- block, but the old due timestamp must not trigger an early message.
 update public.sessions set start_at=start_at+interval '10 days',end_at=end_at+interval '10 days'
 where id='f9500000-0000-4000-8000-000000000002';
+select ok(not crm_private.lifecycle_delivery_snapshot_current((select m.id from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_72h')),'queued reminder is no longer deliverable after a block member is moved');
 select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h'),'eligible','moved session is a new block anchor');
 select is(crm_private.execute_client_lifecycle_job((select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='session_reminder_72h')),'pending','executor refuses obsolete due time after move');
 -- Both real dates have ended: only the last check-in is sent and it
@@ -55,5 +57,6 @@ select is((select count(*)::integer from public.email_messages m join public.aut
 select is((select count(*)::integer from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id
  where m.client_id='f9511111-1111-4111-8111-111111111111' and j.message_purpose='post_session_checkin'),1,
  'only one check-in is queued for the block');
+select ok(not has_function_privilege('authenticated','crm_private.lifecycle_delivery_snapshot_current(uuid)','execute') and not has_function_privilege('service_role','crm_private.lifecycle_delivery_snapshot_current(uuid)','execute'),'delivery revalidation remains private');
 select * from finish();
 rollback;
