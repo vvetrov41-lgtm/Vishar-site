@@ -6,6 +6,7 @@
 // no credential exists — the fixtures are obviously-synthetic strings.
 
 import assert from 'node:assert/strict';
+import { sendWhatsappUtilityTemplate } from '../workers/lib/whatsapp.js';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import {
   drainWhatsappOutbox,
@@ -495,6 +496,62 @@ await test('unknown errors collapse to one generic connector code', () => {
   assert.equal(__testing.safeErrorCode(new Error('boom')), 'whatsapp_connector_error');
   assert.equal(__testing.safeErrorCode({ code: 'Not A Code' }), 'whatsapp_connector_error');
   assert.equal(__testing.safeErrorCode({ code: 'whatsapp_rate_limited' }), 'whatsapp_rate_limited');
+});
+
+await test('body-only lifecycle Utility template is sent without booking-card components', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const result = await sendWhatsappUtilityTemplate(env, route(), {
+    to: '447700900001',
+    purpose: 'post_session_checkin',
+    templateName: 'lifecycle_checkin_v1',
+    language: 'en_GB',
+    bodyParameters: ['Alex', 'https://vishartattoo.com/aftercare/'],
+  }, fetchImpl);
+  assert.deepEqual(result, {
+    delivered: true, providerMessageId: 'wamid.SYNTHETICSEND0001',
+  });
+  assert.equal(graphCalls.length, 1);
+  assert.equal(graphCalls[0].body.type, 'template');
+  assert.equal(graphCalls[0].body.template.name, 'lifecycle_checkin_v1');
+  assert.deepEqual(graphCalls[0].body.template.components, [{
+    type: 'body', parameters: [
+      { type: 'text', text: 'Alex' },
+      { type: 'text', text: 'https://vishartattoo.com/aftercare/' },
+    ],
+  }]);
+  assert.ok(graphCalls[0].url.includes(vladimirPhoneNumberId));
+});
+
+await test('utility template uses Kristina binding and never falls back to Vladimir', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const result = await sendWhatsappUtilityTemplate(env, kristinaRoute, {
+    to: '447700900002', purpose: 'session_reminder_72h',
+    templateName: 'kristina_session_reminder_72h', language: 'en_GB',
+    bodyParameters: ['17, 18 and 19 November'],
+  }, fetchImpl);
+  assert.equal(result.delivered, true);
+  assert.equal(graphCalls.length, 1);
+  assert.ok(graphCalls[0].url.includes(kristinaPhoneNumberId));
+  assert.ok(!graphCalls[0].url.includes(vladimirPhoneNumberId));
+  assert.equal(graphCalls[0].authorization, `Bearer ${kristinaToken}`);
+});
+
+await test('invalid lifecycle template is refused before contacting Meta', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const shared = {
+    to: '447700900001', templateName: 'test_v1',
+    language: 'en_GB', bodyParameters: ['Example'],
+  };
+  for (const message of [
+    { ...shared, purpose: 'booking_card_tattoo' },
+    { ...shared, purpose: 'post_session_aftercare', language: 'bad-language' },
+    { ...shared, purpose: 'session_reminder_24h', bodyParameters: [] },
+    { ...shared, purpose: 'session_reminder_24h', bodyParameters: [' '.repeat(3)] },
+  ]) {
+    const result = await sendWhatsappUtilityTemplate(env, route(), message, fetchImpl);
+    assert.deepEqual(result, { delivered: false, errorCode: 'whatsapp_template_invalid' });
+  }
+  assert.equal(graphCalls.length, 0);
 });
 
 if (failures > 0) {
