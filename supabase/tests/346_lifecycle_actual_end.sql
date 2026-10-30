@@ -1,6 +1,8 @@
 -- Synthetic, rollback-only coverage of evidence-backed end times.
 begin;
 select no_plan();
+create temporary table actual_end_artist as select id from public.artists where slug='vladimir';
+grant select on actual_end_artist to public;
 
 insert into public.clients(id,full_name,email) values
   ('f9591111-1111-4111-8111-111111111111','Actual end test','actual-end@example.test');
@@ -28,7 +30,7 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
 select lives_ok($check$select public.service_set_gmail_integration(
-  (select id from public.artists where slug='vladimir'),
+  (select id from actual_end_artist),
   'google_gmail_actual_end_test','lifecycle-actual@example.test',
   array['https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.send']::text[]
