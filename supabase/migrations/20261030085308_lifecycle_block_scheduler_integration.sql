@@ -523,7 +523,7 @@ begin
         when 'session_start'::public.automation_schedule_anchor
           then s.start_at + make_interval(mins => j.anchor_offset_minutes)
         when 'session_end'::public.automation_schedule_anchor
-          then s.end_at + make_interval(mins => j.anchor_offset_minutes)
+          then coalesce(s.actual_end_at,s.end_at) + make_interval(mins => j.anchor_offset_minutes)
         else j.scheduled_at
       end
   from public.sessions s
@@ -535,7 +535,7 @@ begin
         when 'session_start'::public.automation_schedule_anchor
           then s.start_at + make_interval(mins => j.anchor_offset_minutes)
         when 'session_end'::public.automation_schedule_anchor
-          then s.end_at + make_interval(mins => j.anchor_offset_minutes)
+          then coalesce(s.actual_end_at,s.end_at) + make_interval(mins => j.anchor_offset_minutes)
         else j.scheduled_at
       end;
 
