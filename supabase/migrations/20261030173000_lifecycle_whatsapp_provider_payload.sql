@@ -48,6 +48,10 @@ begin
    p.template_name,p.template_language,p.purpose,p.body_parameters,
    (
      p.automation_job_id is not null
+     and exists (
+       select 1 from crm_private.lifecycle_whatsapp_delivery_gates g
+       where g.artist_id=o.artist_id and g.enabled
+     )
      and m.message_type='template'
      and m.status='queued'::public.communication_status
      and m.artist_id=o.artist_id
