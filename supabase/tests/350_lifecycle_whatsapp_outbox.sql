@@ -14,6 +14,18 @@ insert into public.projects(id,client_id,artist_id,title) values
  (select id from wa_lifecycle_artist),'WhatsApp lifecycle integration');
 -- Reuse the canonical integration; the schema permits one enabled WhatsApp
 -- connection per artist. No separate fake provider account is created.
+-- A clean CI database may not seed the real canonical route. Insert
+-- a synthetic namespaced metadata-only route inside this rollback.
+insert into public.artist_integrations(
+ artist_id,integration_type,provider,integration_key,external_account_label,is_enabled)
+select a.id,'whatsapp','meta_cloud_api','vladimir-production',
+ 'Synthetic lifecycle WhatsApp',true
+from wa_lifecycle_artist a
+where not exists (
+ select 1 from public.artist_integrations i where i.artist_id=a.id
+ and i.integration_type='whatsapp'
+ and i.provider='meta_cloud_api' and i.integration_key='vladimir-production'
+);
 select ok(exists (
  select 1 from public.artist_integrations i
  where i.artist_id=(select id from wa_lifecycle_artist)
@@ -41,8 +53,8 @@ select 'f9705555-5555-4555-8555-555555555555',id,
  'f9701111-1111-4111-8111-111111111111',
  'f9702222-2222-4222-8222-222222222222',
  'tattoo_session','confirmed',
- date_trunc('hour',now())+interval '48 hours',
- date_trunc('hour',now())+interval '52 hours'
+ date_trunc('hour',now())+interval '30 days',
+ date_trunc('hour',now())+interval '30 days 4 hours'
 from wa_lifecycle_artist;
 
 -- Approval must come from a provider status readback, never from connecting
@@ -57,7 +69,17 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'enrolled','WhatsApp-first session enrolled');
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select lives_ok($$select * from public.service_run_automation_tick(500)$$,
+select lives_ok($select * from public.service_run_automation_tick(500)$,
+ 'initial future lifecycle jobs materialize');
+reset role;
+-- Preserve a valid booking at enrolment, then advance its reminder to
+-- five minutes past the 72h due time before invoking the scheduler.
+update public.sessions set
+ start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '71 hours 55 minutes',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '75 hours 55 minutes'
+where id='f9705555-5555-4555-8555-555555555555';
+set local role service_role;
+select lives_ok($select * from public.service_run_automation_tick(500)$,
  'WhatsApp reminder materializes without sending an email');
 reset role;
 select is((select count(*)::integer from public.email_messages
