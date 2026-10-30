@@ -490,6 +490,141 @@ export async function maintainWhatsappBookingTemplates(env, {
   return summary;
 }
 
+// Body-only operational lifecycle notices. The approved Meta body must match
+// the ordered parameters; no dynamic free-form body can bypass this contract.
+const LIFECYCLE_UTILITY_DEFINITIONS = Object.freeze({
+  session_reminder_72h: Object.freeze({
+    text: 'Hi {{1}}, your tattoo sessions with {{2}} are coming up. Dates and start times: {{3}}. Each session date has its own 72-hour cancellation period.',
+    examples: ['Alex', 'Vladimir', '17 November 2026 11:00, 18 November 2026 11:00'],
+  }),
+  session_reminder_24h: Object.freeze({
+    text: 'Hi {{1}}, your tattoo sessions with {{2}} start tomorrow. Your booked dates: {{3}}. Studio address: {{4}}. Confirm the full booking here: {{5}}.',
+    examples: ['Alex', 'Vladimir', '17 and 18 November 2026, 11:00', '1 Sample Street, London', 'https://vishartattoo.com/booking/'],
+  }),
+  post_session_aftercare: Object.freeze({
+    text: 'Hi {{1}}, thank you for your tattoo session with {{2}}. Please follow your aftercare guide: {{3}}. You can reply if you need advice.',
+    examples: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
+  }),
+  post_session_checkin: Object.freeze({
+    text: 'Hi {{1}}, how is your tattoo feeling today after your sessions with {{2}}? Your aftercare guide is here again: {{3}}. No need to reply if everything is fine.',
+    examples: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
+  }),
+});
+
+function lifecycleTemplateDefinition(purpose, name, language) {
+  const definition = LIFECYCLE_UTILITY_DEFINITIONS[purpose];
+  if (!definition || !TEMPLATE_NAME.test(name) || !TEMPLATE_LANGUAGE.test(language)) {
+    throw Object.assign(new Error('unsupported lifecycle template'), {
+      code: 'whatsapp_template_contract_invalid',
+    });
+  }
+  return {
+    name, language, category: 'UTILITY',
+    components: [{
+      type: 'BODY',
+      text: definition.text,
+      example: { body_text: [definition.examples] },
+    }],
+  };
+}
+
+function lifecycleAdminBinding(env, target) {
+  if (!target || !UUID.test(target.artist_id)
+      || !INTEGRATION_KEY.test(target.integration_key)
+      || !Object.hasOwn(LIFECYCLE_UTILITY_DEFINITIONS, target.purpose)
+      || !TEMPLATE_NAME.test(target.template_name)
+      || !TEMPLATE_LANGUAGE.test(target.template_language)) {
+    throw Object.assign(new Error('invalid lifecycle template route'), {
+      code: 'whatsapp_template_target_invalid',
+    });
+  }
+  const selected = resolveProviderBinding(env, {
+    kind: 'whatsapp_message',
+    integration_type: 'whatsapp',
+    provider: 'meta_cloud_api',
+    integration_key: target.integration_key,
+  });
+  const wabaId = typeof selected.credentials.wabaId === 'string'
+    ? selected.credentials.wabaId.trim() : '';
+  const accessToken = typeof selected.credentials.accessToken === 'string'
+    ? selected.credentials.accessToken : '';
+  if (!PROVIDER_ID.test(wabaId) || accessToken.length < 20 || /\\s/.test(accessToken)) {
+    throw Object.assign(new Error('invalid lifecycle Meta binding'), {
+      code: 'provider_binding_invalid',
+    });
+  }
+  return { wabaId, accessToken };
+}
+
+export async function maintainWhatsappLifecycleTemplates(env, {
+  limit = 8, fetchImpl = fetch,
+} = {}) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20) {
+    throw Object.assign(new Error('invalid lifecycle template batch'), {
+      code: 'whatsapp_template_limit_invalid',
+    });
+  }
+  const db = createSupabaseClient(env, fetchImpl);
+  const targets = await db.rpc('service_claim_lifecycle_whatsapp_template_targets', {
+    p_limit: limit,
+  });
+  const batch = Array.isArray(targets) ? targets : targets == null ? [] : [targets];
+  if (batch.length > limit) {
+    throw Object.assign(new Error('invalid lifecycle template claim'), {
+      code: 'whatsapp_template_claim_invalid',
+    });
+  }
+  const summary = { targets: batch.length, checked: 0, created: 0, approved: 0, failed: 0 };
+  for (const target of batch) {
+    try {
+      const binding = lifecycleAdminBinding(env, target);
+      let rows = await listTemplates(binding, fetchImpl);
+      let matches = rows.filter((row) =>
+        row?.name === target.template_name && row?.language === target.template_language);
+      if (matches.length === 0) {
+        await createTemplate(binding, lifecycleTemplateDefinition(
+          target.purpose, target.template_name, target.template_language,
+        ), fetchImpl);
+        summary.created += 1;
+        rows = await listTemplates(binding, fetchImpl);
+        matches = rows.filter((row) =>
+          row?.name === target.template_name && row?.language === target.template_language);
+      }
+      if (matches.length > 1 || (matches.length === 1 && matches[0]?.category !== 'UTILITY')) {
+        throw Object.assign(new Error('lifecycle template contract mismatch'), {
+          code: 'whatsapp_template_contract_mismatch',
+        });
+      }
+      const row = matches[0];
+      const rawStatus = typeof row?.status === 'string' ? row.status.toUpperCase() : 'PENDING';
+      const status = ['APPROVED', 'PENDING', 'REJECTED', 'PAUSED'].includes(rawStatus)
+        ? rawStatus : 'UNKNOWN';
+      const providerId = typeof row?.id === 'string' && PROVIDER_ID.test(row.id)
+        ? row.id : null;
+      if (status === 'APPROVED' && !providerId) {
+        throw Object.assign(new Error('Meta template approval identity unavailable'), {
+          code: 'whatsapp_template_response_invalid',
+        });
+      }
+      await db.rpc('service_record_lifecycle_whatsapp_template_status', {
+        p_artist_id: target.artist_id,
+        p_purpose: target.purpose,
+        p_template_name: target.template_name,
+        p_template_language: target.template_language,
+        p_status: status,
+        p_provider_template_id: status === 'APPROVED' ? providerId : null,
+      });
+      summary.checked += 1;
+      if (status === 'APPROVED') summary.approved += 1;
+    } catch {
+      // No approval is written if Meta cannot be reached. The database's
+      // short-lived readback requirement keeps sending fail-closed.
+      summary.failed += 1;
+    }
+  }
+  return summary;
+}
+
 export const __testing = Object.freeze({
   TATTOO_BODY,
   CONSULTATION_BODY,
