@@ -1,0 +1,104 @@
+-- Synthetic WhatsApp-first client. All database writes rolled back.
+-- No provider secrets or Meta network requests are used by pgTAP.
+begin;
+select no_plan();
+create temporary table wa_lifecycle_artist as select id from public.artists
+ where slug='vladimir';
+grant select on wa_lifecycle_artist to public;
+insert into public.clients(id,full_name,email,phone) values
+ ('f9701111-1111-4111-8111-111111111111','Alex WhatsApp',
+  'wa-lifecycle@example.test','+447700900888');
+insert into public.projects(id,client_id,artist_id,title) values
+ ('f9702222-2222-4222-8222-222222222222',
+ 'f9701111-1111-4111-8111-111111111111',
+ (select id from wa_lifecycle_artist),'WhatsApp lifecycle integration');
+insert into public.artist_integrations(
+ artist_id,integration_type,provider,integration_key,external_account_label,is_enabled)
+select id,'whatsapp','meta_cloud_api','wa-lifecycle-test','Synthetic WhatsApp',true
+from wa_lifecycle_artist;
+insert into public.communication_conversations(
+ id,artist_id,channel,integration_key,external_contact_id,client_id,
+ link_state,state)
+select 'f9703333-3333-4333-8333-333333333333',id,
+ 'whatsapp','wa-lifecycle-test','447700900888',
+ 'f9701111-1111-4111-8111-111111111111','linked','open'
+from wa_lifecycle_artist;
+insert into public.communication_messages(
+ id,conversation_id,artist_id,channel,direction,origin,status,
+ message_type,body,provider_timestamp)
+select 'f9704444-4444-4444-8444-444444444444',
+ 'f9703333-3333-4333-8333-333333333333',id,'whatsapp',
+ 'inbound','contact','received','text','Synthetic inbound',
+ now()-interval '3 days' from wa_lifecycle_artist;
+insert into public.sessions(
+ id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at)
+select 'f9705555-5555-4555-8555-555555555555',id,
+ 'f9701111-1111-4111-8111-111111111111',
+ 'f9702222-2222-4222-8222-222222222222',
+ 'tattoo_session','confirmed',
+ date_trunc('hour',now())+interval '48 hours',
+ date_trunc('hour',now())+interval '52 hours'
+from wa_lifecycle_artist;
+
+-- Approval must come from a provider status readback, never from connecting
+-- a number. This synthetic approval is transaction-local and rolled back.
+update crm_private.lifecycle_whatsapp_template_registry
+ set approval_status='APPROVED',provider_template_id='123456789012345',
+     verified_at=now()
+ where artist_id=(select id from wa_lifecycle_artist)
+ and purpose='session_reminder_72h';
+select is(crm_private.enrol_booked_session_in_lifecycle(
+ 'f9705555-5555-4555-8555-555555555555','wa_lifecycle_test'),
+ 'enrolled','WhatsApp-first session enrolled');
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+set local role service_role;
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,
+ 'WhatsApp reminder materializes without sending an email');
+reset role;
+select is((select count(*)::integer from public.email_messages
+ where client_id='f9701111-1111-4111-8111-111111111111'),0,
+ 'WhatsApp-first client receives no silent email');
+select is((select count(*)::integer from crm_private.lifecycle_whatsapp_payloads
+ where artist_id=(select id from wa_lifecycle_artist)
+ and purpose='session_reminder_72h'),1,
+ 'one Meta Utility payload is queued');
+select is((select count(*)::integer from public.integration_outbox
+ where client_id='f9701111-1111-4111-8111-111111111111'
+ and kind='whatsapp_message'),1,
+ 'one durable WhatsApp outbox item exists');
+select is((select j.status::text from public.automation_jobs j
+ join crm_private.lifecycle_whatsapp_payloads p on p.automation_job_id=j.id
+ where p.purpose='session_reminder_72h'
+ and j.session_id='f9705555-5555-4555-8555-555555555555'),
+ 'completed','queued job recorded exactly once');
+create temporary table wa_lifecycle_outbox as
+ select o.id from public.integration_outbox o
+ where o.client_id='f9701111-1111-4111-8111-111111111111'
+ and o.kind='whatsapp_message';
+grant select on wa_lifecycle_outbox to public;
+set local role service_role;
+select is((select count(*)::integer from public.claim_whatsapp_outbox_by_id(
+ (select id from wa_lifecycle_outbox),'wa-lifecycle-worker',120)),1,
+ 'the existing WhatsApp worker can lease the lifecycle job');
+select ok((select delivery_allowed
+ from public.service_resolve_whatsapp_lifecycle_payload(
+ (select id from wa_lifecycle_outbox),'wa-lifecycle-worker')),
+ 'current block and approved template are deliverable at provider boundary');
+reset role;
+select is((select jsonb_array_length(body_parameters)
+ from crm_private.lifecycle_whatsapp_payloads where session_id=
+ 'f9705555-5555-4555-8555-555555555555' and purpose='session_reminder_72h'),
+ 3,'72-hour message contains name, artist and grouped dates');
+
+update public.sessions
+ set start_at=date_trunc('hour',now())+interval '72 hours',
+     end_at=date_trunc('hour',now())+interval '76 hours'
+ where id='f9705555-5555-4555-8555-555555555555';
+set local role service_role;
+select ok((select not delivery_allowed
+ from public.service_resolve_whatsapp_lifecycle_payload(
+ (select id from wa_lifecycle_outbox),'wa-lifecycle-worker')),
+ 'rescheduling invalidates the leased Meta template before send intent');
+reset role;
+select * from finish();
+rollback;
