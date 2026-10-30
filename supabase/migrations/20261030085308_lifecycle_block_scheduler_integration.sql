@@ -24,6 +24,7 @@ declare
   v_block_dates text;
   v_artist_timezone text;
   v_studio_address text;
+  v_aftercare_url text;
 begin
   if not crm_private.is_service_backend() then
     raise exception 'client lifecycle execution is backend-only' using errcode = '42501';
@@ -294,6 +295,20 @@ begin
             v_body := v_body || E'\n\nStudio address: ' || v_studio_address;
           end if;
         end if;
+      end if;
+
+      if v_job.message_purpose='post_session_checkin' then
+        select substring(t.body from 'https://[a-z0-9.-]+/aftercare/') into v_aftercare_url
+        from public.message_templates t
+        join public.artists a on a.id=v_job.artist_id
+        where t.workspace_id=a.workspace_id and (t.artist_id=a.id or t.artist_id is null)
+          and t.purpose='post_session_aftercare' and t.channel='email'
+          and t.locale=v_job.message_locale and t.status='active'
+        order by (t.artist_id is not null) desc,t.version desc,t.id limit 1;
+        if v_aftercare_url is null then
+          raise exception 'approved artist aftercare link is unavailable' using errcode='23514';
+        end if;
+        v_body := v_body || E'\n\nYour aftercare guide: ' || v_aftercare_url;
       end if;
 
       insert into public.email_messages (
