@@ -3,6 +3,17 @@ begin;
 select no_plan();
 create temporary table block_artist as select a.id from public.artists a join crm_private.artist_state s on s.artist_id=a.id and s.is_active where a.slug='vladimir';
 grant select on block_artist to public;
+-- Seed an authorized notification recipient in an otherwise empty CI database.
+insert into auth.users(id,email) values
+('f9588888-8888-4888-8888-888888888888','lifecycle-alerts@example.test');
+insert into public.profiles(id,email,role,is_active) values
+('f9588888-8888-4888-8888-888888888888','lifecycle-alerts@example.test','booking_manager',true);
+insert into public.artist_memberships(profile_id,artist_id,access_level,
+can_view_finance,can_manage_finance,can_manage_sessions,can_manage_integrations,is_active)
+select 'f9588888-8888-4888-8888-888888888888',id,'artist',
+false,false,true,false,true from block_artist;
+select cmp_ok((select count(*)::integer from crm_private.automation_notification_recipients((select id from block_artist))),'>',0,
+'test recipient exists before failure notifications are checked');
 insert into public.clients (id,full_name,email) values ('f9511111-1111-4111-8111-111111111111','Lifecycle block test','lifecycle-block@example.test');
 insert into public.projects (id,client_id,artist_id,title) values ('f9522222-2222-4222-8222-222222222222','f9511111-1111-4111-8111-111111111111',(select id from block_artist),'Lifecycle block test');
 insert into public.sessions (id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at)
