@@ -78,10 +78,10 @@ select is((select enabled from crm_private.lifecycle_whatsapp_delivery_gates
 -- failed target is not claimed again by the next five-minute scheduler.
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select lives_ok($select public.service_record_lifecycle_whatsapp_template_failure(
+select lives_ok($$select public.service_record_lifecycle_whatsapp_template_failure(
  (select id from lifecycle_registry_artists where slug='kristina'),
  'session_reminder_72h','vishar_lifecycle_reminder_72h_v1',
- 'en_GB','whatsapp_template_api_unavailable_for_account')$,
+ 'en_GB','whatsapp_template_api_unavailable_for_account')$$,
  'Meta account restriction is deferred safely');
 reset role;
 select ok((select next_retry_at>now()+interval '5 hours'
