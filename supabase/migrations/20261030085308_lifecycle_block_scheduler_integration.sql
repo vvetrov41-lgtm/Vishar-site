@@ -20,6 +20,10 @@ declare
   v_confirm_token text;
   v_reschedule_token text;
   v_cancel_token text;
+  v_block_count integer;
+  v_block_dates text;
+  v_artist_timezone text;
+  v_studio_address text;
 begin
   if not crm_private.is_service_backend() then
     raise exception 'client lifecycle execution is backend-only' using errcode = '42501';
@@ -268,6 +272,27 @@ begin
         if v_body is null or btrim(v_body) = '' then
           raise exception 'appointment action rendering failed'
             using errcode = '23514';
+        end if;
+      end if;
+
+      if v_job.message_purpose in ('session_reminder_72h','session_reminder_24h') then
+        select a.timezone into v_artist_timezone from public.artists a where a.id=v_job.artist_id;
+        select count(*)::integer, string_agg(
+          to_char(b.start_at at time zone v_artist_timezone,'FMDay, FMDD FMMonth YYYY')
+            || ' at ' || to_char(b.start_at at time zone v_artist_timezone,'HH24:MI'),
+          E'\n' order by b.start_at,b.session_id)
+        into v_block_count,v_block_dates from crm_private.session_lifecycle_block(v_session.id) b;
+        if v_block_count>1 then
+          v_body := v_body || E'\n\nYour appointment dates:\n' || v_block_dates
+            || E'\n\nIf a deposit applies, the 72-hour cancellation period is calculated separately for each appointment date.';
+        end if;
+        if v_job.message_purpose='session_reminder_24h' then
+          select nullif(btrim(c.studio_address),'') into v_studio_address
+          from crm_private.booking_card_artist_settings c where c.artist_id=v_job.artist_id
+            and (c.appointment_start_from is null or v_session.start_at>=c.appointment_start_from);
+          if v_studio_address is not null then
+            v_body := v_body || E'\n\nStudio address: ' || v_studio_address;
+          end if;
         end if;
       end if;
 
