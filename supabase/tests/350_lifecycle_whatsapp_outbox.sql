@@ -12,15 +12,20 @@ insert into public.projects(id,client_id,artist_id,title) values
  ('f9702222-2222-4222-8222-222222222222',
  'f9701111-1111-4111-8111-111111111111',
  (select id from wa_lifecycle_artist),'WhatsApp lifecycle integration');
-insert into public.artist_integrations(
- artist_id,integration_type,provider,integration_key,external_account_label,is_enabled)
-select id,'whatsapp','meta_cloud_api','vladimir-wa-lifecycle-test','Synthetic WhatsApp',true
-from wa_lifecycle_artist;
+-- Reuse the canonical integration; the schema permits one enabled WhatsApp
+-- connection per artist. No separate fake provider account is created.
+select ok(exists (
+ select 1 from public.artist_integrations i
+ where i.artist_id=(select id from wa_lifecycle_artist)
+  and i.integration_type='whatsapp'
+  and i.provider='meta_cloud_api'
+  and i.integration_key='vladimir-production' and i.is_enabled
+), 'canonical Vladimir WhatsApp route is present');
 insert into public.communication_conversations(
  id,artist_id,channel,integration_key,external_contact_id,client_id,
  link_state,state)
 select 'f9703333-3333-4333-8333-333333333333',id,
- 'whatsapp','vladimir-wa-lifecycle-test','447700900888',
+ 'whatsapp','vladimir-production','447700900888',
  'f9701111-1111-4111-8111-111111111111','linked','open'
 from wa_lifecycle_artist;
 insert into public.communication_messages(
