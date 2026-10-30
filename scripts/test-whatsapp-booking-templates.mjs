@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import {
   maintainWhatsappBookingTemplates,
+  maintainWhatsappLifecycleTemplates,
   __testing,
 } from '../workers/lib/whatsapp-booking-templates.js';
 
@@ -505,6 +506,88 @@ function env() {
   assert.equal(record.args.p_tattoo_status, 'PENDING');
   assert.equal(record.args.p_consultation_status, 'APPROVED');
   assert.equal(record.args.p_error_code, null);
+}
+
+
+{
+  // Meta readback, not application configuration, is the only approval source.
+  const rpcCalls = [];
+  const graphCalls = [];
+  const templates = [];
+  const targets = [
+    { artist_id: ARTIST, integration_key: ROUTE,
+      purpose: 'post_session_aftercare', template_name: 'vishar_lifecycle_aftercare_v1',
+      template_language: 'en_GB', approval_status: 'UNKNOWN' },
+    { artist_id: ARTIST, integration_key: ROUTE,
+      purpose: 'session_reminder_24h', template_name: 'vishar_lifecycle_reminder_24h_v1',
+      template_language: 'en_GB', approval_status: 'UNKNOWN' },
+  ];
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/rest/v1/rpc/')) {
+      const name = u.split('/').pop();
+      const args = JSON.parse(init.body || '{}');
+      rpcCalls.push({ name, args });
+      if (name === 'service_claim_lifecycle_whatsapp_template_targets') {
+        return Response.json(targets);
+      }
+      if (name === 'service_record_lifecycle_whatsapp_template_status') {
+        return Response.json({ ok: true });
+      }
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (u.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      const method = String(init.method || 'GET').toUpperCase();
+      graphCalls.push({ method, body: init.body ? JSON.parse(init.body) : null });
+      assert.equal(init.headers.Authorization, `Bearer ${TOKEN}`);
+      assert.equal(init.redirect, 'manual');
+      if (method === 'GET') return Response.json({ data: structuredClone(templates) });
+      const body = JSON.parse(init.body);
+      assert.equal(body.category, 'UTILITY');
+      assert.equal(body.components.length, 1, 'lifecycle templates have no location or booking buttons');
+      assert.equal(body.components[0].type, 'BODY');
+      const n = body.name.includes('24h') ? 5 : 3;
+      assert.equal(body.components[0].example.body_text[0].length, n);
+      templates.push({ id: String(123456789000 + templates.length), name: body.name,
+        language: body.language, category: 'UTILITY', status: 'APPROVED' });
+      return Response.json({ id: templates.at(-1).id });
+    }
+    throw new Error(`unexpected URL ${u}`);
+  };
+  const result = await maintainWhatsappLifecycleTemplates(env(), { fetchImpl });
+  assert.deepEqual(result, { targets: 2, checked: 2, created: 2, approved: 2, failed: 0 });
+  assert.equal(graphCalls.filter(x => x.method === 'POST').length, 2);
+  const records = rpcCalls.filter(x => x.name === 'service_record_lifecycle_whatsapp_template_status');
+  assert.equal(records.length, 2);
+  for (const record of records) {
+    assert.equal(record.args.p_artist_id, ARTIST);
+    assert.equal(record.args.p_status, 'APPROVED');
+    assert.match(record.args.p_provider_template_id, /^[0-9]{12}$/);
+  }
+  assert.equal(JSON.stringify(result).includes(TOKEN), false);
+}
+
+{
+  // An absent Kristina binding must never borrow Vladimir's Meta credentials.
+  const rpcCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/rest/v1/rpc/')) {
+      const name = u.split('/').pop();
+      rpcCalls.push(name);
+      if (name === 'service_claim_lifecycle_whatsapp_template_targets') {
+        return Response.json([{ artist_id: 'a2222222-2222-4222-8222-222222222222',
+          integration_key: 'kristina-production',
+          purpose: 'post_session_checkin', template_name: 'vishar_lifecycle_checkin_v1',
+          template_language: 'en_GB', approval_status: 'UNKNOWN' }]);
+      }
+      throw new Error(`unsafe RPC ${name}`);
+    }
+    throw new Error('must not contact Meta when Kristina binding is missing');
+  };
+  const result = await maintainWhatsappLifecycleTemplates(env(), { fetchImpl });
+  assert.deepEqual(result, { targets: 1, checked: 0, created: 0, approved: 0, failed: 1 });
+  assert.equal(rpcCalls.includes('service_record_lifecycle_whatsapp_template_status'), false);
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');
