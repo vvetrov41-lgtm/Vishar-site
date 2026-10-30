@@ -125,7 +125,7 @@ begin
     return 'pending';
   end if;
   if v_job.schedule_anchor = 'session_end'::public.automation_schedule_anchor
-     and v_session.end_at + make_interval(mins => v_job.anchor_offset_minutes) > now() then
+     and coalesce(v_session.actual_end_at,v_session.end_at) + make_interval(mins => v_job.anchor_offset_minutes) > now() then
     return 'pending';
   end if;
 
