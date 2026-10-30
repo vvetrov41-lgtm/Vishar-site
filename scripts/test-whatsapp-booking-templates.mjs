@@ -581,6 +581,13 @@ function env() {
           purpose: 'post_session_checkin', template_name: 'vishar_lifecycle_checkin_v1',
           template_language: 'en_GB', approval_status: 'UNKNOWN' }]);
       }
+      if (name === 'service_record_lifecycle_whatsapp_template_failure') {
+        const args = JSON.parse(init.body || '{}');
+        assert.equal(args.p_artist_id, 'a2222222-2222-4222-8222-222222222222');
+        assert.match(args.p_error_code, /^[a-z][a-z0-9_]{2,63}$/);
+        assert.equal(JSON.stringify(args).includes(TOKEN), false);
+        return Response.json({ ok: true });
+      }
       throw new Error(`unsafe RPC ${name}`);
     }
     throw new Error('must not contact Meta when Kristina binding is missing');
@@ -588,6 +595,8 @@ function env() {
   const result = await maintainWhatsappLifecycleTemplates(env(), { fetchImpl });
   assert.deepEqual(result, { targets: 1, checked: 0, created: 0, approved: 0, failed: 1 });
   assert.equal(rpcCalls.includes('service_record_lifecycle_whatsapp_template_status'), false);
+  assert.equal(rpcCalls.filter(x => x === 'service_record_lifecycle_whatsapp_template_failure').length, 1,
+    'missing Kristina binding records a safe bounded retry instead of hammering Meta');
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');
