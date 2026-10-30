@@ -119,7 +119,7 @@ insert into public.communication_messages(
 insert into public.sessions(id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at)
 values ('f9577777-7777-4777-8777-777777777777',(select id from block_artist),
  'f9533333-3333-4333-8333-333333333333','f9544444-4444-4444-8444-444444444444',
- 'tattoo_session','confirmed',now()+interval '30 days',now()+interval '30 days 4 hours');
+ 'tattoo_session','confirmed',date_trunc('hour',now())+interval '30 days',date_trunc('hour',now())+interval '30 days 4 hours');
 select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9577777-7777-4777-8777-777777777777','block_test'),'enrolled',
  'WhatsApp-conversation appointment has a scheduled event');
@@ -127,7 +127,7 @@ set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'WhatsApp-conversation appointment has lifecycle jobs');
 reset role;
-update public.sessions set start_at=now()+interval '48 hours',end_at=now()+interval '52 hours'
+update public.sessions set start_at=date_trunc('hour',now())+interval '48 hours',end_at=date_trunc('hour',now())+interval '52 hours'
 where id='f9577777-7777-4777-8777-777777777777';
 set local role service_role;
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,
