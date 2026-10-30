@@ -33,6 +33,19 @@ assert.equal(typeof worker.scheduled, 'function');
   )).json();
   assert.deepEqual(ran, { ok: true, skipped: false, claimed: 2, succeeded: 1, failed: 1, unrecorded: 0 });
   assert.equal(templateMaintenanceCalls, 1);
+  let lifecycleMaintenanceCalls = 0;
+  const lifecycle = await (await handleInternalDrain(
+    { ...env, WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED: 'true' },
+    async () => ({ claimed: 0, succeeded: 0, failed: 0, unrecorded: 0 }),
+    async () => { throw new Error('booking maintenance flag is disabled'); },
+    async () => {
+      lifecycleMaintenanceCalls += 1;
+      return { targets: 8, checked: 8, created: 0, approved: 8, failed: 0 };
+    },
+  )).json();
+  assert.equal(lifecycle.skipped, false);
+  assert.equal(lifecycleMaintenanceCalls, 1,
+    'the lifecycle template administrator runs only under its explicit flag');
   const quiet = console.error; console.error = () => {};
   const failed = await (await handleInternalDrain(env, async () => { throw Object.assign(new Error('x'), { code: 'database_unavailable' }); })).json();
   console.error = quiet;
