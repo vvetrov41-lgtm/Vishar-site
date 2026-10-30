@@ -723,6 +723,7 @@ insert into expected_function_acl values
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
   ('public.service_run_automation_tick(integer)', false, false, true),
   ('public.service_record_session_actual_end(uuid,timestamptz)', false, false, true),
+  ('public.service_record_lifecycle_whatsapp_template_status(uuid,text,text,text,text,text)', false, false, true),
   ('public.service_record_automation_scheduler_heartbeat()', false, false, true),
   ('public.service_sweep_lifecycle_failure_alerts(integer)', false, false, true),
   ('public.list_automation_rules(uuid)', false, true, false),
