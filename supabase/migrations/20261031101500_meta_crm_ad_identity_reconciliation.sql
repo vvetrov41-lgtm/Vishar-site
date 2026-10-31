@@ -137,6 +137,48 @@ create trigger meta_enquiry_ad_identity
   before insert on crm_private.enquiry_meta_attribution
   for each row execute function crm_private.set_meta_enquiry_ad_identity();
 
+-- If the independent first/last-touch RPC commits after the Meta RPC, a
+-- late opt-in touch must still fill a previously unknown ad identity once.
+-- Do not replace an identity that was already captured at conversion.
+create or replace function crm_private.fill_meta_identity_after_touch()
+returns trigger
+language plpgsql
+set search_path = pg_catalog, public, crm_private
+as $
+declare
+  v_ids jsonb;
+  v_account_id text;
+begin
+  if not exists (
+    select 1 from crm_private.enquiry_meta_attribution
+    where enquiry_id = new.enquiry_id and artist_id = new.artist_id
+      and campaign_id is null
+  ) then return new; end if;
+
+  v_ids := crm_private.meta_enquiry_ad_ids(new.enquiry_id);
+  if not (v_ids ? 'campaign_id') then return new; end if;
+
+  select ad_account_id into v_account_id
+  from crm_private.meta_ad_account_identity
+  where artist_id = new.artist_id;
+  update crm_private.enquiry_meta_attribution
+  set campaign_id = v_ids->>'campaign_id',
+      adset_id = v_ids->>'adset_id',
+      ad_id = v_ids->>'ad_id',
+      ad_identity_source = v_ids->>'source',
+      ad_account_id = v_account_id
+  where enquiry_id = new.enquiry_id and artist_id = new.artist_id
+    and campaign_id is null;
+  return new;
+end;
+$;
+revoke all on function crm_private.fill_meta_identity_after_touch()
+  from public, anon, authenticated, service_role;
+drop trigger if exists meta_identity_late_touch on crm_private.enquiry_touch_attribution;
+create trigger meta_identity_late_touch
+  after insert on crm_private.enquiry_touch_attribution
+  for each row execute function crm_private.fill_meta_identity_after_touch();
+
 -- Backfill ONLY enquiries with a prior explicit Meta measurement consent
 -- (presence in this private attribution table). Do not infer consent or
 -- construct an ad identity from referrer, fbclid, or account-wide totals.
@@ -189,7 +231,21 @@ join public.enquiries e on e.id = m.enquiry_id and e.artist_id = m.artist_id
 left join crm_private.meta_ad_account_identity a
   on a.artist_id = m.artist_id and a.ad_account_id = m.ad_account_id
 left join lateral (
-  select to_timestamp((outbox.payload->>'event_time')::double precision) as event_time_utc,
+  select case when (outbox.payload->>'event_time') ~ '^[0-9]{10}
+         outbox.status::text as delivery_status
+  from public.integration_outbox outbox
+  where outbox.enquiry_id = m.enquiry_id
+    and outbox.kind = 'meta_conversion'
+    and outbox.payload->>'event_name' = 'Lead'
+    and outbox.payload->>'event_id' = m.lead_event_id
+  order by outbox.created_at asc, outbox.id asc limit 1
+) o on true;
+
+revoke all on crm_private.meta_enquiry_reconciliation
+  from public, anon, authenticated, service_role;
+comment on view crm_private.meta_enquiry_reconciliation is
+  'Private consented Meta/CRM lead reconciliation. Event dates use IANA account timezone; CRM entries do not prove Meta-attributed conversions.';
+\n              then to_timestamp((outbox.payload->>'event_time')::double precision)\n              else null end as event_time_utc,
          outbox.status::text as delivery_status
   from public.integration_outbox outbox
   where outbox.enquiry_id = m.enquiry_id
