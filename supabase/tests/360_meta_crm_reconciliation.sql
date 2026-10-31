@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(18);
 
 select has_table('crm_private', 'meta_ad_account_identity', 'private Meta account registry exists');
 select ok((select relrowsecurity from pg_class where oid='crm_private.meta_ad_account_identity'::regclass),
@@ -10,6 +10,9 @@ select has_column('crm_private','enquiry_meta_attribution','campaign_id','consen
 select has_column('crm_private','enquiry_meta_attribution','adset_id','consented attribution stores ad set ID');
 select has_column('crm_private','enquiry_meta_attribution','ad_id','consented attribution stores ad ID');
 select has_view('crm_private','meta_enquiry_reconciliation','private reconciliation projection exists');
+select has_trigger('crm_private','enquiry_touch_attribution','meta_identity_late_touch','late consented touches are reconciled');
+select is(has_function_privilege('authenticated','crm_private.fill_meta_identity_after_touch()','EXECUTE'),false,
+  'late-touch reconciler cannot be executed by authenticated clients');
 select is(has_table_privilege('authenticated','crm_private.meta_enquiry_reconciliation','SELECT'),false,
   'reconciliation is not exposed to authenticated clients');
 select is(
