@@ -144,7 +144,7 @@ create or replace function crm_private.fill_meta_identity_after_touch()
 returns trigger
 language plpgsql
 set search_path = pg_catalog, public, crm_private
-as $
+as $$
 declare
   v_ids jsonb;
   v_account_id text;
@@ -171,7 +171,7 @@ begin
     and campaign_id is null;
   return new;
 end;
-$;
+$$;
 revoke all on function crm_private.fill_meta_identity_after_touch()
   from public, anon, authenticated, service_role;
 drop trigger if exists meta_identity_late_touch on crm_private.enquiry_touch_attribution;
