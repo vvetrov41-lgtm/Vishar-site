@@ -128,7 +128,12 @@ insert into public.projects (id, client_id, artist_id, title, description) value
    'ea011111-1111-4111-8111-111111111111',
    (select id from t_artist),
    'Action activation tattoo project',
-   'Rollback-only project for lifecycle action testing');
+   'Rollback-only project for lifecycle action testing'),
+  ('ea033333-3333-4333-8333-333333333333',
+   'ea011111-1111-4111-8111-111111111111',
+   (select id from t_artist),
+   'Independent same-tick tattoo project',
+   'A separate project so the two appointments are separate lifecycle blocks');
 
 select pg_temp.backend();
 set local role service_role;
@@ -210,7 +215,7 @@ select (
     (select base_at + interval '26 hours' from t_clock),
     'confirmed'::public.session_status,
     null,
-    'ea022222-2222-4222-8222-222222222222',
+    'ea033333-3333-4333-8333-333333333333',
     'Same-tick action fixture'
   ) ->> 'appointment_id'
 )::uuid as id;

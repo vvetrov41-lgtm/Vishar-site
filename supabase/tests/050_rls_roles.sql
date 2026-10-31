@@ -722,6 +722,12 @@ insert into expected_function_acl values
   ('public.snooze_follow_up(uuid,timestamptz)', false, true, false),
   ('public.set_notification_preference(public.notification_channel,boolean)', false, true, false),
   ('public.service_run_automation_tick(integer)', false, false, true),
+  ('public.service_record_session_actual_end(uuid,timestamptz)', false, false, true),
+  ('public.service_record_lifecycle_whatsapp_template_status(uuid,text,text,text,text,text)', false, false, true),
+  ('public.service_record_lifecycle_whatsapp_template_failure(uuid,text,text,text,text)', false, false, true),
+  ('public.service_set_lifecycle_whatsapp_delivery_enabled(uuid,boolean)', false, false, true),
+  ('public.service_claim_lifecycle_whatsapp_template_targets(integer)', false, false, true),
+  ('public.service_resolve_whatsapp_lifecycle_payload(uuid,text)', false, false, true),
   ('public.service_record_automation_scheduler_heartbeat()', false, false, true),
   ('public.service_sweep_lifecycle_failure_alerts(integer)', false, false, true),
   ('public.list_automation_rules(uuid)', false, true, false),
@@ -861,10 +867,6 @@ insert into expected_function_acl values
   ('public.service_apply_whatsapp_booking_card_action(uuid,text,text,text,timestamptz,text)', false, false, true),
   ('public.service_claim_booking_card_template_targets(integer)', false, false, true),
   ('public.service_record_booking_card_template_status(uuid,text,text,text,jsonb,jsonb)', false, false, true),
-  ('public.service_record_lifecycle_whatsapp_template_status(uuid,text,text,text,text,text)', false, false, true),
-  ('public.service_record_lifecycle_whatsapp_template_failure(uuid,text,text,text,text)', false, false, true),
-  ('public.service_claim_lifecycle_whatsapp_template_targets(integer)', false, false, true),
-  ('public.service_set_lifecycle_whatsapp_delivery_enabled(uuid,boolean)', false, false, true),
   ('public.service_resolve_whatsapp_booking_card_payload(uuid,text)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one

@@ -293,8 +293,8 @@ select is(
 select is(
   (select m.body
    from public.email_messages m where m.automation_job_id = (select id from t_job)),
-  E'Hi Activation,\n\nJust checking in after your tattoo session with Vladimir yesterday.\n\nHow are you feeling, and how is the tattoo doing so far?\n\nPlease keep following the aftercare instructions you were given. If you have any questions or anything you are unsure about during the healing process, just reply to this email and let us know.\n\nThere is no need to reply if everything is going well.\n\nTake care,\nVladimir',
-  'the approved body renders only authoritative client and artist variables'
+  E'Hi Activation,\n\nJust checking in after your tattoo session with Vladimir yesterday.\n\nHow are you feeling, and how is the tattoo doing so far?\n\nPlease keep following the aftercare instructions you were given. If you have any questions or anything you are unsure about during the healing process, just reply to this email and let us know.\n\nThere is no need to reply if everything is going well.\n\nTake care,\nVladimir\n\nYour aftercare guide: https://vishartattoo.com/aftercare/',
+  'the approved body renders authoritative variables and the artist aftercare link'
 );
 select is(
   (select count(*)::int

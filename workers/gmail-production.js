@@ -442,7 +442,10 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
       || target.enquiry_id !== auth.enquiry_id || typeof target.delivery_allowed !== 'boolean') {
     throw new Error('gmail_target_scope_invalid');
   }
-  if (!target.delivery_allowed) throw new Error('gmail_deposit_email_obsolete');
+  if (!target.delivery_allowed) {
+    throw new Error(target.configuration?.lifecycle_email === true
+      ? 'gmail_lifecycle_email_obsolete' : 'gmail_deposit_email_obsolete');
+  }
   if (target.integration_key !== job.integration_key || target.mailbox_email !== job.mailbox_email || target.client_email !== String(job.to_email || '').trim().toLowerCase()) {
     throw new Error('gmail_email_route_changed');
   }
