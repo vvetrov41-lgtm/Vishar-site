@@ -231,21 +231,11 @@ join public.enquiries e on e.id = m.enquiry_id and e.artist_id = m.artist_id
 left join crm_private.meta_ad_account_identity a
   on a.artist_id = m.artist_id and a.ad_account_id = m.ad_account_id
 left join lateral (
-  select case when (outbox.payload->>'event_time') ~ '^[0-9]{10}
-         outbox.status::text as delivery_status
-  from public.integration_outbox outbox
-  where outbox.enquiry_id = m.enquiry_id
-    and outbox.kind = 'meta_conversion'
-    and outbox.payload->>'event_name' = 'Lead'
-    and outbox.payload->>'event_id' = m.lead_event_id
-  order by outbox.created_at asc, outbox.id asc limit 1
-) o on true;
-
-revoke all on crm_private.meta_enquiry_reconciliation
-  from public, anon, authenticated, service_role;
-comment on view crm_private.meta_enquiry_reconciliation is
-  'Private consented Meta/CRM lead reconciliation. Event dates use IANA account timezone; CRM entries do not prove Meta-attributed conversions.';
-\n              then to_timestamp((outbox.payload->>'event_time')::double precision)\n              else null end as event_time_utc,
+  select case
+           when (outbox.payload->>'event_time') ~ '^[0-9]{10}$'
+             then to_timestamp((outbox.payload->>'event_time')::double precision)
+           else null
+         end as event_time_utc,
          outbox.status::text as delivery_status
   from public.integration_outbox outbox
   where outbox.enquiry_id = m.enquiry_id
