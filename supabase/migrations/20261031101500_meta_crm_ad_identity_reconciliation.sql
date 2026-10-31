@@ -67,7 +67,7 @@ revoke all on function crm_private.meta_paid_utm_ids(text,text,text,text,text)
 -- attribution. No visitor-history data is recovered without stored consent.
 create or replace function crm_private.meta_enquiry_ad_ids(p_enquiry_id uuid)
 returns jsonb
-language plpgsql stable
+language plpgsql volatile
 set search_path = pg_catalog, public, crm_private
 as $$
 declare
