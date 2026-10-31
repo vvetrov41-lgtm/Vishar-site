@@ -498,7 +498,7 @@ const LIFECYCLE_UTILITY_DEFINITIONS = Object.freeze({
     examples: ['Alex', 'Vladimir', '17 November 2026 11:00, 18 November 2026 11:00'],
   }),
   session_reminder_24h: Object.freeze({
-    text: 'Hi {{1}}, your tattoo sessions with {{2}} start tomorrow. Your booked dates: {{3}}. Studio address: {{4}}. Confirm the full booking here: {{5}}.',
+    text: 'Hi {{1}}, your tattoo sessions with {{2}} start tomorrow. Your booked dates: {{3}}. Studio address: {{4}}. Confirm the full booking here: {{5}}. If you need to reschedule, reply to this message.',
     examples: ['Alex', 'Vladimir', '17 and 18 November 2026, 11:00', '1 Sample Street, London', 'https://vishartattoo.com/booking/'],
   }),
   post_session_aftercare: Object.freeze({
