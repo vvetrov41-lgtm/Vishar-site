@@ -546,6 +546,12 @@ function env() {
       assert.equal(body.category, 'UTILITY');
       assert.equal(body.components.length, 1, 'lifecycle templates have no location or booking buttons');
       assert.equal(body.components[0].type, 'BODY');
+      if (body.name.includes('reminder_24h')) {
+        // Meta's variable placement rules reject a body ending with a
+        // parameter even when it is followed by punctuation alone.
+        assert.match(body.components[0].text,
+          /\{\{5\}\}\. If you need to reschedule, reply to this message\.$/);
+      }
       const n = body.name.includes('24h') ? 5 : 3;
       assert.equal(body.components[0].example.body_text[0].length, n);
       templates.push({ id: String(123456789000 + templates.length), name: body.name,
