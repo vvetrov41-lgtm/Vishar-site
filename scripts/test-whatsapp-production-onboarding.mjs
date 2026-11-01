@@ -393,6 +393,8 @@ for (const [label, subscriptionApps, expectedStatus] of [
   ['legacy top-level app id', [{ id: '1481226093843982', name: 'Vishar CRM' }], 200],
   ['foreign nested app id', [{ whatsapp_business_api_data: { id: '999999999999', name: 'Other app' } }], 500],
   ['no subscribed apps', [], 500],
+  ['app without id', [{ name: 'Unknown app' }], 500],
+  ['invalid response data', null, 500],
 ]) {
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -405,7 +407,7 @@ for (const [label, subscriptionApps, expectedStatus] of [
       assert.equal(body.connected, true, label);
       assert.equal(calls.filter(c => c.target.includes('complete_artist_whatsapp_connection')).length, 1, label);
     } else {
-      assert.deepEqual(body, { ok: false, error: 'meta_waba_subscription_readback_failed' }, label);
+      assert.deepEqual(body, { ok: false, error: label === 'no subscribed apps' ? 'meta_waba_subscription_not_found' : label === 'foreign nested app id' ? 'meta_waba_subscription_app_mismatch' : 'meta_waba_subscription_response_invalid' }, label);
       assert.equal(calls.some(c => c.target.includes('complete_artist_whatsapp_connection')), false,
         `${label}: no CRM connected-state mutation after failed subscription readback`);
     }
