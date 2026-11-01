@@ -358,7 +358,10 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
     const drainIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-drain-production/secrets'));
     const webhookIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-webhook-production/secrets'));
     const subscribeIndex = calls.findIndex((call) => call.target.endsWith('/subscribed_apps'));
-    const subscriptionReadbackIndex = calls.findIndex((call) => call.target.includes('/subscribed_apps?fields='));
+    const subscriptionReadbackIndex = calls.findIndex((call) => (
+      call.target.includes('/subscribed_apps')
+      && String(call.init.method || 'GET').toUpperCase() === 'GET'
+    ));
     const drainReadbackIndex = calls.findIndex((call) => (
       call.target.includes('vishar-whatsapp-drain-production/secrets')
       && String(call.init.method || 'GET').toUpperCase() === 'GET'
