@@ -483,13 +483,18 @@ async function subscribeWaba(accessToken, wabaId) {
 
 async function requireWabaSubscriptionReadback(accessToken, wabaId) {
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`);
-  url.searchParams.set('fields', 'id,name');
+  // Meta's subscribed_apps edge normally returns the subscribed app ID
+  // inside whatsapp_business_api_data, not at the top level. Avoid a fields
+  // projection that may hide that nested object; never trust POST success
+  // alone without the exact application ID in the GET readback.
   const payload = await graph(url.toString(), {
     method: 'GET',
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
   const rows = Array.isArray(payload?.data) ? payload.data : [];
-  if (!rows.some((app) => String(app?.id || '') === APP_ID)) {
+  if (!rows.some((app) => String(
+    app?.whatsapp_business_api_data?.id || app?.id || '',
+  ) === APP_ID)) {
     throw Object.assign(new Error('meta_waba_subscription_readback_failed'), { status: 502 });
   }
 }
