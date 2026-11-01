@@ -727,6 +727,8 @@ insert into expected_function_acl values
   ('public.service_record_lifecycle_whatsapp_template_failure(uuid,text,text,text,text)', false, false, true),
   ('public.service_set_lifecycle_whatsapp_delivery_enabled(uuid,boolean)', false, false, true),
   ('public.service_claim_lifecycle_whatsapp_template_targets(integer)', false, false, true),
+  ('public.service_claim_whatsapp_coexistence_targets(integer)', false, false, true),
+  ('public.service_record_whatsapp_coexistence_state(uuid,jsonb)', false, false, true),
   ('public.service_resolve_whatsapp_lifecycle_payload(uuid,text)', false, false, true),
   ('public.service_record_automation_scheduler_heartbeat()', false, false, true),
   ('public.service_sweep_lifecycle_failure_alerts(integer)', false, false, true),

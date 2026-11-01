@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import {
   maintainWhatsappBookingTemplates,
+  maintainWhatsappCoexistenceState,
   maintainWhatsappLifecycleTemplates,
   __testing,
 } from '../workers/lib/whatsapp-booking-templates.js';
@@ -603,6 +604,69 @@ function env() {
   assert.equal(rpcCalls.includes('service_record_lifecycle_whatsapp_template_status'), false);
   assert.equal(rpcCalls.filter(x => x === 'service_record_lifecycle_whatsapp_template_failure').length, 1,
     'missing Kristina binding records a safe bounded retry instead of hammering Meta');
+}
+
+{
+  // Coexistence evidence is read-only: two GETs with the artist binding, enum
+  // values and Graph codes only, recorded through the backend RPC.
+  const rpcCalls = [];
+  const graphCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_whatsapp_coexistence_targets') {
+        return Response.json([{ artist_id: ARTIST, integration_key: ROUTE }]);
+      }
+      return Response.json({ ok: true });
+    }
+    graphCalls.push({ url: value, method: init.method || 'GET', auth: init.headers?.Authorization });
+    if (value.includes('/100000000000001?')) {
+      return Response.json({
+        is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED',
+        code_verification_status: 'VERIFIED', id: '100000000000001', verified_name: 'Artist <script>',
+      });
+    }
+    return Response.json({
+      error: { code: 100, error_subcode: 33, message: 'Unsupported get request', fbtrace_id: 'Ab12' },
+    }, { status: 400 });
+  };
+  const summary = await maintainWhatsappCoexistenceState(env(), { fetchImpl });
+  assert.deepEqual(summary, { targets: 1, recorded: 1, failed: 0 });
+  assert.ok(graphCalls.every((call) => call.method === 'GET'), 'probe never writes to Meta');
+  assert.ok(graphCalls.every((call) => call.auth === `Bearer ${TOKEN}`));
+  assert.equal(graphCalls.length, 2);
+  const record = rpcCalls.find((call) => call.name === 'service_record_whatsapp_coexistence_state');
+  assert.deepEqual(record.args, {
+    p_artist_id: ARTIST,
+    p_state: {
+      is_on_biz_app: true,
+      platform_type: 'CLOUD_API',
+      phone_status: 'CONNECTED',
+      code_verification_status: 'VERIFIED',
+      waba_read_error: '100/33',
+    },
+  });
+  assert.equal(JSON.stringify(rpcCalls).includes(TOKEN), false, 'token never reaches the database');
+}
+
+{
+  // Values outside the enum shape are dropped, and a missing binding is a
+  // failed probe, never another artist's credentials.
+  const state = await __testing.readCoexistenceState(
+    { wabaId: WABA, phoneNumberId: '100000000000001', accessToken: TOKEN },
+    async (url) => (String(url).includes('100000000000001')
+      ? Response.json({ is_on_biz_app: 'yes', platform_type: 'cloud api', status: 'CONNECTED' })
+      : Response.json({ ownership_type: 'CLIENT_OWNED', account_review_status: 'APPROVED' })),
+  );
+  assert.deepEqual(state, {
+    is_on_biz_app: null, platform_type: null, phone_status: 'CONNECTED', code_verification_status: null,
+    waba_ownership_type: 'CLIENT_OWNED', waba_account_review_status: 'APPROVED',
+  });
+  assert.throws(
+    () => __testing.coexistenceBinding({ ...env(), [BINDING]: undefined }, { artist_id: ARTIST, integration_key: 'kristina-production' }),
+  );
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');
