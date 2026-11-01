@@ -45,6 +45,9 @@ export const ALLOWED_RPCS = new Set([
   'service_record_booking_card_template_status',
 ]);
 
+/** Read-only, aggregated and suppressed Meta funnel counts for Meta Analytics. */
+export const META_FUNNEL_RPCS = new Set(['service_meta_crm_funnel']);
+
 /** Consent-gated attribution stays outside the pinned intake allow-list. */
 export const TOUCH_ATTRIBUTION_RPCS = new Set(['service_record_enquiry_touch_attribution']);
 
@@ -242,6 +245,7 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     if (
       !ALLOWED_RPCS.has(name)
       && !META_ADS_RPCS.has(name)
+      && !META_FUNNEL_RPCS.has(name)
       && !TOUCH_ATTRIBUTION_RPCS.has(name)
       && !TELEGRAM_SELF_SERVICE_RPCS.has(name)
       && !CRM_AGENT_RPCS.has(name)
