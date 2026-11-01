@@ -405,7 +405,7 @@ for (const [label, subscriptionApps, expectedStatus] of [
       assert.equal(body.connected, true, label);
       assert.equal(calls.filter(c => c.target.includes('complete_artist_whatsapp_connection')).length, 1, label);
     } else {
-      assert.deepEqual(body, { ok: false, error: 'meta_waba_subscription_readback_failed' }, label);
+      assert.deepEqual(body, { ok: false, error: label === 'no subscribed apps' ? 'meta_waba_subscription_not_found' : 'meta_waba_subscription_app_mismatch' }, label);
       assert.equal(calls.some(c => c.target.includes('complete_artist_whatsapp_connection')), false,
         `${label}: no CRM connected-state mutation after failed subscription readback`);
     }
