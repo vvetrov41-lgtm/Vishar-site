@@ -637,6 +637,103 @@ export async function maintainWhatsappLifecycleTemplates(env, {
   return summary;
 }
 
+// Read-only Coexistence evidence. Meta documents is_on_biz_app=true with
+// platform_type=CLOUD_API on the business number as the test for a finished
+// WhatsApp Business app onboarding; the WABA's ownership and review state
+// say who may manage its templates. Only enum values and Graph code/subcode
+// are kept. This step never sends, subscribes, syncs or registers.
+const COEXISTENCE_ENUM = /^[A-Z][A-Z0-9_]{1,31}$/;
+
+function coexistenceBinding(env, target) {
+  if (!UUID.test(target?.artist_id ?? '') || !INTEGRATION_KEY.test(target?.integration_key ?? '')) {
+    throw Object.assign(new Error('invalid Coexistence target'), { code: 'whatsapp_coexistence_target_invalid' });
+  }
+  const selected = resolveProviderBinding(env, {
+    kind: 'whatsapp_message',
+    integration_type: 'whatsapp',
+    provider: 'meta_cloud_api',
+    integration_key: target.integration_key,
+  });
+  const text = (value) => (typeof value === 'string' ? value.trim() : '');
+  const wabaId = text(selected.credentials.wabaId);
+  const phoneNumberId = text(selected.credentials.phoneNumberId);
+  const accessToken = typeof selected.credentials.accessToken === 'string' ? selected.credentials.accessToken : '';
+  if (!PROVIDER_ID.test(wabaId) || !PROVIDER_ID.test(phoneNumberId)
+      || accessToken.length < 20 || /\s/.test(accessToken)) {
+    throw Object.assign(new Error('invalid Coexistence binding'), { code: 'provider_binding_invalid' });
+  }
+  return { wabaId, phoneNumberId, accessToken };
+}
+
+function coexistenceEnum(value) {
+  return typeof value === 'string' && COEXISTENCE_ENUM.test(value) ? value : null;
+}
+
+function graphReadError(error) {
+  const code = providerInteger(error?.providerError?.code);
+  const subcode = providerInteger(error?.providerError?.subcode);
+  const status = providerInteger(error?.providerError?.http_status);
+  if (code !== null) return subcode !== null ? `${code}/${subcode}` : String(code);
+  return status !== null ? String(status) : '0';
+}
+
+async function readCoexistenceState(binding, fetchImpl) {
+  const state = {};
+  try {
+    const phone = await graph(
+      binding,
+      `${binding.phoneNumberId}?fields=is_on_biz_app,platform_type,status,code_verification_status`,
+      { method: 'GET' },
+      fetchImpl,
+    );
+    state.is_on_biz_app = typeof phone?.is_on_biz_app === 'boolean' ? phone.is_on_biz_app : null;
+    state.platform_type = coexistenceEnum(phone?.platform_type);
+    state.phone_status = coexistenceEnum(phone?.status);
+    state.code_verification_status = coexistenceEnum(phone?.code_verification_status);
+  } catch (error) {
+    state.phone_read_error = graphReadError(error);
+  }
+  try {
+    const waba = await graph(
+      binding,
+      `${binding.wabaId}?fields=ownership_type,account_review_status`,
+      { method: 'GET' },
+      fetchImpl,
+    );
+    state.waba_ownership_type = coexistenceEnum(waba?.ownership_type);
+    state.waba_account_review_status = coexistenceEnum(waba?.account_review_status);
+  } catch (error) {
+    state.waba_read_error = graphReadError(error);
+  }
+  return state;
+}
+
+export async function maintainWhatsappCoexistenceState(env, { limit = 4, fetchImpl = fetch } = {}) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 10) {
+    throw Object.assign(new Error('Coexistence probe limit invalid'), { code: 'whatsapp_coexistence_limit_invalid' });
+  }
+  const supabase = createSupabaseClient(env, fetchImpl);
+  const claimed = await supabase.rpc('service_claim_whatsapp_coexistence_targets', { p_limit: limit });
+  const targets = Array.isArray(claimed) ? claimed : claimed == null ? [] : [claimed];
+  if (targets.length > limit) {
+    throw Object.assign(new Error('Coexistence probe claim invalid'), { code: 'whatsapp_coexistence_claim_invalid' });
+  }
+  const summary = { targets: targets.length, recorded: 0, failed: 0 };
+  for (const target of targets) {
+    try {
+      const state = await readCoexistenceState(coexistenceBinding(env, target), fetchImpl);
+      await supabase.rpc('service_record_whatsapp_coexistence_state', {
+        p_artist_id: target.artist_id,
+        p_state: state,
+      });
+      summary.recorded += 1;
+    } catch {
+      summary.failed += 1;
+    }
+  }
+  return summary;
+}
+
 export const __testing = Object.freeze({
   TATTOO_BODY,
   CONSULTATION_BODY,
@@ -647,4 +744,6 @@ export const __testing = Object.freeze({
   readProviderError,
   readWabaHealth,
   providerMessage,
+  coexistenceBinding,
+  readCoexistenceState,
 });
