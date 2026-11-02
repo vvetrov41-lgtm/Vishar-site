@@ -1,5 +1,7 @@
 import { drainWhatsappOutbox } from './lib/whatsapp-drain.js';
 import { maintainWhatsappBookingTemplates } from './lib/whatsapp-booking-templates.js';
+import { maintainWhatsappLifecycleTemplates } from './lib/whatsapp-booking-templates.js';
+import { maintainWhatsappCoexistenceState } from './lib/whatsapp-booking-templates.js';
 
 // Outbound WhatsApp drain. It has no public surface: workers_dev and preview
 // URLs are off and the Worker has no route. Production invokes it from the
@@ -67,6 +69,8 @@ export async function handleInternalDrain(
   env,
   drain = drainWhatsappOutbox,
   maintainTemplates = maintainWhatsappBookingTemplates,
+  maintainLifecycleTemplates = maintainWhatsappLifecycleTemplates,
+  probeCoexistence = maintainWhatsappCoexistenceState,
 ) {
   if (env?.VISHAR_ENVIRONMENT !== 'production' || env?.WHATSAPP_DRAIN_ENABLED !== 'true') {
     return json({ ok: true, skipped: true, claimed: 0, succeeded: 0, failed: 0, unrecorded: 0 });
@@ -89,6 +93,41 @@ export async function handleInternalDrain(
       // Template provisioning is independent of ordinary outbound draining.
       // Existing WhatsApp replies must keep flowing if Meta template admin is
       // temporarily unavailable.
+    }
+  }
+
+  if (env?.WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED === 'true') {
+    try {
+      // Read-only Meta Coexistence evidence, at most hourly per artist.
+      const summary = await probeCoexistence(env);
+      console.log('whatsapp coexistence probe', JSON.stringify({
+        targets: summary.targets,
+        recorded: summary.recorded,
+        failed: summary.failed,
+      }));
+    } catch (error) {
+      console.error('whatsapp coexistence probe failed', JSON.stringify({
+        code: safeFailureCode(error),
+      }));
+    }
+  }
+
+  if (env?.WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED === 'true') {
+    try {
+      const summary = await maintainLifecycleTemplates(env);
+      console.log('whatsapp lifecycle template maintenance', JSON.stringify({
+        targets: summary.targets,
+        checked: summary.checked,
+        created: summary.created,
+        approved: summary.approved,
+        failed: summary.failed,
+      }));
+    } catch (error) {
+      console.error('whatsapp lifecycle template maintenance failed', JSON.stringify({
+        code: safeFailureCode(error),
+      }));
+      // An unavailable Meta template-admin route must never block ordinary
+      // authorised WhatsApp replies or booking-card sends.
     }
   }
 

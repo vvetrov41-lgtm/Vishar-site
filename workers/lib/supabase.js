@@ -40,9 +40,16 @@ export const ALLOWED_RPCS = new Set([
   'record_whatsapp_outbox_result',
   'service_begin_communication_send',
   'service_resolve_whatsapp_booking_card_payload',
+  'service_resolve_whatsapp_lifecycle_payload',
+  'service_claim_lifecycle_whatsapp_template_targets',
+  'service_record_lifecycle_whatsapp_template_status',
+  'service_record_lifecycle_whatsapp_template_failure',
   'service_apply_whatsapp_booking_card_action',
   'service_claim_booking_card_template_targets',
   'service_record_booking_card_template_status',
+  // Read-only Meta Coexistence evidence (enum values and Graph codes only).
+  'service_claim_whatsapp_coexistence_targets',
+  'service_record_whatsapp_coexistence_state',
 ]);
 
 /** Read-only, aggregated and suppressed Meta funnel counts for Meta Analytics. */

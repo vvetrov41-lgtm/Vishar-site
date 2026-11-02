@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import {
   maintainWhatsappBookingTemplates,
+  maintainWhatsappCoexistenceState,
+  maintainWhatsappLifecycleTemplates,
   __testing,
 } from '../workers/lib/whatsapp-booking-templates.js';
 
@@ -505,6 +507,166 @@ function env() {
   assert.equal(record.args.p_tattoo_status, 'PENDING');
   assert.equal(record.args.p_consultation_status, 'APPROVED');
   assert.equal(record.args.p_error_code, null);
+}
+
+
+{
+  // Meta readback, not application configuration, is the only approval source.
+  const rpcCalls = [];
+  const graphCalls = [];
+  const templates = [];
+  const targets = [
+    { artist_id: ARTIST, integration_key: ROUTE,
+      purpose: 'post_session_aftercare', template_name: 'vishar_lifecycle_aftercare_v1',
+      template_language: 'en_GB', approval_status: 'UNKNOWN' },
+    { artist_id: ARTIST, integration_key: ROUTE,
+      purpose: 'session_reminder_24h', template_name: 'vishar_lifecycle_reminder_24h_v1',
+      template_language: 'en_GB', approval_status: 'UNKNOWN' },
+  ];
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/rest/v1/rpc/')) {
+      const name = u.split('/').pop();
+      const args = JSON.parse(init.body || '{}');
+      rpcCalls.push({ name, args });
+      if (name === 'service_claim_lifecycle_whatsapp_template_targets') {
+        return Response.json(targets);
+      }
+      if (name === 'service_record_lifecycle_whatsapp_template_status') {
+        return Response.json({ ok: true });
+      }
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (u.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      const method = String(init.method || 'GET').toUpperCase();
+      graphCalls.push({ method, body: init.body ? JSON.parse(init.body) : null });
+      assert.equal(init.headers.Authorization, `Bearer ${TOKEN}`);
+      assert.equal(init.redirect, 'manual');
+      if (method === 'GET') return Response.json({ data: structuredClone(templates) });
+      const body = JSON.parse(init.body);
+      assert.equal(body.category, 'UTILITY');
+      assert.equal(body.components.length, 1, 'lifecycle templates have no location or booking buttons');
+      assert.equal(body.components[0].type, 'BODY');
+      if (body.name.includes('reminder_24h')) {
+        // Meta's variable placement rules reject a body ending with a
+        // parameter even when it is followed by punctuation alone.
+        assert.match(body.components[0].text,
+          /\{\{5\}\}\. If you need to reschedule, reply to this message\.$/);
+      }
+      const n = body.name.includes('24h') ? 5 : 3;
+      assert.equal(body.components[0].example.body_text[0].length, n);
+      templates.push({ id: String(123456789000 + templates.length), name: body.name,
+        language: body.language, category: 'UTILITY', status: 'APPROVED' });
+      return Response.json({ id: templates.at(-1).id });
+    }
+    throw new Error(`unexpected URL ${u}`);
+  };
+  const result = await maintainWhatsappLifecycleTemplates(env(), { fetchImpl });
+  assert.deepEqual(result, { targets: 2, checked: 2, created: 2, approved: 2, failed: 0 });
+  assert.equal(graphCalls.filter(x => x.method === 'POST').length, 2);
+  const records = rpcCalls.filter(x => x.name === 'service_record_lifecycle_whatsapp_template_status');
+  assert.equal(records.length, 2);
+  for (const record of records) {
+    assert.equal(record.args.p_artist_id, ARTIST);
+    assert.equal(record.args.p_status, 'APPROVED');
+    assert.match(record.args.p_provider_template_id, /^[0-9]{12}$/);
+  }
+  assert.equal(JSON.stringify(result).includes(TOKEN), false);
+}
+
+{
+  // An absent Kristina binding must never borrow Vladimir's Meta credentials.
+  const rpcCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const u = String(url);
+    if (u.includes('/rest/v1/rpc/')) {
+      const name = u.split('/').pop();
+      rpcCalls.push(name);
+      if (name === 'service_claim_lifecycle_whatsapp_template_targets') {
+        return Response.json([{ artist_id: 'a2222222-2222-4222-8222-222222222222',
+          integration_key: 'kristina-production',
+          purpose: 'post_session_checkin', template_name: 'vishar_lifecycle_checkin_v1',
+          template_language: 'en_GB', approval_status: 'UNKNOWN' }]);
+      }
+      if (name === 'service_record_lifecycle_whatsapp_template_failure') {
+        const args = JSON.parse(init.body || '{}');
+        assert.equal(args.p_artist_id, 'a2222222-2222-4222-8222-222222222222');
+        assert.match(args.p_error_code, /^[a-z][a-z0-9_]{2,63}$/);
+        assert.equal(JSON.stringify(args).includes(TOKEN), false);
+        return Response.json({ ok: true });
+      }
+      throw new Error(`unsafe RPC ${name}`);
+    }
+    throw new Error('must not contact Meta when Kristina binding is missing');
+  };
+  const result = await maintainWhatsappLifecycleTemplates(env(), { fetchImpl });
+  assert.deepEqual(result, { targets: 1, checked: 0, created: 0, approved: 0, failed: 1 });
+  assert.equal(rpcCalls.includes('service_record_lifecycle_whatsapp_template_status'), false);
+  assert.equal(rpcCalls.filter(x => x === 'service_record_lifecycle_whatsapp_template_failure').length, 1,
+    'missing Kristina binding records a safe bounded retry instead of hammering Meta');
+}
+
+{
+  // Coexistence evidence is read-only: two GETs with the artist binding, enum
+  // values and Graph codes only, recorded through the backend RPC.
+  const rpcCalls = [];
+  const graphCalls = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_whatsapp_coexistence_targets') {
+        return Response.json([{ artist_id: ARTIST, integration_key: ROUTE }]);
+      }
+      return Response.json({ ok: true });
+    }
+    graphCalls.push({ url: value, method: init.method || 'GET', auth: init.headers?.Authorization });
+    if (value.includes('/100000000000001?')) {
+      return Response.json({
+        is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED',
+        code_verification_status: 'VERIFIED', id: '100000000000001', verified_name: 'Artist <script>',
+      });
+    }
+    return Response.json({
+      error: { code: 100, error_subcode: 33, message: 'Unsupported get request', fbtrace_id: 'Ab12' },
+    }, { status: 400 });
+  };
+  const summary = await maintainWhatsappCoexistenceState(env(), { fetchImpl });
+  assert.deepEqual(summary, { targets: 1, recorded: 1, failed: 0 });
+  assert.ok(graphCalls.every((call) => call.method === 'GET'), 'probe never writes to Meta');
+  assert.ok(graphCalls.every((call) => call.auth === `Bearer ${TOKEN}`));
+  assert.equal(graphCalls.length, 2);
+  const record = rpcCalls.find((call) => call.name === 'service_record_whatsapp_coexistence_state');
+  assert.deepEqual(record.args, {
+    p_artist_id: ARTIST,
+    p_state: {
+      is_on_biz_app: true,
+      platform_type: 'CLOUD_API',
+      phone_status: 'CONNECTED',
+      code_verification_status: 'VERIFIED',
+      waba_read_error: '100/33',
+    },
+  });
+  assert.equal(JSON.stringify(rpcCalls).includes(TOKEN), false, 'token never reaches the database');
+}
+
+{
+  // Values outside the enum shape are dropped, and a missing binding is a
+  // failed probe, never another artist's credentials.
+  const state = await __testing.readCoexistenceState(
+    { wabaId: WABA, phoneNumberId: '100000000000001', accessToken: TOKEN },
+    async (url) => (String(url).includes('100000000000001')
+      ? Response.json({ is_on_biz_app: 'yes', platform_type: 'cloud api', status: 'CONNECTED' })
+      : Response.json({ ownership_type: 'CLIENT_OWNED', account_review_status: 'APPROVED' })),
+  );
+  assert.deepEqual(state, {
+    is_on_biz_app: null, platform_type: null, phone_status: 'CONNECTED', code_verification_status: null,
+    waba_ownership_type: 'CLIENT_OWNED', waba_account_review_status: 'APPROVED',
+  });
+  assert.throws(
+    () => __testing.coexistenceBinding({ ...env(), [BINDING]: undefined }, { artist_id: ARTIST, integration_key: 'kristina-production' }),
+  );
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');

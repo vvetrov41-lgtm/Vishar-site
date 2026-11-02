@@ -13,6 +13,12 @@ export function verifyTodayLineage(source) {
     ['20261020090000', '20261021074511'],
     // Placement reconciliation PR #1119, only after the reliability migration is live.
     ['20261021074511', '20261021090000'],
+    // PR #1141: strictly bounded read-only WhatsApp Coexistence state.
+    ['20261030175000', '20261101180000'],
+    // PR #1133: consented Meta ad IDs and conversion-day reconciliation.
+    ['20261101180000', '20261102010000'],
+    // PR #1140: aggregate-only Meta funnel RPC, only after #1133 is live.
+    ['20261102010000', '20261102011000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
