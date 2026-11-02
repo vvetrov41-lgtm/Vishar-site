@@ -1,5 +1,5 @@
 begin;
-select plan(23);
+select plan(24);
 
 select has_function('public', 'service_meta_crm_funnel', array['text','date','date'],
   'funnel aggregate RPC exists');
@@ -159,6 +159,18 @@ select is((
     (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
     ->'campaign_totals'->0->'enquiries'
 ), 'null'::jsonb,'extreme sum of three single-enquiry days remains suppressed');
+
+-- Cross-metric P1 regression: no monthly consultation/project/deposit total
+-- may be published over hidden daily cells. The Worker adds an independent
+-- behavioural check with the [1,1,2] enquiries / [0,1,2] consultation case.
+select ok((
+  select pg_get_functiondef('public.service_meta_crm_funnel(text,date,date)'::regprocedure)
+    like '%when d.consultations_hidden=0 then c.consultations else null end%'
+   and pg_get_functiondef('public.service_meta_crm_funnel(text,date,date)'::regprocedure)
+    like '%when d.projects_hidden=0 then c.confirmed_projects else null end%'
+   and pg_get_functiondef('public.service_meta_crm_funnel(text,date,date)'::regprocedure)
+    like '%when d.deposits_hidden=0 then c.deposits_count else null end%'
+), 'monthly secondary metrics cannot combine with hidden ad/day cells to reveal an enquiry');
 
 select * from finish();
 rollback;
