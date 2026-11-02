@@ -19,6 +19,9 @@ export function verifyTodayLineage(source) {
     ['20261101180000', '20261102010000'],
     // PR #1140: aggregate-only Meta funnel RPC, only after #1133 is live.
     ['20261102010000', '20261102011000'],
+    // PR #1146: additive monthly Meta CRM campaign totals; no messaging changes.
+    // Only after all intervening operator pricing/commission schema is live.
+    ['20261102210000', '20261103010000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
