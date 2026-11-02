@@ -266,6 +266,37 @@ export function StatisticsPage() {
             <MoneyBlock title={t('stats.money.received')} hint={t('stats.money.receivedHint')} amounts={current.finance.received} language={language} />
             <MoneyBlock title={t('stats.money.refunded')} hint={t('stats.money.refundedHint')} amounts={current.finance.refunded} language={language} />
           </div>
+          {current.finance.studio_share ? (
+            <>
+              <h3 className="stats-subhead">{t('stats.studio.title')}</h3>
+              <div className="stats-money">
+                <MoneyBlock title={t('stats.studio.gross')} hint={t('stats.studio.grossHint')}
+                  amounts={[{ currency: 'GBP', amount: current.finance.studio_share.gross }]} language={language} />
+                <MoneyBlock title={t('stats.studio.fee')} hint={t('stats.studio.feeHint')}
+                  amounts={[{ currency: 'GBP', amount: current.finance.studio_share.studio_fee }]} language={language} />
+                <MoneyBlock title={t('stats.studio.net')} hint={t('stats.studio.netHint')}
+                  amounts={[{ currency: 'GBP', amount: current.finance.studio_share.artist_net }]} language={language} />
+              </div>
+              <p className="stats-caveat">
+                {t('stats.studio.rule')} {' '}
+                {t('stats.studio.coverage', {
+                  count: current.finance.studio_share.sessions,
+                  rate: current.finance.studio_share.effective_percent === null
+                    ? '—' : current.finance.studio_share.effective_percent.toLocaleString(locale),
+                })}
+              </p>
+              {current.finance.studio_share.incomplete_sessions > 0 ? (
+                <p className="stats-caveat">{t('stats.studio.incomplete', {
+                  count: current.finance.studio_share.incomplete_sessions,
+                })}</p>
+              ) : null}
+              {current.finance.studio_share.unpaid_sessions > 0 ? (
+                <p className="stats-caveat">{t('stats.studio.unpaid', {
+                  count: current.finance.studio_share.unpaid_sessions,
+                })}</p>
+              ) : null}
+            </>
+          ) : null}
           <h3 className="stats-subhead">{t('stats.money.expected')}</h3>
           <div className="stats-money">
             <MoneyBlock

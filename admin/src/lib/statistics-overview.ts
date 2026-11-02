@@ -109,6 +109,23 @@ function sumFinance(blocks: Array<StatisticsFinanceBlock | null>): StatisticsFin
     partially_paid: present.reduce((total, block) => total + block.partially_paid, 0),
     forecast: sumForecast(present.map((block) => block.forecast)),
     deposits_paid_by_channel: sumRecord(present.map((block) => block.deposits_paid_by_channel)),
+    // Never show a partial studio total when an artist has an older server
+    // response. Only combine the same-currency, per-session calculated values.
+    ...(present.every((block) => block.studio_share?.currency === 'GBP') ? (() => {
+      const shares = present.map((block) => block.studio_share!);
+      const gross = shares.reduce((n, share) => n + Number(share.gross), 0);
+      const studio_fee = shares.reduce((n, share) => n + Number(share.studio_fee), 0);
+      return { studio_share: {
+        currency: 'GBP' as const,
+        gross,
+        studio_fee,
+        artist_net: gross - studio_fee,
+        effective_percent: gross > 0 ? Math.round(studio_fee * 10000 / gross) / 100 : null,
+        sessions: shares.reduce((n, share) => n + Number(share.sessions), 0),
+        incomplete_sessions: shares.reduce((n, share) => n + Number(share.incomplete_sessions), 0),
+        unpaid_sessions: shares.reduce((n, share) => n + Number(share.unpaid_sessions), 0),
+      } };
+    })() : {}),
   };
 }
 

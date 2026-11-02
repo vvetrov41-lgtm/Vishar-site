@@ -376,3 +376,34 @@ These are floors, not significance tests.
 - `admin/src/test/statistics-page.test.tsx` — order on a phone, money for
   exactly the viewer the database returns it to, actual vs expected money, no
   change without history.
+
+
+## Studio share, completed paid tattoo sessions
+
+The Statistics money section shows the calculated studio entitlement, artist
+remainder and effective commission rate for the selected period. Both Vladimir
+and Kristina use the same rule **per completed paid tattoo session**, never on
+the period total:
+
+- Price up to and including £600: 30% of that session price.
+- Price above £600: fixed £180 for that session.
+- Amounts are rounded per session to GBP pence.
+- Examples: £420 -> £126 to studio; £600 -> £180; £980 -> £180.
+
+The source is the saved price on completed, paid `tattoo_session` or
+`touch_up` rows within the selected session-date window. They must survive the
+existing `statistics_sessions` analytics-exclusion projection. Session value
+is taken once; deposits, bank receipts, split transfers and the payment
+destination never become another billable session. Consultations, future
+appointments and sessions not marked paid are excluded. A paid session without
+a usable GBP price is counted as incomplete rather than treated as £0.
+No exchange rate or commission for foreign-currency sessions is invented.
+
+`crm_private.statistics_studio_share` is private. The authorized
+`statistics_core` finance block exposes its aggregate only when
+`view_finance` was granted upstream. Both CRM and GPT use that core.
+Across artists, the UI sums only fully available GBP artist aggregates, and
+recomputes the effective percentage from total studio share divided by total
+session value. An aggregate cannot prove the studio was actually paid:
+"Studio share" is labelled *calculated*, not a verified transfer. It also
+does not deduct the artist's other expenses.

@@ -55,7 +55,21 @@ export interface StatisticsForecast {
   remaining_after_deposits: CurrencyAmount[];
 }
 
+/** Commission computed per paid completed tattoo session in GBP. */
+export interface StatisticsStudioShare {
+  currency: 'GBP';
+  gross: number;
+  studio_fee: number;
+  artist_net: number;
+  effective_percent: number | null;
+  sessions: number;
+  incomplete_sessions: number;
+  unpaid_sessions: number;
+}
+
 export interface StatisticsFinanceBlock {
+  /** Absent until the corresponding database migration is deployed. */
+  studio_share?: StatisticsStudioShare;
   received: CurrencyAmount[];
   refunded: CurrencyAmount[];
   open: CurrencyAmount[];
