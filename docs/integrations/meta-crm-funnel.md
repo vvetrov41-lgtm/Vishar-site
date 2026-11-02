@@ -32,7 +32,8 @@ Consumer: `vvetrov41-lgtm/vishar-meta-analytics`, tool `meta_get_funnel_report` 
   - `confirmed_projects`: project `active` or `completed`;
   - `deposits_count` and `deposits_minor`: project deposit `paid`, GBP only.
 - Counts of 1 or 2 are returned as `null`. The deposit total is null with its count.
-- For a **complete calendar month only**, the response may also contain `campaign_totals`: consent-scoped counts grouped by numeric campaign ID, calculated before daily suppression. A monthly metric is shown only when it is not 1–2 and cannot reveal any individual suppressed daily ad cell through subtraction. It is hidden when there is exactly one suppressed cell, or when several suppressed cells have an extreme total that fixes their values. Daily ad rows retain their original suppression; the deposit amount follows the deposit-count protection. No personal identifiers are included.
+- For a **complete calendar month only**, the response may also contain `campaign_totals`. The monthly enquiry total uses complementary suppression across all publicly queryable daily ad cells; it is hidden when a sole suppressed cell or an extreme sum would allow reconstruction.
+- Monthly consultations, confirmed projects, paid-deposit counts and sums are included only when **every underlying daily ad cell for that metric is already visible**. Their correlations with enquiries could otherwise reveal hidden daily client counts. The Worker independently rejects unsafe or malformed monthly secondary metrics.
 - Partial or custom ranges never include `campaign_totals`. Ad-level reports do not receive independent monthly totals.
 
 - No names, emails, phones, enquiry IDs, references or free text are returned. The Worker rebuilds every row from the listed fields only.
