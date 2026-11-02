@@ -115,6 +115,25 @@ await test('full months expose only suppressed campaign totals; partial ranges r
   }
 });
 
+await test('cross-metric protection rejects campaign totals that disclose a hidden consultation day', async () => {
+  const day = (date, consultations) => ({
+    date, ad_id: '120248212423350778', campaign_id: '120247800617380778',
+    enquiries: null, consultations, confirmed_projects: 0, deposits_count: 0, deposits_minor: 0,
+  });
+  const rows = [day('2026-10-11', 0), day('2026-10-12', null), day('2026-10-13', null)];
+  const totals = [{ campaign_id: '120247800617380778', enquiries: 4,
+    consultations: 3, confirmed_projects: 0, deposits_count: 0, deposits_minor: 0 }];
+  const unsafe = await handleMetaFunnelRequest(await request(), env,
+    { ...backend({ ...DB_PAYLOAD, rows, campaign_totals: totals }), now: () => NOW });
+  assert.equal(unsafe.status, 502, 'consultation total plus hidden daily cells could expose a client day');
+  const safe = await handleMetaFunnelRequest(await request(), env,
+    { ...backend({ ...DB_PAYLOAD, rows, campaign_totals: [{ ...totals[0], consultations: null }] }), now: () => NOW });
+  assert.equal(safe.status, 200, 'monthly enquiries can survive without unsafe secondary totals');
+  const payload = await safe.json();
+  assert.equal(payload.campaign_totals[0].enquiries, 4);
+  assert.equal(payload.campaign_totals[0].consultations, null);
+});
+
 await test('unauthenticated, replayed, malformed or unconfigured requests are 404 and never reach the database', async () => {
   const cases = [
     await request({ signature: '0'.repeat(64) }),
