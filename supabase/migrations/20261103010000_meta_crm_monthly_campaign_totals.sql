@@ -136,39 +136,14 @@ begin
          and c.enquiries - d.enquiries_visible < 2*d.enquiries_hidden
         then c.enquiries
         else null end,
-      'consultations', case
-        when c.consultations between 1 and 2 then null
-        when d.consultations_hidden = 0 then c.consultations
-        when d.consultations_hidden >= 2
-         and c.consultations - d.consultations_visible > d.consultations_hidden
-         and c.consultations - d.consultations_visible < 2*d.consultations_hidden
-        then c.consultations
-        else null end,
-      'confirmed_projects', case
-        when c.confirmed_projects between 1 and 2 then null
-        when d.projects_hidden = 0 then c.confirmed_projects
-        when d.projects_hidden >= 2
-         and c.confirmed_projects - d.projects_visible > d.projects_hidden
-         and c.confirmed_projects - d.projects_visible < 2*d.projects_hidden
-        then c.confirmed_projects
-        else null end,
-      'deposits_count', case
-        when c.deposits_count between 1 and 2 then null
-        when d.deposits_hidden = 0 then c.deposits_count
-        when d.deposits_hidden >= 2
-         and c.deposits_count - d.deposits_visible > d.deposits_hidden
-         and c.deposits_count - d.deposits_visible < 2*d.deposits_hidden
-        then c.deposits_count
-        else null end,
-      'deposits_minor', case
-        when c.deposits_count = 0 and d.deposits_hidden=0 then 0
-        when c.deposits_count > 2 and
-          (d.deposits_hidden = 0 or
-           (d.deposits_hidden >= 2
-            and c.deposits_count-d.deposits_visible > d.deposits_hidden
-            and c.deposits_count-d.deposits_visible < 2*d.deposits_hidden))
-          then c.deposits_minor
-        else null end
+      -- Only monthly enquiry totals are subject to complementary suppression.
+      -- Other metrics are *never* aggregated over hidden day/ad cells: joint
+      -- constraints (e.g. consultations <= enquiries) could otherwise reveal
+      -- a suppressed enquiry day despite each metric being safe in isolation.
+      'consultations', case when d.consultations_hidden=0 then c.consultations else null end,
+      'confirmed_projects', case when d.projects_hidden=0 then c.confirmed_projects else null end,
+      'deposits_count', case when d.deposits_hidden=0 then c.deposits_count else null end,
+      'deposits_minor', case when d.deposits_hidden=0 then c.deposits_minor else null end
     ) order by c.campaign_id) from campaign_grouped c
       join daily_visibility d on d.campaign_id=c.campaign_id), '[]'::jsonb)
     else null
