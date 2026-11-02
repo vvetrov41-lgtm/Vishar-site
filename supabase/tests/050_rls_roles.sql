@@ -793,6 +793,7 @@ insert into expected_function_acl values
   ('public.service_record_enquiry_touch_attribution(uuid,uuid,boolean,jsonb,jsonb)', false, false, true),
   ('public.claim_meta_conversion_outbox(text,integer,integer)', false, false, true),
   ('public.record_meta_conversion_outbox_result(uuid,text,boolean,boolean,text)', false, false, true),
+  ('public.service_meta_crm_funnel(text,date,date)', false, false, true),
 
   -- Bounded AI enquiry intake. Worker orchestration is service-only; the CRM
   -- can only read/retry its own result and edit an existing draft in-scope.

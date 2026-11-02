@@ -20,6 +20,7 @@ import {
 } from './lib/http.js';
 import { handleHostedBookingRequest, isHostedBookingPath } from './routes/hosted-booking.js';
 import { handlePublicBookingRequest, isPublicBookingPath } from './routes/public-booking.js';
+import { handleMetaFunnelRequest, isMetaFunnelPath } from './routes/meta-funnel.js';
 import {
   handleAppointmentClientActionRequest,
   isAppointmentClientActionPath,
@@ -268,6 +269,11 @@ export default {
     // public booking origins. Rate-limited like every other public POST.
     if (isEnquiryTranslationPath(request)) {
       return handleEnquiryTranslationRequest(request, env);
+    }
+
+    // Server-to-server, HMAC-signed, aggregates only; 404 unless configured.
+    if (isMetaFunnelPath(request)) {
+      return handleMetaFunnelRequest(request, env, { fetchImpl: fetch });
     }
 
     if (isAiRouterProbePath(request)) {
