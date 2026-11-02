@@ -130,13 +130,19 @@ function artistFullDay(pricing: ArtistSessionPricing | null | undefined) {
  * Suggest (never decide) a price for one tattoo session.
  * - With a project hourly rate: hours x that rate. If the project uses the
  *   artist's standard hourly rate and the artist has an explicit full-day
- *   price, a session at least that long suggests the explicit day price.
+ *   price, a session at that length suggests the day price unless that would cost more than hourly.
  * - Without one: the artist's explicit full-day price for a full day,
  *   otherwise hours x the artist's hourly rate.
  * No cap or discount is invented: a long part-day is not reduced to a day
  * price unless that day price is explicitly configured and applies.
  * Returns null when nothing applies.
  */
+/** An expensive full-day price must not override a cheaper hourly price at the exact boundary. */
+function fullDayApplies(hours: number, day: { rate: number; hours: number }, hourlyRate: number | null | undefined): boolean {
+  return hours > day.hours ||
+    (hours === day.hours && (hourlyRate == null || day.rate <= Number(hourlyRate) * hours));
+}
+
 export function suggestSessionPrice(
   durationMinutes: number | null | undefined,
   pricingOrInputs: ArtistSessionPricing | SessionPriceInputs | null | undefined
@@ -153,14 +159,14 @@ export function suggestSessionPrice(
   if (projectRate != null && Number.isFinite(projectRate) && projectRate > 0) {
     const currency = inputs.projectCurrency || artist?.currency || 'GBP';
     const standardRate = artist?.hourly_rate != null && Number(artist.hourly_rate) === projectRate;
-    if (fullDay && standardRate && hours >= fullDay.hours) {
+    if (fullDay && standardRate && fullDayApplies(hours, fullDay, artist?.hourly_rate)) {
       return { price: roundMoney(fullDay.rate), basis: 'full_day', source: 'project', hours, rate: fullDay.rate, currency };
     }
     return { price: roundMoney(projectRate * hours), basis: 'hourly', source: 'project', hours, rate: projectRate, currency };
   }
 
   if (!artist) return null;
-  if (fullDay && hours >= fullDay.hours) {
+  if (fullDay && fullDayApplies(hours, fullDay, artist?.hourly_rate)) {
     return { price: roundMoney(fullDay.rate), basis: 'full_day', source: 'artist', hours, rate: fullDay.rate, currency: artist.currency };
   }
   if (artist.hourly_rate != null) {
