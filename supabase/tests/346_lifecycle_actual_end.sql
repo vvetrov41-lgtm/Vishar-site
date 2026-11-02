@@ -88,12 +88,18 @@ select is((select j.scheduled_at from public.automation_jobs j
   where s.id='f9593333-3333-4333-8333-333333333333'),
  'check-in follows actual finish plus 24 hours');
 -- Consecutive-day block: the final day's evidenced finish is the only
--- Keep completed sessions near the current date so a check-in is not expired
--- by the time the pgTAP suite runs after a UTC midnight boundary.
 -- anchor for the following day's wellbeing check, not the first day's end.
+-- Use a separate client and project from the standalone actual-end case:
+-- otherwise a midnight boundary can make two unrelated scenarios adjacent.
+insert into public.clients(id,full_name,email) values
+  ('f9596666-6666-4666-8666-666666666666','Actual end consecutive test','actual-end-block@example.test');
+insert into public.projects(id,client_id,artist_id,title) values
+  ('f9597777-7777-4777-8777-777777777777',
+   'f9596666-6666-4666-8666-666666666666',
+   (select id from public.artists where slug='vladimir'),'Actual end consecutive test');
 insert into public.sessions(id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at)
 select v.id,(select id from public.artists where slug='vladimir'),
- 'f9591111-1111-4111-8111-111111111111','f9592222-2222-4222-8222-222222222222',
+ 'f9596666-6666-4666-8666-666666666666','f9597777-7777-4777-8777-777777777777',
  'tattoo_session','confirmed',v.start_at,v.start_at+interval '4 hours'
 from (values
  ('f9594444-4444-4444-8444-444444444444'::uuid,date_trunc('day',now())+interval '40 days 10 hours'),
@@ -111,18 +117,18 @@ select lives_ok($check$select * from public.service_run_automation_tick(500)$che
 reset role;
 update public.sessions set
  status='completed',
- start_at=date_trunc('day',now())-interval '2 days'+interval '10 hours',
- end_at=date_trunc('day',now())-interval '2 days'+interval '14 hours'
+ start_at=date_trunc('day',now())-interval '3 days'+interval '10 hours',
+ end_at=date_trunc('day',now())-interval '3 days'+interval '14 hours'
 where id='f9594444-4444-4444-8444-444444444444';
 update public.sessions set
  status='completed',
- start_at=date_trunc('day',now())-interval '1 day'+interval '10 hours',
- end_at=date_trunc('day',now())-interval '1 day'+interval '14 hours'
+ start_at=date_trunc('day',now())-interval '2 days'+interval '10 hours',
+ end_at=date_trunc('day',now())-interval '2 days'+interval '14 hours'
 where id='f9595555-5555-4555-8555-555555555555';
 set local role service_role;
 select lives_ok($check$select public.service_record_session_actual_end(
  'f9595555-5555-4555-8555-555555555555',
- date_trunc('day',now())-interval '1 day'+interval '13 hours')$check$,
+ date_trunc('day',now())-interval '2 days'+interval '13 hours')$check$,
  'last day records its actual finish separately');
 select lives_ok($check$select * from public.service_run_automation_tick(500)$check$,
  'check-in reconciles last-day actual finish');
