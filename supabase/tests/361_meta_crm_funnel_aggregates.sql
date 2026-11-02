@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(20);
 
 select has_function('public', 'service_meta_crm_funnel', array['text','date','date'],
   'funnel aggregate RPC exists');
@@ -72,6 +72,14 @@ select is((select j->'rows'->0->'enquiries' from funnel_result), 'null'::jsonb,
 select ok((select (j::text !~* 'example\.test|Funnel Test|bbbbbbbb') from funnel_result),
   'no names, emails or enquiry ids in the output');
 
+-- Two consented enquiries stay suppressed even if the request covers the whole month.
+select is((
+  select public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month', now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month', now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->'enquiries'
+), 'null'::jsonb, 'monthly campaign total of two stays hidden');
+
 -- Re-including the excluded test row gives three consented enquiries: shown, not suppressed.
 update public.enquiries set excluded_from_analytics = false
 where id = (select enquiry_id from funnel_fixture where n = 3);
@@ -82,5 +90,13 @@ select is((select (j->'rows'->0->>'enquiries')::int from funnel_result_3), 3,
 select is((select j->'rows'->0->>'ad_id' from funnel_result_3), '120248212423350778', 'grouped by numeric ad id');
 select is((select (j->'rows'->0->>'deposits_count')::int from funnel_result_3), 0, 'zero stays zero, not null');
 
+select is((
+  select (public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month', now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month', now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->>'enquiries')::int
+), 3, 'three consented enquiries become visible for a complete month');
+select ok((select not (j ? 'campaign_totals') from funnel_result_3),
+  'partial date ranges never include campaign totals');
 select * from finish();
 rollback;
