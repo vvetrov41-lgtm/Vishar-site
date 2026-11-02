@@ -1,5 +1,5 @@
 begin;
-select plan(17);
+select plan(24);
 
 select has_function('public', 'service_meta_crm_funnel', array['text','date','date'],
   'funnel aggregate RPC exists');
@@ -72,6 +72,14 @@ select is((select j->'rows'->0->'enquiries' from funnel_result), 'null'::jsonb,
 select ok((select (j::text !~* 'example\.test|Funnel Test|bbbbbbbb') from funnel_result),
   'no names, emails or enquiry ids in the output');
 
+-- Two consented enquiries stay suppressed even if the request covers the whole month.
+select is((
+  select public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month', now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month', now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->'enquiries'
+), 'null'::jsonb, 'monthly campaign total of two stays hidden');
+
 -- Re-including the excluded test row gives three consented enquiries: shown, not suppressed.
 update public.enquiries set excluded_from_analytics = false
 where id = (select enquiry_id from funnel_fixture where n = 3);
@@ -81,6 +89,88 @@ select is((select (j->'rows'->0->>'enquiries')::int from funnel_result_3), 3,
   'three consented enquiries are counted; the unconsented fourth is not');
 select is((select j->'rows'->0->>'ad_id' from funnel_result_3), '120248212423350778', 'grouped by numeric ad id');
 select is((select (j->'rows'->0->>'deposits_count')::int from funnel_result_3), 0, 'zero stays zero, not null');
+
+select is((
+  select (public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month', now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month', now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->>'enquiries')::int
+), 3, 'three consented enquiries become visible for a complete month');
+select ok((select not (j ? 'campaign_totals') from funnel_result_3),
+  'partial date ranges never include campaign totals');
+
+-- Complementary suppression: distinct, individually hidden daily ad cells.
+-- Use deterministic account-local calendar days; this works near midnight,
+-- DST changes and the first/last day of any month.
+create temporary table funnel_shift as
+select f.enquiry_id, f.n,
+ timezone('Africa/Cairo', date_trunc('month',now() at time zone 'Africa/Cairo')
+       + interval '10 days 12 hours'
+       + (case when f.n=3 then 1 else 0 end)*interval '1 day') as event_at
+from funnel_fixture f where f.n<=3;
+update public.enquiries e set created_at = s.event_at
+from funnel_shift s where e.id=s.enquiry_id;
+update public.integration_outbox o
+set payload=jsonb_set(o.payload,'{event_time}',
+  to_jsonb((extract(epoch from s.event_at)::bigint)::text),true)
+from funnel_shift s where o.enquiry_id=s.enquiry_id
+  and o.kind='meta_conversion';
+
+select is((
+ select (public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month',now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->>'enquiries')::int
+),3,'two suppressed daily cells of sizes 2 and 1 can produce a safe monthly count of 3');
+select ok((
+ select bool_and(r.value->'enquiries'='null'::jsonb)
+ from jsonb_array_elements((public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month',now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'rows')) r(value)
+),'both individual daily cells remain suppressed');
+
+-- All three hidden cells of size 1 would be trivially inferred from a
+-- monthly count of 3. Even with more than one hidden day, suppress it.
+update public.enquiries e
+set created_at = timezone('Africa/Cairo',date_trunc('month',now() at time zone 'Africa/Cairo')
+                           + interval '12 days 12 hours')
+where e.id=(select enquiry_id from funnel_fixture where n=3);
+update public.integration_outbox o
+set payload=jsonb_set(o.payload,'{event_time}',to_jsonb((
+ extract(epoch from timezone('Africa/Cairo',
+   date_trunc('month',now() at time zone 'Africa/Cairo') + interval '12 days 12 hours'))::bigint)::text),true)
+where o.enquiry_id=(select enquiry_id from funnel_fixture where n=3)
+ and o.kind='meta_conversion';
+update public.enquiries e
+set created_at = timezone('Africa/Cairo',date_trunc('month',now() at time zone 'Africa/Cairo')
+                           + interval '11 days 12 hours')
+where e.id=(select enquiry_id from funnel_fixture where n=2);
+update public.integration_outbox o
+set payload=jsonb_set(o.payload,'{event_time}',to_jsonb((
+ extract(epoch from timezone('Africa/Cairo',
+   date_trunc('month',now() at time zone 'Africa/Cairo') + interval '11 days 12 hours'))::bigint)::text),true)
+where o.enquiry_id=(select enquiry_id from funnel_fixture where n=2)
+ and o.kind='meta_conversion';
+
+select is((
+ select public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month',now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->'enquiries'
+), 'null'::jsonb,'extreme sum of three single-enquiry days remains suppressed');
+
+-- Cross-metric P1 regression: no monthly consultation/project/deposit total
+-- may be published over hidden daily cells. The Worker adds an independent
+-- behavioural check with the [1,1,2] enquiries / [0,1,2] consultation case.
+select ok((
+  select pg_get_functiondef('public.service_meta_crm_funnel(text,date,date)'::regprocedure)
+    like '%when d.consultations_hidden=0 then c.consultations else null end%'
+   and pg_get_functiondef('public.service_meta_crm_funnel(text,date,date)'::regprocedure)
+    like '%when d.projects_hidden=0 then c.confirmed_projects else null end%'
+   and pg_get_functiondef('public.service_meta_crm_funnel(text,date,date)'::regprocedure)
+    like '%when d.deposits_hidden=0 then c.deposits_count else null end%'
+), 'monthly secondary metrics cannot combine with hidden ad/day cells to reveal an enquiry');
 
 select * from finish();
 rollback;

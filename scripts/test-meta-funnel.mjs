@@ -91,6 +91,49 @@ await test('a signed request returns only the contract fields; the account is pa
   assert.deepEqual(calls[0].body, { p_ad_account_id: '2128002004809955', p_since: '2026-10-01', p_until: '2026-10-31' });
 });
 
+await test('full months expose only suppressed campaign totals; partial ranges reject them', async () => {
+  const row = { campaign_id: '120247800617380778', enquiries: 3, consultations: null,
+    confirmed_projects: 0, deposits_count: 0, deposits_minor: 0, client_name: 'remove me' };
+  const { fetchImpl } = backend({ ...DB_PAYLOAD, campaign_totals: [row] });
+  const response = await handleMetaFunnelRequest(await request(), env, { fetchImpl, now: () => NOW });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.deepEqual(data.campaign_totals, [{ campaign_id: row.campaign_id, enquiries: 3,
+    consultations: null, confirmed_projects: 0, deposits_count: 0, deposits_minor: 0 }]);
+  assert.ok(!JSON.stringify(data).includes('remove me'));
+  const partial = await handleMetaFunnelRequest(
+    await request({ since: '2026-10-01', until: '2026-10-30' }), env, { fetchImpl, now: () => NOW });
+  assert.equal(partial.status, 502);
+  for (const bad of [
+    { ...row, enquiries: 1 },
+    { ...row, deposits_count: null, deposits_minor: 15000 },
+    { ...row, campaign_id: 'invalid' },
+  ]) {
+    const result = await handleMetaFunnelRequest(await request(), env,
+      { ...backend({ ...DB_PAYLOAD, campaign_totals: [bad] }), now: () => NOW });
+    assert.equal(result.status, 502);
+  }
+});
+
+await test('cross-metric protection rejects campaign totals that disclose a hidden consultation day', async () => {
+  const day = (date, consultations) => ({
+    date, ad_id: '120248212423350778', campaign_id: '120247800617380778',
+    enquiries: null, consultations, confirmed_projects: 0, deposits_count: 0, deposits_minor: 0,
+  });
+  const rows = [day('2026-10-11', 0), day('2026-10-12', null), day('2026-10-13', null)];
+  const totals = [{ campaign_id: '120247800617380778', enquiries: 4,
+    consultations: 3, confirmed_projects: 0, deposits_count: 0, deposits_minor: 0 }];
+  const unsafe = await handleMetaFunnelRequest(await request(), env,
+    { ...backend({ ...DB_PAYLOAD, rows, campaign_totals: totals }), now: () => NOW });
+  assert.equal(unsafe.status, 502, 'consultation total plus hidden daily cells could expose a client day');
+  const safe = await handleMetaFunnelRequest(await request(), env,
+    { ...backend({ ...DB_PAYLOAD, rows, campaign_totals: [{ ...totals[0], consultations: null }] }), now: () => NOW });
+  assert.equal(safe.status, 200, 'monthly enquiries can survive without unsafe secondary totals');
+  const payload = await safe.json();
+  assert.equal(payload.campaign_totals[0].enquiries, 4);
+  assert.equal(payload.campaign_totals[0].consultations, null);
+});
+
 await test('unauthenticated, replayed, malformed or unconfigured requests are 404 and never reach the database', async () => {
   const cases = [
     await request({ signature: '0'.repeat(64) }),
