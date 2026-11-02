@@ -1,5 +1,5 @@
--- Extend the backend-only funnel RPC with full-month campaign-level totals.
--- No historical data edits or individual records cross the Worker boundary.
+-- Add privacy-protected full-calendar-month campaign totals to the service-only Meta CRM funnel.
+-- No persisted customer data or communication settings are changed.
 -- Aggregated Meta funnel counts for the Vishar Meta Analytics Worker.
 --
 -- Contract: docs/integrations/meta-crm-funnel.md (mirrors vishar-meta-analytics
@@ -97,8 +97,8 @@ begin
     group by campaign_id
   ),
   daily_visibility as (
-    -- Every daily ad cell can be retrieved via a permitted partial-period query,
-    -- so use those cells as the privacy boundary for complementary suppression.
+    -- Any individual ad/day cell can be queried via a narrower date range.
+    -- Reveal a month value only when hidden cells cannot be reconstructed.
     select campaign_id,
       count(*) filter (where enquiries between 1 and 2)::int as enquiries_hidden,
       coalesce(sum(enquiries) filter (where enquiries not between 1 and 2),0)::bigint as enquiries_visible,
@@ -109,7 +109,10 @@ begin
       count(*) filter (where deposits_count between 1 and 2)::int as deposits_hidden,
       coalesce(sum(deposits_count) filter (where deposits_count not between 1 and 2),0)::bigint as deposits_visible
     from grouped
-    where campaign_id ~ '^[0-9]{10,25}
+    where campaign_id ~ '^[0-9]{10,25}$'
+    group by campaign_id
+  )
+  select (select coalesce(jsonb_agg(
     jsonb_build_object(
       'date', to_char(day, 'YYYY-MM-DD'),
       'ad_id', ad_id,
@@ -189,51 +192,4 @@ revoke all on function public.service_meta_crm_funnel(text, date, date)
 grant execute on function public.service_meta_crm_funnel(text, date, date) to service_role;
 
 comment on function public.service_meta_crm_funnel(text, date, date) is
-  'Backend-only consented Meta funnel: daily ad suppression and full-calendar-month campaign totals; no personal data.';
-
-    group by campaign_id
-  )
-  select (select coalesce(jsonb_agg(
-    jsonb_build_object(
-      'date', to_char(day, 'YYYY-MM-DD'),
-      'ad_id', ad_id,
-      'enquiries', case when enquiries between 1 and 2 then null else enquiries end,
-      'consultations', case when consultations between 1 and 2 then null else consultations end,
-      'confirmed_projects', case when confirmed_projects between 1 and 2 then null else confirmed_projects end,
-      'deposits_count', case when deposits_count between 1 and 2 then null else deposits_count end,
-      'deposits_minor', case when deposits_count between 1 and 2 then null else deposits_minor end
-    ) || case when campaign_id ~ '^[0-9]{10,25}$'
-              then jsonb_build_object('campaign_id', campaign_id) else '{}'::jsonb end
-    order by day, ad_id), '[]'::jsonb) from grouped),
-  case when p_since = date_trunc('month',p_since)::date
-     and p_until = (date_trunc('month',p_since)+interval '1 month - 1 day')::date
-    then coalesce((select jsonb_agg(jsonb_build_object(
-      'campaign_id', campaign_id,
-      'enquiries', case when enquiries between 1 and 2 then null else enquiries end,
-      'consultations', case when consultations between 1 and 2 then null else consultations end,
-      'confirmed_projects', case when confirmed_projects between 1 and 2 then null else confirmed_projects end,
-      'deposits_count', case when deposits_count between 1 and 2 then null else deposits_count end,
-      'deposits_minor', case when deposits_count between 1 and 2 then null else deposits_minor end
-    ) order by campaign_id) from campaign_grouped), '[]'::jsonb)
-    else null
-  end
-  into v_rows, v_campaign_totals;
-
-  return jsonb_build_object(
-    'version', 1,
-    'account_id', 'act_' || p_ad_account_id,
-    'currency', 'GBP',
-    'date_basis', 'meta_account_local',
-    'rows', v_rows
-  ) || case when v_campaign_totals is not null
-       then jsonb_build_object('campaign_totals',v_campaign_totals)
-       else '{}'::jsonb end;
-end;
-$$;
-
-revoke all on function public.service_meta_crm_funnel(text, date, date)
-  from public, anon, authenticated;
-grant execute on function public.service_meta_crm_funnel(text, date, date) to service_role;
-
-comment on function public.service_meta_crm_funnel(text, date, date) is
-  'Backend-only consented Meta funnel: daily ad suppression and full-calendar-month campaign totals; no personal data.';
+  'Backend-only consented Meta funnel: suppressed daily ad cells and complementary-protected full-calendar-month campaign totals. No personal data.';
