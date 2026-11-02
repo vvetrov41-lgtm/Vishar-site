@@ -1,5 +1,5 @@
 begin;
-select plan(20);
+select plan(23);
 
 select has_function('public', 'service_meta_crm_funnel', array['text','date','date'],
   'funnel aggregate RPC exists');
@@ -98,5 +98,67 @@ select is((
 ), 3, 'three consented enquiries become visible for a complete month');
 select ok((select not (j ? 'campaign_totals') from funnel_result_3),
   'partial date ranges never include campaign totals');
+
+-- Complementary suppression: distinct, individually hidden daily ad cells.
+-- Use deterministic account-local calendar days; this works near midnight,
+-- DST changes and the first/last day of any month.
+create temporary table funnel_shift as
+select f.enquiry_id, f.n,
+ timezone('Africa/Cairo', date_trunc('month',now() at time zone 'Africa/Cairo')
+       + interval '10 days 12 hours'
+       + (case when f.n=3 then 1 else 0 end)*interval '1 day') as event_at
+from funnel_fixture f where f.n<=3;
+update public.enquiries e set created_at = s.event_at
+from funnel_shift s where e.id=s.enquiry_id;
+update public.integration_outbox o
+set payload=jsonb_set(o.payload,'{event_time}',
+  to_jsonb((extract(epoch from s.event_at)::bigint)::text),true)
+from funnel_shift s where o.enquiry_id=s.enquiry_id
+  and o.kind='meta_conversion';
+
+select is((
+ select (public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month',now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->>'enquiries')::int
+),3,'two suppressed daily cells of sizes 2 and 1 can produce a safe monthly count of 3');
+select ok((
+ select bool_and(r.value->'enquiries'='null'::jsonb)
+ from jsonb_array_elements((public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month',now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'rows')) r(value)
+),'both individual daily cells remain suppressed');
+
+-- All three hidden cells of size 1 would be trivially inferred from a
+-- monthly count of 3. Even with more than one hidden day, suppress it.
+update public.enquiries e
+set created_at = timezone('Africa/Cairo',date_trunc('month',now() at time zone 'Africa/Cairo')
+                           + interval '12 days 12 hours')
+where e.id=(select enquiry_id from funnel_fixture where n=3);
+update public.integration_outbox o
+set payload=jsonb_set(o.payload,'{event_time}',to_jsonb((
+ extract(epoch from timezone('Africa/Cairo',
+   date_trunc('month',now() at time zone 'Africa/Cairo') + interval '12 days 12 hours'))::bigint)::text),true)
+where o.enquiry_id=(select enquiry_id from funnel_fixture where n=3)
+ and o.kind='meta_conversion';
+update public.enquiries e
+set created_at = timezone('Africa/Cairo',date_trunc('month',now() at time zone 'Africa/Cairo')
+                           + interval '11 days 12 hours')
+where e.id=(select enquiry_id from funnel_fixture where n=2);
+update public.integration_outbox o
+set payload=jsonb_set(o.payload,'{event_time}',to_jsonb((
+ extract(epoch from timezone('Africa/Cairo',
+   date_trunc('month',now() at time zone 'Africa/Cairo') + interval '11 days 12 hours'))::bigint)::text),true)
+where o.enquiry_id=(select enquiry_id from funnel_fixture where n=2)
+ and o.kind='meta_conversion';
+
+select is((
+ select public.service_meta_crm_funnel('2128002004809955',
+    date_trunc('month',now() at time zone 'Africa/Cairo')::date,
+    (date_trunc('month',now() at time zone 'Africa/Cairo') + interval '1 month - 1 day')::date)
+    ->'campaign_totals'->0->'enquiries'
+), 'null'::jsonb,'extreme sum of three single-enquiry days remains suppressed');
+
 select * from finish();
 rollback;
