@@ -48,6 +48,23 @@ for (const invalid of [
   shadow.replace('20261021074511', '20261010170000'),
 ]) assert.throws(() => verifyTodayLineage(invalid));
 
+
+// PR #1141: only the exact read-only Coexistence state migration may follow
+// the deployed 20261030175000 production head.
+const coexistenceTransition = [
+  ' Local | Remote | Time',
+  ' 20261030175000 | 20261030175000 | t',
+  ' 20261101180000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(coexistenceTransition), '20261101180000');
+for (const invalid of [
+  coexistenceTransition + '\n 20261101181000 | | t',
+  coexistenceTransition.replace('20261101180000 | |', '20261101190000 | |'),
+  coexistenceTransition.replace('20261030175000 | 20261030175000', '20261030175000 | '),
+  coexistenceTransition.replace('20261030175000 | 20261030175000', '20261030174000 | 20261030174000'),
+  coexistenceTransition + '\n | 20261101181000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
+
 // PR #1133 then PR #1140: two single-step releases, in order, with no
 // skipped, extra, reordered or unknown migration.
 const metaReconciliation = [
