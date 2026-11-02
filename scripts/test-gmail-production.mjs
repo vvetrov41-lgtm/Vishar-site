@@ -465,6 +465,7 @@ await test('leased payment email without an enquiry sends once and deduplicates 
 
   for (const [change, error] of [
     [{ delivery_allowed: false }, 'gmail_deposit_email_obsolete'],
+    [{ delivery_allowed: false, configuration: { lifecycle_email: true } }, 'gmail_lifecycle_email_obsolete'],
     [{ artist_id: 'a2222222-2222-4222-8222-222222222222' }, 'gmail_target_scope_invalid'],
     [{ email_message_id: job.outbox_id }, 'gmail_target_scope_invalid'],
     [{ enquiry_id: job.outbox_id }, 'gmail_target_scope_invalid'],

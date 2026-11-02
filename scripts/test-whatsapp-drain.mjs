@@ -6,6 +6,7 @@
 // no credential exists — the fixtures are obviously-synthetic strings.
 
 import assert from 'node:assert/strict';
+import { sendWhatsappUtilityTemplate } from '../workers/lib/whatsapp.js';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import {
   drainWhatsappOutbox,
@@ -107,6 +108,7 @@ function makeFetch({
   resolvedRoute = [route()],
   routesByOutbox = {},
   bookingPayloadsByOutbox = {},
+  lifecyclePayloadsByOutbox = {},
   graphStatus = 200,
   graphBody = { messages: [{ id: 'wamid.SYNTHETICSEND0001' }] },
   acknowledgementStatus = 200,
@@ -127,6 +129,17 @@ function makeFetch({
       if (name === 'claim_whatsapp_outbox') return Response.json(automaticClaim);
       if (name === 'resolve_outbox_route') {
         return Response.json(routesByOutbox[args.p_outbox_id] ?? resolvedRoute);
+      }
+      if (name === 'service_resolve_whatsapp_lifecycle_payload') {
+        if (Object.prototype.hasOwnProperty.call(lifecyclePayloadsByOutbox, args.p_outbox_id)) {
+          return Response.json(lifecyclePayloadsByOutbox[args.p_outbox_id]);
+        }
+        const job = [...automaticClaim, ...claim].find((entry) => entry?.outbox_id === args.p_outbox_id);
+        return Response.json([{
+          is_lifecycle: false, communication_message_id: job?.whatsapp_message_id ?? null,
+          artist_id: job?.artist_id ?? null, template_name: null, template_language: null,
+          purpose: null, body_parameters: null, delivery_allowed: false,
+        }]);
       }
       if (name === 'service_resolve_whatsapp_booking_card_payload') {
         if (Object.prototype.hasOwnProperty.call(bookingPayloadsByOutbox, args.p_outbox_id)) {
@@ -495,6 +508,107 @@ await test('unknown errors collapse to one generic connector code', () => {
   assert.equal(__testing.safeErrorCode(new Error('boom')), 'whatsapp_connector_error');
   assert.equal(__testing.safeErrorCode({ code: 'Not A Code' }), 'whatsapp_connector_error');
   assert.equal(__testing.safeErrorCode({ code: 'whatsapp_rate_limited' }), 'whatsapp_rate_limited');
+});
+
+await test('body-only lifecycle Utility template is sent without booking-card components', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const result = await sendWhatsappUtilityTemplate(env, route(), {
+    to: '447700900001',
+    purpose: 'post_session_checkin',
+    templateName: 'lifecycle_checkin_v1',
+    language: 'en_GB',
+    bodyParameters: ['Alex', 'https://vishartattoo.com/aftercare/'],
+  }, fetchImpl);
+  assert.deepEqual(result, {
+    delivered: true, providerMessageId: 'wamid.SYNTHETICSEND0001',
+  });
+  assert.equal(graphCalls.length, 1);
+  assert.equal(graphCalls[0].body.type, 'template');
+  assert.equal(graphCalls[0].body.template.name, 'lifecycle_checkin_v1');
+  assert.deepEqual(graphCalls[0].body.template.components, [{
+    type: 'body', parameters: [
+      { type: 'text', text: 'Alex' },
+      { type: 'text', text: 'https://vishartattoo.com/aftercare/' },
+    ],
+  }]);
+  assert.ok(graphCalls[0].url.includes(vladimirPhoneNumberId));
+});
+
+await test('utility template uses Kristina binding and never falls back to Vladimir', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const result = await sendWhatsappUtilityTemplate(env, kristinaRoute, {
+    to: '447700900002', purpose: 'session_reminder_72h',
+    templateName: 'kristina_session_reminder_72h', language: 'en_GB',
+    bodyParameters: ['17, 18 and 19 November'],
+  }, fetchImpl);
+  assert.equal(result.delivered, true);
+  assert.equal(graphCalls.length, 1);
+  assert.ok(graphCalls[0].url.includes(kristinaPhoneNumberId));
+  assert.ok(!graphCalls[0].url.includes(vladimirPhoneNumberId));
+  assert.equal(graphCalls[0].authorization, `Bearer ${kristinaToken}`);
+});
+
+await test('invalid lifecycle template is refused before contacting Meta', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const shared = {
+    to: '447700900001', templateName: 'test_v1',
+    language: 'en_GB', bodyParameters: ['Example'],
+  };
+  for (const message of [
+    { ...shared, purpose: 'booking_card_tattoo' },
+    { ...shared, purpose: 'post_session_aftercare', language: 'bad-language' },
+    { ...shared, purpose: 'session_reminder_24h', bodyParameters: [] },
+    { ...shared, purpose: 'session_reminder_24h', bodyParameters: [' '.repeat(3)] },
+  ]) {
+    const result = await sendWhatsappUtilityTemplate(env, route(), message, fetchImpl);
+    assert.deepEqual(result, { delivered: false, errorCode: 'whatsapp_template_invalid' });
+  }
+  assert.equal(graphCalls.length, 0);
+});
+
+await test('lifecycle Utility payload passes current-snapshot guard and sends one body-only template', async () => {
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
+    lifecyclePayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_lifecycle: true,
+        communication_message_id: claimedJob().whatsapp_message_id,
+        artist_id: claimedJob().artist_id,
+        purpose: 'post_session_checkin',
+        template_name: 'vishar_lifecycle_checkin_v1',
+        template_language: 'en_GB',
+        body_parameters: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
+        delivery_allowed: true,
+      }],
+    },
+  });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(result.outcome, 'succeeded');
+  assert.equal(graphCalls.length, 1);
+  assert.equal(graphCalls[0].body.type, 'template');
+  assert.equal(graphCalls[0].body.template.components.length, 1);
+  assert.deepEqual(graphCalls[0].body.template.components[0].parameters.map(x => x.text),
+    ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/']);
+  assert.equal(rpcCalls.some(x => x.name === 'service_resolve_whatsapp_booking_card_payload'), false);
+  assert.equal(rpcCalls.filter(x => x.name === 'service_begin_communication_send').length, 1);
+});
+
+await test('stale lifecycle block never records send intent or contacts Meta', async () => {
+  const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
+    lifecyclePayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_lifecycle: true, communication_message_id: claimedJob().whatsapp_message_id,
+        artist_id: claimedJob().artist_id, purpose: 'post_session_aftercare',
+        template_name: 'vishar_lifecycle_aftercare_v1', template_language: 'en_GB',
+        body_parameters: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
+        delivery_allowed: false,
+      }],
+    },
+  });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(result.outcome, 'failed');
+  assert.equal(result.errorCode, 'whatsapp_lifecycle_obsolete');
+  assert.equal(graphCalls.length, 0);
+  assert.equal(rpcCalls.some(x => x.name === 'service_begin_communication_send'), false);
 });
 
 if (failures > 0) {

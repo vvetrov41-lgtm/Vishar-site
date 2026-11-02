@@ -98,6 +98,9 @@ function authorizedFetch(calls, {
   routeEnabled = true,
   routeIntegrationKey = null,
   missingSecretWorker = null,
+  subscriptionApps = [{
+    whatsapp_business_api_data: { id: '1481226093843982', name: 'Vishar CRM' },
+  }],
   phoneRows = [{
     id: KRISTINA_PHONE,
     display_phone_number: '+44 7000 000002',
@@ -194,7 +197,7 @@ function authorizedFetch(calls, {
       return Response.json({ success: true });
     }
     if (target.includes(`/${bodyFor(artistId).session.waba_id}/subscribed_apps`) && method === 'GET') {
-      return Response.json({ data: [{ id: '1481226093843982', name: 'Vishar CRM' }] });
+      return Response.json({ data: subscriptionApps });
     }
     if (target.includes('/rest/v1/rpc/complete_artist_whatsapp_connection') && method === 'POST') {
       const payload = JSON.parse(String(init.body));
@@ -355,7 +358,10 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
     const drainIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-drain-production/secrets'));
     const webhookIndex = calls.findIndex((call) => call.target.includes('vishar-whatsapp-webhook-production/secrets'));
     const subscribeIndex = calls.findIndex((call) => call.target.endsWith('/subscribed_apps'));
-    const subscriptionReadbackIndex = calls.findIndex((call) => call.target.includes('/subscribed_apps?fields='));
+    const subscriptionReadbackIndex = calls.findIndex((call) => (
+      call.target.includes('/subscribed_apps')
+      && String(call.init.method || 'GET').toUpperCase() === 'GET'
+    ));
     const drainReadbackIndex = calls.findIndex((call) => (
       call.target.includes('vishar-whatsapp-drain-production/secrets')
       && String(call.init.method || 'GET').toUpperCase() === 'GET'
@@ -375,6 +381,36 @@ assert.equal(__testing.whatsappBindingName('future-artist-production'), 'ARTIST_
     assert.ok(drainReadbackIndex > subscriptionReadbackIndex);
     assert.ok(webhookReadbackIndex > drainReadbackIndex);
     assert.ok(connectedIndex > webhookReadbackIndex);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// Meta's production Graph subscribed_apps response nests the application id.
+// A correct nested readback must complete only the intended artist route.
+// Keep legacy top-level app ID support, but deny unknown/mismatched subscriptions.
+for (const [label, subscriptionApps, expectedStatus] of [
+  ['legacy top-level app id', [{ id: '1481226093843982', name: 'Vishar CRM' }], 200],
+  ['foreign nested app id', [{ whatsapp_business_api_data: { id: '999999999999', name: 'Other app' } }], 500],
+  ['no subscribed apps', [], 500],
+  ['app without id', [{ name: 'Unknown app' }], 500],
+  ['invalid response data', null, 500],
+]) {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { subscriptionApps });
+  try {
+    const response = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(response.status, expectedStatus, label);
+    const body = await response.json();
+    if (expectedStatus === 200) {
+      assert.equal(body.connected, true, label);
+      assert.equal(calls.filter(c => c.target.includes('complete_artist_whatsapp_connection')).length, 1, label);
+    } else {
+      assert.deepEqual(body, { ok: false, error: label === 'no subscribed apps' ? 'meta_waba_subscription_not_found' : label === 'foreign nested app id' ? 'meta_waba_subscription_app_mismatch' : 'meta_waba_subscription_response_invalid' }, label);
+      assert.equal(calls.some(c => c.target.includes('complete_artist_whatsapp_connection')), false,
+        `${label}: no CRM connected-state mutation after failed subscription readback`);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

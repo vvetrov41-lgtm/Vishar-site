@@ -483,15 +483,29 @@ async function subscribeWaba(accessToken, wabaId) {
 
 async function requireWabaSubscriptionReadback(accessToken, wabaId) {
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${wabaId}/subscribed_apps`);
-  url.searchParams.set('fields', 'id,name');
+  // Meta's subscribed_apps edge normally returns the subscribed app ID
+  // inside whatsapp_business_api_data, not at the top level. Avoid a fields
+  // projection that may hide that nested object; never trust POST success
+  // alone without the exact application ID in the GET readback.
   const payload = await graph(url.toString(), {
     method: 'GET',
     headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
   });
-  const rows = Array.isArray(payload?.data) ? payload.data : [];
-  if (!rows.some((app) => String(app?.id || '') === APP_ID)) {
-    throw Object.assign(new Error('meta_waba_subscription_readback_failed'), { status: 502 });
+  // Only the exact app proves the subscription. Keep actionable, safe failure codes.
+  if (!Array.isArray(payload?.data)) {
+    throw Object.assign(new Error('meta_waba_subscription_response_invalid'), { status: 502 });
   }
+  if (payload.data.length === 0) {
+    throw Object.assign(new Error('meta_waba_subscription_not_found'), { status: 502 });
+  }
+  const appIds = payload.data.map((app) => {
+    const id = app?.whatsapp_business_api_data?.id ?? app?.id;
+    return typeof id === 'string' && PROVIDER_ID.test(id) ? id : null;
+  });
+  if (appIds.includes(APP_ID)) return;
+  throw Object.assign(new Error(
+    appIds.some(Boolean) ? 'meta_waba_subscription_app_mismatch' : 'meta_waba_subscription_response_invalid',
+  ), { status: 502 });
 }
 
 async function markIntegrationConnected(operator, env, artistId, route) {

@@ -129,6 +129,18 @@ select ok(
   'reviewed post-session service copy is explicitly activated'
 );
 
+create temporary table t_aftercare_template as
+select public.upsert_message_template(
+  (select id from t_workspace),
+  'post_session_aftercare',
+  'email'::public.message_template_channel,
+  'Your aftercare guide: https://vishartattoo.com/aftercare/',
+  'en', 'Aftercare guide', (select id from t_artist)
+) as id;
+grant select on t_aftercare_template to public;
+select ok(public.set_message_template_active((select id from t_aftercare_template), true),
+  'the check-in has an approved aftercare link for this artist');
+
 create temporary table t_rule as
 select public.create_client_lifecycle_rule(
   (select id from t_artist),

@@ -286,6 +286,68 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   return { delivered: true, providerMessageId };
 }
 
+// Body-only WhatsApp Utility templates for lifecycle messages. An upstream
+// service must approve the artist-specific template and current block first.
+const LIFECYCLE_UTILITY_PURPOSES = new Set([
+  'session_reminder_72h', 'session_reminder_24h',
+  'post_session_aftercare', 'post_session_checkin',
+]);
+
+export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl = fetch) {
+  const binding = selectWhatsappBinding(env, route);
+  if (!binding.ok) return { delivered: false, errorCode: binding.errorCode };
+
+  const to = typeof message?.to === 'string' ? message.to.trim() : '';
+  const purpose = message?.purpose;
+  const templateName = typeof message?.templateName === 'string' ? message.templateName.trim() : '';
+  const language = typeof message?.language === 'string' ? message.language.trim() : '';
+  const params = message?.bodyParameters;
+  if (!WA_ID.test(to)) return { delivered: false, errorCode: 'whatsapp_destination_invalid' };
+  if (!LIFECYCLE_UTILITY_PURPOSES.has(purpose)
+    || !TEMPLATE_NAME.test(templateName) || !TEMPLATE_LANGUAGE.test(language)
+    || !Array.isArray(params) || params.length < 1 || params.length > 10
+    || params.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1024)) {
+    return { delivered: false, errorCode: 'whatsapp_template_invalid' };
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(
+      `${GRAPH_ORIGIN}/${GRAPH_API_VERSION}/${binding.phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${binding.accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messaging_product: 'whatsapp', recipient_type: 'individual',
+          to, type: 'template',
+          template: {
+            name: templateName,
+            language: { code: language },
+            components: [{ type: 'body',
+              parameters: params.map((text) => ({ type: 'text', text })) }],
+          },
+        }),
+        redirect: 'manual',
+      }
+    );
+  } catch {
+    return { delivered: false, errorCode: 'whatsapp_unreachable' };
+  }
+  if (!response.ok) return deliveryError(response.status);
+
+  let parsed;
+  try { parsed = await response.json(); }
+  catch { return { delivered: false, errorCode: 'whatsapp_response_invalid' }; }
+  const providerMessageId = parsed?.messages?.[0]?.id;
+  if (typeof providerMessageId !== 'string' || !providerMessageId) {
+    return { delivered: false, errorCode: 'whatsapp_response_invalid' };
+  }
+  return { delivered: true, providerMessageId };
+}
+
 export const __testing = {
   deliveryError,
   MAX_BODY_LENGTH,
