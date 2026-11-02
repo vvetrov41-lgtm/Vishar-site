@@ -80,8 +80,17 @@ function sameHex(a, b) {
 // Only the fields of the contract leave the Worker, rebuilt one by one.
 const ID = /^[0-9]{10,25}$/;
 const METRICS = ['enquiries', 'consultations', 'confirmed_projects', 'deposits_count', 'deposits_minor'];
-export function projectFunnel(payload, account) {
-  if (!payload || payload.version !== 1 || payload.account_id !== account || !Array.isArray(payload.rows)) return null;
+// Only exact complete calendar months may carry additional campaign totals.
+// The daily-ad values still use suppression and are never expanded or inferred.
+function fullCalendarMonth(since, until) {
+  if (!DAY.test(since || '') || !DAY.test(until || '') || !since.endsWith('-01')) return false;
+  const year = Number(since.slice(0, 4)), month = Number(since.slice(5, 7));
+  return Number.isInteger(year) && month >= 1 && month <= 12
+    && new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10) === until;
+}
+export function projectFunnel(payload, account, since, until) {
+  if (!payload || payload.version !== 1 || payload.account_id !== account
+      || !Array.isArray(payload.rows) || payload.rows.length > 5000) return null;
   const rows = [];
   for (const r of payload.rows) {
     if (!r || !DAY.test(r.date) || typeof r.ad_id !== 'string' || !ID.test(r.ad_id)) return null;
@@ -94,7 +103,28 @@ export function projectFunnel(payload, account) {
     }
     rows.push(row);
   }
-  return { version: 1, account_id: account, currency: 'GBP', date_basis: 'meta_account_local', rows };
+  const result = { version: 1, account_id: account, currency: 'GBP', date_basis: 'meta_account_local', rows };
+  if (Object.hasOwn(payload, 'campaign_totals')) {
+    if (!fullCalendarMonth(since, until) || !Array.isArray(payload.campaign_totals)
+        || payload.campaign_totals.length > 5000) return null;
+    const seen = new Set(), totals = [];
+    for (const r of payload.campaign_totals) {
+      if (!r || typeof r.campaign_id !== 'string' || !ID.test(r.campaign_id)
+          || seen.has(r.campaign_id)) return null;
+      seen.add(r.campaign_id);
+      const row = { campaign_id: r.campaign_id };
+      for (const m of METRICS) {
+        const v = r[m];
+        if (v !== null && !(Number.isSafeInteger(v) && v >= 0)) return null;
+        if (m !== 'deposits_minor' && (v === 1 || v === 2)) return null;
+        row[m] = v;
+      }
+      if (row.deposits_count === null && row.deposits_minor !== null) return null;
+      totals.push(row);
+    }
+    result.campaign_totals = totals;
+  }
+  return result;
 }
 
 export async function handleMetaFunnelRequest(request, env, { fetchImpl = fetch, now = () => Math.floor(Date.now() / 1000) } = {}) {
@@ -128,7 +158,7 @@ export async function handleMetaFunnelRequest(request, env, { fetchImpl = fetch,
   } catch {
     return new Response(JSON.stringify({ error: 'crm_unavailable' }), { status: 503, headers: HEADERS });
   }
-  const body = projectFunnel(payload, account);
+  const body = projectFunnel(payload, account, since, until);
   if (!body) return new Response(JSON.stringify({ error: 'crm_invalid_response' }), { status: 502, headers: HEADERS });
   return new Response(JSON.stringify(body), { status: 200, headers: HEADERS });
 }
