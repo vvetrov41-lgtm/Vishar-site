@@ -139,6 +139,11 @@ select is((select j.scheduled_at from public.automation_jobs j
  (select s.actual_end_at+interval '24 hours' from public.sessions s
   where s.id='f9595555-5555-4555-8555-555555555555'),
  'final-day check-in is 24 hours after evidenced finish');
+select is((select array_agg(b.session_id order by b.local_day)
+  from crm_private.session_lifecycle_block('f9595555-5555-4555-8555-555555555555') b),
+ array['f9594444-4444-4444-8444-444444444444',
+       'f9595555-5555-4555-8555-555555555555']::uuid[],
+ 'block holds exactly the two consecutive days, whatever the clock time');
 select is((select count(*)::int from public.email_messages m
  join public.automation_jobs j on j.id=m.automation_job_id
  where j.session_id in ('f9594444-4444-4444-8444-444444444444',
