@@ -94,6 +94,24 @@ describe('Statistics screen', () => {
     expect(within(money).getByText('£250.00')).toBeInTheDocument();
   });
 
+  it('shows per-session studio share, effective rate and artist net separately from received payments', async () => {
+    const statistics = statisticsResult(true) as any;
+    statistics.artists[0].current.finance = {
+      ...statistics.artists[0].current.finance,
+      studio_share: {
+        currency: 'GBP', gross: 1400, studio_fee: 306, artist_net: 1094,
+        effective_percent: 21.86, sessions: 2, incomplete_sessions: 0, unpaid_sessions: 0,
+      },
+    };
+    await renderStatistics('owner', statistics);
+    const money = (await screen.findByRole('heading', { level: 2, name: 'Money' })).closest('section') as HTMLElement;
+    expect(within(money).getByText('Studio share (calculated)')).toBeInTheDocument();
+    expect(within(money).getByText('£1,400.00')).toBeInTheDocument();
+    expect(within(money).getByText('£306.00')).toBeInTheDocument();
+    expect(within(money).getByText('£1,094.00')).toBeInTheDocument();
+    expect(within(money).getByText(/Effective studio rate: 21.86%/)).toBeInTheDocument();
+  });
+
   it('shows the forecast with few saved prices, confirmed and estimated value apart', async () => {
     await renderStatistics('owner');
     const money = (await screen.findByRole('heading', { level: 2, name: 'Money' })).closest('section') as HTMLElement;
