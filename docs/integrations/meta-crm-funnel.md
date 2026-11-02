@@ -1,6 +1,6 @@
 # Meta funnel endpoint for Vishar Meta Analytics
 
-Producer: this repository, TattooAI Worker route `GET /internal/meta-funnel` (`workers/routes/meta-funnel.js`) and the database function `public.service_meta_crm_funnel(text, date, date)` (migration `20261101170000`).
+Producer: this repository, TattooAI Worker route `GET /internal/meta-funnel` (`workers/routes/meta-funnel.js`) and the database function `public.service_meta_crm_funnel(text, date, date)` (migration `20261102011000`).
 Consumer: `vvetrov41-lgtm/vishar-meta-analytics`, tool `meta_get_funnel_report` (contract `docs/crm-funnel.md` there).
 
 ## Request
