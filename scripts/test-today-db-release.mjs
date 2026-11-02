@@ -64,3 +64,27 @@ for (const invalid of [
   coexistenceTransition.replace('20261030175000 | 20261030175000', '20261030174000 | 20261030174000'),
   coexistenceTransition + '\n | 20261101181000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// PR #1133 then PR #1140: two single-step releases, in order, with no
+// skipped, extra, reordered or unknown migration.
+const metaReconciliation = [
+  ' Local | Remote | Time',
+  ' 20261101180000 | 20261101180000 | t',
+  ' 20261102010000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(metaReconciliation), '20261102010000');
+const metaFunnel = [
+  ' Local | Remote | Time',
+  ' 20261101180000 | 20261101180000 | t',
+  ' 20261102010000 | 20261102010000 | t',
+  ' 20261102011000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(metaFunnel), '20261102011000');
+for (const invalid of [
+  metaReconciliation + '\n 20261102011000 | | t',
+  metaReconciliation.replace('20261102010000 | |', '20261102011000 | |'),
+  metaReconciliation.replace('20261101180000 | 20261101180000', '20261101180000 | '),
+  metaReconciliation + '\n | 20261102005000 | t',
+  metaFunnel.replace('20261102010000 | 20261102010000', '20261102010000 | '),
+  metaFunnel + '\n 20261102012000 | | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
