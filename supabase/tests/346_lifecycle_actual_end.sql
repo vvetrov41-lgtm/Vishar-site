@@ -89,17 +89,17 @@ select is((select j.scheduled_at from public.automation_jobs j
  'check-in follows actual finish plus 24 hours');
 -- Consecutive-day block: the final day's evidenced finish is the only
 -- anchor for the following day's wellbeing check, not the first day's end.
--- Blocks group by artist, client and project. The block uses its own project
--- so the earlier session, moved to now()-6h above, cannot join it: between
--- 00:00 and 06:00 that session lands on the day after the block's last day
--- and would legitimately become the block's final day.
+-- Use a separate client and project from the standalone actual-end case:
+-- otherwise a midnight boundary can make two unrelated scenarios adjacent.
+insert into public.clients(id,full_name,email) values
+  ('f9596666-6666-4666-8666-666666666666','Actual end consecutive test','actual-end-block@example.test');
 insert into public.projects(id,client_id,artist_id,title) values
-  ('f9596666-6666-4666-8666-666666666666',
-   'f9591111-1111-4111-8111-111111111111',
-   (select id from public.artists where slug='vladimir'),'Actual end consecutive block');
+  ('f9597777-7777-4777-8777-777777777777',
+   'f9596666-6666-4666-8666-666666666666',
+   (select id from public.artists where slug='vladimir'),'Actual end consecutive test');
 insert into public.sessions(id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at)
 select v.id,(select id from public.artists where slug='vladimir'),
- 'f9591111-1111-4111-8111-111111111111','f9596666-6666-4666-8666-666666666666',
+ 'f9596666-6666-4666-8666-666666666666','f9597777-7777-4777-8777-777777777777',
  'tattoo_session','confirmed',v.start_at,v.start_at+interval '4 hours'
 from (values
  ('f9594444-4444-4444-8444-444444444444'::uuid,date_trunc('day',now())+interval '40 days 10 hours'),
