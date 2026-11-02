@@ -120,6 +120,14 @@ export function projectFunnel(payload, account, since, until) {
         row[m] = v;
       }
       if (row.deposits_count === null && row.deposits_minor !== null) return null;
+      // Defence in depth: even a signed backend must not disclose a monthly
+      // secondary metric if an ad/day cell of the same campaign was hidden.
+      // Their joint subset relationships could reconstruct hidden enquiries.
+      const daily = rows.filter((d) => d.campaign_id === r.campaign_id);
+      if (daily.length === 0) return null;
+      for (const metric of ['consultations', 'confirmed_projects', 'deposits_count', 'deposits_minor']) {
+        if (row[metric] !== null && daily.some((d) => d[metric] === null)) return null;
+      }
       totals.push(row);
     }
     result.campaign_totals = totals;
