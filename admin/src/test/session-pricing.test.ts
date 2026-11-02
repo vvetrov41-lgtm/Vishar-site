@@ -29,6 +29,18 @@ const otherArtist: ArtistSessionPricing = {
 };
 
 describe('suggestSessionPrice', () => {
+  it('uses Kristina’s hourly rate through exactly 5 h, then £650', () => {
+    const kristina = { ...otherArtist, hourly_rate: 110, full_day_rate: 650, full_day_hours: 5 };
+    expect(suggestSessionPrice(240, kristina)).toMatchObject({ price: 440, basis: 'hourly' });
+    expect(suggestSessionPrice(300, kristina)).toMatchObject({ price: 550, basis: 'hourly' });
+    expect(suggestSessionPrice(305, kristina)).toMatchObject({ price: 650, basis: 'full_day' });
+    expect(suggestSessionPrice(315, kristina)).toMatchObject({ price: 650, basis: 'full_day' });
+    expect(suggestSessionPrice(300, { projectHourlyRate: 110, artistPricing: kristina }))
+      .toMatchObject({ price: 550, basis: 'hourly', source: 'project' });
+    expect(suggestSessionPrice(305, { projectHourlyRate: 110, artistPricing: kristina }))
+      .toMatchObject({ price: 650, basis: 'full_day', source: 'project' });
+  });
+
   it('prices a full day at the full-day rate', () => {
     expect(suggestSessionPrice(7 * 60, vladimir)).toMatchObject({ price: 980, basis: 'full_day' });
     expect(suggestSessionPrice(8 * 60, vladimir)).toMatchObject({ price: 980, basis: 'full_day' });
@@ -137,10 +149,15 @@ describe('suggestSessionPrice parity with the Statistics estimate', () => {
     ...vladimir, configured: false, hourly_rate: null, full_day_rate: null, full_day_hours: null,
   };
   const hourlyOnly: ArtistSessionPricing = { ...vladimir, full_day_rate: null, full_day_hours: null };
+  const kristina: ArtistSessionPricing = { ...otherArtist, hourly_rate: 110, full_day_rate: 650, full_day_hours: 5 };
   const cases: Array<[string, number, number | null, string | null, ArtistSessionPricing | null, [number, string, string, string] | null]> = [
     ['3 h at the standard rate', 3, null, null, vladimir, [420, 'GBP', 'hourly', 'artist']],
     ['4 h at the standard rate', 4, null, null, vladimir, [560, 'GBP', 'hourly', 'artist']],
     ['a full day', 7, null, null, vladimir, [980, 'GBP', 'full_day', 'artist']],
+    ['Kristina 5 h at hourly rate', 5, null, null, kristina, [550, 'GBP', 'hourly', 'artist']],
+    ['Kristina 5.25 h full day', 5.25, null, null, kristina, [650, 'GBP', 'full_day', 'artist']],
+    ['Kristina 5 h at project standard rate', 5, 110, 'GBP', kristina, [550, 'GBP', 'hourly', 'project']],
+    ['Kristina 5.25 h at project standard rate', 5.25, 110, 'GBP', kristina, [650, 'GBP', 'full_day', 'project']],
     ['a longer day', 8, null, null, vladimir, [980, 'GBP', 'full_day', 'artist']],
     ['a project at the standard rate', 7, 140, 'GBP', vladimir, [980, 'GBP', 'full_day', 'project']],
     ['a different project rate is not capped', 7, 200, 'GBP', vladimir, [1400, 'GBP', 'hourly', 'project']],
