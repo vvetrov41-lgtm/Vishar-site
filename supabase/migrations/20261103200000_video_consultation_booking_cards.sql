@@ -217,3 +217,21 @@ begin
   execute v_sql;
 end;
 $video_instagram$;
+
+-- Last-minute Meta approval and appointment-type check: no wrong template at send.
+do $video_provider_guard$
+declare v_sql text:=pg_get_functiondef('public.service_resolve_whatsapp_booking_card_payload(uuid,text)'::regprocedure);
+begin
+  if position('(b.card_kind = ''consultation_booked''
+            and settings.whatsapp_consultation_template_name = p.template_name)' in v_sql)=0 then raise exception 'Unexpected WhatsApp card provider guard'; end if;
+  execute replace(v_sql,'(b.card_kind = ''consultation_booked''
+            and settings.whatsapp_consultation_template_name = p.template_name)','(b.card_kind = ''consultation_booked''
+            and b.appointment_type = ''in_person_consultation''::public.appointment_type
+            and settings.whatsapp_consultation_template_name = p.template_name)
+          or
+          (b.card_kind = ''consultation_booked''
+            and b.appointment_type = ''video_consultation''::public.appointment_type
+            and settings.whatsapp_video_template_name = p.template_name
+            and settings.whatsapp_video_template_status = ''APPROVED'')');
+end;
+$video_provider_guard$;
