@@ -6,7 +6,7 @@
 // no credential exists — the fixtures are obviously-synthetic strings.
 
 import assert from 'node:assert/strict';
-import { sendWhatsappUtilityTemplate } from '../workers/lib/whatsapp.js';
+import { sendWhatsappTemplate, sendWhatsappUtilityTemplate } from '../workers/lib/whatsapp.js';
 import { bindingNameFor } from '../workers/lib/provider-routing.js';
 import {
   drainWhatsappOutbox,
@@ -609,6 +609,29 @@ await test('stale lifecycle block never records send intent or contacts Meta', a
   assert.equal(result.errorCode, 'whatsapp_lifecycle_obsolete');
   assert.equal(graphCalls.length, 0);
   assert.equal(rpcCalls.some(x => x.name === 'service_begin_communication_send'), false);
+});
+
+await test('video card sends body and confirmation replies without location header', async () => {
+  let sent;
+  const fetchImpl = async (url, init = {}) => {
+    sent = JSON.parse(init.body);
+    return Response.json({ messages: [{ id: 'wamid.SYNTHETICVIDEO1' }] });
+  };
+  const result = await sendWhatsappTemplate(env, route(), {
+    to: '447700900001',
+    templateName: 'booking_card_video_consultation_v1',
+    language: 'en_GB',
+    bodyParameters: ['Daniel', 'Vladimir', 'Thursday, 5 November 2026', '11:00'],
+    quickReplies: [
+      'booking_action:' + 'a'.repeat(64),
+      'booking_action:' + 'b'.repeat(64),
+    ],
+    location: null,
+  }, fetchImpl);
+  assert.equal(result.delivered, true);
+  assert.equal(sent.template.components.some((v) => v.type === 'header'), false);
+  assert.equal(sent.template.components[0].type, 'body');
+  assert.equal(sent.template.components.length, 3);
 });
 
 if (failures > 0) {
