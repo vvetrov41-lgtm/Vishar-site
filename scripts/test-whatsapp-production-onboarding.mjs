@@ -102,6 +102,7 @@ function authorizedFetch(calls, {
   coexistencePhone = { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' },
   appWebhookFields = ['messages', 'account_update', 'history', 'smb_app_state_sync', 'smb_message_echoes'],
   syncFailure = null,
+  syncProgress = new Map(),
   subscriptionApps = [{
     whatsapp_business_api_data: { id: '1481226093843982', name: 'Vishar CRM' },
   }],
@@ -221,6 +222,25 @@ function authorizedFetch(calls, {
     }
     if (target.includes(`/${bodyFor(artistId).session.waba_id}/subscribed_apps`) && method === 'GET') {
       return Response.json({ data: subscriptionApps });
+    }
+    if (target.includes('/rest/v1/rpc/claim_whatsapp_coexistence_sync') && method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.p_artist_id, KRISTINA_ID);
+      assert.equal(body.p_waba_id, KRISTINA_WABA);
+      assert.equal(body.p_phone_number_id, KRISTINA_PHONE);
+      assert.ok(['history', 'smb_app_state_sync'].includes(body.p_sync_type));
+      const status = syncProgress.get(body.p_sync_type);
+      if (status === 'accepted') return Response.json('already_accepted');
+      if (status === 'claimed') return Response.json({ message: 'already claimed' }, { status: 409 });
+      syncProgress.set(body.p_sync_type, 'claimed');
+      return Response.json('execute');
+    }
+    if (target.includes('/rest/v1/rpc/record_whatsapp_coexistence_sync_accepted') && method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.p_artist_id, KRISTINA_ID);
+      assert.equal(syncProgress.get(body.p_sync_type), 'claimed');
+      syncProgress.set(body.p_sync_type, 'accepted');
+      return Response.json({ accepted: true });
     }
     if (target.includes('/rest/v1/rpc/complete_artist_whatsapp_connection') && method === 'POST') {
       const payload = JSON.parse(String(init.body));
@@ -1236,5 +1256,51 @@ for (const [label, coexistencePhone] of [
     assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_webhook_fields_missing' });
     assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
     assert.equal(calls.some((c) => c.target.includes('/oauth/access_token')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+
+// After a previous accepted contacts request, the next OAuth authorization
+// must skip contacts completely and start only the not-yet-used history sync.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const progress = new Map([['smb_app_state_sync', 'accepted']]);
+  globalThis.fetch = authorizedFetch(calls, { syncProgress: progress });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 200);
+    assert.deepEqual(calls.filter((c) => c.target.includes('/smb_app_data'))
+      .map((c) => JSON.parse(String(c.init.body)).sync_type), ['history']);
+    assert.equal(progress.get('smb_app_state_sync'), 'accepted');
+    assert.equal(progress.get('history'), 'accepted');
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+// An ambiguous failure after Meta receives history must never retry it or
+// re-issue the previously accepted contacts operation on a new OAuth code.
+{
+  const progress = new Map();
+  const firstCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = authorizedFetch(firstCalls, {
+    syncProgress: progress, syncFailure: 'history',
+  });
+  try {
+    const first = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(first.status, 500);
+    assert.equal(progress.get('smb_app_state_sync'), 'accepted');
+    assert.equal(progress.get('history'), 'claimed');
+    assert.deepEqual(firstCalls.filter((c) => c.target.includes('/smb_app_data'))
+      .map((c) => JSON.parse(String(c.init.body)).sync_type), [
+        'smb_app_state_sync', 'history',
+      ]);
+
+    const retryCalls = [];
+    globalThis.fetch = authorizedFetch(retryCalls, { syncProgress: progress });
+    const again = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(again.status, 409);
+    assert.equal((await again.json()).error, 'crm_coexistence_sync_progress_blocked');
+    assert.equal(retryCalls.filter((c) => c.target.includes('/smb_app_data')).length, 0);
   } finally { globalThis.fetch = originalFetch; }
 }
