@@ -22,6 +22,8 @@ export function verifyTodayLineage(source) {
     // CRM Meta funnel: only the next privacy-hardened monthly totals migration
     // after studio share, premium day rate and guest commission are live.
     ['20261102210000', '20261103010000'],
+    // PR #1151: only metadata for a once-only Coexistence sync, no chat data.
+    ['20261103010000', '20261103070000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
