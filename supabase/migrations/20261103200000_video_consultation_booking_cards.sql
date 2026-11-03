@@ -167,3 +167,24 @@ begin
   execute v_sql;
 end;
 $video_email$;
+
+do $video_email_location$
+declare v_sql text := pg_get_functiondef('crm_private.render_booking_card_email(uuid,text,text)'::regprocedure);
+begin
+  if position('    || ''<div style="margin:20px 0;line-height:1.5;">''
+    || ''<strong>'' || crm_private.booking_card_html_escape(v_settings.studio_name) || ''</strong><br>''
+    || crm_private.booking_card_html_escape(v_settings.studio_address) || ''<br>''
+    || ''<a href="'' || crm_private.booking_card_html_escape(v_settings.studio_map_url)
+    || ''" style="color:#111;">View location</a></div>''' in v_sql)=0 then raise exception 'Unexpected booking-card HTML location'; end if;
+  execute replace(v_sql,'    || ''<div style="margin:20px 0;line-height:1.5;">''
+    || ''<strong>'' || crm_private.booking_card_html_escape(v_settings.studio_name) || ''</strong><br>''
+    || crm_private.booking_card_html_escape(v_settings.studio_address) || ''<br>''
+    || ''<a href="'' || crm_private.booking_card_html_escape(v_settings.studio_map_url)
+    || ''" style="color:#111;">View location</a></div>''','    || case when v_video then ''<p>Video consultation. We will agree how to connect before the call.</p>''
+       else ''<div style="margin:20px 0;line-height:1.5;">''
+         || ''<strong>'' || crm_private.booking_card_html_escape(v_settings.studio_name) || ''</strong><br>''
+         || crm_private.booking_card_html_escape(v_settings.studio_address) || ''<br>''
+         || ''<a href="'' || crm_private.booking_card_html_escape(v_settings.studio_map_url)
+         || ''" style="color:#111;">View location</a></div>'' end');
+end;
+$video_email_location$;
