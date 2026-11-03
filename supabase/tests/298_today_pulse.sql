@@ -223,5 +223,52 @@ select is((
   ) i where i ->> 'kind' = 'integration_failure'
 ), '/integrations', 'the actionable delivery warning opens the integrations diagnostic screen');
 
+-- Classifier says the newest inbound needs no reply (e.g. "OK, thanks").
+-- The Inbox/Today conversation alert must agree with client_attention.
+select ok(
+  crm_private.conversation_awaiting_reply_since('d4400000-0000-4000-8000-000000000001') is not null,
+  'an unanswered incoming message starts as an actionable reply'
+);
+insert into crm_private.client_reply_marks
+  (artist_id, client_id, message_at, reply_state, source)
+select 'a1111111-1111-4111-8111-111111111111',
+       'd4200000-0000-4000-8000-000000000002',
+       coalesce(m.provider_timestamp, m.created_at), 'no_reply_needed', 'classifier'
+from public.communication_messages m
+where m.id = 'd4410000-0000-4000-8000-000000000001';
+
+select is(
+  crm_private.conversation_awaiting_reply_since('d4400000-0000-4000-8000-000000000001'),
+  null::timestamptz,
+  'a classified no-reply-needed acknowledgement does not enter the Today reply list'
+);
+select ok(not exists (
+  select 1 from jsonb_array_elements(
+    crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', false, false)
+  ) i where i ->> 'key' = 'reply-d4400000-0000-4000-8000-000000000001'
+), 'Today agrees with the no-reply-needed classifier verdict');
+
+-- A new message from the same client must resurface even after a previous
+-- acknowledgement was classified as needing no response.
+insert into public.communication_messages
+  (id, conversation_id, artist_id, channel, direction, origin, status, body, provider_timestamp)
+values
+  ('d4410000-0000-4000-8000-000000000004',
+   'd4400000-0000-4000-8000-000000000001',
+   'a1111111-1111-4111-8111-111111111111', 'whatsapp',
+   'inbound', 'contact', 'received', 'Could we move the time?',
+   now() - interval '20 minutes');
+select is(
+  crm_private.conversation_awaiting_reply_since('d4400000-0000-4000-8000-000000000001'),
+  (select m.provider_timestamp from public.communication_messages m
+   where m.id = 'd4410000-0000-4000-8000-000000000004'),
+  'a new question reappears despite the prior no-reply-needed mark'
+);
+select ok(exists (
+  select 1 from jsonb_array_elements(
+    crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', false, false)
+  ) i where i ->> 'key' = 'reply-d4400000-0000-4000-8000-000000000001'
+), 'Today still alerts for a newer unresolved inbound question');
+
 select * from finish(true);
 rollback;
