@@ -429,6 +429,24 @@ async function ensureTargetTemplates(env, target, fetchImpl) {
   return { tattooStatus, consultationStatus, created };
 }
 
+async function ensureVideoTemplate(env, target, fetchImpl) {
+  const binding = adminBinding(env, target);
+  let rows = await atStage('list', () => listTemplates(binding, fetchImpl));
+  let status = resolveTemplate(rows, target.video_template_name, target.template_language);
+  let created = 0;
+  if (!status) {
+    await atStage('create_video', () => createTemplate(
+      binding,
+      templateDefinition('video', target.video_template_name, target.template_language),
+      fetchImpl,
+    ));
+    created = 1;
+    rows = await atStage('readback', () => listTemplates(binding, fetchImpl));
+    status = resolveTemplate(rows, target.video_template_name, target.template_language);
+  }
+  return { status: status || 'PENDING', created };
+}
+
 export async function maintainWhatsappBookingTemplates(env, {
   limit = MAX_TARGETS,
   fetchImpl = fetch,
@@ -500,6 +518,41 @@ export async function maintainWhatsappBookingTemplates(env, {
     }
   }
 
+  // Separate capability gate: a pending video template must not disable
+  // already-approved studio/tattoo cards.
+  const videoRows = await supabase.rpc('service_claim_video_booking_template_targets', {
+    p_limit: limit,
+  });
+  const videoTargets = Array.isArray(videoRows) ? videoRows
+    : videoRows == null ? [] : [videoRows];
+  if (videoTargets.length > limit) {
+    throw Object.assign(new Error('video template claim invalid'), {
+      code: 'whatsapp_template_claim_invalid',
+    });
+  }
+  summary.videoTargets = videoTargets.length;
+  summary.videoApproved = 0;
+  for (const target of videoTargets) {
+    let status = typeof target?.video_template_status === 'string'
+      && SAFE_STATUS.test(target.video_template_status)
+      ? target.video_template_status : 'UNKNOWN';
+    try {
+      const result = await ensureVideoTemplate(env, target, fetchImpl);
+      status = result.status;
+      summary.created += result.created;
+    } catch {
+      summary.failed += 1;
+    }
+    if (status === 'APPROVED') summary.videoApproved += 1;
+    try {
+      await supabase.rpc('service_record_video_booking_template_status', {
+        p_artist_id: target.artist_id,
+        p_status: status,
+      });
+    } catch {
+      summary.failed += 1;
+    }
+  }
   return summary;
 }
 
