@@ -28,6 +28,8 @@ export function verifyTodayLineage(source) {
     ['20261103070000', '20261103120000'],
     // Today: suppress intentional cancels and credit real Gmail history checks.
     ['20261103120000', '20261103150000'],
+    // Only the Today reply read-model; honor an already-classified no-reply-needed message.
+    ['20261103150000', '20261103190000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
