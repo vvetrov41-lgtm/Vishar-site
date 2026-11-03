@@ -683,4 +683,43 @@ function env() {
   );
 }
 
+{
+  // Creating the video template does not touch the two existing templates.
+  const calls = [];
+  const templates = [];
+  const fetchImpl = async (url, init = {}) => {
+    const value = String(url);
+    if (value.includes('/rest/v1/rpc/')) {
+      const name = value.split('/').pop();
+      calls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_booking_card_template_targets') return Response.json([]);
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([{
+        artist_id: ARTIST, integration_key: ROUTE,
+        video_template_name: 'booking_card_video_consultation_v1',
+        template_language: 'en_GB', video_template_status: 'UNKNOWN',
+      }]);
+      if (name === 'service_record_video_booking_template_status') return Response.json({ ok: true });
+      throw new Error(`unexpected RPC ${name}`);
+    }
+    if (value.startsWith(`https://graph.facebook.com/v25.0/${WABA}/message_templates`)) {
+      if (String(init.method || 'GET').toUpperCase() === 'GET') return Response.json({ data: templates });
+      const body = JSON.parse(init.body);
+      calls.push({ name: 'meta_create', body });
+      templates.push({ id: '90001', name: body.name, language: body.language,
+        category: body.category, status: 'PENDING' });
+      return Response.json({ id: '90001', status: 'PENDING' });
+    }
+    throw new Error(`unexpected request ${value}`);
+  };
+  const result = await maintainWhatsappBookingTemplates(env(), { fetchImpl });
+  assert.equal(result.targets, 0);
+  assert.equal(result.videoTargets, 1);
+  assert.equal(result.created, 1);
+  assert.equal(result.failed, 0);
+  const meta = calls.find((call) => call.name === 'meta_create').body;
+  assert.equal(meta.components.some((component) => component.type === 'HEADER'), false);
+  assert.equal(meta.components[1].buttons[0].text, 'Confirm video call');
+  assert.equal(calls.find((call) => call.name === 'service_record_video_booking_template_status').args.p_status, 'PENDING');
+}
+
 console.log('WhatsApp booking template maintenance tests passed.');
