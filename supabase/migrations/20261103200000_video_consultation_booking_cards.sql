@@ -1,0 +1,1 @@
+-- Add video consultation booking-card support after approved migration review.
