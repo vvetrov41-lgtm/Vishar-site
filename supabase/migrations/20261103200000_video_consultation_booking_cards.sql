@@ -188,3 +188,32 @@ begin
          || ''" style="color:#111;">View location</a></div>'' end');
 end;
 $video_email_location$;
+
+do $video_instagram$
+declare v_sql text:=pg_get_functiondef('crm_private.create_booking_card_instagram(uuid,text,text)'::regprocedure);
+begin
+  if position('  v_grouped boolean := false;' in v_sql)=0 then raise exception 'Unexpected Instagram booking renderer'; end if;
+  v_sql:=replace(v_sql,'  v_grouped boolean := false;','  v_grouped boolean := false;
+  v_video boolean := false;');
+  if position('  v_first_name := split_part(btrim(v_client.full_name), '' '', 1);' in v_sql)=0 then raise exception 'Unexpected Instagram booking renderer'; end if;
+  v_sql:=replace(v_sql,'  v_first_name := split_part(btrim(v_client.full_name), '' '', 1);','  v_video := v_card.appointment_type = ''video_consultation''::public.appointment_type;
+  v_first_name := split_part(btrim(v_client.full_name), '' '', 1);');
+  if position('    v_headline := ''your consultation with '' || v_artist.display_name || '' is booked ✓'';
+    v_body := ''Your consultation is booked.'';' in v_sql)=0 then raise exception 'Unexpected Instagram booking renderer'; end if;
+  v_sql:=replace(v_sql,'    v_headline := ''your consultation with '' || v_artist.display_name || '' is booked ✓'';
+    v_body := ''Your consultation is booked.'';','    v_headline := case when v_video then ''your video consultation with '' else ''your consultation with '' end || v_artist.display_name || '' is booked ✓'';
+    v_body := case when v_video then ''Your video consultation is booked.'' else ''Your consultation is booked.'' end;');
+  if position('    || E''\n'' || v_place
+    || v_money
+    || E''\n\nPlease confirm so I know to expect you: tap a button below, or use a link.''
+    || E''\n'' || case when v_grouped then ''Confirm all sessions: '' else ''I''''ll be there: '' end' in v_sql)=0 then raise exception 'Unexpected Instagram booking renderer'; end if;
+  v_sql:=replace(v_sql,'    || E''\n'' || v_place
+    || v_money
+    || E''\n\nPlease confirm so I know to expect you: tap a button below, or use a link.''
+    || E''\n'' || case when v_grouped then ''Confirm all sessions: '' else ''I''''ll be there: '' end','    || case when v_video then E''\nThis is an online consultation. We will agree how to connect before the call.'' else E''\n'' || v_place end
+    || v_money
+    || case when v_video then E''\n\nPlease confirm you can join the video call: tap a button or use a link.'' else E''\n\nPlease confirm so I know to expect you: tap a button below, or use a link.'' end
+    || E''\n'' || case when v_video then ''Confirm video call: '' when v_grouped then ''Confirm all sessions: '' else ''I''''ll be there: '' end');
+  execute v_sql;
+end;
+$video_instagram$;
