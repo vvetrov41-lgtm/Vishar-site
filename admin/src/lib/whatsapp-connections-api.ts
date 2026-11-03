@@ -280,6 +280,29 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       return assertExistingProvisioningResponse(result);
     },
 
+    async checkCoexistenceWebhookReadiness(artist: WhatsAppArtist, supabaseUrl: string): Promise<void> {
+      if (whatsappCrmEnvironment(supabaseUrl) !== 'production' || artist.slug !== 'kristina') {
+        throw new ApiError('WhatsApp Coexistence preflight unavailable for this artist.');
+      }
+      const accessToken = await crmAccessToken();
+      const url = `/api/whatsapp/embedded-signup/provision?artist_id=${encodeURIComponent(artist.id)}`;
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+      });
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok) {
+        const reason = payload && typeof payload.error === 'string'
+          ? payload.error : `coexistence_preflight_failed_http_${response.status}`;
+        throw new ApiError(reason);
+      }
+      if (payload?.ok !== true || payload?.ready !== true) {
+        throw new ApiError('meta_coexistence_preflight_response_invalid');
+      }
+    },
+
     async provisionProductionWhatsApp(
       artist: WhatsAppArtist,
       supabaseUrl: string,
