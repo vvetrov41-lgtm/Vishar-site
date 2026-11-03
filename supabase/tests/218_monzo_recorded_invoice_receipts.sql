@@ -186,5 +186,18 @@ select ok(
   'bank receipt linking is restricted to CRM human RPC and not direct table/service access'
 );
 
+-- A linked Monzo transfer is already settled evidence, not money awaiting confirmation.
+-- Today must not ask the artist to reconcile the same GBP 730 again.
+select ok(
+  not exists (
+    select 1 from jsonb_array_elements(
+      crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', true, false, now())
+    ) as attention
+    where attention ->> 'key' = 'payment-' ||
+      (select result ->> 'candidate_id' from recorded_bank_fixture)
+  ),
+  'Today excludes the Monzo evidence linked to an already-paid invoice receipt'
+);
+
 select * from finish();
 rollback;
