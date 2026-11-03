@@ -194,11 +194,11 @@ describe('CRM-owned Embedded Signup redirect', () => {
     const publicStorage = memoryStorage();
     const { state } = begin(operatorStorage);
     const navigate = vi.fn();
-    const crmCallback = \`https://crm.vishartattoo.com/?code=\${encodeURIComponent(CODE)}&state=\${state}&provider_secret=must_not_forward\`;
+    const crmCallback = `https://crm.vishartattoo.com/?code=${encodeURIComponent(CODE)}&state=${state}&provider_secret=must_not_forward`;
     expect(forwardEmbeddedSignupCallbackToOperator(crmCallback, { storage: publicStorage, navigate })).toBe(true);
     expect(navigate).toHaveBeenCalledTimes(1);
     const operatorCallback = new URL(navigate.mock.calls[0][0] as string);
-    expect(\`\${operatorCallback.origin}\${operatorCallback.pathname}\`).toBe(META_OAUTH_OPERATOR_CALLBACK_URI);
+    expect(`${operatorCallback.origin}${operatorCallback.pathname}`).toBe(META_OAUTH_OPERATOR_CALLBACK_URI);
     expect(Object.fromEntries(operatorCallback.searchParams)).toEqual({ state, code: CODE });
     expect(publicStorage.values.size).toBe(0);
     const replaceUrl = vi.fn();
@@ -214,7 +214,7 @@ describe('CRM-owned Embedded Signup redirect', () => {
     const { state } = begin(operatorStorage);
     const navigate = vi.fn();
     expect(forwardEmbeddedSignupCallbackToOperator(
-      \`https://crm.vishartattoo.com/?error=access_denied&state=\${state}&error_description=sensitive\`,
+      `https://crm.vishartattoo.com/?error=access_denied&state=${state}&error_description=sensitive`,
       { storage: memoryStorage(), navigate },
     )).toBe(true);
     const url = new URL(navigate.mock.calls[0][0] as string);
@@ -240,7 +240,7 @@ describe('CRM-owned Embedded Signup redirect', () => {
       })).toBe(false);
     }
     expect(forwardEmbeddedSignupCallbackToOperator(
-      \`https://crm.vishartattoo.com/?code=\${CODE}&state=\${state}\`,
+      `https://crm.vishartattoo.com/?code=${CODE}&state=${state}`,
       { storage: publicStorage, navigate },
     )).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
@@ -250,13 +250,13 @@ describe('CRM-owned Embedded Signup redirect', () => {
   it('does not accept a relayed operator code without matching pending state', () => {
     const operatorStorage = memoryStorage();
     const { state } = begin(operatorStorage);
-    const url = \`https://app.vishartattoo.com/?code=\${CODE}&state=\${'X'.repeat(43)}\`;
+    const url = `https://app.vishartattoo.com/?code=${CODE}&state=${'X'.repeat(43)}`;
     expect(captureEmbeddedSignupCallback(url, {
       storage: operatorStorage, replaceUrl: vi.fn(), now: () => NOW,
     })).toEqual({ status: 'rejected', reason: 'state_mismatch' });
     expect(operatorStorage.values.has(PENDING_SIGNUP_KEY)).toBe(false);
     expect(captureEmbeddedSignupCallback(
-      \`https://app.vishartattoo.com/?code=\${CODE}&state=\${state}\`,
+      `https://app.vishartattoo.com/?code=${CODE}&state=${state}`,
       { storage: operatorStorage, replaceUrl: vi.fn(), now: () => NOW },
     )).toEqual({ status: 'rejected', reason: 'state_missing' });
   });
