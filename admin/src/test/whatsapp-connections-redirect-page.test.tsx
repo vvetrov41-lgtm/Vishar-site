@@ -45,6 +45,7 @@ function sessionFor() {
       connected_at: '2026-10-10T10:00:00.000Z',
       updated_at: '2026-10-10T10:00:00.000Z',
     }]),
+    checkCoexistenceWebhookReadiness: vi.fn(async () => undefined),
     provisionProductionWhatsApp: vi.fn(async () => ({
       ok: true,
       connected: true,
@@ -89,7 +90,11 @@ describe('WhatsApp connections page, CRM-owned Meta redirect', () => {
     const connect = await screen.findByRole('button', { name: /Connect Kristina WhatsApp Business app \(Coexistence\)/ });
     expect(connect).not.toBeDisabled();
     fireEvent.click(connect);
-    expect(beginEmbeddedSignupRedirect).toHaveBeenCalledWith(KRISTINA.id);
+    await waitFor(() => expect(api.checkCoexistenceWebhookReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({ id: KRISTINA.id }),
+      PRODUCTION_SUPABASE,
+    ));
+    await waitFor(() => expect(beginEmbeddedSignupRedirect).toHaveBeenCalledWith(KRISTINA.id));
     expect(api.provisionProductionWhatsApp).not.toHaveBeenCalled();
   });
 
