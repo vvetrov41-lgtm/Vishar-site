@@ -97,6 +97,25 @@ async function resolveCalendarRoute(supabase, claimed) {
   }
 }
 
+// A video consultation should never be projected into a shared studio
+// calendar. The OAuth owner's primary calendar is personal and the event
+// must be marked private, regardless of the studio destination's styling.
+// Other appointment types keep the artist's existing studio destination.
+export function calendarProjectionForAppointment(job, destination, tokenRecord) {
+  if (job?.appointment_type === 'video_consultation') {
+    return {
+      ...destination,
+      calendarId: 'primary',
+      eventVisibility: 'private',
+      eventLabelId: null,
+    };
+  }
+  return {
+    ...destination,
+    eventLabelId: destination.eventLabelId || tokenRecord?.eventLabelId || null,
+  };
+}
+
 async function processJob(job, env, supabase, workerId, fetchImpl) {
   const claimed = validateClaimedJob(job);
 
@@ -111,14 +130,15 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
 
   const resolved = await resolveCalendarRoute(supabase, claimed);
   const route = firstRow(resolved);
+  const validatedRoute = validateCalendarRoute(route, claimed);
+  const tokenRecord = await loadArtistTokenRecord(env, claimed, route);
   const {
     calendarId,
     eventLabelId,
     eventVisibility,
     eventDisplayName,
     eventColorId,
-  } = validateCalendarRoute(route, claimed);
-  const tokenRecord = await loadArtistTokenRecord(env, claimed, route);
+  } = calendarProjectionForAppointment(claimed, validatedRoute, tokenRecord);
   const accessToken = await refreshGoogleAccessToken(env, tokenRecord.refreshToken, fetchImpl);
   const provider = createGoogleCalendarProvider({
     accessToken,
@@ -127,7 +147,7 @@ async function processJob(job, env, supabase, workerId, fetchImpl) {
     eventVisibility,
     artistDisplayName: eventDisplayName,
     eventColorId,
-    eventLabelId: eventLabelId || tokenRecord.eventLabelId,
+    eventLabelId,
     fetchImpl,
   });
 

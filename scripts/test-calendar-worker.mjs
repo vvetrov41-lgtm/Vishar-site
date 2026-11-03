@@ -11,7 +11,7 @@ import {
   stableGoogleEventId,
   validateCalendarRoute,
 } from '../workers/lib/google-calendar.js';
-import { drainCalendarOutbox } from '../workers/lib/calendar-drain.js';
+import { calendarProjectionForAppointment, drainCalendarOutbox } from '../workers/lib/calendar-drain.js';
 
 let passes = 0;
 let failures = 0;
@@ -211,6 +211,31 @@ await test('artist route validation is exact and keeps each artist its own styli
     async () => validateCalendarRoute(wrong, job()),
     (error) => error.code === 'provider_route_invalid',
   );
+});
+
+await test('video consultations use a private personal calendar; studio appointments retain their shared destination', async () => {
+  const shared = validateCalendarRoute(
+    routeFor(vladimirId, 'outbox-video-routing', 'calendar_create', {
+      configuration: { calendar_id: sharedCalendarId },
+    }),
+    job({ outbox_id: 'outbox-video-routing' }),
+  );
+  const oauth = { eventLabelId: wisteriaLabelId };
+  const video = calendarProjectionForAppointment(job({ appointment_type: 'video_consultation' }), shared, oauth);
+  assert.equal(video.calendarId, 'primary');
+  assert.equal(video.eventVisibility, 'private');
+  assert.equal(video.eventLabelId, null);
+  const videoEvent = buildGoogleEvent(job({ appointment_type: 'video_consultation' }), {
+    visibility: video.eventVisibility,
+    artistDisplayName: video.eventDisplayName,
+  });
+  assert.equal(videoEvent.visibility, 'private');
+
+  for (const kind of ['tattoo_session', 'in_person_consultation', 'touch_up']) {
+    const regular = calendarProjectionForAppointment(job({ appointment_type: kind }), shared, oauth);
+    assert.equal(regular.calendarId, sharedCalendarId);
+    assert.equal(regular.eventVisibility, 'public');
+  }
 });
 
 await test('invalid shared calendar targets fail closed before a provider request', async () => {
