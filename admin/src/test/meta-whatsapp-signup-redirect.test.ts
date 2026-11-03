@@ -5,6 +5,8 @@ import {
   captureEmbeddedSignupCallback,
   createSignupState,
   embeddedSignupDialogUrl,
+  forwardEmbeddedSignupCallbackToOperator,
+  META_OAUTH_OPERATOR_CALLBACK_URI,
   META_OAUTH_REDIRECT_URI,
   PENDING_SIGNUP_KEY,
   PENDING_SIGNUP_MAX_AGE_MS,
@@ -186,4 +188,77 @@ describe('CRM-owned Embedded Signup redirect', () => {
     expect(outcomes[1]).toEqual(outcomes[0]);
     expect(outcomes[0].callback).toEqual({ status: 'code', artistId: KRISTINA_ID, code: CODE });
   });
+
+  it('relays a public OAuth callback to the operator origin with independent sessionStorage', () => {
+    const operatorStorage = memoryStorage();
+    const publicStorage = memoryStorage();
+    const { state } = begin(operatorStorage);
+    const navigate = vi.fn();
+    const crmCallback = `https://crm.vishartattoo.com/?code=${encodeURIComponent(CODE)}&state=${state}&provider_secret=must_not_forward`;
+    expect(forwardEmbeddedSignupCallbackToOperator(crmCallback, { storage: publicStorage, navigate })).toBe(true);
+    expect(navigate).toHaveBeenCalledTimes(1);
+    const operatorCallback = new URL(navigate.mock.calls[0][0] as string);
+    expect(`${operatorCallback.origin}${operatorCallback.pathname}`).toBe(META_OAUTH_OPERATOR_CALLBACK_URI);
+    expect(Object.fromEntries(operatorCallback.searchParams)).toEqual({ state, code: CODE });
+    expect(publicStorage.values.size).toBe(0);
+    const replaceUrl = vi.fn();
+    expect(captureEmbeddedSignupCallback(operatorCallback.toString(), {
+      storage: operatorStorage, replaceUrl, now: () => NOW + 1_000,
+    })).toEqual({ status: 'code', artistId: KRISTINA_ID, code: CODE });
+    expect(replaceUrl).toHaveBeenCalledWith('/#/integrations/whatsapp');
+    expect(operatorStorage.values.has(PENDING_SIGNUP_KEY)).toBe(false);
+  });
+
+  it('relays Meta cancellation to the operator without forwarding provider details', () => {
+    const operatorStorage = memoryStorage();
+    const { state } = begin(operatorStorage);
+    const navigate = vi.fn();
+    expect(forwardEmbeddedSignupCallbackToOperator(
+      `https://crm.vishartattoo.com/?error=access_denied&state=${state}&error_description=sensitive`,
+      { storage: memoryStorage(), navigate },
+    )).toBe(true);
+    const url = new URL(navigate.mock.calls[0][0] as string);
+    expect(Object.fromEntries(url.searchParams)).toEqual({ state, error: 'access_denied' });
+    expect(captureEmbeddedSignupCallback(url.toString(), {
+      storage: operatorStorage, replaceUrl: vi.fn(), now: () => NOW + 10_000,
+    })).toEqual({ status: 'cancelled', artistId: KRISTINA_ID });
+  });
+
+  it('never redirects an unrelated, malformed, or already-owned Meta callback', () => {
+    const publicStorage = memoryStorage();
+    const { state } = begin(publicStorage);
+    const navigate = vi.fn();
+    for (const url of [
+      'https://evil.example/?code=token&state=' + state,
+      'https://crm.vishartattoo.com/team/?code=' + CODE + '&state=' + state,
+      'https://crm.vishartattoo.com/?code=bad%20code&state=' + state,
+      'https://crm.vishartattoo.com/?code=' + CODE + '&state=short',
+      'https://crm.vishartattoo.com/?code=' + CODE + '&error=access_denied&state=' + state,
+    ]) {
+      expect(forwardEmbeddedSignupCallbackToOperator(url, {
+        storage: memoryStorage(), navigate,
+      })).toBe(false);
+    }
+    expect(forwardEmbeddedSignupCallbackToOperator(
+      `https://crm.vishartattoo.com/?code=${CODE}&state=${state}`,
+      { storage: publicStorage, navigate },
+    )).toBe(false);
+    expect(navigate).not.toHaveBeenCalled();
+    expect(publicStorage.values.has(PENDING_SIGNUP_KEY)).toBe(true);
+  });
+
+  it('does not accept a relayed operator code without matching pending state', () => {
+    const operatorStorage = memoryStorage();
+    const { state } = begin(operatorStorage);
+    const url = `https://app.vishartattoo.com/?code=${CODE}&state=${'X'.repeat(43)}`;
+    expect(captureEmbeddedSignupCallback(url, {
+      storage: operatorStorage, replaceUrl: vi.fn(), now: () => NOW,
+    })).toEqual({ status: 'rejected', reason: 'state_mismatch' });
+    expect(operatorStorage.values.has(PENDING_SIGNUP_KEY)).toBe(false);
+    expect(captureEmbeddedSignupCallback(
+      `https://app.vishartattoo.com/?code=${CODE}&state=${state}`,
+      { storage: operatorStorage, replaceUrl: vi.fn(), now: () => NOW },
+    )).toEqual({ status: 'rejected', reason: 'state_missing' });
+  });
+
 });
