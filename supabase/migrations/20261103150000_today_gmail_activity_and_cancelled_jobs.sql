@@ -267,7 +267,7 @@ AS $function$
   ) order by r.rank, r.tier, r.at nulls last, r.key), '[]'::jsonb)
   from ranked r
   left join public.clients c on c.id = r.client_id;
-$function$
+$function$;
 
 CREATE OR REPLACE FUNCTION crm_private.pulse_summary(p_artist_id uuid, p_now timestamp with time zone DEFAULT NULL::timestamp with time zone)
  RETURNS jsonb
@@ -330,5 +330,4 @@ AS $function$
       'gmail_refreshed_at', (select refreshed_at from snap)
     )
   );
-$function$
-
+$function$;
