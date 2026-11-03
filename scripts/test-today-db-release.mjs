@@ -88,3 +88,20 @@ for (const invalid of [
   metaFunnel.replace('20261102010000 | 20261102010000', '20261102010000 | '),
   metaFunnel + '\n 20261102012000 | | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Coexistence Option A: only the exact metadata-only once-per-onboarding
+// migration is allowed after the actual production head.
+const coexistenceSyncTransition = [
+  ' Local | Remote | Time',
+  ' 20261103010000 | 20261103010000 | t',
+  ' 20261103070000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(coexistenceSyncTransition), '20261103070000');
+for (const invalid of [
+  coexistenceSyncTransition + '\n 20261103080000 | | t',
+  coexistenceSyncTransition.replace('20261103070000 | |', '20261103071000 | |'),
+  coexistenceSyncTransition.replace('20261103010000 | 20261103010000', '20261103010000 | '),
+  coexistenceSyncTransition.replaceAll('20261103010000', '20261102210000'),
+  coexistenceSyncTransition + '\n | 20261103090000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));

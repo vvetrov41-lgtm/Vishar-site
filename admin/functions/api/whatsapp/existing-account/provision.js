@@ -206,6 +206,19 @@ async function verifyExistingTarget(accessToken, approved) {
   };
 }
 
+
+async function requireKristinaCloudApiState(accessToken, phoneNumberId) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}`);
+  url.searchParams.set('fields', 'is_on_biz_app,platform_type,status');
+  const state = await graph(url.toString(), {
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+  });
+  if (String(state?.id || '') !== phoneNumberId || state?.is_on_biz_app !== true
+      || state?.platform_type !== 'CLOUD_API' || state?.status !== 'CONNECTED') {
+    throw Object.assign(new Error('meta_coexistence_not_completed'), { status: 409 });
+  }
+}
+
 function cloudflareSecretsUrl(env, worker) {
   return `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
 }
@@ -331,6 +344,12 @@ export async function onRequestPost(context) {
     await verifyMetaAccessToken(accessToken, env);
     stage = 'meta_selection';
     const safeMeta = await verifyExistingTarget(accessToken, approved);
+    // Existing-account credentials cannot manufacture a Cloud API connection:
+    // the provider must confirm this Business App number is fully connected.
+    if (approved.integrationKey === 'kristina-production') {
+      stage = 'coexistence_readback';
+      await requireKristinaCloudApiState(accessToken, safeMeta.phoneNumberId);
+    }
 
     const envelope = JSON.stringify({
       phoneNumberId: safeMeta.phoneNumberId,

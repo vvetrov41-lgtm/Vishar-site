@@ -429,6 +429,121 @@ async function verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId) 
   };
 }
 
+
+const KRISTINA_COEXISTENCE_KEY = 'kristina-production';
+const REQUIRED_COEXISTENCE_WEBHOOK_FIELDS = Object.freeze([
+  'messages',
+  'account_update',
+  'smb_message_echoes',
+  'smb_app_state_sync',
+  'history',
+]);
+
+// The embedded signup code is single-use. No automatic retry of smb_app_data:
+// Meta permits one request per sync_type per onboarding. Deliberately discard
+// the provider response and all resulting history/contact webhook payloads.
+async function requireCloudApiCoexistence(accessToken, phoneNumberId) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}`);
+  url.searchParams.set('fields', 'is_on_biz_app,platform_type,status');
+  const phone = await graph(url.toString(), {
+    headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+  });
+  if (String(phone?.id || '') !== phoneNumberId
+      || phone?.is_on_biz_app !== true
+      || phone?.platform_type !== 'CLOUD_API'
+      || phone?.status !== 'CONNECTED') {
+    throw Object.assign(new Error('meta_coexistence_not_completed'), { status: 409 });
+  }
+}
+
+async function requireCoexistenceWebhookFields(metaAppSecret) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${APP_ID}/subscriptions`);
+  const payload = await graph(url.toString(), {
+    headers: { authorization: `Bearer ${APP_ID}|${metaAppSecret}`, accept: 'application/json' },
+  });
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const matching = rows.filter((row) => row?.object === 'whatsapp_business_account');
+  if (matching.length !== 1 || matching[0].active === false) {
+    throw Object.assign(new Error('meta_coexistence_webhooks_not_ready'), { status: 409 });
+  }
+  const subscribed = new Set(
+    (Array.isArray(matching[0].fields) ? matching[0].fields : [])
+      .map((field) => typeof field === 'string' ? field : field?.name)
+      .filter((name) => typeof name === 'string'),
+  );
+  if (!REQUIRED_COEXISTENCE_WEBHOOK_FIELDS.every((field) => subscribed.has(field))) {
+    throw Object.assign(new Error('meta_coexistence_webhook_fields_missing'), { status: 409 });
+  }
+}
+
+async function initiateCoexistenceSync(accessToken, phoneNumberId, syncType) {
+  if (syncType !== 'smb_app_state_sync' && syncType !== 'history') {
+    throw Object.assign(new Error('meta_coexistence_sync_invalid'), { status: 500 });
+  }
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${phoneNumberId}/smb_app_data`;
+  const payload = await graph(url, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({ messaging_product: 'whatsapp', sync_type: syncType }),
+  });
+  if (payload?.messaging_product !== 'whatsapp'
+      || typeof payload.request_id !== 'string'
+      || !/^[A-Za-z0-9_-]{4,128}$/.test(payload.request_id)) {
+    throw Object.assign(new Error('meta_coexistence_sync_response_invalid'), { status: 502 });
+  }
+}
+
+
+async function coexistenceSyncRpc(operator, env, rpcName, body) {
+  if (rpcName !== 'claim_whatsapp_coexistence_sync'
+      && rpcName !== 'record_whatsapp_coexistence_sync_accepted') {
+    throw Object.assign(new Error('coexistence_progress_invalid'), { status: 500 });
+  }
+  const response = await noFollowFetch(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/rpc/${rpcName}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabasePublishableKey(env),
+      authorization: `Bearer ${operator.token}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw Object.assign(new Error('crm_coexistence_sync_progress_blocked'), { status: 409 });
+  }
+  return responseJson(response);
+}
+
+// Claim is committed before Meta's single-use POST. If the response was lost,
+// the claim remains uncertain and blocks retries instead of issuing a second
+// Graph request. Successfully accepted contacts can be skipped on a new
+// authorization so a failed history step remains recoverable.
+async function ensureCoexistenceSyncedOnce(operator, env, artistId, wabaId, phoneNumberId, accessToken, syncType) {
+  const decision = await coexistenceSyncRpc(operator, env, 'claim_whatsapp_coexistence_sync', {
+    p_artist_id: artistId,
+    p_waba_id: wabaId,
+    p_phone_number_id: phoneNumberId,
+    p_sync_type: syncType,
+  });
+  if (decision === 'already_accepted') return;
+  if (decision !== 'execute') {
+    throw Object.assign(new Error('crm_coexistence_sync_progress_invalid'), { status: 409 });
+  }
+  await initiateCoexistenceSync(accessToken, phoneNumberId, syncType);
+  const recorded = await coexistenceSyncRpc(operator, env, 'record_whatsapp_coexistence_sync_accepted', {
+    p_artist_id: artistId,
+    p_sync_type: syncType,
+  });
+  if (recorded?.accepted !== true) {
+    throw Object.assign(new Error('crm_coexistence_sync_receipt_invalid'), { status: 409 });
+  }
+}
+
 function cloudflareSecretsUrl(env, worker) {
   return `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
 }
@@ -631,6 +746,15 @@ export async function onRequestPost(context) {
     const safeMeta = await verifyMetaSelection(accessToken, wabaId, requestedPhoneNumberId);
     stage = 'artist_number_pin';
     requirePinnedSelection(route.integrationKey, safeMeta.phoneNumberId);
+    // This is an existing Business App number. Do not persist credentials or
+    // declare success if Meta has not finished switching it to Cloud API.
+    const isKristinaCoexistence = route.integrationKey === KRISTINA_COEXISTENCE_KEY;
+    if (isKristinaCoexistence) {
+      stage = 'coexistence_phone_preflight';
+      await requireCloudApiCoexistence(accessToken, safeMeta.phoneNumberId);
+      stage = 'coexistence_webhook_preflight';
+      await requireCoexistenceWebhookFields(metaAppSecret);
+    }
     const envelope = JSON.stringify({
       artistId,
       integrationKey: route.integrationKey,
@@ -655,6 +779,17 @@ export async function onRequestPost(context) {
     await requireWorkerSecretReadback(env, DRAIN_WORKER, route.bindingName);
     stage = 'webhook_binding_readback';
     await requireWorkerSecretReadback(env, WEBHOOK_WORKER, route.bindingName);
+    if (isKristinaCoexistence) {
+      stage = 'coexistence_phone_readback';
+      await requireCloudApiCoexistence(accessToken, safeMeta.phoneNumberId);
+      // Explicit option A: initiate Meta's one-time handshake, but do NOT
+      // retain contact records or historical messages in the CRM. The signed
+      // webhook handler ignores the history and smb_app_state_sync fields.
+      stage = 'coexistence_contact_sync';
+      await ensureCoexistenceSyncedOnce(operator, env, artistId, wabaId, safeMeta.phoneNumberId, accessToken, 'smb_app_state_sync');
+      stage = 'coexistence_history_sync';
+      await ensureCoexistenceSyncedOnce(operator, env, artistId, wabaId, safeMeta.phoneNumberId, accessToken, 'history');
+    }
     stage = 'crm_connected_state';
     const connectedAt = await markIntegrationConnected(operator, env, artistId, route);
 
@@ -687,7 +822,38 @@ export async function onRequestPost(context) {
   }
 }
 
+// Read-only readiness check BEFORE opening Meta's irreversible signup UI.
+// Fails before the QR step when app-level Coexistence webhooks are missing.
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const url = new URL(request.url);
+  if (url.origin !== PRODUCTION_CRM_ORIGIN) {
+    return json({ ok: false, error: 'origin_not_allowed' }, 403);
+  }
+  try {
+    requireServerConfiguration(env);
+    const operator = await requireCrmOperator(request, env);
+    const artistId = url.searchParams.get('artist_id') || '';
+    if (!UUID.test(artistId)) {
+      return json({ ok: false, error: 'invalid_artist_id' }, 400);
+    }
+    await requireArtistIntegrationCapability(operator, env, artistId);
+    const route = await requireApprovedRoute(operator, env, artistId);
+    if (route.integrationKey !== KRISTINA_COEXISTENCE_KEY) {
+      return json({ ok: false, error: 'coexistence_preflight_not_applicable' }, 409);
+    }
+    await requireCoexistenceWebhookFields(binding(env, 'META_APP_SECRET'));
+    return json({ ok: true, ready: true });
+  } catch (error) {
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+    const safeError = typeof error?.message === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.message)
+      ? error.message : 'meta_coexistence_preflight_failed';
+    return json({ ok: false, error: safeError }, edgeSafeStatus(status));
+  }
+}
+
 export function onRequest(context) {
+  if (context.request.method === 'GET') return onRequestGet(context);
   if (context.request.method === 'POST') return onRequestPost(context);
   return json({ ok: false, error: 'method_not_allowed' }, 405);
 }
@@ -704,4 +870,7 @@ export const __testing = {
   META_OAUTH_REDIRECT_URIS,
   PINNED_ARTIST_WABA_IDS,
   discoverPinnedWaba,
+  requireCloudApiCoexistence,
+  requireCoexistenceWebhookFields,
+  initiateCoexistenceSync,
 };

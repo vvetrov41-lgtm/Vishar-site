@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   __testing,
+  onRequestGet,
   onRequestPost,
 } from '../admin/functions/api/whatsapp/embedded-signup/provision.js';
 
@@ -98,6 +99,10 @@ function authorizedFetch(calls, {
   routeEnabled = true,
   routeIntegrationKey = null,
   missingSecretWorker = null,
+  coexistencePhone = { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' },
+  appWebhookFields = ['messages', 'account_update', 'history', 'smb_app_state_sync', 'smb_message_echoes'],
+  syncFailure = null,
+  syncProgress = new Map(),
   subscriptionApps = [{
     whatsapp_business_api_data: { id: '1481226093843982', name: 'Vishar CRM' },
   }],
@@ -162,6 +167,25 @@ function authorizedFetch(calls, {
     if (target.includes(`/${bodyFor(artistId).session.waba_id}/phone_numbers`)) {
       return Response.json({ data: phoneRows });
     }
+    if (target.includes(`/${KRISTINA_PHONE}?fields=is_on_biz_app%2Cplatform_type%2Cstatus`)) {
+      return Response.json(coexistencePhone);
+    }
+    if (target.includes('/1481226093843982/subscriptions') && method === 'GET') {
+      return Response.json({ data: [{
+        object: 'whatsapp_business_account',
+        active: true,
+        fields: appWebhookFields.map((name) => ({ name })),
+      }] });
+    }
+    if (target.includes(`/${KRISTINA_PHONE}/smb_app_data`) && method === 'POST') {
+      const payload = JSON.parse(String(init.body));
+      assert.equal(payload.messaging_product, 'whatsapp');
+      assert.ok(['history', 'smb_app_state_sync'].includes(payload.sync_type));
+      if (payload.sync_type === syncFailure) {
+        return Response.json({ error: { code: 100, error_subcode: 2593108 } }, { status: 400 });
+      }
+      return Response.json({ messaging_product: 'whatsapp', request_id: `test-request-${payload.sync_type}` });
+    }
     if (target.includes('/workers/scripts/vishar-whatsapp-drain-production/secrets') && method === 'PUT') {
       const payload = JSON.parse(String(init.body));
       assert.equal(init.method, 'PUT');
@@ -198,6 +222,25 @@ function authorizedFetch(calls, {
     }
     if (target.includes(`/${bodyFor(artistId).session.waba_id}/subscribed_apps`) && method === 'GET') {
       return Response.json({ data: subscriptionApps });
+    }
+    if (target.includes('/rest/v1/rpc/claim_whatsapp_coexistence_sync') && method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.p_artist_id, KRISTINA_ID);
+      assert.equal(body.p_waba_id, KRISTINA_WABA);
+      assert.equal(body.p_phone_number_id, KRISTINA_PHONE);
+      assert.ok(['history', 'smb_app_state_sync'].includes(body.p_sync_type));
+      const status = syncProgress.get(body.p_sync_type);
+      if (status === 'accepted') return Response.json('already_accepted');
+      if (status === 'claimed') return Response.json({ message: 'already claimed' }, { status: 409 });
+      syncProgress.set(body.p_sync_type, 'claimed');
+      return Response.json('execute');
+    }
+    if (target.includes('/rest/v1/rpc/record_whatsapp_coexistence_sync_accepted') && method === 'POST') {
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.p_artist_id, KRISTINA_ID);
+      assert.equal(syncProgress.get(body.p_sync_type), 'claimed');
+      syncProgress.set(body.p_sync_type, 'accepted');
+      return Response.json({ accepted: true });
     }
     if (target.includes('/rest/v1/rpc/complete_artist_whatsapp_connection') && method === 'POST') {
       const payload = JSON.parse(String(init.body));
@@ -1097,3 +1140,167 @@ console.log('WhatsApp Embedded Signup pinned-WABA fallback tests passed.');
 }
 
 console.log('WhatsApp Embedded Signup scope diagnostic tests passed.');
+
+
+// Fail closed BEFORE touching encrypted Worker bindings or the global WABA
+// subscription. Mere possession of a token and WABA membership is not a
+// completed WhatsApp Business App / Cloud API connection.
+for (const [label, coexistencePhone] of [
+  ['on-premise', { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'ON_PREMISE', status: 'DISCONNECTED' }],
+  ['not connected', { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'DISCONNECTED' }],
+  ['not on business app', { id: KRISTINA_PHONE, is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'CONNECTED' }],
+  ['foreign number', { id: '10987654323', is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' }],
+]) {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { coexistencePhone });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 409, label);
+    assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_not_completed' }, label);
+    assert.equal(calls.filter((c) => c.target.includes('/workers/scripts/')).length, 0, label);
+    assert.equal(calls.filter((c) => c.target.includes('/smb_app_data')).length, 0, label);
+    assert.equal(calls.filter((c) => c.target.includes('/subscribed_apps')).length, 0, label);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// Only the precisely required app-level fields are accepted. WABA subscribed
+// apps alone is insufficient; history and contact sync would otherwise vanish.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { appWebhookFields: ['messages', 'smb_message_echoes'] });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 409);
+    assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_webhook_fields_missing' });
+    assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((c) => c.target.includes('/smb_app_data')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+// Meta's once-per-onboarding endpoint must be reached exactly once for
+// contacts, then history, and only AFTER all binding / subscription readbacks.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls);
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 200);
+    const sync = calls.filter((c) => c.target.includes('/smb_app_data'));
+    assert.deepEqual(sync.map((c) => JSON.parse(String(c.init.body)).sync_type), [
+      'smb_app_state_sync', 'history',
+    ]);
+    const lastBindingReadback = calls.findLastIndex((c) =>
+      c.target.includes('/workers/scripts/') && c.init.method !== 'PUT');
+    assert.ok(calls.indexOf(sync[0]) > lastBindingReadback);
+    const complete = calls.findIndex((c) => c.target.includes('/complete_artist_whatsapp_connection'));
+    assert.ok(complete > calls.indexOf(sync[1]));
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  // If Meta rejects a sync request, do not misrepresent the route as
+  // connected and never retry the one-time Graph mutation automatically.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { syncFailure: 'smb_app_state_sync' });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 500);
+    assert.deepEqual((await result.json()).error, 'meta_request_failed');
+    assert.equal(calls.filter((c) => c.target.includes('/smb_app_data')).length, 1);
+    assert.equal(calls.some((c) => c.target.includes('/complete_artist_whatsapp_connection')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+
+// GET preflight runs before the user opens Meta's QR step. It must not exchange
+// a Meta code, mutate Cloudflare Workers or begin any history/contact sync.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls);
+  try {
+    const result = await onRequestGet({
+      request: new Request(`${ENDPOINT}?artist_id=${KRISTINA_ID}`, {
+        method: 'GET',
+        headers: { authorization: 'Bearer crm-owner-session-token-for-test' },
+      }),
+      env: env(),
+    });
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), { ok: true, ready: true });
+    assert.equal(calls.some((c) => c.target.includes('/oauth/access_token')), false);
+    assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((c) => c.target.includes('/smb_app_data')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { appWebhookFields: ['messages'] });
+  try {
+    const result = await onRequestGet({
+      request: new Request(`${ENDPOINT}?artist_id=${KRISTINA_ID}`, {
+        method: 'GET',
+        headers: { authorization: 'Bearer crm-owner-session-token-for-test' },
+      }),
+      env: env(),
+    });
+    assert.equal(result.status, 409);
+    assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_webhook_fields_missing' });
+    assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((c) => c.target.includes('/oauth/access_token')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+
+// After a previous accepted contacts request, the next OAuth authorization
+// must skip contacts completely and start only the not-yet-used history sync.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  const progress = new Map([['smb_app_state_sync', 'accepted']]);
+  globalThis.fetch = authorizedFetch(calls, { syncProgress: progress });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 200);
+    assert.deepEqual(calls.filter((c) => c.target.includes('/smb_app_data'))
+      .map((c) => JSON.parse(String(c.init.body)).sync_type), ['history']);
+    assert.equal(progress.get('smb_app_state_sync'), 'accepted');
+    assert.equal(progress.get('history'), 'accepted');
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+// An ambiguous failure after Meta receives history must never retry it or
+// re-issue the previously accepted contacts operation on a new OAuth code.
+{
+  const progress = new Map();
+  const firstCalls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = authorizedFetch(firstCalls, {
+    syncProgress: progress, syncFailure: 'history',
+  });
+  try {
+    const first = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(first.status, 500);
+    assert.equal(progress.get('smb_app_state_sync'), 'accepted');
+    assert.equal(progress.get('history'), 'claimed');
+    assert.deepEqual(firstCalls.filter((c) => c.target.includes('/smb_app_data'))
+      .map((c) => JSON.parse(String(c.init.body)).sync_type), [
+        'smb_app_state_sync', 'history',
+      ]);
+
+    const retryCalls = [];
+    globalThis.fetch = authorizedFetch(retryCalls, { syncProgress: progress });
+    const again = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(again.status, 409);
+    assert.equal((await again.json()).error, 'crm_coexistence_sync_progress_blocked');
+    assert.equal(retryCalls.filter((c) => c.target.includes('/smb_app_data')).length, 0);
+  } finally { globalThis.fetch = originalFetch; }
+}

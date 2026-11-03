@@ -136,6 +136,22 @@ describe('WhatsApp Connections safety', () => {
     });
   });
 
+
+  it('preflights Meta application webhook fields without starting an OAuth flow', async () => {
+    const mocks = clientFor();
+    const api = createWhatsAppConnectionsApi(mocks.client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true, ready: true }));
+    try {
+      await expect(api.checkCoexistenceWebhookReadiness(
+        KRISTINA, 'https://vfjexhfdbrjmuxfdvbdx.supabase.co',
+      )).resolves.toBeUndefined();
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe(`/api/whatsapp/embedded-signup/provision?artist_id=${KRISTINA.id}`);
+      expect(init?.method).toBe('GET');
+      expect(init?.headers).toMatchObject({ authorization: 'Bearer crm-owner-session-token-for-test' });
+    } finally { fetchMock.mockRestore(); }
+  });
+
   it('provisions Kristina through the same-origin Embedded Signup backend without trusting a browser routing key', async () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
@@ -379,6 +395,7 @@ describe('WhatsApp Connections safety', () => {
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
     expect(Object.keys(api).sort()).toEqual([
+      'checkCoexistenceWebhookReadiness',
       'listWhatsAppIntegrations',
       'manageMetaReviewTemplate',
       'prepareWhatsAppIntegration',

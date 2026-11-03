@@ -183,7 +183,7 @@ export function WhatsAppConnectionsPage() {
 
   // Embedded Signup leaves the CRM: the page navigates to Meta's dialog in this
   // tab and Meta returns to the CRM root, where main.tsx captures the code.
-  function startMetaOnboarding(artist: Artist) {
+  async function startMetaOnboarding(artist: Artist) {
     setActionError(null);
     setMetaMessage(null);
     if (
@@ -199,10 +199,20 @@ export function WhatsAppConnectionsPage() {
     }
     setMetaBusyArtistId(artist.id);
     try {
+      if (artist.slug === 'kristina') {
+        // A missing Meta webhook subscription must be fixed before QR/phone
+        // approval; otherwise the one-time 24h sync could be lost.
+        await api.checkCoexistenceWebhookReadiness(artist, supabaseUrl);
+      }
       beginEmbeddedSignupRedirect(artist.id);
     } catch (cause) {
       setMetaBusyArtistId(null);
-      setActionError(describeWhatsAppEmbeddedSignupError(cause, language));
+      const detail = cause instanceof Error ? cause.message : '';
+      setActionError(detail.includes('meta_coexistence_webhook_fields_missing')
+        ? (language === 'ru'
+          ? 'Meta App не подписано на history / smb_app_state_sync / smb_message_echoes. Сначала настрой webhook-поля приложения, затем повтори подключение.'
+          : 'Required Meta App webhook fields are missing. Enable history, smb_app_state_sync and smb_message_echoes before reconnecting.')
+        : describeWhatsAppEmbeddedSignupError(cause, language));
     }
   }
 

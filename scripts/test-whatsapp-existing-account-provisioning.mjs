@@ -200,6 +200,7 @@ async function runProvisionScenario(overrides = {}) {
   const wabaResponseId = overrides.wabaResponseId ?? approved.wabaId;
   const phoneRows = overrides.phoneRows ?? fixture.phoneRows;
   const phonePaging = overrides.phonePaging ?? fixture.phonePaging;
+  const coexState = overrides.coexState ?? { id: KRISTINA_PHONE_ID, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' };
   const subscriptionApps = overrides.subscriptionApps ?? [{
     whatsapp_business_api_data: {
       id: META_APP_ID,
@@ -283,6 +284,9 @@ async function runProvisionScenario(overrides = {}) {
           : phoneRows.length === 1 && !phonePaging?.next && /^[0-9]{5,32}$/.test(String(phoneRows[0]?.id || ''));
         if (wabaResponseId === approved.wabaId && validPhone) state.metaValidationComplete = true;
         return Response.json({ data: phoneRows, paging: phonePaging });
+      }
+      if (artistId === KRISTINA_ID && url.pathname === `/v25.0/${KRISTINA_PHONE_ID}`) {
+        return Response.json(coexState);
       }
       if (url.pathname === `/v25.0/${approved.wabaId}/subscribed_apps` && method === 'POST') {
         state.subscriptionPosts += 1;
@@ -422,3 +426,17 @@ for (const artistId of [VLADIMIR_ID, KRISTINA_ID]) {
 }
 
 console.log('WhatsApp existing-account Vladimir + Kristina provisioning boundary: ok');
+
+// Direct token provision is never a workaround for unfinished Meta Coexistence.
+for (const coexState of [
+  { id: KRISTINA_PHONE_ID, is_on_biz_app: true, platform_type: 'ON_PREMISE', status: 'DISCONNECTED' },
+  { id: KRISTINA_PHONE_ID, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'DISCONNECTED' },
+  { id: KRISTINA_PHONE_ID, is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'CONNECTED' },
+]) {
+  const result = await runProvisionScenario({ artistId: KRISTINA_ID, coexState });
+  assert.equal(result.response.status, 409);
+  assert.equal(result.payload.error, 'meta_coexistence_not_completed');
+  assert.deepEqual(result.state.cloudflareWrites, []);
+  assert.deepEqual(result.state.supabaseMutations, []);
+  assert.equal(result.state.subscriptionPosts, 0);
+}
