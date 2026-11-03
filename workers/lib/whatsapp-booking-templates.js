@@ -530,8 +530,10 @@ export async function maintainWhatsappBookingTemplates(env, {
       code: 'whatsapp_template_claim_invalid',
     });
   }
-  summary.videoTargets = videoTargets.length;
-  summary.videoApproved = 0;
+  if (videoTargets.length) {
+    summary.videoTargets = videoTargets.length;
+    summary.videoApproved = 0;
+  }
   for (const target of videoTargets) {
     let status = typeof target?.video_template_status === 'string'
       && SAFE_STATUS.test(target.video_template_status)
