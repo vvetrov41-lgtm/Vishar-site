@@ -30,3 +30,83 @@ update crm_private.booking_card_artist_settings s
 set whatsapp_video_template_name='booking_card_video_consultation_v1'
 from public.artists a
 where a.id=s.artist_id and a.slug in ('vladimir','kristina');
+
+CREATE OR REPLACE FUNCTION crm_private.booking_card_eligibility(p_session_id uuid)
+ RETURNS TABLE(eligible boolean, reason text, card_kind text, session_price numeric, deposit_paid numeric, remaining_balance numeric, currency text, deposit_source text)
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'crm_private'
+AS $function$
+declare
+  v_session record;
+  v_deposit numeric;
+  v_deposit_currency text;
+  v_deposit_source text;
+begin
+  select s.appointment_type, s.status, s.start_at, s.price, s.currency, s.created_at,
+         a.is_active as artist_active, a.timezone, c.archived_at as client_archived_at,
+         bs.appointment_created_from
+    into v_session
+  from public.sessions s
+  join public.artists a on a.id = s.artist_id
+  join public.clients c on c.id = s.client_id
+  left join crm_private.booking_card_artist_settings bs on bs.artist_id = s.artist_id
+  where s.id = p_session_id;
+
+  if not found then
+    return query select false, 'session_not_found', null::text, null::numeric,
+      null::numeric, null::numeric, null::text, null::text;
+    return;
+  end if;
+
+  currency := v_session.currency;
+  eligible := false;
+
+  if not v_session.artist_active then
+    reason := 'artist_inactive';
+  elsif v_session.client_archived_at is not null then
+    reason := 'client_archived';
+  elsif v_session.status <> 'confirmed'::public.session_status then
+    reason := 'not_confirmed';
+  elsif v_session.start_at <= clock_timestamp() then
+    reason := 'appointment_in_past';
+  elsif v_session.appointment_created_from is not null
+     and v_session.created_at < v_session.appointment_created_from then
+    reason := 'appointment_before_activation';
+  elsif nullif(btrim(coalesce(v_session.timezone, '')), '') is null then
+    reason := 'artist_timezone_missing';
+  elsif v_session.appointment_type in ('in_person_consultation'::public.appointment_type, 'video_consultation'::public.appointment_type) then
+    eligible := true;
+    reason := 'ready';
+    card_kind := 'consultation_booked';
+  elsif v_session.appointment_type <> 'tattoo_session'::public.appointment_type then
+    reason := 'appointment_type_without_card';
+  elsif v_session.price is null or v_session.price <= 0 then
+    reason := 'session_price_missing';
+  else
+    session_price := v_session.price;
+
+    select d.amount, d.currency, d.source_kind
+      into v_deposit, v_deposit_currency, v_deposit_source
+    from crm_private.booking_card_deposit_for_session(p_session_id) d;
+
+    if not found or v_deposit is null or v_deposit <= 0 then
+      reason := 'deposit_not_paid_for_session';
+    elsif v_deposit_currency is distinct from v_session.currency then
+      reason := 'deposit_currency_mismatch';
+    elsif v_deposit > v_session.price then
+      reason := 'deposit_exceeds_price';
+      deposit_paid := v_deposit;
+    else
+      eligible := true;
+      reason := 'ready';
+      card_kind := 'tattoo_deposit_paid';
+      deposit_paid := v_deposit;
+      remaining_balance := v_session.price - v_deposit;
+      deposit_source := v_deposit_source;
+    end if;
+  end if;
+
+  return next;
+end;
+$function$;
