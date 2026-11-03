@@ -29,6 +29,15 @@ const CONSULTATION_BODY = [
   'Please confirm so I know to expect you.',
 ].join('\n');
 
+const VIDEO_BODY = [
+  'Hi {{1}}, your video consultation is booked.',
+  'Artist: {{2}}',
+  'When: {{3}} at {{4}}',
+  '',
+  'This is an online call. We will agree how to connect before the appointment.',
+  'Please confirm you can join the video call.',
+].join('\n');
+
 function safeErrorCode(error) {
   const value = error instanceof ProviderRouteError ? error.code : error?.code;
   return typeof value === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(value)
@@ -40,8 +49,11 @@ function targetRoute(target) {
   if (
     !UUID.test(target?.artist_id ?? '')
     || !INTEGRATION_KEY.test(target?.integration_key ?? '')
-    || !TEMPLATE_NAME.test(target?.tattoo_template_name ?? '')
-    || !TEMPLATE_NAME.test(target?.consultation_template_name ?? '')
+    || !(
+      (TEMPLATE_NAME.test(target?.tattoo_template_name ?? '')
+        && TEMPLATE_NAME.test(target?.consultation_template_name ?? ''))
+      || TEMPLATE_NAME.test(target?.video_template_name ?? '')
+    )
     || !TEMPLATE_LANGUAGE.test(target?.template_language ?? '')
   ) {
     throw Object.assign(new Error('invalid template target'), {
@@ -74,7 +86,8 @@ function adminBinding(env, target) {
 
 function templateDefinition(kind, name, language) {
   const tattoo = kind === 'tattoo';
-  if (!tattoo && kind !== 'consultation') {
+  const video = kind === 'video';
+  if (!tattoo && !video && kind !== 'consultation') {
     throw Object.assign(new Error('unsupported template kind'), {
       code: 'whatsapp_template_contract_invalid',
     });
@@ -84,10 +97,10 @@ function templateDefinition(kind, name, language) {
     language,
     category: 'UTILITY',
     components: [
-      { type: 'HEADER', format: 'LOCATION' },
+      ...(video ? [] : [{ type: 'HEADER', format: 'LOCATION' }]),
       {
         type: 'BODY',
-        text: tattoo ? TATTOO_BODY : CONSULTATION_BODY,
+        text: video ? VIDEO_BODY : tattoo ? TATTOO_BODY : CONSULTATION_BODY,
         example: {
           body_text: [tattoo
             ? ['James', 'Vladimir', 'Tuesday, 10 November 2026', '10:00', '£250', '£730']
@@ -97,7 +110,7 @@ function templateDefinition(kind, name, language) {
       {
         type: 'BUTTONS',
         buttons: [
-          { type: 'QUICK_REPLY', text: "I'll be there" },
+          { type: 'QUICK_REPLY', text: video ? 'Confirm video call' : "I'll be there" },
           { type: 'QUICK_REPLY', text: 'Need another time' },
         ],
       },
@@ -146,7 +159,7 @@ function providerMessage(value) {
   // Bytes, not characters: the stored diagnostic has a byte cap.
   if (!text || utf8Length(text) > MAX_PROVIDER_MESSAGE) return null;
   if (text.includes('{{') || TOKEN_LIKE.test(text)) return null;
-  const bodyLines = [...TATTOO_BODY.split('\n'), ...CONSULTATION_BODY.split('\n')]
+  const bodyLines = [...TATTOO_BODY.split('\n'), ...CONSULTATION_BODY.split('\n'), ...VIDEO_BODY.split('\n')]
     .map((line) => line.trim())
     .filter((line) => line.length > 8);
   if (bodyLines.some((line) => text.includes(line))) return null;
@@ -737,6 +750,7 @@ export async function maintainWhatsappCoexistenceState(env, { limit = 4, fetchIm
 export const __testing = Object.freeze({
   TATTOO_BODY,
   CONSULTATION_BODY,
+  VIDEO_BODY,
   adminBinding,
   resolveTemplate,
   templateDefinition,
