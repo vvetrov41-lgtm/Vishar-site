@@ -25,6 +25,11 @@ export const META_OAUTH_DIALOG_URL = 'https://www.facebook.com/v25.0/dialog/oaut
 // Must be listed exactly in Facebook Login for Business > Valid OAuth
 // Redirect URIs, and must equal the value the server exchanges with.
 export const META_OAUTH_REDIRECT_URI = 'https://crm.vishartattoo.com/';
+// The operator's sessionStorage cannot be read by the public CRM origin.
+// Meta keeps using the already-whitelisted public redirect_uri, but that
+// origin forwards ONLY the callback to the existing Access-gated operator
+// origin in the SAME tab, where the pending OAuth state can be verified.
+export const META_OAUTH_OPERATOR_CALLBACK_URI = 'https://app.vishartattoo.com/';
 export const PENDING_SIGNUP_KEY = 'vishar.whatsapp.embedded-signup.pending';
 export const PENDING_SIGNUP_MAX_AGE_MS = 15 * 60 * 1000;
 
@@ -123,6 +128,50 @@ function sameState(a: string, b: string): boolean {
 }
 
 /**
+ * A Coexistence attempt starts on app.vishartattoo.com. Its OAuth state lives
+ * in that origin's sessionStorage, but Meta returns its authorization code to
+ * the registered crm.vishartattoo.com redirect_uri. Browser storage is
+ * origin-scoped, so processing the callback on crm would always reject it as
+ * state_missing after phone confirmation.
+ *
+ * Relay only the state + one-time code (or cancellation), to a fixed owned
+ * operator origin in the SAME tab. The operator validates its own original
+ * 256-bit state and expires/burns it before making any provision request.
+ * No dynamic URL destinations, extra Meta parameters or auth tokens.
+ * A legacy flow initiated on the public CRM retains its original handler.
+ */
+export function forwardEmbeddedSignupCallbackToOperator(
+  href: string,
+  {
+    storage = window.sessionStorage,
+    navigate = (url: string) => window.location.replace(url),
+  }: {
+    storage?: StorageLike;
+    navigate?: (url: string) => void;
+  } = {},
+): boolean {
+  let url: URL;
+  try { url = new URL(href); } catch { return false; }
+  if (`${url.origin}${url.pathname}` !== META_OAUTH_REDIRECT_URI) return false;
+  const state = url.searchParams.get('state') || '';
+  const code = url.searchParams.get('code');
+  const hasError = url.searchParams.has('error');
+  if (!STATE_PATTERN.test(state)) return false;
+  if ((code === null && !hasError) || (code !== null && (hasError || !CODE_PATTERN.test(code)))) {
+    return false;
+  }
+  // Don't steal a legitimate callback for a signup started on this origin.
+  if (readPending(storage)) return false;
+
+  const target = new URL(META_OAUTH_OPERATOR_CALLBACK_URI);
+  target.searchParams.set('state', state);
+  if (code !== null) target.searchParams.set('code', code);
+  else target.searchParams.set('error', 'access_denied');
+  navigate(target.toString());
+  return true;
+}
+
+/**
  * Reads Meta's redirect back to the CRM root once, at startup. Returns null for
  * any URL that is not that redirect, and leaves such URLs untouched. For the
  * redirect it consumes the pending state (single use), strips code and state
@@ -146,7 +195,9 @@ export function captureEmbeddedSignupCallback(
   } catch {
     return null;
   }
-  if (`${url.origin}${url.pathname}` !== META_OAUTH_REDIRECT_URI) return null;
+  // The operator callback is relayed from the Meta-registered CRM origin.
+  if (!new Set([META_OAUTH_REDIRECT_URI, META_OAUTH_OPERATOR_CALLBACK_URI])
+    .has(`${url.origin}${url.pathname}`)) return null;
   const params = url.searchParams;
   if (!params.has('state') || (!params.has('code') && !params.has('error'))) return null;
 
@@ -172,6 +223,9 @@ let capturedCallback: EmbeddedSignupCallback | null = null;
 export function captureEmbeddedSignupCallbackAtStartup(): void {
   if (typeof window === 'undefined') return;
   try {
+    // The public host must not consume the callback using its own unrelated
+    // sessionStorage. Forward it first so the operator can check its state.
+    if (forwardEmbeddedSignupCallbackToOperator(window.location.href)) return;
     capturedCallback = captureEmbeddedSignupCallback(window.location.href);
   } catch {
     capturedCallback = null;
