@@ -10,6 +10,8 @@ import { useMemo } from 'react';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useLanguage } from '../lib/i18n';
+import { safeDeliveryErrorCode, splitDeliveryIssues } from '../lib/integration-issues';
+import type { OutboxJob } from '../lib/types';
 import { visibleIntegrationArtistIds } from '../lib/integration-visibility';
 import {
   integrationHealth,
@@ -58,9 +60,10 @@ export function IntegrationsPage() {
   const { profile, memberships } = useSession();
   const { language, t } = useLanguage();
   const state = useAsync(async () => {
-    const [statuses, artists] = await Promise.all([
+    const [statuses, artists, failedJobs] = await Promise.all([
       api.listIntegrationStatus(),
       api.listAccessibleArtists(),
+      api.listFailedJobs().catch(() => null),
     ]);
     const visibleArtistIds = visibleIntegrationArtistIds(profile, artists, memberships);
     return {
@@ -68,6 +71,7 @@ export function IntegrationsPage() {
         (status) => status.owner_kind !== 'artist' || visibleArtistIds.has(status.owner_id),
       ),
       hasVisibleArtist: visibleArtistIds.size > 0,
+      failedJobs: failedJobs?.filter((job) => visibleArtistIds.has(job.artist_id)) ?? null,
     };
   }, [api, memberships, profile]);
 
@@ -92,6 +96,7 @@ export function IntegrationsPage() {
 
   return (
     <div className="stack">
+      <DeliveryIssuesSection jobs={state.data?.failedJobs ?? null} />
       <Section title={language === 'ru' ? 'Формы и сайты' : 'Forms and websites'}>
         <div className="card">
           <div className="card-header">
@@ -133,6 +138,81 @@ export function IntegrationsPage() {
         </Section>
       ))}
     </div>
+  );
+}
+
+function DeliveryIssuesSection({ jobs }: { jobs: OutboxJob[] | null }) {
+  const { language } = useLanguage();
+  const { actionable, cancelled } = splitDeliveryIssues(jobs ?? []);
+  return (
+    <Section title={language === 'ru' ? 'Ошибки доставки' : 'Delivery issues'}>
+      <div className="card" id="delivery-issues">
+        {jobs === null ? (
+          <p className="muted">
+            {language === 'ru'
+              ? 'Не удалось загрузить журнал отправки. Состояние подключений ниже не означает, что сообщения доставлены.'
+              : 'Could not load delivery history. A connected account below does not guarantee message delivery.'}
+          </p>
+        ) : (
+          <>
+            <p className="muted" data-testid="actionable-delivery-count">
+              {actionable.length === 0
+                ? (language === 'ru' ? 'Нет ошибок, требующих действий.' : 'No deliveries require action.')
+                : (language === 'ru'
+                  ? `Ошибок, требующих действий: ${actionable.length}`
+                  : `Deliveries requiring action: ${actionable.length}`)}
+            </p>
+            {actionable.length > 0 ? (
+              <ul className="card-list" data-testid="actionable-delivery-list">
+                {actionable.map((job) => <DeliveryIssueRow key={job.id} job={job} />)}
+              </ul>
+            ) : null}
+            {cancelled.length > 0 ? (
+              <details>
+                <summary>
+                  {language === 'ru'
+                    ? `Ранее отменены вручную: ${cancelled.length}`
+                    : `Previously cancelled by an operator: ${cancelled.length}`}
+                </summary>
+                <ul className="card-list">
+                  {cancelled.map((job) => <DeliveryIssueRow key={job.id} job={job} cancelled />)}
+                </ul>
+              </details>
+            ) : null}
+          </>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function DeliveryIssueRow({ job, cancelled = false }: { job: OutboxJob; cancelled?: boolean }) {
+  const { language } = useLanguage();
+  const kind = job.kind === 'approved_email'
+    ? (language === 'ru' ? 'Письмо' : 'Email')
+    : job.kind === 'whatsapp_message'
+      ? 'WhatsApp'
+      : job.kind.replaceAll('_', ' ');
+  const cause = job.last_error_code === 'operator_cancelled'
+    ? (language === 'ru' ? 'Отменено оператором' : 'Cancelled by operator')
+    : job.last_error_code === 'cancelled_by_artist_for_direct_gmail_send'
+      ? (language === 'ru' ? 'Отменено для прямой отправки через Gmail' : 'Cancelled for direct Gmail send')
+      : safeDeliveryErrorCode(job.last_error_code);
+  return (
+    <li className="card">
+      <div className="card-header">
+        <strong>{kind}</strong>
+        <span className="muted">{formatDate(job.updated_at, language)}</span>
+      </div>
+      <p className="muted">{cause}</p>
+      {!cancelled ? (
+        <p className="muted">
+          {language === 'ru'
+            ? `Попыток: ${job.attempt_count} из ${job.max_attempts}`
+            : `Attempts: ${job.attempt_count} of ${job.max_attempts}`}
+        </p>
+      ) : null}
+    </li>
   );
 }
 
