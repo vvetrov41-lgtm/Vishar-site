@@ -132,3 +132,38 @@ begin
   execute v_sql;
 end;
 $video_wa$;
+
+-- Personal online consultations must not show the physical studio address or arrival wording.
+do $video_email$
+declare v_sql text := pg_get_functiondef('crm_private.render_booking_card_email(uuid,text,text)'::regprocedure);
+begin
+  if position('  v_grouped boolean := false;' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'  v_grouped boolean := false;','  v_grouped boolean := false;
+  v_video boolean := false;');
+  if position('  v_first_name := split_part(btrim(v_client_name), '' '', 1);' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'  v_first_name := split_part(btrim(v_client_name), '' '', 1);','  v_video := v_card.appointment_type = ''video_consultation''::public.appointment_type;
+  v_first_name := split_part(btrim(v_client_name), '' '', 1);');
+  if position('    v_title := ''Your consultation is booked'';
+    subject := ''Your consultation is booked with '' || v_artist_name;' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'    v_title := ''Your consultation is booked'';
+    subject := ''Your consultation is booked with '' || v_artist_name;','    v_title := case when v_video then ''Your video consultation is booked'' else ''Your consultation is booked'' end;
+    subject := v_title || '' with '' || v_artist_name;');
+  if position('    || v_settings.studio_name || E''\n''
+    || v_settings.studio_address || E''\n''
+    || v_settings.studio_map_url || E''\n\n''' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'    || v_settings.studio_name || E''\n''
+    || v_settings.studio_address || E''\n''
+    || v_settings.studio_map_url || E''\n\n''','    || case when v_video then E''Video consultation. We will agree how to connect before the call.\n\n''
+       else v_settings.studio_name || E''\n'' || v_settings.studio_address || E''\n''
+         || v_settings.studio_map_url || E''\n\n'' end');
+  if position('|| case when v_grouped then E''Please confirm all sessions.\n\n'' else E''Please confirm so I know to expect you.\n\n'' end' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'|| case when v_grouped then E''Please confirm all sessions.\n\n'' else E''Please confirm so I know to expect you.\n\n'' end','|| case when v_video then E''Please confirm you can join the video call.\n\n'' when v_grouped then E''Please confirm all sessions.\n\n'' else E''Please confirm so I know to expect you.\n\n'' end');
+  if position('|| case when v_grouped then E''Confirm all sessions:\n'' else E''I\''ll be there:\n'' end' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'|| case when v_grouped then E''Confirm all sessions:\n'' else E''I\''ll be there:\n'' end','|| case when v_video then E''Confirm video call:\n'' when v_grouped then E''Confirm all sessions:\n'' else E''I\''ll be there:\n'' end');
+  if position('|| case when v_grouped then ''Please confirm all sessions.'' else ''Please confirm so I know to expect you.'' end' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'|| case when v_grouped then ''Please confirm all sessions.'' else ''Please confirm so I know to expect you.'' end','|| case when v_video then ''Please confirm you can join the video call.'' when v_grouped then ''Please confirm all sessions.'' else ''Please confirm so I know to expect you.'' end');
+  if position('|| case when v_grouped then ''Confirm all sessions'' else ''I&#39;ll be there'' end' in v_sql)=0 then raise exception 'Unexpected booking-card email renderer'; end if;
+  v_sql:=replace(v_sql,'|| case when v_grouped then ''Confirm all sessions'' else ''I&#39;ll be there'' end','|| case when v_video then ''Confirm video call'' when v_grouped then ''Confirm all sessions'' else ''I&#39;ll be there'' end');
+  execute v_sql;
+end;
+$video_email$;
