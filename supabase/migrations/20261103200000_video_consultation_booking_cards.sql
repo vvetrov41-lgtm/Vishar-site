@@ -235,3 +235,54 @@ begin
             and settings.whatsapp_video_template_status = ''APPROVED'')');
 end;
 $video_provider_guard$;
+
+-- Video template maintenance is separate, so pending Meta approval never
+-- disables existing approved tattoo and in-person booking templates.
+create function public.service_claim_video_booking_template_targets(p_limit integer default 5)
+returns table(artist_id uuid,integration_key text,video_template_name text,
+              template_language text,video_template_status text)
+language plpgsql security definer
+set search_path=pg_catalog,public,crm_private
+as $$
+begin
+  if not crm_private.is_service_backend() then
+    raise exception 'video template maintenance is backend-only' using errcode='42501';
+  end if;
+  if p_limit < 1 or p_limit > 20 then
+    raise exception 'video template limit invalid' using errcode='22023';
+  end if;
+  return query
+    with candidates as (
+      select s.artist_id,i.integration_key,s.whatsapp_video_template_name,
+             s.whatsapp_template_language,s.whatsapp_video_template_status
+      from crm_private.booking_card_artist_settings s
+      join public.artists a on a.id=s.artist_id and a.is_active
+      join public.artist_integrations i on i.artist_id=s.artist_id
+        and i.integration_type='whatsapp'::public.artist_integration_type
+        and i.provider='meta_cloud_api' and i.is_enabled
+      where s.whatsapp_enabled and s.whatsapp_video_template_name is not null
+        and (s.whatsapp_video_template_status <> 'APPROVED'
+             or s.whatsapp_video_template_checked_at is null
+             or s.whatsapp_video_template_checked_at < now() - interval '24 hours')
+        and (s.whatsapp_video_template_checked_at is null
+             or s.whatsapp_video_template_checked_at < now() - interval '30 minutes')
+        and not exists (select 1 from public.artist_integrations o
+          where o.artist_id=s.artist_id
+            and o.integration_type='whatsapp'::public.artist_integration_type
+            and o.provider='meta_cloud_api' and o.is_enabled and o.id<>i.id)
+      order by s.whatsapp_video_template_checked_at nulls first,s.artist_id
+      limit p_limit for update of s skip locked
+    ), updated as (
+      update crm_private.booking_card_artist_settings s
+      set whatsapp_video_template_checked_at=now(),updated_at=now()
+      from candidates c where c.artist_id=s.artist_id
+      returning c.artist_id,c.integration_key,c.whatsapp_video_template_name,
+                c.whatsapp_template_language,c.whatsapp_video_template_status
+    )
+    select c.artist_id,c.integration_key,c.whatsapp_video_template_name,
+           c.whatsapp_template_language,c.whatsapp_video_template_status from updated c;
+end;
+$$;
+revoke all on function public.service_claim_video_booking_template_targets(integer)
+  from public,anon,authenticated;
+grant execute on function public.service_claim_video_booking_template_targets(integer) to service_role;
