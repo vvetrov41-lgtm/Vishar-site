@@ -775,7 +775,38 @@ export async function onRequestPost(context) {
   }
 }
 
+// Read-only readiness check BEFORE opening Meta's irreversible signup UI.
+// Fails before the QR step when app-level Coexistence webhooks are missing.
+export async function onRequestGet(context) {
+  const { request, env } = context;
+  const url = new URL(request.url);
+  if (url.origin !== PRODUCTION_CRM_ORIGIN) {
+    return json({ ok: false, error: 'origin_not_allowed' }, 403);
+  }
+  try {
+    requireServerConfiguration(env);
+    const operator = await requireCrmOperator(request, env);
+    const artistId = url.searchParams.get('artist_id') || '';
+    if (!UUID.test(artistId)) {
+      return json({ ok: false, error: 'invalid_artist_id' }, 400);
+    }
+    await requireArtistIntegrationCapability(operator, env, artistId);
+    const route = await requireApprovedRoute(operator, env, artistId);
+    if (route.integrationKey !== KRISTINA_COEXISTENCE_KEY) {
+      return json({ ok: false, error: 'coexistence_preflight_not_applicable' }, 409);
+    }
+    await requireCoexistenceWebhookFields(binding(env, 'META_APP_SECRET'));
+    return json({ ok: true, ready: true });
+  } catch (error) {
+    const status = Number.isInteger(error?.status) ? error.status : 500;
+    const safeError = typeof error?.message === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(error.message)
+      ? error.message : 'meta_coexistence_preflight_failed';
+    return json({ ok: false, error: safeError }, edgeSafeStatus(status));
+  }
+}
+
 export function onRequest(context) {
+  if (context.request.method === 'GET') return onRequestGet(context);
   if (context.request.method === 'POST') return onRequestPost(context);
   return json({ ok: false, error: 'method_not_allowed' }, 405);
 }
