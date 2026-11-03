@@ -47,6 +47,8 @@ export const ALLOWED_RPCS = new Set([
   'service_apply_whatsapp_booking_card_action',
   'service_claim_booking_card_template_targets',
   'service_record_booking_card_template_status',
+  'service_claim_video_booking_template_targets',
+  'service_record_video_booking_template_status',
   // Read-only Meta Coexistence evidence (enum values and Graph codes only).
   'service_claim_whatsapp_coexistence_targets',
   'service_record_whatsapp_coexistence_state',
