@@ -282,7 +282,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
 
     async checkCoexistenceWebhookReadiness(artist: WhatsAppArtist, supabaseUrl: string): Promise<void> {
       if (whatsappCrmEnvironment(supabaseUrl) !== 'production' || artist.slug !== 'kristina') {
-        throw new ApiError('WhatsApp Coexistence preflight unavailable for this artist.');
+        throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
       const accessToken = await crmAccessToken();
       const url = `/api/whatsapp/embedded-signup/provision?artist_id=${encodeURIComponent(artist.id)}`;
@@ -299,7 +299,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         throw new ApiError(reason);
       }
       if (payload?.ok !== true || payload?.ready !== true) {
-        throw new ApiError('meta_coexistence_preflight_response_invalid');
+        throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
       }
     },
 
