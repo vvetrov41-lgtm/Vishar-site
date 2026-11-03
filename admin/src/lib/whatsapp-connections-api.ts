@@ -44,6 +44,12 @@ type WhatsAppArtist = Pick<Artist, 'id' | 'slug' | 'display_name'>;
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const STAGING_SUPABASE_ORIGIN = 'https://gwaliusblwrzisrwnsvs.supabase.co';
+const OPERATOR_CRM_ORIGIN = 'https://app.vishartattoo.com';
+const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
+
+export function embeddedSignupProvisionUrl(path: string, browserOrigin: string): string {
+  return browserOrigin === OPERATOR_CRM_ORIGIN ? `${PRODUCTION_CRM_ORIGIN}${path}` : path;
+}
 const EXISTING_ACCOUNT_ARTISTS = new Map([
   ['a1111111-1111-4111-8111-111111111111', 'vladimir'],
   ['a2222222-2222-4222-8222-222222222222', 'kristina'],
@@ -285,13 +291,22 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         throw new ApiError(apiMessage('Production WhatsApp provisioning is unavailable in this CRM environment.'));
       }
       const accessToken = await crmAccessToken();
-      const url = `/api/whatsapp/embedded-signup/provision?artist_id=${encodeURIComponent(artist.id)}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        credentials: 'same-origin',
-        cache: 'no-store',
-        headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
-      });
+      const url = embeddedSignupProvisionUrl(
+        `/api/whatsapp/embedded-signup/provision?artist_id=${encodeURIComponent(artist.id)}`,
+        window.location.origin,
+      );
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          method: 'GET',
+          credentials: 'omit',
+          cache: 'no-store',
+          headers: { authorization: `Bearer ${accessToken}`, accept: 'application/json' },
+          signal: AbortSignal.timeout(15000),
+        });
+      } catch {
+        throw new ApiError(apiMessage('Meta readiness check timed out or could not be reached. Try again later.'));
+      }
       const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
       if (!response.ok) {
         const reason = payload && typeof payload.error === 'string'
@@ -318,7 +333,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       const expectedIntegrationKey = whatsappIntegrationKey(supabaseUrl, artist.slug);
       const accessToken = await crmAccessToken();
       return provisioningRequest(
-        '/api/whatsapp/embedded-signup/provision',
+        embeddedSignupProvisionUrl('/api/whatsapp/embedded-signup/provision', window.location.origin),
         accessToken,
         {
           artist_id: artist.id,

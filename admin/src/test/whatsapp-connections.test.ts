@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CrmClient } from '../lib/api';
 import {
   createWhatsAppConnectionsApi,
+  embeddedSignupProvisionUrl,
   whatsappCrmEnvironment,
   whatsappIntegrationKey,
 } from '../lib/whatsapp-connections-api';
@@ -138,6 +139,10 @@ describe('WhatsApp Connections safety', () => {
 
 
   it('preflights Meta application webhook fields without starting an OAuth flow', async () => {
+    expect(embeddedSignupProvisionUrl('/api/whatsapp/embedded-signup/provision', 'https://app.vishartattoo.com'))
+      .toBe('https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision');
+    expect(embeddedSignupProvisionUrl('/api/whatsapp/embedded-signup/provision', 'https://crm.vishartattoo.com'))
+      .toBe('/api/whatsapp/embedded-signup/provision');
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true, ready: true }));
@@ -148,7 +153,18 @@ describe('WhatsApp Connections safety', () => {
       const [url, init] = fetchMock.mock.calls[0];
       expect(url).toBe(`/api/whatsapp/embedded-signup/provision?artist_id=${KRISTINA.id}`);
       expect(init?.method).toBe('GET');
+      expect(init?.credentials).toBe('omit');
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
       expect(init?.headers).toMatchObject({ authorization: 'Bearer crm-owner-session-token-for-test' });
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it('ends a stalled preflight with a visible error instead of leaving the button busy', async () => {
+    const api = createWhatsAppConnectionsApi(clientFor().client);
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new DOMException('timed out', 'TimeoutError'));
+    try {
+      await expect(api.checkCoexistenceWebhookReadiness(KRISTINA, 'https://vfjexhfdbrjmuxfdvbdx.supabase.co'))
+        .rejects.toThrow('Meta readiness check timed out');
     } finally { fetchMock.mockRestore(); }
   });
 

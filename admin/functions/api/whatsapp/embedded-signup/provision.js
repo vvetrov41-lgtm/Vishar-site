@@ -1,6 +1,7 @@
 const APP_ID = '1481226093843982';
 const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
+const OPERATOR_CRM_ORIGIN = 'https://app.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 // A code is bound to the redirect_uri of the dialog that issued it, and Meta
 // refuses an exchange with any other value (100/36008). The browser says which
@@ -681,7 +682,8 @@ function requireServerConfiguration(env) {
 export async function onRequestPost(context) {
   const { request, env } = context;
   const url = new URL(request.url);
-  if (url.origin !== PRODUCTION_CRM_ORIGIN || request.headers.get('origin') !== PRODUCTION_CRM_ORIGIN) {
+  if (url.origin !== PRODUCTION_CRM_ORIGIN
+      || ![PRODUCTION_CRM_ORIGIN, OPERATOR_CRM_ORIGIN].includes(request.headers.get('origin'))) {
     return json({ ok: false, error: 'origin_not_allowed' }, 403);
   }
   if (!(request.headers.get('content-type') || '').toLowerCase().startsWith('application/json')) {
@@ -852,10 +854,29 @@ export async function onRequestGet(context) {
   }
 }
 
-export function onRequest(context) {
-  if (context.request.method === 'GET') return onRequestGet(context);
-  if (context.request.method === 'POST') return onRequestPost(context);
-  return json({ ok: false, error: 'method_not_allowed' }, 405);
+export async function onRequest(context) {
+  const { request } = context;
+  const url = new URL(request.url);
+  const operator = url.origin === PRODUCTION_CRM_ORIGIN
+    && request.headers.get('origin') === OPERATOR_CRM_ORIGIN;
+  if (request.method === 'OPTIONS') {
+    if (!operator) return json({ ok: false, error: 'origin_not_allowed' }, 403);
+    return new Response(null, { status: 204, headers: {
+      'access-control-allow-origin': OPERATOR_CRM_ORIGIN,
+      'access-control-allow-methods': 'GET, POST, OPTIONS',
+      'access-control-allow-headers': 'authorization, content-type',
+      'access-control-max-age': '300',
+      vary: 'Origin',
+    } });
+  }
+  const response = request.method === 'GET' ? await onRequestGet(context)
+    : request.method === 'POST' ? await onRequestPost(context)
+      : json({ ok: false, error: 'method_not_allowed' }, 405);
+  if (operator) {
+    response.headers.set('access-control-allow-origin', OPERATOR_CRM_ORIGIN);
+    response.headers.set('vary', 'Origin');
+  }
+  return response;
 }
 
 export const __testing = {
