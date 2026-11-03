@@ -286,3 +286,51 @@ $$;
 revoke all on function public.service_claim_video_booking_template_targets(integer)
   from public,anon,authenticated;
 grant execute on function public.service_claim_video_booking_template_targets(integer) to service_role;
+
+create function public.service_record_video_booking_template_status(
+  p_artist_id uuid,p_status text)
+returns jsonb language plpgsql security definer
+set search_path=pg_catalog,public,crm_private
+as $$
+declare
+  v_status text:=upper(btrim(coalesce(p_status,'')));
+  v_card record;
+  v_count integer:=0;
+begin
+  if not crm_private.is_service_backend() then
+    raise exception 'video template maintenance is backend-only' using errcode='42501';
+  end if;
+  if p_artist_id is null or v_status !~ '^[A-Z][A-Z_]{2,31}$' then
+    raise exception 'video template status invalid' using errcode='22023';
+  end if;
+  update crm_private.booking_card_artist_settings s
+  set whatsapp_video_template_status=v_status,whatsapp_video_template_checked_at=now(),
+      updated_at=now()
+  where s.artist_id=p_artist_id and s.whatsapp_video_template_name is not null;
+  if not found then raise exception 'video template target missing' using errcode='23503'; end if;
+  if v_status='APPROVED' then
+    -- Bound the catch-up batch to future, confirmed, unsent video cards only.
+    -- The existing dispatcher provides one-channel and outbox deduplication.
+    for v_card in
+      select b.id
+      from crm_private.booking_cards b
+      join public.sessions s on s.id=b.session_id
+      where b.artist_id=p_artist_id
+        and b.appointment_type='video_consultation'::public.appointment_type
+        and b.superseded_at is null and s.status='confirmed'::public.session_status
+        and s.start_at>now()
+        and not exists (select 1 from crm_private.booking_card_deliveries d
+          where d.booking_card_id=b.id)
+      order by b.start_at,b.id limit 25
+    loop
+      perform crm_private.dispatch_booking_card(v_card.id);
+      v_count:=v_count+1;
+    end loop;
+  end if;
+  return jsonb_build_object('artist_id',p_artist_id,'video_status',v_status,
+                            'cards_checked',v_count);
+end;
+$$;
+revoke all on function public.service_record_video_booking_template_status(uuid,text)
+  from public,anon,authenticated;
+grant execute on function public.service_record_video_booking_template_status(uuid,text) to service_role;
