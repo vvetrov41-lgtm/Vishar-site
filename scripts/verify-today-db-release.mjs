@@ -24,6 +24,8 @@ export function verifyTodayLineage(source) {
     ['20261102210000', '20261103010000'],
     // PR #1151: only metadata for a once-only Coexistence sync, no chat data.
     ['20261103010000', '20261103070000'],
+    // PR #1152: one Today-pulse correction; exclude transfers linked to settled receipts.
+    ['20261103070000', '20261103120000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
