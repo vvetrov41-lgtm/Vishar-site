@@ -98,6 +98,9 @@ function authorizedFetch(calls, {
   routeEnabled = true,
   routeIntegrationKey = null,
   missingSecretWorker = null,
+  coexistencePhone = { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' },
+  appWebhookFields = ['messages', 'account_update', 'history', 'smb_app_state_sync', 'smb_message_echoes'],
+  syncFailure = null,
   subscriptionApps = [{
     whatsapp_business_api_data: { id: '1481226093843982', name: 'Vishar CRM' },
   }],
@@ -161,6 +164,25 @@ function authorizedFetch(calls, {
     }
     if (target.includes(`/${bodyFor(artistId).session.waba_id}/phone_numbers`)) {
       return Response.json({ data: phoneRows });
+    }
+    if (target.includes(`/${KRISTINA_PHONE}?fields=is_on_biz_app%2Cplatform_type%2Cstatus`)) {
+      return Response.json(coexistencePhone);
+    }
+    if (target.includes('/1481226093843982/subscriptions') && method === 'GET') {
+      return Response.json({ data: [{
+        object: 'whatsapp_business_account',
+        active: true,
+        fields: appWebhookFields.map((name) => ({ name })),
+      }] });
+    }
+    if (target.includes(`/${KRISTINA_PHONE}/smb_app_data`) && method === 'POST') {
+      const payload = JSON.parse(String(init.body));
+      assert.equal(payload.messaging_product, 'whatsapp');
+      assert.ok(['history', 'smb_app_state_sync'].includes(payload.sync_type));
+      if (payload.sync_type === syncFailure) {
+        return Response.json({ error: { code: 100, error_subcode: 2593108 } }, { status: 400 });
+      }
+      return Response.json({ messaging_product: 'whatsapp', request_id: `test-request-${payload.sync_type}` });
     }
     if (target.includes('/workers/scripts/vishar-whatsapp-drain-production/secrets') && method === 'PUT') {
       const payload = JSON.parse(String(init.body));
@@ -1097,3 +1119,79 @@ console.log('WhatsApp Embedded Signup pinned-WABA fallback tests passed.');
 }
 
 console.log('WhatsApp Embedded Signup scope diagnostic tests passed.');
+
+
+// Fail closed BEFORE touching encrypted Worker bindings or the global WABA
+// subscription. Mere possession of a token and WABA membership is not a
+// completed WhatsApp Business App / Cloud API connection.
+for (const [label, coexistencePhone] of [
+  ['on-premise', { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'ON_PREMISE', status: 'DISCONNECTED' }],
+  ['not connected', { id: KRISTINA_PHONE, is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'DISCONNECTED' }],
+  ['not on business app', { id: KRISTINA_PHONE, is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'CONNECTED' }],
+  ['foreign number', { id: '10987654323', is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' }],
+]) {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { coexistencePhone });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 409, label);
+    assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_not_completed' }, label);
+    assert.equal(calls.filter((c) => c.target.includes('/workers/scripts/')).length, 0, label);
+    assert.equal(calls.filter((c) => c.target.includes('/smb_app_data')).length, 0, label);
+    assert.equal(calls.filter((c) => c.target.includes('/subscribed_apps')).length, 0, label);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+// Only the precisely required app-level fields are accepted. WABA subscribed
+// apps alone is insufficient; history and contact sync would otherwise vanish.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { appWebhookFields: ['messages', 'smb_message_echoes'] });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 409);
+    assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_webhook_fields_missing' });
+    assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((c) => c.target.includes('/smb_app_data')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+// Meta's once-per-onboarding endpoint must be reached exactly once for
+// contacts, then history, and only AFTER all binding / subscription readbacks.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls);
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 200);
+    const sync = calls.filter((c) => c.target.includes('/smb_app_data'));
+    assert.deepEqual(sync.map((c) => JSON.parse(String(c.init.body)).sync_type), [
+      'smb_app_state_sync', 'history',
+    ]);
+    const lastBindingReadback = calls.findLastIndex((c) =>
+      c.target.includes('/workers/scripts/') && c.init.method !== 'PUT');
+    assert.ok(calls.indexOf(sync[0]) > lastBindingReadback);
+    const complete = calls.findIndex((c) => c.target.includes('/complete_artist_whatsapp_connection'));
+    assert.ok(complete > calls.indexOf(sync[1]));
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  // If Meta rejects a sync request, do not misrepresent the route as
+  // connected and never retry the one-time Graph mutation automatically.
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { syncFailure: 'smb_app_state_sync' });
+  try {
+    const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
+    assert.equal(result.status, 500);
+    assert.deepEqual((await result.json()).error, 'meta_request_failed');
+    assert.equal(calls.filter((c) => c.target.includes('/smb_app_data')).length, 1);
+    assert.equal(calls.some((c) => c.target.includes('/complete_artist_whatsapp_connection')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
