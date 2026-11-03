@@ -61,6 +61,12 @@ function env() {
   );
   assert.equal(consultation.components[1].text.includes('Deposit'), false);
   assert.equal(consultation.components[1].text.includes('balance'), false);
+  const video = __testing.templateDefinition('video', 'booking_card_video_consultation_v1', 'en_GB');
+  assert.equal(video.components.some((part) => part.type === 'HEADER'), false);
+  assert.equal(video.components[0].type, 'BODY');
+  assert.equal(video.components[1].buttons[0].text, 'Confirm video call');
+  assert.equal(video.components[1].buttons[1].text, 'Need another time');
+  assert.equal(video.components[0].text.includes('online call'), true);
 }
 
 {
@@ -74,6 +80,7 @@ function env() {
       const name = value.split('/').pop();
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') {
         return Response.json([target()]);
       }
@@ -141,6 +148,7 @@ function env() {
       const name = value.split('/').pop();
       const args = JSON.parse(init.body || '{}');
       rpcCalls.push({ name, args });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
       if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
@@ -171,7 +179,8 @@ function env() {
     const name = value.split('/').pop();
     const args = JSON.parse(init.body || '{}');
     rpcCalls.push({ name, args });
-    if (name === 'service_claim_booking_card_template_targets') {
+    if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
+      if (name === 'service_claim_booking_card_template_targets') {
       return Response.json([target({ integration_key: 'missing-production' })]);
     }
     if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
@@ -192,6 +201,7 @@ function env() {
     if (value.includes('/rest/v1/rpc/')) {
       const name = value.split('/').pop();
       rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
       if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
@@ -240,6 +250,7 @@ function env() {
     if (value.includes('/rest/v1/rpc/')) {
       const name = value.split('/').pop();
       rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
       if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
@@ -301,6 +312,7 @@ function env() {
     if (value.includes('/rest/v1/rpc/')) {
       const name = value.split('/').pop();
       rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
       if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
@@ -411,6 +423,7 @@ function env() {
     if (value.includes('/rest/v1/rpc/')) {
       const name = value.split('/').pop();
       rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') return Response.json([target()]);
       if (name === 'service_record_booking_card_template_status') return Response.json({ ok: true });
       throw new Error(`unexpected RPC ${name}`);
@@ -480,6 +493,7 @@ function env() {
     if (value.includes('/rest/v1/rpc/')) {
       const name = value.split('/').pop();
       rpcCalls.push({ name, args: JSON.parse(init.body || '{}') });
+      if (name === 'service_claim_video_booking_template_targets') return Response.json([]);
       if (name === 'service_claim_booking_card_template_targets') {
         return Response.json([target({ tattoo_template_status: 'UNKNOWN', consultation_template_status: 'UNKNOWN' })]);
       }
