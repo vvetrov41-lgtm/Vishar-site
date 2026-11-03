@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   __testing,
+  onRequest,
   onRequestGet,
   onRequestPost,
 } from '../admin/functions/api/whatsapp/embedded-signup/provision.js';
@@ -1171,6 +1172,21 @@ for (const [label, coexistencePhone] of [
 {
   const originalFetch = globalThis.fetch;
   const calls = [];
+  globalThis.fetch = authorizedFetch(calls);
+  try {
+    const result = await onRequest({
+      request: request(bodyFor(KRISTINA_ID), { origin: 'https://app.vishartattoo.com' }),
+      env: env(),
+    });
+    assert.equal(result.status, 200);
+    assert.equal(result.headers.get('access-control-allow-origin'), 'https://app.vishartattoo.com');
+    assert.equal(calls.filter((c) => c.target.includes('/smb_app_data')).length, 2);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
   globalThis.fetch = authorizedFetch(calls, { appWebhookFields: ['messages', 'smb_message_echoes'] });
   try {
     const result = await onRequestPost({ request: request(bodyFor(KRISTINA_ID)), env: env() });
@@ -1221,6 +1237,31 @@ for (const [label, coexistencePhone] of [
 // GET preflight runs before the user opens Meta's QR step. It must not exchange
 // a Meta code, mutate Cloudflare Workers or begin any history/contact sync.
 {
+  const operator = 'https://app.vishartattoo.com';
+  const preflight = await onRequest({
+    request: new Request(ENDPOINT, { method: 'OPTIONS', headers: {
+      origin: operator,
+      'access-control-request-method': 'GET',
+      'access-control-request-headers': 'authorization',
+    } }), env: env(),
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), operator);
+  assert.match(preflight.headers.get('access-control-allow-headers'), /authorization/);
+  const foreign = await onRequest({
+    request: new Request(ENDPOINT, { method: 'OPTIONS', headers: { origin: 'https://other.example' } }),
+    env: env(),
+  });
+  assert.equal(foreign.status, 403);
+  assert.equal(foreign.headers.get('access-control-allow-origin'), null);
+  const unauthenticated = await onRequest({
+    request: new Request(ENDPOINT, { headers: { origin: operator } }), env: env(),
+  });
+  assert.equal(unauthenticated.status, 401);
+  assert.equal(unauthenticated.headers.get('access-control-allow-origin'), operator);
+}
+
+{
   const originalFetch = globalThis.fetch;
   const calls = [];
   globalThis.fetch = authorizedFetch(calls);
@@ -1237,6 +1278,13 @@ for (const [label, coexistencePhone] of [
     assert.equal(calls.some((c) => c.target.includes('/oauth/access_token')), false);
     assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
     assert.equal(calls.some((c) => c.target.includes('/smb_app_data')), false);
+    const operatorResult = await onRequest({
+      request: new Request(`${ENDPOINT}?artist_id=${KRISTINA_ID}`, {
+        headers: { origin: 'https://app.vishartattoo.com', authorization: 'Bearer crm-owner-session-token-for-test' },
+      }), env: env(),
+    });
+    assert.equal(operatorResult.status, 200);
+    assert.equal(operatorResult.headers.get('access-control-allow-origin'), 'https://app.vishartattoo.com');
   } finally { globalThis.fetch = originalFetch; }
 }
 

@@ -336,6 +336,7 @@ export const API_MESSAGES = {
   'VITE_INSTAGRAM_CONNECTOR_ORIGIN must be a permitted connector root URL.': 'Адрес коннектора Instagram настроен неверно. Обратитесь к администратору.',
   'WhatsApp integration controls are unavailable in this CRM environment.': 'Управление интеграцией WhatsApp недоступно в этой среде CRM.',
   'WhatsApp provisioning returned an invalid response.': 'Подключение WhatsApp вернуло некорректный ответ. Подключение не создано — попробуйте ещё раз.',
+  'Meta readiness check timed out or could not be reached. Try again later.': 'Проверка Meta не ответила за 15 секунд. Подключение не началось — попробуйте позже.',
   'Your CRM session expired. Sign in again before connecting WhatsApp.': 'Сеанс CRM истёк. Войдите снова, прежде чем подключать WhatsApp.',
   'Your CRM session has expired. Sign in again.': 'Сеанс CRM истёк. Войдите снова.',
   'Your session has expired. Sign in again.': 'Сеанс истёк. Войдите снова.',
