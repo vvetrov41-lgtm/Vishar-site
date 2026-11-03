@@ -110,3 +110,25 @@ begin
   return next;
 end;
 $function$;
+
+-- Change only the consultation transport branch; tattoo cards remain identical.
+do $video_wa$
+declare v_sql text := pg_get_functiondef('crm_private.create_booking_card_whatsapp(uuid,text,text)'::regprocedure);
+begin
+  if position('    v_template_name := v_settings.whatsapp_consultation_template_name;
+    v_parameters := jsonb_build_array(' in v_sql)=0 or position('    v_body := ''Your consultation is booked.'';' in v_sql)=0 then
+    raise exception 'Unexpected booking-card WhatsApp function definition';
+  end if;
+  v_sql:=replace(v_sql,'    v_template_name := v_settings.whatsapp_consultation_template_name;
+    v_parameters := jsonb_build_array(','    v_template_name := case when v_card.appointment_type = ''video_consultation''::public.appointment_type
+      then v_settings.whatsapp_video_template_name
+      else v_settings.whatsapp_consultation_template_name end;
+    if v_card.appointment_type = ''video_consultation''::public.appointment_type
+       and v_settings.whatsapp_video_template_status is distinct from ''APPROVED'' then
+      return null;
+    end if;
+    v_parameters := jsonb_build_array(');
+  v_sql:=replace(v_sql,'    v_body := ''Your consultation is booked.'';','    v_body := case when v_card.appointment_type = ''video_consultation''::public.appointment_type then ''Your video consultation is booked.'' else ''Your consultation is booked.'' end;');
+  execute v_sql;
+end;
+$video_wa$;
