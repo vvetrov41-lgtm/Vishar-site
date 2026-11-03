@@ -215,5 +215,16 @@ select ok(
   'only direction and time are stored'
 );
 
+-- A successful history read proves Gmail is fresh even when the latest
+-- client-message snapshot has no new matching rows.
+select is(
+  crm_private.pulse_summary('a1111111-1111-4111-8111-111111111111', now()) #>> '{sources,gmail_snapshot}',
+  'fresh', 'Today accepts a successful client-history read as Gmail freshness'
+);
+select is(
+  crm_private.pulse_summary('a1111111-1111-4111-8111-111111111111', now() + interval '3 days') #>> '{sources,gmail_snapshot}',
+  'stale', 'Gmail still goes stale after 24h without a successful check'
+);
+
 select * from finish(true);
 rollback;

@@ -201,5 +201,27 @@ select ok(not has_function_privilege('anon', 'public.get_today_pulse(uuid)', 'ex
 select ok(not has_function_privilege('authenticated', 'crm_private.pulse_items(uuid, boolean, boolean, timestamptz)', 'execute'),
   'the pulse engine itself is private');
 
+-- Historical operator cancels stay in the ledger but are not failures needing action.
+insert into public.integration_outbox
+  (kind, dedupe_key, status, artist_id, last_error_code)
+values
+  ('reconciliation', 'test:today_manually_cancelled_20261103', 'dead',
+   'a1111111-1111-4111-8111-111111111111', 'operator_cancelled'),
+  ('reconciliation', 'test:today_direct_gmail_20261103', 'dead',
+   'a1111111-1111-4111-8111-111111111111', 'cancelled_by_artist_for_direct_gmail_send'),
+  ('reconciliation', 'test:today_actual_failure_20261103', 'dead',
+   'a1111111-1111-4111-8111-111111111111', 'provider_unavailable');
+
+select is((
+  select (i ->> 'detail')::int from jsonb_array_elements(
+    crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', false, true)
+  ) i where i ->> 'kind' = 'integration_failure'
+), 1, 'Today counts the real provider failure but not the two cancelled jobs');
+select is((
+  select i ->> 'href' from jsonb_array_elements(
+    crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', false, true)
+  ) i where i ->> 'kind' = 'integration_failure'
+), '/integrations', 'the actionable delivery warning opens the integrations diagnostic screen');
+
 select * from finish(true);
 rollback;
