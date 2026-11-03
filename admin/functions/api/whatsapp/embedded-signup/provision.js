@@ -497,6 +497,53 @@ async function initiateCoexistenceSync(accessToken, phoneNumberId, syncType) {
   }
 }
 
+
+async function coexistenceSyncRpc(operator, env, rpcName, body) {
+  if (rpcName !== 'claim_whatsapp_coexistence_sync'
+      && rpcName !== 'record_whatsapp_coexistence_sync_accepted') {
+    throw Object.assign(new Error('coexistence_progress_invalid'), { status: 500 });
+  }
+  const response = await noFollowFetch(`${PRODUCTION_SUPABASE_ORIGIN}/rest/v1/rpc/${rpcName}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabasePublishableKey(env),
+      authorization: `Bearer ${operator.token}`,
+      'content-type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw Object.assign(new Error('crm_coexistence_sync_progress_blocked'), { status: 409 });
+  }
+  return responseJson(response);
+}
+
+// Claim is committed before Meta's single-use POST. If the response was lost,
+// the claim remains uncertain and blocks retries instead of issuing a second
+// Graph request. Successfully accepted contacts can be skipped on a new
+// authorization so a failed history step remains recoverable.
+async function ensureCoexistenceSyncedOnce(operator, env, artistId, wabaId, phoneNumberId, accessToken, syncType) {
+  const decision = await coexistenceSyncRpc(operator, env, 'claim_whatsapp_coexistence_sync', {
+    p_artist_id: artistId,
+    p_waba_id: wabaId,
+    p_phone_number_id: phoneNumberId,
+    p_sync_type: syncType,
+  });
+  if (decision === 'already_accepted') return;
+  if (decision !== 'execute') {
+    throw Object.assign(new Error('crm_coexistence_sync_progress_invalid'), { status: 409 });
+  }
+  await initiateCoexistenceSync(accessToken, phoneNumberId, syncType);
+  const recorded = await coexistenceSyncRpc(operator, env, 'record_whatsapp_coexistence_sync_accepted', {
+    p_artist_id: artistId,
+    p_sync_type: syncType,
+  });
+  if (recorded?.accepted !== true) {
+    throw Object.assign(new Error('crm_coexistence_sync_receipt_invalid'), { status: 409 });
+  }
+}
+
 function cloudflareSecretsUrl(env, worker) {
   return `https://api.cloudflare.com/client/v4/accounts/${binding(env, 'CLOUDFLARE_ACCOUNT_ID')}/workers/scripts/${worker}/secrets`;
 }
@@ -739,9 +786,9 @@ export async function onRequestPost(context) {
       // retain contact records or historical messages in the CRM. The signed
       // webhook handler ignores the history and smb_app_state_sync fields.
       stage = 'coexistence_contact_sync';
-      await initiateCoexistenceSync(accessToken, safeMeta.phoneNumberId, 'smb_app_state_sync');
+      await ensureCoexistenceSyncedOnce(operator, env, artistId, wabaId, safeMeta.phoneNumberId, accessToken, 'smb_app_state_sync');
       stage = 'coexistence_history_sync';
-      await initiateCoexistenceSync(accessToken, safeMeta.phoneNumberId, 'history');
+      await ensureCoexistenceSyncedOnce(operator, env, artistId, wabaId, safeMeta.phoneNumberId, accessToken, 'history');
     }
     stage = 'crm_connected_state';
     const connectedAt = await markIntegrationConnected(operator, env, artistId, route);
