@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   __testing,
+  onRequestGet,
   onRequestPost,
 } from '../admin/functions/api/whatsapp/embedded-signup/provision.js';
 
@@ -1193,5 +1194,47 @@ for (const [label, coexistencePhone] of [
     assert.deepEqual((await result.json()).error, 'meta_request_failed');
     assert.equal(calls.filter((c) => c.target.includes('/smb_app_data')).length, 1);
     assert.equal(calls.some((c) => c.target.includes('/complete_artist_whatsapp_connection')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+
+// GET preflight runs before the user opens Meta's QR step. It must not exchange
+// a Meta code, mutate Cloudflare Workers or begin any history/contact sync.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls);
+  try {
+    const result = await onRequestGet({
+      request: new Request(`${ENDPOINT}?artist_id=${KRISTINA_ID}`, {
+        method: 'GET',
+        headers: { authorization: 'Bearer crm-owner-session-token-for-test' },
+      }),
+      env: env(),
+    });
+    assert.equal(result.status, 200);
+    assert.deepEqual(await result.json(), { ok: true, ready: true });
+    assert.equal(calls.some((c) => c.target.includes('/oauth/access_token')), false);
+    assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((c) => c.target.includes('/smb_app_data')), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = authorizedFetch(calls, { appWebhookFields: ['messages'] });
+  try {
+    const result = await onRequestGet({
+      request: new Request(`${ENDPOINT}?artist_id=${KRISTINA_ID}`, {
+        method: 'GET',
+        headers: { authorization: 'Bearer crm-owner-session-token-for-test' },
+      }),
+      env: env(),
+    });
+    assert.equal(result.status, 409);
+    assert.deepEqual(await result.json(), { ok: false, error: 'meta_coexistence_webhook_fields_missing' });
+    assert.equal(calls.some((c) => c.target.includes('/workers/scripts/')), false);
+    assert.equal(calls.some((c) => c.target.includes('/oauth/access_token')), false);
   } finally { globalThis.fetch = originalFetch; }
 }
