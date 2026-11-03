@@ -171,6 +171,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   const language = typeof message?.language === 'string' ? message.language.trim() : '';
   const bodyParameters = Array.isArray(message?.bodyParameters) ? message.bodyParameters : null;
   const location = message?.location;
+  const videoBookingTemplate = templateName === 'booking_card_video_consultation_v1';
   const quickReplies = Array.isArray(message?.quickReplies) ? message.quickReplies : null;
 
   if (!WA_ID.test(to)) return { delivered: false, errorCode: 'whatsapp_destination_invalid' };
@@ -195,10 +196,12 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   const locationName = typeof location?.name === 'string' ? location.name.trim() : '';
   const locationAddress = typeof location?.address === 'string' ? location.address.trim() : '';
   if (
-    !Number.isFinite(latitude) || latitude < -90 || latitude > 90
-    || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
-    || !locationName || locationName.length > 256
-    || !locationAddress || locationAddress.length > 512
+    !videoBookingTemplate && (
+      !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+      || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
+      || !locationName || locationName.length > 256
+      || !locationAddress || locationAddress.length > 512
+    )
   ) {
     return { delivered: false, errorCode: 'whatsapp_template_invalid' };
   }
@@ -231,7 +234,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
             name: templateName,
             language: { code: language },
             components: [
-              {
+              ...(videoBookingTemplate ? [] : [{
                 type: 'header',
                 parameters: [{
                   type: 'location',
@@ -242,7 +245,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
                     address: locationAddress,
                   },
                 }],
-              },
+              }]),
               {
                 type: 'body',
                 parameters: bodyParameters.map((value) => ({ type: 'text', text: value })),
