@@ -6,7 +6,7 @@ import { canShowArtistIntegration } from '../lib/integration-visibility';
 import {
   describeWhatsAppEmbeddedSignupError,
   META_WHATSAPP_APP_ID,
-  META_WHATSAPP_CONFIG_ID,
+  META_WHATSAPP_COEXISTENCE_CONFIG_ID,
 } from '../lib/meta-whatsapp-embedded-signup';
 import {
   beginEmbeddedSignupRedirect,
@@ -297,7 +297,7 @@ export function WhatsAppConnectionsPage() {
           <p>
             {language === 'ru' ? 'ID приложения Meta:' : 'Meta App ID:'} <code>{META_WHATSAPP_APP_ID}</code>
             {' · '}
-            {language === 'ru' ? 'ID конфигурации:' : 'Config ID:'} <code>{META_WHATSAPP_CONFIG_ID}</code>
+            {language === 'ru' ? 'ID конфигурации Coexistence:' : 'Coexistence config ID:'} <code>{META_WHATSAPP_COEXISTENCE_CONFIG_ID}</code>
           </p>
         ) : null}
       </div>

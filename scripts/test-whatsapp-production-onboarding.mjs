@@ -49,6 +49,7 @@ function sourceConstant(source, name) {
   );
   assert.equal(sourceConstant(browserSource, 'META_WHATSAPP_APP_ID'), sourceConstant(serverSource, 'APP_ID'));
   assert.equal(sourceConstant(browserSource, 'META_WHATSAPP_CONFIG_ID'), '4468652066715473');
+  assert.equal(sourceConstant(browserSource, 'META_WHATSAPP_COEXISTENCE_CONFIG_ID'), '3104916749850885');
 }
 
 function request(body, overrides = {}) {

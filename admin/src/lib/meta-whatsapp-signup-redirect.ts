@@ -19,7 +19,7 @@
 // id. It is single use: it is removed before the callback is acted on, so a
 // replayed or forged callback finds nothing to match and is refused.
 
-import { META_WHATSAPP_APP_ID, META_WHATSAPP_CONFIG_ID } from './meta-whatsapp-embedded-signup';
+import { META_WHATSAPP_APP_ID, META_WHATSAPP_COEXISTENCE_CONFIG_ID } from './meta-whatsapp-embedded-signup';
 
 export const META_OAUTH_DIALOG_URL = 'https://www.facebook.com/v25.0/dialog/oauth';
 // Must be listed exactly in Facebook Login for Business > Valid OAuth
@@ -69,7 +69,7 @@ export function embeddedSignupDialogUrl(state: string): string {
   if (!STATE_PATTERN.test(state)) throw new Error('Embedded Signup state is invalid.');
   const url = new URL(META_OAUTH_DIALOG_URL);
   url.searchParams.set('client_id', META_WHATSAPP_APP_ID);
-  url.searchParams.set('config_id', META_WHATSAPP_CONFIG_ID);
+  url.searchParams.set('config_id', META_WHATSAPP_COEXISTENCE_CONFIG_ID);
   url.searchParams.set('redirect_uri', META_OAUTH_REDIRECT_URI);
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('override_default_response_type', 'true');
