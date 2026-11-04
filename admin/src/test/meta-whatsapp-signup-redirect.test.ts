@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { META_WHATSAPP_APP_ID, META_WHATSAPP_CONFIG_ID } from '../lib/meta-whatsapp-embedded-signup';
+import { META_WHATSAPP_APP_ID, META_WHATSAPP_COEXISTENCE_CONFIG_ID } from '../lib/meta-whatsapp-embedded-signup';
 import {
   beginEmbeddedSignupRedirect,
   captureEmbeddedSignupCallback,
@@ -46,7 +46,7 @@ describe('CRM-owned Embedded Signup redirect', () => {
     expect(`${url.origin}${url.pathname}`).toBe('https://www.facebook.com/v25.0/dialog/oauth');
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_id: META_WHATSAPP_APP_ID,
-      config_id: META_WHATSAPP_CONFIG_ID,
+      config_id: META_WHATSAPP_COEXISTENCE_CONFIG_ID,
       redirect_uri: 'https://crm.vishartattoo.com/',
       response_type: 'code',
       override_default_response_type: 'true',
