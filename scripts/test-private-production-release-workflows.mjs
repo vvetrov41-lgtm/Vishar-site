@@ -468,3 +468,38 @@ expectExcludes(hostSplitScript, 'app.aud', 'CRM host split script');
 expectExcludes(hostSplitScript, 'JSON.stringify(policy)', 'CRM host split script');
 
 console.log('CRM host split gate boundaries: passed');
+
+// Automated Instagram Worker releases must be as strongly gated as the
+// manual production workflow. A code-only ref is never allowed into the
+// broad CRM/Supabase/Telegram production release.
+for (const needle of [
+  "release/private-crm-rc*-instagram-code-only-*",
+  "github.actor == github.repository_owner",
+  "github.run_attempt == 1",
+  "^release/private-crm-rc[0-9]+-instagram-code-only-[a-z0-9-]+$",
+  "Canonical CRM branch moved or differs from this release snapshot.",
+  "Instagram release ref moved after the workflow started.",
+  "Required canonical exact-head workflow is not green",
+  "'Static Validation'",
+  "'CRM and booking validation'",
+  "'WhatsApp production onboarding validation'",
+  "'Gmail production validation'",
+  "'Booking host validation'",
+  "CRM_PRODUCTION_INSTAGRAM_DEPLOY_ENABLED",
+  "Verify unchanged live Instagram capability flags before mutation",
+  "Unexpected production Instagram secret name set",
+  "INSTAGRAM_OAUTH_ENABLED', 'true'",
+  "INSTAGRAM_DRAIN_ENABLED', 'true'",
+  "INSTAGRAM_ENRICHMENT_ENABLED', 'false'",
+  "EXPOSE_PRIVATE_CRM_INSTAGRAM",
+  "AUTO_EXACT_HEAD_RELEASE",
+  "npx wrangler deploy",
+  "--strict",
+]) {
+  expectIncludes(instagram, needle, 'Instagram exact-head automatic release');
+}
+expectIncludes(privateRelease, "'!release/private-crm-rc*-instagram-code-only*'", 'Instagram isolated release');
+expectExcludes(instagram, 'supabase db push', 'Instagram isolated release');
+expectExcludes(instagram, 'wrangler pages deploy', 'Instagram isolated release');
+expectExcludes(instagram, 'wrangler.whatsapp-drain', 'Instagram isolated release');
+expectExcludes(instagram, 'wrangler.telegram-drain', 'Instagram isolated release');
