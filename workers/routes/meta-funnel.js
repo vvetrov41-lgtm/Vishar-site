@@ -47,9 +47,12 @@ function keyFor(env, account) {
   try {
     keys = JSON.parse(typeof env?.META_FUNNEL_KEYS === 'string' ? env.META_FUNNEL_KEYS : '');
   } catch {
-    return '';
+    keys = null;
   }
-  const key = keys && typeof keys === 'object' && !Array.isArray(keys) ? keys[account] : undefined;
+  const legacy = keys && typeof keys === 'object' && !Array.isArray(keys) ? keys[account] : undefined;
+  // Kristina's HMAC credential is a separate secret binding, so provisioning
+  // cannot replace Vladimir's existing JSON map. No other account may use it.
+  const key = legacy ?? (account === 'act_899170029105750' ? env?.META_FUNNEL_KEY_KRISTINA : undefined);
   return typeof key === 'string' && key.length >= MIN_KEY_LENGTH ? key : '';
 }
 
