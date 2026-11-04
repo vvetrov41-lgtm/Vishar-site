@@ -182,5 +182,25 @@ await test('the production entry dispatches the path before the legacy router', 
   assert.equal(res.status, 404);
 });
 
+
+await test('Kristina separate funnel secret authorizes only her ad account and preserves Vladimir', async () => {
+  const kristina = 'act_899170029105750';
+  const ownKey = 'Q'.repeat(48);
+  const withKristina = { ...env, META_FUNNEL_KEY_KRISTINA: ownKey };
+  const validRequest = await request({ account: kristina, key: ownKey });
+  const { fetchImpl } = backend({ ...DB_PAYLOAD, account_id: kristina, rows: [] });
+  const result = await handleMetaFunnelRequest(validRequest, withKristina, { fetchImpl, now: () => NOW });
+  assert.equal(result.status, 200);
+  const data = await result.json();
+  assert.equal(data.account_id, kristina);
+  assert.deepEqual(data.rows, []);
+  const outsider = await request({ account: 'act_899170029105751', key: ownKey });
+  assert.equal((await handleMetaFunnelRequest(outsider, withKristina, { fetchImpl, now: () => NOW })).status, 404);
+  const vladimir = await request();
+  assert.equal((await handleMetaFunnelRequest(vladimir, withKristina, {
+    ...backend(), now: () => NOW,
+  })).status, 200);
+});
+
 console.log(`meta funnel: ${passes} passed, ${failures} failed`);
 if (failures) process.exit(1);
