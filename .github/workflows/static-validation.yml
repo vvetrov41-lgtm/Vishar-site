@@ -43,6 +43,9 @@ jobs:
       - name: Validate static site
         run: npm run validate:site
 
+      - name: Check social share previews
+        run: node scripts/test-social-preview.mjs
+
       - name: Public deploy boundary self-test
         run: npm run build:public:self-test
 
