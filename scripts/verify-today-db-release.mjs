@@ -32,6 +32,8 @@ export function verifyTodayLineage(source) {
     ['20261105165000', '20261106010000'],
     // Client channel routing: one verified migration after WhatsApp audio.
     ['20261106010000', '20261106090000'],
+    // Existing approved WhatsApp templates: map URL joins the address variable.
+    ['20261106090000', '20261106180000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
