@@ -294,6 +294,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
 const LIFECYCLE_UTILITY_PURPOSES = new Set([
   'session_reminder_72h', 'session_reminder_24h',
   'post_session_aftercare', 'post_session_checkin',
+  'consultation_reminder',
 ]);
 
 export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl = fetch) {
