@@ -140,6 +140,7 @@ function validateBookingTemplatePayload(payload, job) {
 const LIFECYCLE_PURPOSES = new Set([
   'session_reminder_72h', 'session_reminder_24h',
   'post_session_aftercare', 'post_session_checkin',
+  'consultation_reminder',
 ]);
 function validateLifecycleTemplatePayload(payload, job) {
   if (!payload || payload.is_lifecycle !== true) return null;

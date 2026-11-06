@@ -536,6 +536,9 @@ function env() {
     { artist_id: ARTIST, integration_key: ROUTE,
       purpose: 'session_reminder_24h', template_name: 'vishar_lifecycle_reminder_24h_v1',
       template_language: 'en_GB', approval_status: 'UNKNOWN' },
+    { artist_id: ARTIST, integration_key: ROUTE,
+      purpose: 'consultation_reminder', template_name: 'vishar_lifecycle_consultation_v1',
+      template_language: 'en_GB', approval_status: 'UNKNOWN' },
   ];
   const fetchImpl = async (url, init = {}) => {
     const u = String(url);
@@ -567,7 +570,7 @@ function env() {
         assert.match(body.components[0].text,
           /\{\{5\}\}\. If you need to reschedule, reply to this message\.$/);
       }
-      const n = body.name.includes('24h') ? 5 : 3;
+      const n = (body.name.includes('24h') || body.name.includes('consultation')) ? 5 : 3;
       assert.equal(body.components[0].example.body_text[0].length, n);
       templates.push({ id: String(123456789000 + templates.length), name: body.name,
         language: body.language, category: 'UTILITY', status: 'APPROVED' });
@@ -576,10 +579,10 @@ function env() {
     throw new Error(`unexpected URL ${u}`);
   };
   const result = await maintainWhatsappLifecycleTemplates(env(), { fetchImpl });
-  assert.deepEqual(result, { targets: 2, checked: 2, created: 2, approved: 2, failed: 0 });
-  assert.equal(graphCalls.filter(x => x.method === 'POST').length, 2);
+  assert.deepEqual(result, { targets: 3, checked: 3, created: 3, approved: 3, failed: 0 });
+  assert.equal(graphCalls.filter(x => x.method === 'POST').length, 3);
   const records = rpcCalls.filter(x => x.name === 'service_record_lifecycle_whatsapp_template_status');
-  assert.equal(records.length, 2);
+  assert.equal(records.length, 3);
   for (const record of records) {
     assert.equal(record.args.p_artist_id, ARTIST);
     assert.equal(record.args.p_status, 'APPROVED');
