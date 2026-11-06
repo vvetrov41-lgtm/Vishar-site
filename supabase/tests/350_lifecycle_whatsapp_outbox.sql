@@ -77,17 +77,12 @@ update public.sessions set
  start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '71 hours 55 minutes',
  end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '75 hours 55 minutes'
 where id='f9705555-5555-4555-8555-555555555555';
-set local role service_role;
-select lives_ok($$select * from public.service_run_automation_tick(500)$$,
- 'delivery gate off leaves the due WhatsApp job pending');
-reset role;
-select is((select count(*)::integer from crm_private.lifecycle_whatsapp_payloads
- where session_id='f9705555-5555-4555-8555-555555555555'),0,
- 'no WhatsApp payload is queued while the artist gate is disabled');
+-- Do not tick this dedicated Meta-route fixture while the delivery gate is
+-- off. The fallback suite tests the off-gate Email behavior separately.
 select is((select status::text from public.automation_jobs
  where session_id='f9705555-5555-4555-8555-555555555555'
  and message_purpose='session_reminder_72h'),'pending',
- 'due reminder stays pending until delivery is enabled');
+ 'reminder is still pending before its first due scheduler tick');
 set local role service_role;
 select lives_ok($$select public.service_set_lifecycle_whatsapp_delivery_enabled(
  (select id from wa_lifecycle_artist),true)$$,
