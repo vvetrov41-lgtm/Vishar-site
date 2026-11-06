@@ -53,12 +53,12 @@ create table crm_private.lifecycle_email_fallbacks (
   job_id uuid primary key references public.automation_jobs(id) on delete restrict,
   artist_id uuid not null references public.artists(id) on delete restrict,
   client_id uuid not null references public.clients(id) on delete restrict,
-  reason text not null check (reason in ('whatsapp_unavailable','whatsapp_rejected')),
+  reason text not null check (reason in ('whatsapp_unavailable','whatsapp_rejected','whatsapp_provider_failed')),
   whatsapp_outbox_id uuid references public.integration_outbox(id) on delete restrict,
   created_at timestamptz not null default now(),
   constraint lifecycle_email_fallback_evidence check (
     (reason='whatsapp_unavailable' and whatsapp_outbox_id is null)
-    or (reason='whatsapp_rejected' and whatsapp_outbox_id is not null)
+    or (reason in ('whatsapp_rejected','whatsapp_provider_failed') and whatsapp_outbox_id is not null)
   )
 );
 alter table crm_private.lifecycle_email_fallbacks enable row level security;
@@ -118,29 +118,41 @@ set search_path=pg_catalog,public,crm_private as $function$
            where p.automation_job_id=j.id
          ))
         or
-        (f.reason='whatsapp_rejected'
-         and o.status='dead' and o.kind='whatsapp_message'
+        (f.reason in ('whatsapp_rejected','whatsapp_provider_failed')
+         and o.kind='whatsapp_message'
+         and ((f.reason='whatsapp_provider_failed'
+           and o.status='succeeded'
+           and exists (
+             select 1 from public.communication_messages m
+             where m.id=o.communication_message_id
+               and m.status='failed' and m.error_code='provider_failed'
+               and m.provider_message_id is not null
+               and m.delivered_at is null and m.read_at is null
+           ))
+           or (f.reason='whatsapp_rejected' and o.status='dead'))
          and o.artist_id=j.artist_id and o.client_id=s.client_id
-         and o.last_error_code in (
-           'whatsapp_rejected','whatsapp_credentials_rejected',
-           'whatsapp_rate_limited','whatsapp_destination_invalid',
-           'whatsapp_template_invalid','whatsapp_provider_unsupported',
-           'provider_binding_missing','provider_binding_invalid',
-           'provider_route_invalid'
-         )
+         and (f.reason='whatsapp_provider_failed'
+           or o.last_error_code in (
+             'whatsapp_rejected','whatsapp_credentials_rejected',
+             'whatsapp_rate_limited','whatsapp_destination_invalid',
+             'whatsapp_template_invalid','whatsapp_provider_unsupported',
+             'provider_binding_missing','provider_binding_invalid',
+             'provider_route_invalid'
+           ))
          and exists (
            select 1 from crm_private.lifecycle_whatsapp_payloads p
            where p.automation_job_id=j.id
              and p.communication_message_id=o.communication_message_id
          ))
       )
-      and not exists (
-        select 1 from crm_private.lifecycle_whatsapp_payloads p
-        join public.integration_outbox already
-          on already.communication_message_id=p.communication_message_id
-        where p.automation_job_id=j.id
-          and already.status='succeeded'
-      )
+      and (f.reason='whatsapp_provider_failed'
+        or not exists (
+          select 1 from crm_private.lifecycle_whatsapp_payloads p
+          join public.integration_outbox already
+            on already.communication_message_id=p.communication_message_id
+          where p.automation_job_id=j.id
+            and already.status='succeeded'
+        ))
   );
 $function$;
 revoke all on function crm_private.lifecycle_email_fallback_allowed(uuid)
@@ -1202,3 +1214,80 @@ create trigger integration_outbox_lifecycle_terminal_email_fallback
 after update of status on public.integration_outbox
 for each row execute function crm_private.lifecycle_whatsapp_terminal_email_fallback();
 
+
+
+-- A signed Meta delivery-status webhook may report a previously accepted
+-- message as definitively FAILED. Only that transition, and never missing
+-- receipts or transport timeouts, can authorize the same one-time fallback.
+create or replace function crm_private.lifecycle_provider_failed_email_fallback()
+returns trigger language plpgsql security definer
+set search_path=pg_catalog,public,crm_private as $function$
+declare
+  v_job public.automation_jobs%rowtype;
+  v_session public.sessions%rowtype;
+  v_outbox_id uuid;
+begin
+  if new.channel<>'whatsapp' or new.origin<>'automation'
+     or old.status not in ('sent','queued')
+     or new.status<>'failed' or new.error_code<>'provider_failed'
+     or new.provider_message_id is null
+     or new.delivered_at is not null or new.read_at is not null
+  then return new; end if;
+
+  select o.id,j.* into v_outbox_id,v_job
+  from crm_private.lifecycle_whatsapp_payloads p
+  join public.automation_jobs j on j.id=p.automation_job_id
+  join public.integration_outbox o
+    on o.communication_message_id=p.communication_message_id
+   and o.artist_id=p.artist_id
+  where p.communication_message_id=new.id and p.artist_id=new.artist_id
+    and o.status='succeeded' and o.kind='whatsapp_message'
+    and j.status='completed'
+  for update of j;
+  if not found then return new; end if;
+
+  select * into v_session from public.sessions s
+  where s.id=v_job.session_id and s.artist_id=v_job.artist_id
+  for update;
+  if not found or v_session.client_id is distinct from new.client_id
+     or (v_job.schedule_anchor='session_start'
+       and (v_session.status<>'confirmed' or v_session.start_at<=now()))
+     or (v_job.schedule_anchor='session_end'
+       and v_session.status<>'completed')
+     or v_job.scheduled_at < now()-interval '2 days'
+     or crm_private.lifecycle_selected_channel(
+       v_session.client_id,v_job.artist_id)<>'whatsapp'
+     or crm_private.client_send_block_reason(
+       v_session.client_id,'email','service') is not null
+     or not exists (
+       select 1 from public.clients c where c.id=v_session.client_id
+         and c.archived_at is null and nullif(btrim(c.email),'') is not null
+     )
+     or exists (
+       select 1 from public.email_messages m
+       where m.automation_job_id=v_job.id
+     )
+  then return new; end if;
+
+  insert into crm_private.lifecycle_email_fallbacks (
+    job_id,artist_id,client_id,reason,whatsapp_outbox_id
+  ) values (
+    v_job.id,v_job.artist_id,v_session.client_id,
+    'whatsapp_provider_failed',v_outbox_id
+  ) on conflict(job_id) do nothing;
+
+  if crm_private.lifecycle_email_fallback_allowed(v_job.id) then
+    update public.automation_jobs
+    set status='pending',completed_at=null,last_error_category=null
+    where id=v_job.id and status='completed';
+  end if;
+  return new;
+end;
+$function$;
+revoke all on function crm_private.lifecycle_provider_failed_email_fallback()
+ from public,anon,authenticated,service_role;
+drop trigger if exists communication_messages_lifecycle_provider_failed_email_fallback
+ on public.communication_messages;
+create trigger communication_messages_lifecycle_provider_failed_email_fallback
+after update of status on public.communication_messages
+for each row execute function crm_private.lifecycle_provider_failed_email_fallback();
