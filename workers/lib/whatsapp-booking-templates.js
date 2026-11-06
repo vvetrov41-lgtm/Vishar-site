@@ -561,6 +561,10 @@ export async function maintainWhatsappBookingTemplates(env, {
 // Body-only operational lifecycle notices. The approved Meta body must match
 // the ordered parameters; no dynamic free-form body can bypass this contract.
 const LIFECYCLE_UTILITY_DEFINITIONS = Object.freeze({
+  consultation_reminder: Object.freeze({
+    text: 'Hi {{1}}, your consultation with {{2}} is tomorrow at {{3}}. {{4}}. Please confirm your attendance here: {{5}}. For a different time, reply to this message.',
+    examples: ['Alex', 'Vladimir', 'Saturday, 07 November 2026 10:00', 'Label Tattoo Kensington, London', 'https://vishartattoo.com/booking/'],
+  }),
   session_reminder_72h: Object.freeze({
     text: 'Hi {{1}}, your tattoo sessions with {{2}} are coming up. Dates and start times: {{3}}. Each session date has its own 72-hour cancellation period.',
     examples: ['Alex', 'Vladimir', '17 November 2026 11:00, 18 November 2026 11:00'],
