@@ -15,6 +15,18 @@ set instagram_enabled=true,email_enabled=true,whatsapp_enabled=false,
     studio_map_url='https://maps.app.goo.gl/fixture123'
 where artist_id='a1111111-1111-4111-8111-111111111111';
 
+-- Synthetic Gmail integration allows the fallback to create an outbox entry.
+-- It is rolled back with the full test transaction.
+insert into public.artist_integrations(
+ artist_id,integration_type,provider,integration_key,external_account_label,is_enabled)
+select 'a1111111-1111-4111-8111-111111111111','email','google',
+ 'instagram-lifecycle-gmail-test','ig-test@example.test',true
+where not exists (
+ select 1 from public.artist_integrations i
+ where i.artist_id='a1111111-1111-4111-8111-111111111111'
+ and i.integration_type='email' and i.provider='google'
+ and i.is_enabled and nullif(btrim(i.external_account_label),'') is not null);
+
 insert into public.clients(id,full_name,email,phone,preferred_contact) values
  ('f98a1111-1111-4111-8111-111111111111','Instagram Open','ig-open@example.test',null,'Instagram'),
  ('f98b1111-1111-4111-8111-111111111111','Instagram Closed','ig-closed@example.test',null,'Instagram');
