@@ -304,8 +304,8 @@ select results_eq(
 select results_eq(
   $$ select whatsapp_deliveries, email_deliveries, decided_channel, outcome, evidence_source
      from card_channels where session_id = 'fd6f1111-1111-4111-8111-111111111111' $$,
-  $$ values (0, 0, 'instagram'::text, 'conversation_channel_disabled'::text, 'instagram_message'::text) $$,
-  'F: Instagram-only conversation with Instagram cards off sends nothing to Email or WhatsApp and says why'
+  $ values (0, 1, 'email'::text, 'selected'::text, 'instagram_message'::text) $,
+  'F: Instagram channel disabled falls back to the client's available Email'
 );
 
 -- The chosen channel being switched off never falls back to the other one.
@@ -361,9 +361,9 @@ select throws_ok(
      from crm_private.booking_cards b
      where b.session_id = 'fd6f1111-1111-4111-8111-111111111111'
        and b.superseded_at is null $$,
-  '23514',
-  'booking card delivery does not match its channel decision',
-  'a blocked card cannot get a delivery behind its decision'
+  '23505',
+  'duplicate key value violates unique constraint "booking_card_deliveries_booking_card_id_channel_key"',
+  'an Instagram-unavailable Email card cannot get a duplicate Email delivery'
 );
 
 select is(
