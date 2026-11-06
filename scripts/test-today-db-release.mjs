@@ -119,3 +119,19 @@ for (const invalid of [
   coexistenceSyncTransition.replaceAll('20261103010000', '20261102210000'),
   coexistenceSyncTransition + '\n | 20261103090000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Exact release authorization for the preferred-channel lifecycle migration.
+const preferredChannel = [
+  ' Local | Remote | Time',
+  ' 20261105165000 | 20261105165000 | t',
+  ' 20261106010000 | 20261106010000 | t',
+  ' 20261106090000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(preferredChannel), '20261106090000');
+for (const invalid of [
+  preferredChannel + '\n 20261106090500 | | t',
+  preferredChannel.replace('20261106090000 | |','20261106091000 | |'),
+  preferredChannel.replace('20261106010000 | 20261106010000','20261106010000 | '),
+  preferredChannel + '\n | 20261106095000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
