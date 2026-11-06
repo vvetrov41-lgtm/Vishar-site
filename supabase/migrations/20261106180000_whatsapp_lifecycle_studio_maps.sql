@@ -19,6 +19,20 @@ $map$;
 REVOKE ALL ON FUNCTION crm_private.lifecycle_whatsapp_location_with_map(text,text)
  FROM public,anon,authenticated,service_role;
 
+-- The current lifecycle queue rendered a bare 64-character action token
+-- instead of a confirmation URL. Use the configured owned booking endpoint.
+CREATE OR REPLACE FUNCTION crm_private.lifecycle_whatsapp_confirmation_url(
+ p_base text,p_token text
+) RETURNS text LANGUAGE sql IMMUTABLE
+SET search_path=pg_catalog,public,crm_private AS $link$
+ SELECT CASE WHEN btrim(p_base) = 'https://booking.vishartattoo.com/appointments/respond/'
+   AND p_token ~ '^[0-9a-f]{64}$'
+   THEN btrim(p_base)||p_token
+   ELSE NULL END;
+$link$;
+REVOKE ALL ON FUNCTION crm_private.lifecycle_whatsapp_confirmation_url(text,text)
+ FROM public,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION crm_private.queue_lifecycle_whatsapp_job(p_job_id uuid)
  RETURNS text
  LANGUAGE plpgsql
@@ -39,6 +53,7 @@ declare
   v_url text;
   v_address text;
   v_map_url text;
+  v_action_base text;
   v_params jsonb;
   v_message_id uuid;
   v_token text;
@@ -142,8 +157,9 @@ begin
     v_params:=jsonb_build_array(v_first,a.display_name,v_dates);
     if j.message_purpose='session_reminder_24h' then
       select nullif(btrim(c.studio_address),''),
-             nullif(btrim(c.studio_map_url),'')
-        into v_address,v_map_url
+             nullif(btrim(c.studio_map_url),''),
+             nullif(btrim(c.client_action_base_url),'')
+        into v_address,v_map_url,v_action_base
       from crm_private.booking_card_artist_settings c
       where c.artist_id=j.artist_id
         and (c.appointment_start_from is null or s.start_at>=c.appointment_start_from)
@@ -165,8 +181,7 @@ begin
         raise exception 'lifecycle confirmation capability unavailable' using errcode='23514';
       end if;
       perform crm_private.register_lifecycle_confirmation(v_token,s.id);
-      v_url:=crm_private.render_lifecycle_action_template_text(
-        '{{confirm_link}}',s.id,v_token,v_reschedule_token,v_cancel_token);
+      v_url:=crm_private.lifecycle_whatsapp_confirmation_url(v_action_base,v_token);
       if nullif(v_url,'') is null or v_url !~ '^https://' or char_length(v_url)>1024 then
         raise exception 'lifecycle confirmation URL unavailable' using errcode='23514';
       end if;
@@ -179,9 +194,13 @@ begin
     v_dates:=to_char(s.start_at at time zone a.timezone,
                      'FMDay, FMDD FMMonth YYYY HH24:MI');
     if s.appointment_type='in_person_consultation' then
-      select l.studio_name || ', ' || l.studio_address into v_address
-      from crm_private.consultation_email_location() l;
-      select nullif(btrim(c.studio_map_url),'') into v_map_url
+      -- Resolve the artist's current studio, not the retired hardcoded
+      -- consultation_email_location() address.
+      select nullif(concat_ws(', ',nullif(btrim(c.studio_name),''),
+                                     nullif(btrim(c.studio_address),'')),''),
+             nullif(btrim(c.studio_map_url),''),
+             nullif(btrim(c.client_action_base_url),'')
+        into v_address,v_map_url,v_action_base
       from crm_private.booking_card_artist_settings c
       where c.artist_id=j.artist_id
         and (c.appointment_start_from is null or s.start_at>=c.appointment_start_from)
@@ -191,6 +210,11 @@ begin
       v_address:=crm_private.lifecycle_whatsapp_location_with_map(v_address,v_map_url);
     else
       v_address:='Video consultation: no studio visit';
+      select nullif(btrim(c.client_action_base_url),'') into v_action_base
+      from crm_private.booking_card_artist_settings c
+      where c.artist_id=j.artist_id
+        and (c.appointment_start_from is null or s.start_at>=c.appointment_start_from)
+      limit 1;
     end if;
     select max(x.raw_token) filter (where x.action='confirm_attendance'),
            max(x.raw_token) filter (where x.action='request_reschedule'),
@@ -200,8 +224,7 @@ begin
     if v_token is null or v_reschedule_token is null or v_cancel_token is null then
       raise exception 'consultation action capability unavailable' using errcode='23514';
     end if;
-    v_url:=crm_private.render_lifecycle_action_template_text(
-      '{{confirm_link}}',s.id,v_token,v_reschedule_token,v_cancel_token);
+    v_url:=crm_private.lifecycle_whatsapp_confirmation_url(v_action_base,v_token);
     if v_url is null or v_url !~ '^https://' or char_length(v_url)>1024
        or nullif(v_address,'') is null then
       raise exception 'consultation parameters unavailable' using errcode='23514';
