@@ -708,3 +708,420 @@ REVOKE ALL ON FUNCTION public.service_resolve_instagram_booking_card_cancel_payl
 GRANT EXECUTE ON FUNCTION public.service_resolve_instagram_booking_card_cancel_payload(uuid,text)
  TO service_role;
 
+
+-- Lifecycle Instagram messages use the linked participant ID and Meta's real
+-- 24-hour inbound window. No unsolicited first-contact DM is possible.
+CREATE TABLE crm_private.lifecycle_instagram_payloads (
+  automation_job_id uuid PRIMARY KEY REFERENCES public.automation_jobs(id) ON DELETE RESTRICT,
+  communication_message_id uuid NOT NULL UNIQUE REFERENCES public.communication_messages(id) ON DELETE RESTRICT,
+  artist_id uuid NOT NULL REFERENCES public.artists(id) ON DELETE RESTRICT,
+  session_id uuid NOT NULL REFERENCES public.sessions(id) ON DELETE RESTRICT,
+  purpose text NOT NULL CHECK (purpose IN
+    ('session_reminder_72h','session_reminder_24h','consultation_reminder',
+     'post_session_aftercare','post_session_checkin')),
+  message_text text NOT NULL CHECK (char_length(message_text) BETWEEN 1 AND 1000),
+  confirm_payload text,
+  reschedule_payload text,
+  cancel_payload text,
+  members jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT instagram_lifecycle_buttons CHECK (
+    (purpose IN ('session_reminder_24h','consultation_reminder')
+      AND confirm_payload ~ '^booking_action:[0-9a-f]{64}$'
+      AND reschedule_payload ~ '^booking_action:[0-9a-f]{64}$'
+      AND cancel_payload ~ '^booking_action:[0-9a-f]{64}$'
+      AND confirm_payload<>reschedule_payload
+      AND confirm_payload<>cancel_payload
+      AND reschedule_payload<>cancel_payload)
+    OR (purpose NOT IN ('session_reminder_24h','consultation_reminder')
+      AND confirm_payload IS NULL AND reschedule_payload IS NULL
+      AND cancel_payload IS NULL)
+  )
+);
+ALTER TABLE crm_private.lifecycle_instagram_payloads ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON crm_private.lifecycle_instagram_payloads
+ FROM public,anon,authenticated,service_role;
+
+-- An email may replace an unavailable Instagram route before sending, or
+-- a provider rejection known to be definitive. Unknown sends never fall back.
+CREATE TABLE crm_private.lifecycle_instagram_email_fallbacks (
+ job_id uuid PRIMARY KEY REFERENCES public.automation_jobs(id) ON DELETE RESTRICT,
+ artist_id uuid NOT NULL REFERENCES public.artists(id) ON DELETE RESTRICT,
+ client_id uuid NOT NULL REFERENCES public.clients(id) ON DELETE RESTRICT,
+ reason text NOT NULL CHECK(reason IN ('instagram_unavailable','instagram_rejected')),
+ instagram_outbox_id uuid UNIQUE REFERENCES public.integration_outbox(id) ON DELETE RESTRICT,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ CONSTRAINT instagram_fallback_evidence CHECK(
+   (reason='instagram_unavailable' AND instagram_outbox_id IS NULL)
+   OR (reason='instagram_rejected' AND instagram_outbox_id IS NOT NULL))
+);
+ALTER TABLE crm_private.lifecycle_instagram_email_fallbacks ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON crm_private.lifecycle_instagram_email_fallbacks
+ FROM public,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION crm_private.lifecycle_instagram_send_ready(
+ p_client_id uuid,p_artist_id uuid
+) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path=pg_catalog,public,crm_private AS $fn$
+ SELECT coalesce(
+   crm_private.client_send_block_reason(p_client_id,'instagram','service') IS NULL
+   AND EXISTS (SELECT 1 FROM public.clients c
+      WHERE c.id=p_client_id AND c.archived_at IS NULL)
+   AND EXISTS (SELECT 1 FROM crm_private.booking_card_artist_settings s
+      WHERE s.artist_id=p_artist_id AND s.instagram_enabled)
+   AND EXISTS (
+     SELECT 1 FROM public.communication_conversations c
+     JOIN public.artist_integrations i ON i.artist_id=c.artist_id
+       AND i.integration_key=c.integration_key AND i.integration_type='instagram'
+       AND i.provider='instagram_login' AND i.is_enabled
+     WHERE c.artist_id=p_artist_id AND c.client_id=p_client_id
+       AND c.channel='instagram' AND c.link_state='linked' AND c.state='open'
+       AND c.external_contact_id ~ '^[0-9]{5,40}$'
+       AND crm_private.instagram_window_open(c)
+   ),false);
+$fn$;
+REVOKE ALL ON FUNCTION crm_private.lifecycle_instagram_send_ready(uuid,uuid)
+ FROM public,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION crm_private.lifecycle_instagram_email_fallback_allowed(
+ p_job_id uuid
+) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path=pg_catalog,public,crm_private AS $fn$
+ SELECT EXISTS(
+   SELECT 1 FROM crm_private.lifecycle_instagram_email_fallbacks f
+   JOIN public.automation_jobs j ON j.id=f.job_id
+   JOIN public.sessions s ON s.id=j.session_id AND s.artist_id=j.artist_id
+   LEFT JOIN public.integration_outbox o ON o.id=f.instagram_outbox_id
+   WHERE f.job_id=p_job_id AND f.artist_id=j.artist_id
+     AND f.client_id=s.client_id
+     AND crm_private.lifecycle_selected_channel(s.client_id,j.artist_id)='instagram'
+     AND (
+       (f.reason='instagram_unavailable' AND f.instagram_outbox_id IS NULL
+          AND NOT EXISTS (SELECT 1 FROM crm_private.lifecycle_instagram_payloads p
+                          WHERE p.automation_job_id=j.id))
+       OR
+       (f.reason='instagram_rejected' AND o.kind='instagram_message'
+         AND o.status='dead' AND o.artist_id=j.artist_id
+         AND o.client_id=s.client_id
+         AND o.last_error_code IN (
+           'instagram_outside_messaging_window','instagram_rejected',
+           'instagram_credentials_rejected','instagram_destination_invalid',
+           'instagram_account_invalid','instagram_provider_unsupported',
+           'instagram_lifecycle_window_closed')
+         AND EXISTS(
+           SELECT 1 FROM crm_private.lifecycle_instagram_payloads p
+           WHERE p.automation_job_id=j.id
+             AND p.communication_message_id=o.communication_message_id))
+     )
+     AND NOT EXISTS (
+       SELECT 1 FROM crm_private.lifecycle_instagram_payloads p
+       JOIN public.integration_outbox earlier
+         ON earlier.communication_message_id=p.communication_message_id
+       WHERE p.automation_job_id=j.id AND earlier.status='succeeded'
+     )
+ );
+$fn$;
+REVOKE ALL ON FUNCTION crm_private.lifecycle_instagram_email_fallback_allowed(uuid)
+ FROM public,anon,authenticated,service_role;
+
+-- Queue once, against the already-authorised lifecycle job and its session.
+-- The final provider send is still governed by leased pre-send readback.
+CREATE OR REPLACE FUNCTION crm_private.queue_lifecycle_instagram_job(p_job_id uuid)
+RETURNS text LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,public,crm_private,extensions AS $fn$
+DECLARE
+ j public.automation_jobs%rowtype;
+ s public.sessions%rowtype;
+ a public.artists%rowtype;
+ c public.communication_conversations%rowtype;
+ cfg crm_private.booking_card_artist_settings%rowtype;
+ v_first text;
+ v_dates text;
+ v_place text;
+ v_guide text;
+ v_text text;
+ v_members jsonb;
+ v_confirm_token text;
+ v_reschedule_token text;
+ v_cancel_token text;
+ v_confirm_url text;
+ v_reschedule_url text;
+ v_cancel_url text;
+ v_message_id uuid;
+ v_outbox_id uuid;
+BEGIN
+ IF NOT crm_private.is_service_backend() THEN
+   RAISE EXCEPTION 'Instagram lifecycle enqueue is backend-only' USING errcode='42501'; END IF;
+ SELECT * INTO j FROM public.automation_jobs WHERE id=p_job_id FOR UPDATE;
+ IF NOT FOUND OR j.status<>'pending' OR j.message_purpose NOT IN (
+  'session_reminder_72h','session_reminder_24h','consultation_reminder',
+  'post_session_aftercare','post_session_checkin') THEN RETURN 'skipped'; END IF;
+ SELECT * INTO s FROM public.sessions
+ WHERE id=j.session_id AND artist_id=j.artist_id;
+ SELECT * INTO a FROM public.artists WHERE id=j.artist_id AND is_active;
+ SELECT * INTO cfg FROM crm_private.booking_card_artist_settings
+ WHERE artist_id=j.artist_id AND instagram_enabled;
+ IF s.id IS NULL OR a.id IS NULL OR cfg.artist_id IS NULL
+    OR crm_private.lifecycle_block_disposition(j.id) NOT IN ('eligible','unmanaged')
+    OR crm_private.lifecycle_selected_channel(s.client_id,j.artist_id)<>'instagram'
+    OR NOT crm_private.lifecycle_instagram_send_ready(s.client_id,j.artist_id)
+ THEN RETURN 'unavailable'; END IF;
+
+ SELECT cc.* INTO c FROM public.communication_conversations cc
+ JOIN public.artist_integrations i ON i.artist_id=cc.artist_id
+   AND i.integration_key=cc.integration_key
+   AND i.integration_type='instagram' AND i.provider='instagram_login' AND i.is_enabled
+ WHERE cc.artist_id=j.artist_id AND cc.client_id=s.client_id
+   AND cc.channel='instagram' AND cc.link_state='linked' AND cc.state='open'
+   AND crm_private.instagram_window_open(cc)
+ ORDER BY cc.last_inbound_at DESC,cc.id LIMIT 1 FOR UPDATE OF cc;
+ IF NOT FOUND THEN RETURN 'unavailable'; END IF;
+
+ SELECT nullif(split_part(btrim(cl.full_name),' ',1),'') INTO v_first
+ FROM public.clients cl WHERE cl.id=s.client_id AND cl.archived_at IS NULL;
+ IF v_first IS NULL THEN RETURN 'unavailable'; END IF;
+ v_members:=CASE WHEN j.message_purpose='consultation_reminder' THEN
+   jsonb_build_array(jsonb_build_object(
+     'id',s.id,'version',s.calendar_version,'start',s.start_at,
+     'end',s.end_at,'actual_end',s.actual_end_at,'status',s.status))
+ ELSE crm_private.lifecycle_email_members(s.id,j.message_purpose) END;
+ IF v_members IS NULL OR jsonb_array_length(v_members)=0 THEN RETURN 'unavailable'; END IF;
+
+ IF j.message_purpose IN ('session_reminder_72h','session_reminder_24h') THEN
+   SELECT string_agg(to_char(b.start_at AT TIME ZONE a.timezone,'FMDD FMMonth YYYY HH24:MI'),
+      ', ' ORDER BY b.start_at,b.session_id) INTO v_dates
+   FROM crm_private.session_lifecycle_block(s.id) b;
+   IF nullif(v_dates,'') IS NULL THEN RETURN 'unavailable'; END IF;
+ END IF;
+
+ IF j.message_purpose IN ('session_reminder_24h','consultation_reminder') THEN
+   SELECT max(x.raw_token) FILTER (WHERE x.action='confirm_attendance'),
+          max(x.raw_token) FILTER (WHERE x.action='request_reschedule'),
+          max(x.raw_token) FILTER (WHERE x.action='cancel')
+     INTO v_confirm_token,v_reschedule_token,v_cancel_token
+   FROM crm_private.issue_appointment_client_actions(s.id) x;
+   v_confirm_url:=crm_private.lifecycle_whatsapp_confirmation_url(
+     cfg.client_action_base_url,v_confirm_token);
+   v_reschedule_url:=crm_private.lifecycle_whatsapp_confirmation_url(
+     cfg.client_action_base_url,v_reschedule_token);
+   v_cancel_url:=crm_private.lifecycle_whatsapp_confirmation_url(
+     cfg.client_action_base_url,v_cancel_token);
+   IF v_confirm_url IS NULL OR v_reschedule_url IS NULL OR v_cancel_url IS NULL
+      THEN RAISE EXCEPTION 'Instagram lifecycle actions unavailable' USING errcode='23514'; END IF;
+   IF j.message_purpose='session_reminder_24h' THEN
+     PERFORM crm_private.register_lifecycle_confirmation(v_confirm_token,s.id);
+   END IF;
+ END IF;
+
+ IF j.message_purpose IN ('session_reminder_24h','consultation_reminder')
+    AND s.appointment_type<>'video_consultation' THEN
+   IF nullif(btrim(cfg.studio_address),'') IS NULL THEN RETURN 'unavailable'; END IF;
+   v_place:=concat_ws(', ',nullif(btrim(cfg.studio_name),''),btrim(cfg.studio_address));
+   v_place:=crm_private.lifecycle_whatsapp_location_with_map(v_place,cfg.studio_map_url);
+ END IF;
+
+ IF j.message_purpose='session_reminder_72h' THEN
+   v_text:='Hi '||v_first||', your tattoo sessions with '||a.display_name
+      ||' are coming up. Dates and times: '||v_dates
+      ||'. Each session has its own 72-hour cancellation period.';
+ ELSIF j.message_purpose='session_reminder_24h' THEN
+   v_text:='Hi '||v_first||', your tattoo sessions with '||a.display_name
+      ||' start tomorrow. Booked dates: '||v_dates||E'\nStudio: '||v_place
+      ||E'\nConfirm: '||v_confirm_url
+      ||E'\nReschedule: '||v_reschedule_url
+      ||E'\nCancel: '||v_cancel_url;
+ ELSIF j.message_purpose='consultation_reminder' THEN
+   IF s.appointment_type NOT IN ('in_person_consultation','video_consultation')
+     THEN RETURN 'unavailable'; END IF;
+   v_dates:=to_char(s.start_at AT TIME ZONE a.timezone,'FMDay, FMDD FMMonth YYYY HH24:MI');
+   v_text:='Hi '||v_first||', your '
+     ||CASE WHEN s.appointment_type='video_consultation'
+       THEN 'video consultation' ELSE 'consultation' END
+     ||' with '||a.display_name||' is tomorrow at '||v_dates||'.'
+     ||E'\n'||CASE WHEN s.appointment_type='video_consultation'
+       THEN 'Online consultation. No studio visit.'
+       ELSE 'Studio: '||v_place END
+     ||E'\nConfirm: '||v_confirm_url
+     ||E'\nReschedule: '||v_reschedule_url
+     ||E'\nCancel: '||v_cancel_url;
+ ELSE
+   SELECT substring(tmpl.body from 'https://[a-z0-9.-]+/aftercare/')
+     INTO v_guide
+   FROM public.message_templates tmpl
+   JOIN public.artists ar ON ar.id=j.artist_id
+   WHERE tmpl.workspace_id=ar.workspace_id
+     AND (tmpl.artist_id=ar.id OR tmpl.artist_id IS NULL)
+     AND tmpl.purpose='post_session_aftercare'
+     AND tmpl.channel='email' AND tmpl.locale=j.message_locale
+     AND tmpl.status='active'
+   ORDER BY (tmpl.artist_id IS NOT NULL) DESC,tmpl.version DESC,tmpl.id
+   LIMIT 1;
+   IF v_guide IS NULL THEN RETURN 'unavailable'; END IF;
+   IF j.message_purpose='post_session_aftercare' THEN
+     v_text:='Hi '||v_first||', thank you for your tattoo session with '
+       ||a.display_name||'. Your aftercare guide: '||v_guide
+       ||'. Reply here if you need advice.';
+   ELSE
+     v_text:='Hi '||v_first||', how is your tattoo healing after your session with '
+       ||a.display_name||'? Your aftercare guide: '||v_guide
+       ||'. No need to reply if everything is fine.';
+   END IF;
+ END IF;
+ IF nullif(btrim(v_text),'') IS NULL
+    OR octet_length(convert_to(v_text,'UTF8'))>1000
+ THEN RETURN 'unavailable'; END IF;
+ IF EXISTS (SELECT 1 FROM crm_private.lifecycle_instagram_payloads p
+   WHERE p.automation_job_id=j.id) THEN RETURN 'skipped'; END IF;
+
+ INSERT INTO public.communication_messages (
+   conversation_id,artist_id,channel,direction,origin,status,
+   message_type,body,created_by
+ ) VALUES (c.id,j.artist_id,'instagram','outbound','automation','queued',
+   'template','Automatic appointment update ('||j.message_purpose||')',NULL)
+ RETURNING id INTO v_message_id;
+
+ INSERT INTO crm_private.lifecycle_instagram_payloads(
+   automation_job_id,communication_message_id,artist_id,session_id,
+   purpose,message_text,confirm_payload,reschedule_payload,cancel_payload,members
+ ) VALUES (
+   j.id,v_message_id,j.artist_id,s.id,j.message_purpose,v_text,
+   CASE WHEN v_confirm_token IS NOT NULL THEN 'booking_action:'||v_confirm_token END,
+   CASE WHEN v_reschedule_token IS NOT NULL THEN 'booking_action:'||v_reschedule_token END,
+   CASE WHEN v_cancel_token IS NOT NULL THEN 'booking_action:'||v_cancel_token END,
+   v_members
+ );
+
+ INSERT INTO public.integration_outbox(
+   kind,dedupe_key,payload,artist_id,client_id,enquiry_id,
+   project_id,session_id,communication_message_id,max_attempts
+ ) VALUES ('instagram_message','instagram:lifecycle:'||j.id::text,
+   jsonb_build_object('communication_message_id',v_message_id),
+   j.artist_id,s.client_id,s.enquiry_id,s.project_id,NULL,v_message_id,1)
+ ON CONFLICT(dedupe_key) DO NOTHING RETURNING id INTO v_outbox_id;
+ IF v_outbox_id IS NULL THEN RAISE EXCEPTION 'Instagram lifecycle outbox collision' USING errcode='23514'; END IF;
+
+ UPDATE public.automation_jobs SET status='completed',completed_at=now(),
+  attempt_count=attempt_count+1,last_error_category='none' WHERE id=j.id;
+ RETURN 'queued';
+END;
+$fn$;
+REVOKE ALL ON FUNCTION crm_private.queue_lifecycle_instagram_job(uuid)
+ FROM public,anon,authenticated,service_role;
+
+-- Leased payloads are revalidated at the moment of sending. A changed session,
+-- closed Instagram window, suppression or identity mismatch prevents delivery.
+CREATE OR REPLACE FUNCTION public.service_resolve_instagram_lifecycle_payload(
+ p_outbox_id uuid,p_worker_id text
+) RETURNS TABLE(is_lifecycle boolean,communication_message_id uuid,artist_id uuid,
+ purpose text,message_text text,quick_replies jsonb,delivery_allowed boolean)
+LANGUAGE plpgsql STABLE SECURITY DEFINER
+SET search_path=pg_catalog,public,crm_private AS $fn$
+BEGIN
+ IF NOT crm_private.is_service_backend() THEN
+   RAISE EXCEPTION 'Instagram lifecycle readback is backend-only' USING errcode='42501'; END IF;
+ IF p_outbox_id IS NULL OR coalesce(p_worker_id,'') !~ '^[a-z][a-z0-9_-]{2,127}$' THEN
+   RAISE EXCEPTION 'valid Instagram worker lease required' USING errcode='22023'; END IF;
+ RETURN QUERY
+ SELECT p.automation_job_id IS NOT NULL,m.id,o.artist_id,
+   p.purpose,p.message_text,
+   CASE WHEN p.purpose IN ('session_reminder_24h','consultation_reminder')
+     THEN jsonb_build_array(
+       jsonb_build_object('title','Confirm','payload',p.confirm_payload),
+       jsonb_build_object('title','Reschedule','payload',p.reschedule_payload),
+       jsonb_build_object('title','Cancel booking','payload',p.cancel_payload))
+     ELSE '[]'::jsonb END AS quick_replies,
+   (
+     p.automation_job_id IS NOT NULL
+     AND m.status='queued' AND m.artist_id=o.artist_id
+     AND o.client_id=s.client_id AND o.artist_id=s.artist_id
+     AND j.id=p.automation_job_id AND j.artist_id=o.artist_id
+     AND j.status='completed' AND j.message_purpose=p.purpose
+     AND j.session_id=p.session_id
+     AND ((p.purpose='consultation_reminder'
+       AND s.appointment_type IN ('in_person_consultation','video_consultation'))
+        OR (p.purpose<>'consultation_reminder'
+       AND s.appointment_type IN ('tattoo_session','touch_up')))
+     AND ((p.purpose IN ('session_reminder_72h','session_reminder_24h','consultation_reminder')
+            AND s.status='confirmed' AND s.start_at>now())
+          OR (p.purpose IN ('post_session_aftercare','post_session_checkin')
+            AND s.status='completed'))
+     AND p.members=(CASE WHEN p.purpose='consultation_reminder'
+       THEN jsonb_build_array(jsonb_build_object(
+         'id',s.id,'version',s.calendar_version,'start',s.start_at,
+         'end',s.end_at,'actual_end',s.actual_end_at,'status',s.status))
+       ELSE crm_private.lifecycle_email_members(p.session_id,p.purpose) END)
+     AND crm_private.client_send_block_reason(s.client_id,'instagram','service') IS NULL
+     AND crm_private.lifecycle_selected_channel(s.client_id,o.artist_id)='instagram'
+     AND c.id=m.conversation_id AND c.client_id=s.client_id
+     AND c.artist_id=o.artist_id AND c.channel='instagram'
+     AND c.state='open' AND c.link_state='linked'
+     AND crm_private.instagram_window_open(c)
+     AND EXISTS(SELECT 1 FROM crm_private.booking_card_artist_settings cfg
+       WHERE cfg.artist_id=o.artist_id AND cfg.instagram_enabled)
+     AND EXISTS(SELECT 1 FROM public.artist_integrations i
+       WHERE i.artist_id=o.artist_id AND i.integration_key=c.integration_key
+       AND i.integration_type='instagram' AND i.provider='instagram_login'
+       AND i.is_enabled)
+   ) AS delivery_allowed
+ FROM public.integration_outbox o
+ JOIN public.communication_messages m ON m.id=o.communication_message_id
+ LEFT JOIN crm_private.lifecycle_instagram_payloads p
+   ON p.communication_message_id=m.id AND p.artist_id=o.artist_id
+ LEFT JOIN public.automation_jobs j ON j.id=p.automation_job_id
+ LEFT JOIN public.sessions s ON s.id=p.session_id
+ LEFT JOIN public.communication_conversations c ON c.id=m.conversation_id
+ WHERE o.id=p_outbox_id AND o.kind='instagram_message'
+   AND o.status='leased' AND o.leased_by=p_worker_id
+   AND o.lease_expires_at>now()
+   AND m.artist_id=o.artist_id AND m.channel='instagram';
+END;
+$fn$;
+REVOKE ALL ON FUNCTION public.service_resolve_instagram_lifecycle_payload(uuid,text)
+ FROM public,anon,authenticated,service_role;
+GRANT EXECUTE ON FUNCTION public.service_resolve_instagram_lifecycle_payload(uuid,text)
+ TO service_role;
+
+-- A confirmed provider rejection is different from an ambiguous timeout.
+-- Wake the SAME automation job for one Email send when it is safe to do so.
+CREATE OR REPLACE FUNCTION crm_private.lifecycle_instagram_terminal_email_fallback()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path=pg_catalog,public,crm_private AS $fn$
+DECLARE p crm_private.lifecycle_instagram_payloads%rowtype;
+ s public.sessions%rowtype;
+BEGIN
+ IF old.status='dead' OR new.status<>'dead'
+   OR new.kind<>'instagram_message'
+   OR new.last_error_code NOT IN (
+     'instagram_outside_messaging_window','instagram_rejected',
+     'instagram_credentials_rejected','instagram_destination_invalid',
+     'instagram_account_invalid','instagram_provider_unsupported',
+     'instagram_lifecycle_window_closed')
+ THEN RETURN new; END IF;
+ SELECT * INTO p FROM crm_private.lifecycle_instagram_payloads x
+ WHERE x.communication_message_id=new.communication_message_id
+   AND x.artist_id=new.artist_id;
+ IF NOT FOUND THEN RETURN new; END IF;
+ SELECT * INTO s FROM public.sessions x WHERE x.id=p.session_id
+ AND x.artist_id=p.artist_id;
+ IF NOT FOUND OR s.client_id IS DISTINCT FROM new.client_id
+   OR crm_private.lifecycle_selected_channel(s.client_id,p.artist_id)<>'instagram'
+   THEN RETURN new; END IF;
+ INSERT INTO crm_private.lifecycle_instagram_email_fallbacks(
+   job_id,artist_id,client_id,reason,instagram_outbox_id)
+ VALUES(p.automation_job_id,p.artist_id,s.client_id,'instagram_rejected',new.id)
+ ON CONFLICT(job_id) DO NOTHING;
+ UPDATE public.automation_jobs SET status='pending',completed_at=NULL,
+  last_error_category='none',updated_at=now()
+ WHERE id=p.automation_job_id AND status='completed'
+ AND EXISTS(SELECT 1 FROM crm_private.lifecycle_instagram_email_fallbacks f
+            WHERE f.job_id=p.automation_job_id AND f.instagram_outbox_id=new.id);
+ RETURN new;
+END;
+$fn$;
+REVOKE ALL ON FUNCTION crm_private.lifecycle_instagram_terminal_email_fallback()
+ FROM public,anon,authenticated,service_role;
+DROP TRIGGER IF EXISTS instagram_lifecycle_terminal_email_fallback ON public.integration_outbox;
+CREATE TRIGGER instagram_lifecycle_terminal_email_fallback
+ AFTER UPDATE OF status ON public.integration_outbox
+ FOR EACH ROW WHEN (new.kind='instagram_message')
+ EXECUTE FUNCTION crm_private.lifecycle_instagram_terminal_email_fallback();
