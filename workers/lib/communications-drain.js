@@ -163,6 +163,7 @@ export async function processClaimedJob({
   }
 
   let delivery;
+  let providerCallStarted = false;
   try {
     const resolved = await supabase.rpc('resolve_outbox_route', { p_outbox_id: job.outbox_id });
     const route = validateRoute(firstRow(resolved), job, channel);
@@ -180,8 +181,12 @@ export async function processClaimedJob({
       p_worker_id: workerId,
     }));
     if (intent?.proceed !== true) {
+      if (channel === 'instagram' && /^welcome_/.test(intent?.reason ?? '')) {
+        return recordFailure(supabase, job.outbox_id, workerId, 'instagram_welcome_ineligible');
+      }
       return recordFailure(supabase, job.outbox_id, workerId, 'communication_send_result_unknown');
     }
+    providerCallStarted = true;
     delivery = await deliver(route, {
       recipientId: job.external_contact_id,
       body: job.body,
@@ -189,6 +194,9 @@ export async function processClaimedJob({
       extras: prepared?.extras ?? null,
     });
   } catch (error) {
+    if (channel === 'instagram' && providerCallStarted) {
+      return recordFailure(supabase, job.outbox_id, workerId, 'communication_send_result_unknown');
+    }
     return recordFailure(supabase, job.outbox_id, workerId, safeErrorCode(error));
   }
 

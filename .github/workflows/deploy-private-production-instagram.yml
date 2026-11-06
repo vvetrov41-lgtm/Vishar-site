@@ -207,6 +207,7 @@ jobs:
 
       - name: Re-run Instagram security boundaries at the exact SHA
         run: |
+          node scripts/test-instagram-annual-welcome.mjs
           node scripts/test-instagram-webhook.mjs
           node scripts/test-instagram-connector.mjs
           node scripts/test-instagram-webhook-subscription.mjs

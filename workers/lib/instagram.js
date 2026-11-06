@@ -520,10 +520,15 @@ export async function sendInstagramMessage({
       },
     );
   } catch {
-    return { delivered: false, errorCode: 'instagram_unreachable' };
+    return { delivered: false, errorCode: 'communication_send_result_unknown' };
   }
 
   if (!response.ok) {
+    // A server failure or redirect does not prove the POST was rejected.
+    // Keep the durable intent; the shared outbox must never replay it.
+    if (response.status >= 500 || response.status === 408 || (response.status >= 300 && response.status < 400)) {
+      return { delivered: false, errorCode: 'communication_send_result_unknown' };
+    }
     let payload = null;
     try {
       payload = await response.json();
@@ -537,12 +542,12 @@ export async function sendInstagramMessage({
   try {
     parsed = await response.json();
   } catch {
-    return { delivered: false, errorCode: 'instagram_response_invalid' };
+    return { delivered: false, errorCode: 'communication_send_result_unknown' };
   }
 
   const providerMessageId = typeof parsed?.message_id === 'string' ? parsed.message_id : '';
-  if (!providerMessageId) {
-    return { delivered: false, errorCode: 'instagram_response_invalid' };
+  if (!/^[A-Za-z0-9_=./-]{8,255}$/.test(providerMessageId)) {
+    return { delivered: false, errorCode: 'communication_send_result_unknown' };
   }
 
   // Only the message id crosses back. The rest of Meta's response echoes the
