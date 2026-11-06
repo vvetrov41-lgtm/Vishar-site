@@ -25,7 +25,7 @@ CREATE OR REPLACE FUNCTION crm_private.lifecycle_whatsapp_confirmation_url(
  p_base text,p_token text
 ) RETURNS text LANGUAGE sql IMMUTABLE
 SET search_path=pg_catalog,public,crm_private AS $link$
- SELECT CASE WHEN btrim(p_base) = 'https://booking.vishartattoo.com/appointments/respond/'
+ SELECT CASE WHEN btrim(p_base) ~ '^https://booking[.][a-z0-9-]+([.][a-z0-9-]+)+/appointments/respond/$'
    AND p_token ~ '^[0-9a-f]{64}$'
    THEN btrim(p_base)||p_token
    ELSE NULL END;
