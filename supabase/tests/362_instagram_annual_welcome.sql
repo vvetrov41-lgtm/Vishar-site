@@ -127,5 +127,29 @@ select public.record_communication_inbound_message(
  'ig_annual_after_reconnect',clock_timestamp(),'text','Hello again');
 select is((select count(*)::int from public.integration_outbox where dedupe_key like 'instagram:welcome:%'
  and artist_id='a2222222-2222-4222-8222-222222222222'),1,'reconnect retains the cooldown');
+-- Stale webhook and explicit pre-send rejection are safe without provider calls.
+select public.service_set_instagram_welcome_mode(
+ 'a1111111-1111-4111-8111-111111111111','17841400000000001','test',array['900000009003','900000009004'],true);
+select public.record_communication_inbound_message(
+ 'a1111111-1111-4111-8111-111111111111','instagram','vladimir-instagram','900000009003',
+ 'ig_annual_old_delivery',clock_timestamp()-interval '2 days','text','Delayed webhook');
+select is((select count(*)::int from crm_private.instagram_welcome_contacts where external_contact_id='900000009003'),0,
+ 'stale historical delivery cannot trigger a welcome after activation');
+select public.record_communication_inbound_message(
+ 'a1111111-1111-4111-8111-111111111111','instagram','vladimir-instagram','900000009004',
+ 'ig_annual_refusal_first',clock_timestamp(),'text','Hello');
+update public.integration_outbox set status='leased',leased_by='instagram-unsent-test',
+ leased_at=clock_timestamp(),lease_expires_at=clock_timestamp()+interval '2 minutes'
+ where id=(select outbox_id from crm_private.instagram_welcome_contacts where external_contact_id='900000009004');
+select public.record_communication_outbox_result(id,'instagram-unsent-test',false,null,'instagram_welcome_ineligible')
+ from public.integration_outbox
+ where id=(select outbox_id from crm_private.instagram_welcome_contacts where external_contact_id='900000009004');
+select is((select state from crm_private.instagram_welcome_contacts where external_contact_id='900000009004'),
+ 'unsent','definitely-unsent pre-provider failure does not consume annual welcome');
+select public.record_communication_inbound_message(
+ 'a1111111-1111-4111-8111-111111111111','instagram','vladimir-instagram','900000009004',
+ 'ig_annual_refusal_next',clock_timestamp(),'text','Next inbound');
+select is((select count(*)::int from public.integration_outbox where dedupe_key like 'instagram:welcome:%:900000009004:%'),2,
+ 'another attempt after definite failure needs a distinct new inbound');
 select * from finish(true);
 rollback;
