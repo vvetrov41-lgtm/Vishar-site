@@ -100,7 +100,7 @@ function messagePayload(overrides = {}) {
   };
 }
 
-async function post(payload, { env: environment = env(), supabase = supabaseDouble(), signature } = {}) {
+async function post(payload, { env: environment = env(), supabase = supabaseDouble(), signature, onInbound } = {}) {
   const body = JSON.stringify(payload);
   const request = new Request('https://instagram.vishartattoo.com/webhook', {
     method: 'POST',
@@ -110,7 +110,7 @@ async function post(payload, { env: environment = env(), supabase = supabaseDoub
     },
     body,
   });
-  const response = await handleInstagramWebhook(request, environment, supabase);
+  const response = await handleInstagramWebhook(request, environment, supabase, { onInbound });
   return { response, supabase };
 }
 
@@ -171,6 +171,55 @@ await test('a correctly signed payload is accepted', async () => {
   const { response, supabase } = await post(messagePayload());
   assert.equal(response.status, 200);
   assert.ok(supabase.calls.some((call) => call.name === 'record_communication_inbound_message'));
+});
+
+await test('signed inbound schedules its fast outbox drain only after persistence', async () => {
+  const db = supabaseDouble();
+  const calls = [];
+  const { response } = await post(messagePayload(), {
+    supabase: db,
+    onInbound: () => {
+      const persisted = db.calls.some(call => call.name === 'record_communication_inbound_message');
+      calls.push(persisted);
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls, [true], 'one scheduled drain for a signed persisted inbound');
+});
+
+await test('signed provider echoes and read receipts do not trigger immediate outbound drain', async () => {
+  const calls = [];
+  const echo = messagePayload({
+    sender: { id: V_ACCOUNT }, recipient: { id: SENDER },
+    message: { mid: 'ig_mid_SYNTHETICECHO01', text: 'reply', is_echo: true },
+  });
+  const read = messagePayload({ message: undefined, read: { mid: 'ig_mid_SYNTHETICOUT001' } });
+  delete read.entry[0].messaging[0].message;
+  for (const payload of [echo, read]) {
+    const { response } = await post(payload, { onInbound: () => calls.push('scheduled') });
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(calls, []);
+});
+
+await test('an unsigned webhook never schedules outbound work', async () => {
+  const calls = [];
+  const { response } = await post(messagePayload(), {
+    signature: `sha256=${'0'.repeat(64)}`,
+    onInbound: () => calls.push('scheduled'),
+  });
+  assert.equal(response.status, 401);
+  assert.deepEqual(calls, []);
+});
+
+await test('drain scheduling failure never causes Meta to retry an already persisted inbound', async () => {
+  const db = supabaseDouble();
+  const { response } = await post(messagePayload(), {
+    supabase: db,
+    onInbound: () => { throw new Error('synthetic_scheduler_error'); },
+  });
+  assert.equal(response.status, 200);
+  assert.ok(db.calls.some(call => call.name === 'record_communication_inbound_message'));
 });
 
 await test('an invalid signature is refused and nothing is ingested', async () => {
