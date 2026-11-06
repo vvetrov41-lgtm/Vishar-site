@@ -210,20 +210,9 @@ begin
     return crm_private.queue_lifecycle_whatsapp_job(p_job_id);
   end if;
 
-  -- Instagram does not support unattended appointment reminders outside
-  -- Meta's customer-message window. Surface a failure rather than pretending
-  -- an email or WhatsApp send matched the client's chosen channel.
-  if v_job.message_purpose in (
-       'consultation_reminder','session_reminder_72h','session_reminder_24h',
-       'post_session_aftercare','post_session_checkin')
-     and crm_private.lifecycle_selected_channel(
-       v_session.client_id,v_job.artist_id)='instagram' then
-    update public.automation_jobs
-       set status='failed',attempt_count=attempt_count+1,
-           last_error_category='integration_unavailable'
-     where id=p_job_id;
-    return 'failed';
-  end if;
+  -- Instagram is not a supported unattended lifecycle transport. Preserve
+  -- the existing Email service reminder fallback until a compliant Instagram
+  -- route is available, rather than silently dropping the reminder.
 
   select lower(btrim(c.email)) into v_to_email
   from public.clients c
