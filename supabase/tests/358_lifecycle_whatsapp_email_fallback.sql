@@ -254,16 +254,27 @@ select is(crm_private.lifecycle_whatsapp_location_with_map(
 select is(crm_private.lifecycle_whatsapp_location_with_map(
  'Studio A','https://maps.app.goo.gl/'||repeat('x',1010)),
  'Studio A','overlong template parameter falls back to the original address');
+select is(crm_private.lifecycle_whatsapp_confirmation_url(
+ 'https://booking.vishartattoo.com/appointments/respond/',repeat('a',64)),
+ 'https://booking.vishartattoo.com/appointments/respond/'||repeat('a',64),
+ 'valid booking confirmation token is converted into an owned HTTPS URL');
+select is(crm_private.lifecycle_whatsapp_confirmation_url(
+ 'https://other.example/appointments/respond/',repeat('a',64)),
+ null::text,'untrusted confirmation destination fails closed');
 
 insert into crm_private.booking_card_artist_settings(
- artist_id,studio_name,studio_address,studio_map_url,appointment_start_from
+ artist_id,studio_name,studio_address,studio_map_url,
+ client_action_base_url,appointment_start_from
 ) select a.id,'Label Tattoo Private',
  '16 Exhibition House, Addison Bridge Place, London W14 8XP',
- 'https://maps.app.goo.gl/fixture123',null from preferred_route_artist a
+ 'https://maps.app.goo.gl/fixture123',
+ 'https://booking.vishartattoo.com/appointments/respond/',null
+from preferred_route_artist a
 on conflict (artist_id) do update set
  studio_name=excluded.studio_name,
  studio_address=excluded.studio_address,
  studio_map_url=excluded.studio_map_url,
+ client_action_base_url=excluded.client_action_base_url,
  appointment_start_from=null;
 
 -- The already-enrolled tattoo fixture advances into its 24-hour reminder.
@@ -284,6 +295,11 @@ select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecyc
  where p.session_id='f9805555-5555-4555-8555-555555555555'
    and p.purpose='session_reminder_24h' limit 1),5,
  'approved 24-hour Meta template still receives precisely five variables');
+select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com/appointments/respond/%'
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+ and p.purpose='session_reminder_24h' limit 1),
+ '24-hour confirmation parameter is a full booking URL, not a raw token');
 
 -- New linked client: in-person consultation gets Maps without changing
 -- the five-parameter Meta consultation template.
@@ -323,15 +339,25 @@ set local role service_role;
 select lives_ok('select * from public.service_run_automation_tick(500)',
  'in-person consultation WhatsApp reminder with Maps queued');
 reset role;
-select like((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
+select ok((select (p.body_parameters->>3) LIKE '%Google Maps: https://maps.app.goo.gl/fixture123'
+ from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
- '%Google Maps: https://maps.app.goo.gl/fixture123',
  'in-person consultation variable four includes the configured Maps link');
 select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),5,
  'approved consultation Meta template keeps exactly five variables');
+select ok((select (p.body_parameters->>3) LIKE 'Label Tattoo Private, 16 Exhibition House%'
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9835555-5555-4555-8555-555555555555'
+ and p.purpose='consultation_reminder' limit 1),
+ 'in-person consultation does not reuse the obsolete studio address');
+select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com/appointments/respond/%'
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9835555-5555-4555-8555-555555555555'
+ and p.purpose='consultation_reminder' limit 1),
+ 'consultation confirmation parameter is a valid full booking URL');
 
 select * from finish();
 rollback;
