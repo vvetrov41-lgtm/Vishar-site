@@ -1719,3 +1719,9 @@ begin
 end;
 $function$;
 
+-- Four-argument booking-card send functions are new overloads and would
+-- otherwise inherit PostgreSQL's default PUBLIC EXECUTE permission.
+REVOKE ALL ON FUNCTION crm_private.create_booking_card_instagram(uuid,text,text,text)
+ FROM public,anon,authenticated,service_role;
+REVOKE ALL ON FUNCTION crm_private.queue_booking_card_instagram(uuid,text,text,text)
+ FROM public,anon,authenticated,service_role;
