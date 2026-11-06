@@ -272,7 +272,7 @@ update public.sessions set
  end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '27 hours 55 minutes'
 where id='f9805555-5555-4555-8555-555555555555';
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok('select * from public.service_run_automation_tick(500)',
  '24-hour WhatsApp reminder with map link queues without provider requests');
 reset role;
 select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
@@ -312,7 +312,7 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9835555-5555-4555-8555-555555555555','maps_consultation_test'),
  'enrolled','in-person consultation enrolled with approved Meta template');
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok('select * from public.service_run_automation_tick(500)',
  'future consultation job is materialized without contacting Meta');
 reset role;
 update public.sessions set
@@ -320,7 +320,7 @@ update public.sessions set
  end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '23 hours 35 minutes'
 where id='f9835555-5555-4555-8555-555555555555';
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok('select * from public.service_run_automation_tick(500)',
  'in-person consultation WhatsApp reminder with Maps queued');
 reset role;
 select like((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
