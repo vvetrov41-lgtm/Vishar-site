@@ -38,6 +38,114 @@ insert into crm_private.lifecycle_whatsapp_template_registry (
   from public.artists where slug in ('vladimir','kristina')
   on conflict (artist_id,purpose) do nothing;
 
+-- Consultation WhatsApp payloads are a separate approved Utility purpose.
+alter table crm_private.lifecycle_whatsapp_payloads
+  drop constraint lifecycle_whatsapp_payloads_purpose_check;
+alter table crm_private.lifecycle_whatsapp_payloads
+  add constraint lifecycle_whatsapp_payloads_purpose_check
+  check (purpose in ('session_reminder_72h','session_reminder_24h',
+                    'post_session_aftercare','post_session_checkin',
+                    'consultation_reminder'));
+
+-- Preserve a per-job, auditable decision to use Email instead of the
+-- requested WhatsApp channel. Never infer permission from a provider timeout.
+create table crm_private.lifecycle_email_fallbacks (
+  job_id uuid primary key references public.automation_jobs(id) on delete restrict,
+  artist_id uuid not null references public.artists(id) on delete restrict,
+  client_id uuid not null references public.clients(id) on delete restrict,
+  reason text not null check (reason in ('whatsapp_unavailable','whatsapp_rejected')),
+  whatsapp_outbox_id uuid references public.integration_outbox(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  constraint lifecycle_email_fallback_evidence check (
+    (reason='whatsapp_unavailable' and whatsapp_outbox_id is null)
+    or (reason='whatsapp_rejected' and whatsapp_outbox_id is not null)
+  )
+);
+alter table crm_private.lifecycle_email_fallbacks enable row level security;
+revoke all on crm_private.lifecycle_email_fallbacks
+  from public,anon,authenticated,service_role;
+
+-- This is a read-only transport preflight. A route without a current Meta
+-- approval or an actual linked conversation must not consume a reminder.
+create or replace function crm_private.lifecycle_whatsapp_send_ready(
+  p_client_id uuid,p_artist_id uuid,p_purpose text
+) returns boolean language sql stable security definer
+set search_path=pg_catalog,public,crm_private as $function$
+  select coalesce(
+    crm_private.client_send_block_reason(p_client_id,'whatsapp','service') is null
+    and exists (
+      select 1 from crm_private.lifecycle_whatsapp_delivery_gates g
+      join crm_private.lifecycle_whatsapp_template_registry t
+        on t.artist_id=g.artist_id and t.purpose=p_purpose
+      where g.artist_id=p_artist_id and g.enabled
+        and t.approval_status='APPROVED'
+        and t.provider_template_id is not null
+        and t.verified_at>now()-interval '24 hours'
+    ) and exists (
+      select 1 from public.communication_conversations c
+      join public.artist_integrations i
+        on i.artist_id=c.artist_id
+       and i.integration_key=c.integration_key
+      where c.client_id=p_client_id and c.artist_id=p_artist_id
+        and c.channel='whatsapp' and c.state='open' and c.link_state='linked'
+        and i.integration_type='whatsapp' and i.provider='meta_cloud_api'
+        and i.is_enabled
+    ),false);
+$function$;
+revoke all on function crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)
+  from public,anon,authenticated,service_role;
+
+-- A recorded fallback must belong to this client, artist and exact job.
+-- A never-accepted Meta send can switch channels. Unknown outcomes cannot.
+create or replace function crm_private.lifecycle_email_fallback_allowed(
+ p_job_id uuid
+) returns boolean language sql stable security definer
+set search_path=pg_catalog,public,crm_private as $function$
+  select exists (
+    select 1 from crm_private.lifecycle_email_fallbacks f
+    join public.automation_jobs j on j.id=f.job_id
+    join public.sessions s on s.id=j.session_id and s.artist_id=j.artist_id
+    left join public.integration_outbox o on o.id=f.whatsapp_outbox_id
+    where f.job_id=p_job_id
+      and f.artist_id=j.artist_id and f.client_id=s.client_id
+      and crm_private.lifecycle_selected_channel(s.client_id,j.artist_id)
+          in ('whatsapp','email')
+      and (
+        (f.reason='whatsapp_unavailable'
+         and f.whatsapp_outbox_id is null
+         and not exists (
+           select 1 from crm_private.lifecycle_whatsapp_payloads p
+           where p.automation_job_id=j.id
+         ))
+        or
+        (f.reason='whatsapp_rejected'
+         and o.status='dead' and o.kind='whatsapp_message'
+         and o.artist_id=j.artist_id and o.client_id=s.client_id
+         and o.last_error_code in (
+           'whatsapp_rejected','whatsapp_credentials_rejected',
+           'whatsapp_rate_limited','whatsapp_destination_invalid',
+           'whatsapp_template_invalid','whatsapp_provider_unsupported',
+           'provider_binding_missing','provider_binding_invalid',
+           'provider_route_invalid'
+         )
+         and exists (
+           select 1 from crm_private.lifecycle_whatsapp_payloads p
+           where p.automation_job_id=j.id
+             and p.communication_message_id=o.communication_message_id
+         ))
+      )
+      and not exists (
+        select 1 from crm_private.lifecycle_whatsapp_payloads p
+        join public.integration_outbox already
+          on already.communication_message_id=p.communication_message_id
+        where p.automation_job_id=j.id
+          and already.status='succeeded'
+      )
+  );
+$function$;
+revoke all on function crm_private.lifecycle_email_fallback_allowed(uuid)
+  from public,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION crm_private.execute_client_lifecycle_job(p_job_id uuid)
  RETURNS text
  LANGUAGE plpgsql
@@ -173,46 +281,37 @@ begin
     return 'pending';
   end if;
 
-  -- Explicit client preference wins over the last unrelated conversation.
-  -- WhatsApp dispatch remains gated by Meta template proof at delivery.
+  -- Resolve at the scheduled execution time, not only on enrolment.
+  -- A previously recorded one-time fallback must not retry the same WhatsApp
+  -- job or create a second provider message.
   if v_job.message_purpose in
-      ('session_reminder_72h','session_reminder_24h',
-       'post_session_aftercare','post_session_checkin')
+       ('session_reminder_72h','session_reminder_24h',
+        'post_session_aftercare','post_session_checkin',
+        'consultation_reminder')
      and crm_private.lifecycle_selected_channel(
        v_session.client_id,v_job.artist_id)='whatsapp' then
-    return crm_private.queue_lifecycle_whatsapp_job(p_job_id);
+    if crm_private.lifecycle_email_fallback_allowed(v_job.id) then
+      null; -- WhatsApp already failed definitively; continue with Email.
+    elsif exists (
+      select 1 from crm_private.lifecycle_whatsapp_payloads p
+      where p.automation_job_id=v_job.id
+    ) then
+      -- An outbox result is ambiguous or still in flight. Do not duplicate.
+      return 'pending';
+    elsif crm_private.lifecycle_whatsapp_send_ready(
+      v_session.client_id,v_job.artist_id,v_job.message_purpose) then
+      return crm_private.queue_lifecycle_whatsapp_job(p_job_id);
+    else
+      insert into crm_private.lifecycle_email_fallbacks (
+        job_id,artist_id,client_id,reason
+      ) values (
+        v_job.id,v_job.artist_id,v_session.client_id,'whatsapp_unavailable'
+      ) on conflict(job_id) do nothing;
+    end if;
   end if;
 
-  -- Consultation templates require their own Meta Utility approval.
-  -- Until approved, preserve the email reminder so the client is not missed.
-  if v_job.message_purpose='consultation_reminder'
-     and crm_private.lifecycle_selected_channel(
-       v_session.client_id,v_job.artist_id)='whatsapp'
-     and exists (
-       select 1 from crm_private.lifecycle_whatsapp_delivery_gates g
-       where g.artist_id=v_job.artist_id and g.enabled
-     )
-     and exists (
-       select 1 from crm_private.lifecycle_whatsapp_template_registry t
-       where t.artist_id=v_job.artist_id and t.purpose='consultation_reminder'
-         and t.approval_status='APPROVED' and t.provider_template_id is not null
-         and t.verified_at>now()-interval '24 hours'
-     )
-     and exists (
-       select 1 from public.communication_conversations c
-       join public.artist_integrations i
-         on i.artist_id=c.artist_id and i.integration_key=c.integration_key
-       where c.client_id=v_session.client_id and c.artist_id=v_job.artist_id
-         and c.channel='whatsapp' and c.state='open' and c.link_state='linked'
-         and i.integration_type='whatsapp' and i.provider='meta_cloud_api'
-         and i.is_enabled
-     ) then
-    return crm_private.queue_lifecycle_whatsapp_job(p_job_id);
-  end if;
-
-  -- Instagram is not a supported unattended lifecycle transport. Preserve
-  -- the existing Email service reminder fallback until a compliant Instagram
-  -- route is available, rather than silently dropping the reminder.
+  -- Instagram has no unrestricted unattended provider route. Keep the
+  -- existing operational Email reminder rather than silently dropping it.
 
   select lower(btrim(c.email)) into v_to_email
   from public.clients c
@@ -753,7 +852,8 @@ begin
     ('session_reminder_72h','session_reminder_24h',
      'post_session_aftercare','post_session_checkin') then return new; end if;
   v_channel:=crm_private.lifecycle_selected_channel(new.client_id,new.artist_id);
-  if v_channel='whatsapp' then
+  if v_channel='whatsapp'
+     and not crm_private.lifecycle_email_fallback_allowed(new.automation_job_id) then
     raise exception 'lifecycle WhatsApp utility template is unavailable'
       using errcode='23514';
   end if;
@@ -804,7 +904,8 @@ begin
  if not found or v_snapshot.session_id is distinct from v_job.session_id or v_snapshot.purpose is distinct from v_job.message_purpose then return false; end if;
  if v_job.artist_id is distinct from v_message.artist_id
     or crm_private.client_send_block_reason(v_message.client_id,'email','service') is not null
-    or crm_private.lifecycle_selected_channel(v_message.client_id,v_job.artist_id)='whatsapp'
+    or (crm_private.lifecycle_selected_channel(v_message.client_id,v_job.artist_id)='whatsapp'
+      and not crm_private.lifecycle_email_fallback_allowed(v_job.id))
     then return false; end if;
  return v_snapshot.members=crm_private.lifecycle_email_members(v_job.session_id,v_job.message_purpose);
 end;
@@ -1024,4 +1125,80 @@ begin
  return new;
 end;
 $function$;
+
+
+-- Only a terminal explicit refusal can justify a second transport.
+-- Graph timeouts, invalid/unknown responses and accepted messages never do.
+create or replace function crm_private.lifecycle_whatsapp_terminal_email_fallback()
+returns trigger language plpgsql security definer
+set search_path=pg_catalog,public,crm_private as $function$
+declare
+  v_job public.automation_jobs%rowtype;
+  v_session public.sessions%rowtype;
+begin
+  if old.status<>'leased' or new.status<>'dead'
+     or new.kind<>'whatsapp_message'
+     or new.last_error_code not in (
+       'whatsapp_rejected','whatsapp_credentials_rejected',
+       'whatsapp_rate_limited','whatsapp_destination_invalid',
+       'whatsapp_template_invalid','whatsapp_provider_unsupported',
+       'provider_binding_missing','provider_binding_invalid',
+       'provider_route_invalid'
+     ) or new.communication_message_id is null
+  then return new; end if;
+
+  select j.* into v_job
+  from crm_private.lifecycle_whatsapp_payloads p
+  join public.automation_jobs j on j.id=p.automation_job_id
+  where p.communication_message_id=new.communication_message_id
+    and p.artist_id=new.artist_id and j.status='completed'
+  for update of j;
+  if not found then return new; end if;
+
+  select * into v_session from public.sessions s
+  where s.id=v_job.session_id and s.artist_id=v_job.artist_id
+  for update;
+  if not found or v_session.client_id is distinct from new.client_id
+     or (v_job.schedule_anchor='session_start'
+       and (v_session.status<>'confirmed' or v_session.start_at<=now()))
+     or (v_job.schedule_anchor='session_end'
+       and v_session.status<>'completed')
+     or v_job.scheduled_at < now()-interval '2 days'
+     or crm_private.lifecycle_selected_channel(
+       v_session.client_id,v_job.artist_id) <> 'whatsapp'
+     or crm_private.client_send_block_reason(
+       v_session.client_id,'email','service') is not null
+     or not exists (
+       select 1 from public.clients c where c.id=v_session.client_id
+         and c.archived_at is null and nullif(btrim(c.email),'') is not null
+     )
+     or exists (
+       select 1 from public.email_messages m
+       where m.automation_job_id=v_job.id
+     )
+  then return new; end if;
+
+  insert into crm_private.lifecycle_email_fallbacks (
+    job_id,artist_id,client_id,reason,whatsapp_outbox_id
+  ) values (
+    v_job.id,v_job.artist_id,v_session.client_id,'whatsapp_rejected',new.id
+  ) on conflict(job_id) do nothing;
+
+  -- The original job ID guarantees exactly one Gmail message/outbox.
+  -- Re-enrol only when a matching, auditable fallback exists.
+  if crm_private.lifecycle_email_fallback_allowed(v_job.id) then
+    update public.automation_jobs
+    set status='pending',completed_at=null,last_error_category=null
+    where id=v_job.id and status='completed';
+  end if;
+  return new;
+end;
+$function$;
+revoke all on function crm_private.lifecycle_whatsapp_terminal_email_fallback()
+ from public,anon,authenticated,service_role;
+drop trigger if exists integration_outbox_lifecycle_terminal_email_fallback
+  on public.integration_outbox;
+create trigger integration_outbox_lifecycle_terminal_email_fallback
+after update of status on public.integration_outbox
+for each row execute function crm_private.lifecycle_whatsapp_terminal_email_fallback();
 
