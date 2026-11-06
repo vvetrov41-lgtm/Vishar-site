@@ -102,6 +102,13 @@ begin
     or p_limit not between 1 and 3 or p_lease_seconds not between 60 and 600 then
     raise exception 'invalid lease' using errcode='22023';
   end if;
+  -- Received Meta media IDs expire. Never keep them or retry an old voice
+  -- note after the provider retention window has elapsed.
+  update crm_private.whatsapp_audio_transcription_jobs j
+  set state='failed', error_code='whatsapp_audio_expired',media_id='00000',
+      lease_owner=null,lease_expires_at=null,finished_at=now(),updated_at=now()
+  where state in ('pending','processing') and created_at<now()-interval '7 days';
+
   update crm_private.whatsapp_audio_transcription_jobs j
   set state='failed', error_code='attempts_exhausted',
       lease_owner=null,lease_expires_at=null,finished_at=now(),updated_at=now()
