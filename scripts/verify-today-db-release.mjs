@@ -30,6 +30,8 @@ export function verifyTodayLineage(source) {
     ['20261103120000', '20261103150000'],
     // Voice notes: only one private queue migration after the live head.
     ['20261105165000', '20261106010000'],
+    // Client channel routing: one verified migration after WhatsApp audio.
+    ['20261106010000', '20261106090000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
