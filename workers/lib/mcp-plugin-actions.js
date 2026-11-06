@@ -105,13 +105,27 @@ export async function callPluginMcpTool(entry, args, request, env) {
   }
 
   const upstreamRequest = buildActionRequest(entry, args, request);
+  // A transient Service Binding failure is safe to retry for reads only.
+  // Do not retry writes: their outcome is unknown if the transport fails.
+  const retryableRead = entry.method === 'GET' || entry.method === 'HEAD';
+  const maxAttempts = retryableRead ? 3 : 1;
   let upstream;
-  try {
-    upstream = await env.GPT_ACTIONS_SERVICE.fetch(upstreamRequest);
-  } catch {
-    throw new McpPluginActionError('action_service_unavailable', 'The CRM action service is temporarily unavailable.', 502);
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      upstream = await env.GPT_ACTIONS_SERVICE.fetch(upstreamRequest.clone());
+    } catch {
+      if (attempt === maxAttempts - 1) {
+        throw new McpPluginActionError('action_service_unavailable', 'The CRM action service is temporarily unavailable.', 502);
+      }
+      await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 100 : 250));
+      continue;
+    }
+    if (!retryableRead || ![502, 503, 504].includes(upstream.status) || attempt === maxAttempts - 1) break;
+    await new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 100 : 250));
   }
 
+  // Cloudflare may return an HTML/plain-text 5xx body, not JSON.
+  if (!upstream.ok && upstream.status >= 500) throw safeError(upstream.status, {});
   const text = await upstream.text();
   if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
     throw new McpPluginActionError('response_too_large', 'The CRM response exceeded the Plugin MCP limit.', 502);
