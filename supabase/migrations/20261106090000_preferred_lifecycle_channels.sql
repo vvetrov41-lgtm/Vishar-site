@@ -1225,6 +1225,7 @@ set search_path=pg_catalog,public,crm_private as $function$
 declare
   v_job public.automation_jobs%rowtype;
   v_session public.sessions%rowtype;
+  v_job_id uuid;
   v_outbox_id uuid;
 begin
   if new.channel<>'whatsapp' or new.origin<>'automation'
@@ -1234,22 +1235,29 @@ begin
      or new.delivered_at is not null or new.read_at is not null
   then return new; end if;
 
-  select o.id,j.* into v_outbox_id,v_job
+  select o.id,p.automation_job_id into v_outbox_id,v_job_id
   from crm_private.lifecycle_whatsapp_payloads p
-  join public.automation_jobs j on j.id=p.automation_job_id
   join public.integration_outbox o
     on o.communication_message_id=p.communication_message_id
    and o.artist_id=p.artist_id
   where p.communication_message_id=new.id and p.artist_id=new.artist_id
-    and o.status='succeeded' and o.kind='whatsapp_message'
-    and j.status='completed'
-  for update of j;
+    and o.status='succeeded' and o.kind='whatsapp_message';
+  if not found then return new; end if;
+
+  select j.* into v_job
+  from public.automation_jobs j
+  where j.id=v_job_id and j.artist_id=new.artist_id and j.status='completed'
+  for update;
   if not found then return new; end if;
 
   select * into v_session from public.sessions s
   where s.id=v_job.session_id and s.artist_id=v_job.artist_id
   for update;
-  if not found or v_session.client_id is distinct from new.client_id
+  if not found or not exists (
+       select 1 from public.communication_conversations c
+       where c.id=new.conversation_id and c.client_id=v_session.client_id
+         and c.artist_id=new.artist_id and c.channel='whatsapp'
+     )
      or (v_job.schedule_anchor='session_start'
        and (v_session.status<>'confirmed' or v_session.start_at<=now()))
      or (v_job.schedule_anchor='session_end'
