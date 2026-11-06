@@ -304,7 +304,7 @@ select results_eq(
 select results_eq(
   $$ select whatsapp_deliveries, email_deliveries, decided_channel, outcome, evidence_source
      from card_channels where session_id = 'fd6f1111-1111-4111-8111-111111111111' $$,
-  $ values (0, 1, 'email'::text, 'selected'::text, 'instagram_message'::text) $,
+  $$ values (0, 1, 'email'::text, 'selected'::text, 'instagram_message'::text) $$,
   'F: Instagram channel disabled falls back to the client's available Email'
 );
 
