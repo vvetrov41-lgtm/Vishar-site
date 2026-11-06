@@ -283,9 +283,9 @@ insert into public.sessions(id,client_id,artist_id,appointment_type,status,start
  date_trunc('day',now())+interval '83 days 11 hours',
  date_trunc('day',now())+interval '83 days 11 hours 30 minutes',0.5,null,'GBP',now());
 select results_eq(
- $select instagram,email,whatsapp,channel,outcome from ig_cards
- where session_id='f06e1111-1111-4111-8111-111111111111'$,
- $values (0,1,0,'email'::text,'selected'::text)$,
+ $$select instagram,email,whatsapp,channel,outcome from ig_cards
+ where session_id='f06e1111-1111-4111-8111-111111111111'$$,
+ $$values (0,1,0,'email'::text,'selected'::text)$$,
  'closed Instagram window falls back once to Email, without a duplicate DM');
 
 -- The third native quick reply applies an actual cancellation in CRM, and
