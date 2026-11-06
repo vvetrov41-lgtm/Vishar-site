@@ -1134,6 +1134,27 @@ await test('v2: Kristina colour styles keep their own labels and her privacy not
   assert.equal(args.p_enquiry.privacy_notice_version, '2026-10-12');
 });
 
+await test('v2: Kristina current November privacy notice is accepted from her Worker', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({ styles: ['floral', 'watercolour'], sizeNotes: '10-15 cm' });
+  const { response, payload } = await send(v2Form({
+    details, fields: { privacyNoticeVersion: '2026-11-03' },
+  }));
+  assert.equal(response.status, 200, JSON.stringify(payload));
+  const args = intakeArgs(calls);
+  assert.equal(args.p_enquiry.privacy_acknowledged, true);
+  assert.equal(args.p_enquiry.privacy_notice_version, '2026-11-03');
+});
+
+await test('v2: even the current notice requires explicit acknowledgement', async () => {
+  stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const { response, payload } = await send(v2Form({
+    fields: { privacyNoticeVersion: '2026-11-03', privacyAcknowledged: 'false' },
+  }));
+  assert.equal(response.status, 400);
+  assert.equal(payload.code, 'privacy_notice_not_acknowledged');
+});
+
 await test('v2: an unknown privacy notice version is still refused', async () => {
   stubBackend({ state: { fileIds: V2_FILE_IDS } });
   const { response, payload } = await send(v2Form({ fields: { privacyNoticeVersion: '2026-10-11' } }));

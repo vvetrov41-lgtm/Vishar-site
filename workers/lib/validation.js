@@ -30,13 +30,15 @@ export const MAX_FILE_BYTES = 4 * 1024 * 1024;
 // contract checks while the current public notice moves to the September version.
 export const PRIVACY_NOTICE_VERSION = '2026-07-29';
 export const CURRENT_PRIVACY_NOTICE_VERSION = '2026-09-09';
-// Kristina's own notice at kristinavishar.com/privacy/. Her booking Worker
-// sends it from server config; the database intake gate accepts it too.
-export const KRISTINA_PRIVACY_NOTICE_VERSION = '2026-10-12';
+// Kristina's booking Worker supplies its reviewed notice version server-side.
+// The previous version remains accepted for already-open booking forms.
+export const KRISTINA_PRIVACY_NOTICE_VERSION = '2026-11-03';
+export const KRISTINA_PREVIOUS_PRIVACY_NOTICE_VERSION = '2026-10-12';
 const ACCEPTED_PRIVACY_NOTICE_VERSIONS = new Set([
   CURRENT_PRIVACY_NOTICE_VERSION,
   PRIVACY_NOTICE_VERSION,
   KRISTINA_PRIVACY_NOTICE_VERSION,
+  KRISTINA_PREVIOUS_PRIVACY_NOTICE_VERSION,
 ]);
 
 export const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
