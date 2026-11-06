@@ -220,7 +220,7 @@ select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9825555-5555-4555-8555-555555555555','preferred_fallback_test'),
  'enrolled','WhatsApp-unavailable video consultation enrolled sufficiently early');
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'initial future consultation reminder job materializes');
 reset role;
 update public.sessions set
@@ -228,7 +228,7 @@ update public.sessions set
  end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '24 hours 25 minutes'
 where id='f9825555-5555-4555-8555-555555555555';
 set local role service_role;
-select lives_ok($select * from public.service_run_automation_tick(500)$,
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,
  'unsupported consultation WhatsApp route sends via fallback Gmail');
 reset role;
 select is((select reason from crm_private.lifecycle_email_fallbacks f
