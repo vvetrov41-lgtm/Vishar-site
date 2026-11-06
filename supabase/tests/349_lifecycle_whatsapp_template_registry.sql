@@ -6,8 +6,8 @@ create temporary table lifecycle_registry_artists as
 select id,slug from public.artists where slug in ('vladimir','kristina');
 grant select on lifecycle_registry_artists to public;
 select is((select count(*)::integer from crm_private.lifecycle_whatsapp_template_registry
- where artist_id in (select id from lifecycle_registry_artists)),8,
- 'both artists have four lifecycle template definitions');
+ where artist_id in (select id from lifecycle_registry_artists)),10,
+ 'both artists have four tattoo lifecycle templates and one consultation template');
 select is((select count(*)::integer from crm_private.lifecycle_whatsapp_template_registry
  where approval_status='APPROVED'),0,
  'no template is assumed approved just because WhatsApp is connected');
