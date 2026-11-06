@@ -444,7 +444,7 @@ async function recordRejectedSignature(env, supabase) {
   await recordDelivery(supabase, { signature_invalid: 1 });
 }
 
-export async function handleInstagramWebhook(request, env, supabase = null) {
+export async function handleInstagramWebhook(request, env, supabase = null, { onInbound = null } = {}) {
   const url = new URL(request.url);
   if (url.pathname !== INSTAGRAM_WEBHOOK_PATH) return new Response('Not found', { status: 404 });
 
@@ -523,6 +523,16 @@ export async function handleInstagramWebhook(request, env, supabase = null) {
       skipped_message: counters.skipped_message,
       skipped_cross_account: counters.skipped_cross_account,
     });
+    // The inbox RPC has committed any newly queued welcome before this point.
+    // Wake the outbound drain only for a verified and persisted inbound.
+    // A failed wake-up must not turn a successful ingress into a Meta retry.
+    if (counters.inbound > 0 && typeof onInbound === 'function') {
+      try {
+        onInbound();
+      } catch {
+        console.warn(JSON.stringify({ event: 'instagram_immediate_drain_schedule_failed' }));
+      }
+    }
     return new Response('EVENT_RECEIVED', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   } catch (error) {
     if (error instanceof InstagramWebhookError) return jsonError(error.status);
