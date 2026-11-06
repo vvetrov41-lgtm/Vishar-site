@@ -28,6 +28,8 @@ export function verifyTodayLineage(source) {
     ['20261103070000', '20261103120000'],
     // Today: suppress intentional cancels and credit real Gmail history checks.
     ['20261103120000', '20261103150000'],
+    // Voice notes: only one private queue migration after the live head.
+    ['20261105165000', '20261106010000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
