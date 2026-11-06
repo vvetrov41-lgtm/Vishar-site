@@ -12,8 +12,8 @@ AS $map$
      AND nullif(btrim(p_map_url),'') IS NOT NULL
      AND btrim(p_map_url) ~ '^https://((www[.])?google[.]com/maps/|maps[.]app[.]goo[.]gl/[A-Za-z0-9])'
      AND btrim(p_map_url) !~ '[[:space:]]'
-     AND char_length(p_address)+char_length(E'\\nGoogle Maps: ')+char_length(btrim(p_map_url))<=1024
-    THEN p_address || E'\\nGoogle Maps: ' || btrim(p_map_url)
+     AND char_length(p_address)+char_length(E'\nGoogle Maps: ')+char_length(btrim(p_map_url))<=1024
+    THEN p_address || E'\nGoogle Maps: ' || btrim(p_map_url)
     ELSE p_address END;
 $map$;
 REVOKE ALL ON FUNCTION crm_private.lifecycle_whatsapp_location_with_map(text,text)
