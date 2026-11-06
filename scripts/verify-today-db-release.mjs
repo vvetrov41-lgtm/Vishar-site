@@ -36,6 +36,8 @@ export function verifyTodayLineage(source) {
     ['20261106090000', '20261106180000'],
     // PR #1171: annual Instagram welcome, both account switches remain off.
     ['20261106180000', '20261106184619'],
+    // Instagram card cancellation and 24h-compliant lifecycle reminders.
+    ['20261106184619', '20261106223000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
