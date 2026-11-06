@@ -2,10 +2,9 @@
 //
 // Unit tests for the model capability router and its provider tiers.
 //
-// The DeepSeek, Qwen and Workers AI tiers all execute on the Cloudflare `AI`
-// binding. That is the property most of this file defends: those tiers must
-// never reach the network, must never look for an API key, and must still be
-// selected by name so the routing layer stays a routing layer.
+// Qwen and Workers AI run through the Cloudflare `AI` binding without
+// network egress or vendor credentials. The removed DeepSeek tier must never
+// be selected, even when supplied in an environment override.
 //
 // Also pinned here: OpenAI remains external and entirely optional, the Chinese
 // model paths work with no OPENAI_API_KEY, payload and cost ceilings hold,
@@ -24,7 +23,6 @@ const router = await load('lib/ai/router.js');
 const tasks = await load('lib/ai/tasks.js');
 const errors = await load('lib/ai/errors.js');
 const binding = await load('lib/ai/providers/workers-ai-binding.js');
-const deepseek = await load('lib/ai/providers/deepseek.js');
 const qwen = await load('lib/ai/providers/qwen.js');
 const openai = await load('lib/ai/providers/openai.js');
 const llama = await load('lib/ai/providers/workers-ai.js');
@@ -61,7 +59,6 @@ const SYSTEM = 'You are a test system prompt.';
 const INPUT = 'A wolf in moonlight.';
 const PNG_BASE64 = probe.__testing.PROBES.vision_reference_understanding.images[0].dataBase64;
 
-const DEEPSEEK_MODEL = '@cf/deepseek-ai/deepseek-v4-flash-0731';
 const QWEN_MODEL = '@cf/qwen/qwen3.8-27b';
 const LLAMA_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 const GEMMA_MODEL = '@cf/google/gemma-4-26b-a4b-it';
@@ -120,21 +117,19 @@ const visionInput = { system: SYSTEM, input: INPUT, images: [{ mimeType: 'image/
 
 // --- the binding is the transport, not the abstraction ----------------------
 
-await test('DeepSeek, Qwen and Workers AI are separate tiers that share one binding', () => {
+await test('Qwen and Workers AI are separate binding-backed tiers', () => {
   const env = aiBinding().AI;
-  assert.equal(deepseek.configure({ AI: env }, 'text').model, DEEPSEEK_MODEL);
   assert.equal(qwen.configure({ AI: env }, 'vision').model, QWEN_MODEL);
   assert.equal(llama.configure({ AI: env }, 'text').model, LLAMA_MODEL);
   assert.equal(llama.configure({ AI: env }, 'vision').model, GEMMA_MODEL);
-
-  // Distinct ids, so the router still selects a provider by name.
-  const ids = [deepseek.id, qwen.id, llama.id, openai.id];
+  const ids = [qwen.id, llama.id, openai.id];
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids.slice(0, 3).sort(), ['deepseek', 'qwen', 'workers_ai']);
+  assert.deepEqual([...ids].sort(), ['openai', 'qwen', 'workers_ai']);
+  assert.equal(router.PROVIDER_IDS.has('deepseek'), false);
 });
 
 await test('a binding-backed tier is configured by the binding alone, never a key', () => {
-  for (const tier of [deepseek, qwen, llama]) {
+  for (const tier of [qwen, llama]) {
     const modality = tier.id === 'qwen' ? 'vision' : 'text';
     assert.equal(tier.configure({}, modality), null, `${tier.id} must need the binding`);
     assert.equal(tier.configure({ AI: {} }, modality), null, `${tier.id} must need AI.run`);
@@ -183,60 +178,39 @@ await test('every declared task resolves to known providers and bounded limits',
   }
 });
 
-await test('chain order follows Workers AI cost, not the old vendor assumption', () => {
-  assert.deepEqual(
-    [...tasks.resolveTask({}, 'enquiry_intake', router.PROVIDER_IDS).chain],
-    ['workers_ai', 'qwen'],
-  );
-  // Routine CRM extraction leads with Llama too, per the live eval.
-  assert.deepEqual(
-    [...tasks.resolveTask({}, 'crm_client_state', router.PROVIDER_IDS).chain],
-    ['workers_ai', 'qwen'],
-  );
-  // Short, high-volume public replies stay on the cheap Llama tier and escalate.
-  for (const name of ['concept_consult', 'aftercare_support']) {
-    const chain = tasks.resolveTask({}, name, router.PROVIDER_IDS).chain;
-    assert.deepEqual([...chain], ['workers_ai', 'deepseek'], name);
+await test('default task chains match the verified production routes', () => {
+  for (const name of ['enquiry_intake', 'crm_client_state', 'crm_draft_reply',
+      'enquiry_translation', 'concept_consult', 'aftercare_support']) {
+    assert.deepEqual([...tasks.resolveTask({}, name, router.PROVIDER_IDS).chain],
+      ['workers_ai', 'qwen'], name);
   }
-  // Reasoning, structure and long context lead with DeepSeek.
-  for (const name of ['text_summarization', 'text_classification', 'text_extraction', 'high_quality_reasoning']) {
-    assert.equal(tasks.resolveTask({}, name, router.PROVIDER_IDS).chain[0], 'deepseek', name);
-  }
-  assert.deepEqual(
-    [...tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS).chain],
-    ['deepseek', 'qwen'],
-  );
-  for (const name of ['vision_reference_understanding', 'vision_document_extraction']) {
-    assert.deepEqual([...tasks.resolveTask({}, name, router.PROVIDER_IDS).chain], ['qwen', 'workers_ai'], name);
+  for (const name of ['text_summarization', 'text_classification',
+      'text_extraction', 'high_quality_reasoning', 'vision_reference_understanding',
+      'vision_document_extraction', 'vision_reference_extraction']) {
+    assert.deepEqual([...tasks.resolveTask({}, name, router.PROVIDER_IDS).chain],
+      ['qwen', 'workers_ai'], name);
   }
 });
 
-await test('every task keeps a tier that needs neither a key nor a paid plan', () => {
-  // OpenAI needs OPENAI_API_KEY. DeepSeek V4 Flash is gated behind Workers Paid
-  // or prepaid AI Gateway credits, which a production probe confirmed this
-  // account does not have. A chain built only from those two can strand a task.
-  const needsAKey = new Set(['openai']);
-  const needsAPaidPlan = new Set(['deepseek']);
-
+await test('every task keeps a key-free model and no retired provider', () => {
   for (const name of tasks.TASK_NAMES) {
     const plan = tasks.resolveTask({}, name, router.PROVIDER_IDS);
-    const alwaysAvailable = plan.chain.filter((id) => !needsAKey.has(id) && !needsAPaidPlan.has(id));
-    assert.ok(
-      alwaysAvailable.length >= 1,
-      `${name} routes only to gated tiers (${plan.chain.join(', ')}) and would strand`,
-    );
+    assert.ok(plan.chain.some((id) => id === 'qwen' || id === 'workers_ai'),
+      name + ' lost its Cloudflare fallback');
+    assert.ok(!plan.chain.includes('deepseek'), name + ' retained the removed tier');
   }
 });
 
-await test('server-side route overrides apply, and invalid ones are ignored', () => {
+await test('route overrides work and cannot restore the removed tier', () => {
   const overridden = tasks.resolveTask(
-    { AI_ROUTE_CONCEPT_CONSULT: 'deepseek, workers_ai' }, 'concept_consult', router.PROVIDER_IDS);
-  assert.deepEqual([...overridden.chain], ['deepseek', 'workers_ai']);
+    { AI_ROUTE_CONCEPT_CONSULT: 'qwen, workers_ai' }, 'concept_consult', router.PROVIDER_IDS);
+  assert.deepEqual([...overridden.chain], ['qwen', 'workers_ai']);
   assert.equal(overridden.routeSource, 'env');
 
-  for (const bad of ['', 'not_a_provider', 'deepseek,deepseek', 'deepseek,openai,workers_ai', '../etc']) {
+  for (const bad of ['', 'not_a_provider', 'deepseek,workers_ai', 'deepseek',
+      'qwen,qwen', 'qwen,openai,workers_ai', '../etc']) {
     const plan = tasks.resolveTask({ AI_ROUTE_CONCEPT_CONSULT: bad }, 'concept_consult', router.PROVIDER_IDS);
-    assert.deepEqual([...plan.chain], ['workers_ai', 'deepseek'], `override "${bad}" must be ignored`);
+    assert.deepEqual([...plan.chain], ['workers_ai', 'qwen'], bad + ' must be ignored');
     assert.equal(plan.routeSource, 'default');
   }
 });
@@ -249,40 +223,30 @@ await test('an unknown task never reaches a provider', async () => {
   assert.equal(stub.calls.length, 0);
 });
 
-// --- DeepSeek via env.AI ----------------------------------------------------
+// --- Qwen text via env.AI --------------------------------------------
 
-await test('DeepSeek runs on the binding with the Cloudflare model id and no network', async () => {
-  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL ? { response: '  Considered answer.  ' } : null));
+await test('Qwen handles reasoning on the binding with no external network', async () => {
+  const stub = aiBinding((model) => (model === QWEN_MODEL ? { response: '  Considered answer.  ' } : null));
   const result = await router.runModelTask(
     { AI: stub.AI }, 'high_quality_reasoning', textInput, { fetchImpl: forbiddenFetch() });
-
   assert.equal(result.ok, true);
-  assert.equal(result.provider, 'deepseek');
-  assert.equal(result.model, DEEPSEEK_MODEL);
+  assert.equal(result.provider, 'qwen');
+  assert.equal(result.model, QWEN_MODEL);
   assert.equal(result.text, 'Considered answer.');
   assert.equal(result.fallbackUsed, false);
-
   assert.equal(stub.calls.length, 1);
   const [call] = stub.calls;
-  assert.equal(call.model, DEEPSEEK_MODEL);
+  assert.equal(call.model, QWEN_MODEL);
   assert.deepEqual(call.input.messages.map((m) => m.role), ['system', 'user']);
   assert.equal(call.input.messages[1].content, INPUT);
-  assert.equal(
-    call.input.max_tokens,
-    tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS).maxOutputTokens,
-  );
+  assert.equal(call.input.max_tokens,
+    tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS).maxOutputTokens);
 });
 
-await test('the DeepSeek model id is server-configurable but must be a Cloudflare id', () => {
-  const AI = aiBinding().AI;
-  assert.equal(
-    deepseek.configure({ AI, AI_MODEL_DEEPSEEK_TEXT: '@cf/deepseek-ai/deepseek-v4-pro-0813' }, 'text').model,
-    '@cf/deepseek-ai/deepseek-v4-pro-0813',
-  );
-  for (const bad of ['deepseek-chat', 'https://api.deepseek.com/v1', '@cf/', 'x'.repeat(200)]) {
-    assert.equal(deepseek.configure({ AI, AI_MODEL_DEEPSEEK_TEXT: bad }, 'text').model, DEEPSEEK_MODEL, bad);
-  }
-  assert.equal(deepseek.configure({ AI }, 'vision'), null, 'DeepSeek must never take image work');
+await test('removed provider cannot be forced by an experiment', () => {
+  const plan = tasks.resolveTask({}, 'high_quality_reasoning', router.PROVIDER_IDS);
+  const exp = router.normalizeExperiment(plan, { provider: 'deepseek' });
+  assert.equal(exp.provider, null);
 });
 
 // --- Qwen vision via env.AI -------------------------------------------------
@@ -394,21 +358,19 @@ await test('a text task refuses images rather than silently dropping them', asyn
 
 // --- fallback ---------------------------------------------------------------
 
-await test('a failing DeepSeek call falls through to Llama on the same binding', async () => {
-  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+await test('a failing Qwen call falls through to Llama on the same binding', async () => {
+  const stub = aiBinding((model) => (model === QWEN_MODEL
     ? new Error('model not available on this plan')
     : { response: 'Summary.' }));
-
   const result = await router.runModelTask(
     { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch() });
-
   assert.equal(result.ok, true);
   assert.equal(result.provider, 'workers_ai');
   assert.equal(result.model, LLAMA_MODEL);
   assert.equal(result.fallbackUsed, true);
-  assert.equal(stub.calls.length, 2, 'one attempt per tier, no retry loop');
-  assert.deepEqual(result.attempts.map((a) => `${a.provider}:${a.outcome}`), ['deepseek:failed', 'workers_ai:succeeded']);
-  // A binding exception must never leak the provider's own wording.
+  assert.equal(stub.calls.length, 2);
+  assert.deepEqual(result.attempts.map((a) => `${a.provider}:${a.outcome}`),
+    ['qwen:failed', 'workers_ai:succeeded']);
   assert.equal(result.attempts[0].errorCode, 'provider_unavailable');
 });
 
@@ -420,7 +382,7 @@ await test('the live public chain still lands on Llama first', async () => {
   assert.equal(result.provider, 'workers_ai');
   assert.equal(result.model, LLAMA_MODEL);
   assert.equal(result.fallbackUsed, false);
-  assert.equal(stub.calls.length, 1, 'the cheap tier answers without touching DeepSeek');
+  assert.equal(stub.calls.length, 1, 'the cheap tier answers without invoking Qwen');
 });
 
 await test('Qwen vision failure falls through to Gemma on the same binding', async () => {
@@ -460,7 +422,7 @@ await test('a hung binding times out and the chain moves on once', async () => {
   const AI = {
     run: async (model) => {
       calls.push(model);
-      if (model === DEEPSEEK_MODEL) return new Promise(() => {});
+      if (model === QWEN_MODEL) return new Promise(() => {});
       return { response: 'Recovered.' };
     },
   };
@@ -514,7 +476,7 @@ await test('unparseable structured output is a failure, and a fenced object is n
   assert.equal(failed.ok, false);
   assert.deepEqual(failed.attempts.map((a) => a.errorCode), ['output_invalid', 'output_invalid']);
 
-  const mixed = aiBinding((model) => (model === DEEPSEEK_MODEL
+  const mixed = aiBinding((model) => (model === QWEN_MODEL
     ? { response: 'not json' }
     : { response: '```json\n{"label":"cover_up"}\n```' }));
   const recovered = await router.runModelTask(
@@ -573,7 +535,7 @@ await test('a binding failure carries a bounded diagnostic token, never its mess
   assert.equal(d('x', 'weird name; drop table'), 'unknown_other');
   assert.equal(new errors.ProviderError('provider_unavailable', 'account 7f3a').detail, null);
 
-  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+  const stub = aiBinding((model) => (model === QWEN_MODEL
     ? new Error('AiError: 3023: Service unavailable for account-7f3a')
     : { response: 'Summary.' }));
   const logger = collectingLogger();
@@ -611,7 +573,7 @@ await test('an eval may put only an allow-listed model on the workers_ai tier', 
 });
 
 await test('a model refusing the request shape falls back to the next tier', async () => {
-  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+  const stub = aiBinding((model) => (model === QWEN_MODEL
     ? new Error('AiError: 5006: Error: json_schema not supported for account-7f3a')
     : { response: 'Summary.' }));
   const logger = collectingLogger();
@@ -627,7 +589,7 @@ await test('a model refusing the request shape falls back to the next tier', asy
 
 await test('telemetry identifies the tier and model without carrying content', async () => {
   const logger = collectingLogger();
-  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL
+  const stub = aiBinding((model) => (model === QWEN_MODEL
     ? new Error('paid plan required')
     : { response: 'A summary mentioning a raven.' }));
 
@@ -643,8 +605,8 @@ await test('telemetry identifies the tier and model without carrying content', a
   assert.equal(completed.providerAttempts, 2);
   assert.equal(completed.outputChars, result.text.length);
 
-  const attempt = logger.lines.find((line) => line.event === 'ai.router.attempt' && line.provider === 'deepseek');
-  assert.equal(attempt.model, 'cf-deepseek-ai-deepseek-v4-flash-0731');
+  const attempt = logger.lines.find((line) => line.event === 'ai.router.attempt' && line.provider === 'qwen');
+  assert.equal(attempt.model, 'cf-qwen-qwen3.8-27b');
   assert.equal(attempt.errorCode, 'provider_unavailable');
 
   const serialized = JSON.stringify(logger.lines);
@@ -772,7 +734,7 @@ await test('the readback reports every tier as available from the binding alone'
   assert.equal(response.headers.get('access-control-allow-origin'), null, 'the probe must not be browser-reachable');
 
   const byId = Object.fromEntries(payload.routing.providers.map((p) => [p.provider, p]));
-  assert.equal(byId.deepseek.configured, true, 'DeepSeek needs no key now');
+  assert.equal(byId.deepseek, undefined, 'removed tier must not be registered');
   assert.equal(byId.qwen.configured, true, 'Qwen needs no key now');
   assert.equal(byId.workers_ai.configured, true);
   assert.equal(byId.openai.configured, false, 'OpenAI stays optional and external');
@@ -782,8 +744,8 @@ await test('the readback reports every tier as available from the binding alone'
   assert.equal(vision.fallback, 'workers_ai');
   assert.equal(vision.available, true, 'vision is available with no external key at all');
   const reasoning = payload.routing.tasks.find((t) => t.task === 'high_quality_reasoning');
-  assert.equal(reasoning.selected, 'deepseek');
-  assert.equal(reasoning.fallback, 'qwen', 'reasoning must keep a tier that needs no key');
+  assert.equal(reasoning.selected, 'qwen');
+  assert.equal(reasoning.fallback, 'workers_ai', 'reasoning keeps a key-free fallback');
 
   assert.ok(!JSON.stringify(payload).includes(token));
 });
@@ -813,19 +775,17 @@ await test('a probe sends only its own synthetic payload', async () => {
   assert.equal(stub.calls.length, 1);
 });
 
-await test('the probe can exercise the DeepSeek tier specifically', async () => {
+await test('the probe can exercise the supported Qwen reasoning tier', async () => {
   const token = 't'.repeat(40);
-  const stub = aiBinding((model) => (model === DEEPSEEK_MODEL ? { response: 'ROUTED' } : null));
+  const stub = aiBinding((model) => (model === QWEN_MODEL ? { response: 'ROUTED' } : null));
   const env = { AI: stub.AI, AI_ROUTER_PROBE_ENABLED: 'true', AI_ROUTER_PROBE_TOKEN: token };
-
   const { response, payload } = await post('/internal/ai-router', {
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ task: 'high_quality_reasoning' }),
   }, env);
-
   assert.equal(response.status, 200);
-  assert.equal(payload.provider, 'deepseek');
-  assert.equal(payload.model, DEEPSEEK_MODEL);
+  assert.equal(payload.provider, 'qwen');
+  assert.equal(payload.model, QWEN_MODEL);
   assert.equal(payload.outputPreview, 'ROUTED');
 });
 
@@ -848,4 +808,4 @@ if (failures > 0) {
   realConsole.error(`\n${failures} model router test(s) failed, ${passes} passed.`);
   process.exit(1);
 }
-realConsole.log(`Model router tests passed: ${passes} cases covering the Cloudflare-hosted DeepSeek, Qwen, Llama and Gemma tiers, the optional external OpenAI tier, routing, fallback, payload bounds, response normalisation, telemetry and the guarded probe.`);
+realConsole.log(`Model router tests passed: ${passes} cases covering the Cloudflare-hosted Qwen, Llama and Gemma tiers, the optional external OpenAI tier, routing, fallback, payload bounds, response normalisation, telemetry and the guarded probe.`);
