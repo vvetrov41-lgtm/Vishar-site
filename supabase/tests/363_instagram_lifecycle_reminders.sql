@@ -108,11 +108,16 @@ update public.integration_outbox
  where dedupe_key IN (
  select 'instagram:lifecycle:'||p.automation_job_id::text
  from crm_private.lifecycle_instagram_payloads p
- where p.session_id='f98a5555-5555-4555-8555-555555555555');
+ where p.session_id='f98a5555-5555-4555-8555-555555555555'
+ and p.purpose='session_reminder_24h');
 select is((select r.delivery_allowed::text
  from public.integration_outbox o
  cross join lateral public.service_resolve_instagram_lifecycle_payload(o.id,'ig-lifecycle-test') r
- where o.dedupe_key LIKE 'instagram:lifecycle:%'), 'true',
+ where o.dedupe_key = (
+   select 'instagram:lifecycle:'||p.automation_job_id::text
+   from crm_private.lifecycle_instagram_payloads p
+   where p.session_id='f98a5555-5555-4555-8555-555555555555'
+     and p.purpose='session_reminder_24h')), 'true',
  'leased current Instagram reminder is allowed before Meta window closes');
 
 -- Expire the inbound window before provider call. No DM may leave the worker.
@@ -122,13 +127,21 @@ where artist_id='a1111111-1111-4111-8111-111111111111'
 select is((select r.delivery_allowed::text
  from public.integration_outbox o
  cross join lateral public.service_resolve_instagram_lifecycle_payload(o.id,'ig-lifecycle-test') r
- where o.dedupe_key LIKE 'instagram:lifecycle:%'), 'false',
+ where o.dedupe_key = (
+   select 'instagram:lifecycle:'||p.automation_job_id::text
+   from crm_private.lifecycle_instagram_payloads p
+   where p.session_id='f98a5555-5555-4555-8555-555555555555'
+     and p.purpose='session_reminder_24h')), 'false',
  'closed window is blocked at pre-send, not just at enqueue');
 
 set local role service_role;
 select lives_ok($$select public.record_communication_outbox_result(
   o.id,'ig-lifecycle-test',false,null,'instagram_lifecycle_window_closed')
-  from public.integration_outbox o where o.dedupe_key LIKE 'instagram:lifecycle:%'$$,
+  from public.integration_outbox o where o.dedupe_key = (
+   select 'instagram:lifecycle:'||p.automation_job_id::text
+   from crm_private.lifecycle_instagram_payloads p
+   where p.session_id='f98a5555-5555-4555-8555-555555555555'
+     and p.purpose='session_reminder_24h')$$,
  'definitively unsent Instagram reminder is recorded');
 reset role;
 select is((select f.reason from crm_private.lifecycle_instagram_email_fallbacks f
