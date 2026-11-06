@@ -33,6 +33,10 @@ export const ALLOWED_RPCS = new Set([
   'claim_whatsapp_outbox',
   'claim_whatsapp_outbox_by_id',
   'record_whatsapp_inbound_message',
+  // Private, artist-bound audio queue. No generic media or storage access.
+  'service_queue_whatsapp_audio_transcription',
+  'service_claim_whatsapp_audio_transcriptions',
+  'service_complete_whatsapp_audio_transcription',
   'record_whatsapp_message_status',
   // A reply typed in the WhatsApp Business app (Coexistence echo). Never opens
   // a conversation; idempotent on the provider message id.
