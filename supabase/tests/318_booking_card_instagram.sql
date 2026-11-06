@@ -29,7 +29,7 @@ select ok(
 
 insert into public.clients (id, full_name, email, phone) values
   ('f01a1111-1111-4111-8111-111111111111', 'Insta Client', 'insta@example.test', '+447700900701'),
-  ('f01b1111-1111-4111-8111-111111111111', 'Quiet Insta', 'quiet-insta@example.test', '+447700900702'),
+  ('f01b1111-1111-4111-8111-111111111111', 'Quiet Insta', null, '+447700900702'),
   ('f01c1111-1111-4111-8111-111111111111', 'Legacy Insta', 'legacy-insta@example.test', '+447700900703');
 
 -- Real inbound Instagram messages through the existing ingestion RPC.
@@ -121,6 +121,8 @@ select ok(
           and char_length(p.message_text) <= 1000
           and p.confirm_payload ~ '^booking_action:[0-9a-f]{64}$'
           and p.reschedule_payload ~ '^booking_action:[0-9a-f]{64}$'
+          and p.cancel_payload ~ '^booking_action:[0-9a-f]{64}$'
+          and p.message_text like '%Cancel booking: https://%'
    from crm_private.booking_card_instagram_payloads p
    join ig_cards c on c.card_id = p.booking_card_id
    where c.session_id = 'f06a1111-1111-4111-8111-111111111111'),
@@ -131,16 +133,16 @@ select is(
   (select count(*)::int from crm_private.appointment_client_action_tokens t
    where t.session_id = 'f06a1111-1111-4111-8111-111111111111'
      and t.consumed_at is null and t.invalidated_at is null),
-  2,
-  'one capability pair for the one channel'
+  3,
+  'Instagram booking card has confirmation, reschedule and cancellation actions'
 );
 
--- Closed messaging window: fail closed, no fallback, waits for the client.
+-- Client without Email: closed Instagram window waits for a new inbound.
 select results_eq(
   $$ select instagram, email, whatsapp, channel, outcome from ig_cards
      where session_id = 'f06b1111-1111-4111-8111-111111111111' $$,
   $$ values (0, 0, 0, 'instagram'::text, 'messaging_window_closed'::text) $$,
-  'a closed Instagram window blocks the card and never switches to Email'
+  'closed Instagram and no deliverable Email leaves the booking card waiting'
 );
 
 select public.record_communication_inbound_message(
@@ -262,6 +264,63 @@ select ok(
   and not has_function_privilege('authenticated', 'public.service_apply_instagram_booking_card_action(uuid,text,text,text,timestamptz,text,text)', 'EXECUTE'),
   'Instagram card payloads and RPCs are backend-only'
 );
+
+
+-- A linked Instagram client with a closed window receives a booking card via
+-- an existing Email, never an unattended Instagram DM.
+insert into public.clients (id,full_name,email,phone) values
+ ('f01e1111-1111-4111-8111-111111111111','Fallback Insta','fallback-ig@example.test',null);
+select public.record_communication_inbound_message(
+ 'a1111111-1111-4111-8111-111111111111','instagram','vladimir-instagram','900000000005',
+ 'ig_mid_CARDTEST00000015',now()-interval '3 days','text','Old chat','[]'::jsonb,null);
+update public.communication_conversations set client_id='f01e1111-1111-4111-8111-111111111111',link_state='linked'
+where artist_id='a1111111-1111-4111-8111-111111111111' and channel='instagram'
+and external_contact_id='900000000005';
+insert into public.sessions(id,client_id,artist_id,appointment_type,status,start_at,end_at,
+ duration_hours,price,currency,created_at) values
+ ('f06e1111-1111-4111-8111-111111111111','f01e1111-1111-4111-8111-111111111111',
+ 'a1111111-1111-4111-8111-111111111111','in_person_consultation','confirmed',
+ date_trunc('day',now())+interval '83 days 11 hours',
+ date_trunc('day',now())+interval '83 days 11 hours 30 minutes',0.5,null,'GBP',now());
+select results_eq(
+ $select instagram,email,whatsapp,channel,outcome from ig_cards
+ where session_id='f06e1111-1111-4111-8111-111111111111'$,
+ $values (0,1,0,'email'::text,'selected'::text)$,
+ 'closed Instagram window falls back once to Email, without a duplicate DM');
+
+-- The third native quick reply applies an actual cancellation in CRM, and
+-- remains bound to the same provider-scoped Instagram conversation.
+insert into public.clients(id,full_name,email,phone) values
+ ('f01d1111-1111-4111-8111-111111111111','Cancel Insta','cancel-ig@example.test',null);
+select public.record_communication_inbound_message(
+ 'a1111111-1111-4111-8111-111111111111','instagram','vladimir-instagram','900000000004',
+ 'ig_mid_CARDTEST00000016',now()-interval '30 minutes','text','Book please','[]'::jsonb,null);
+update public.communication_conversations set client_id='f01d1111-1111-4111-8111-111111111111',link_state='linked'
+where artist_id='a1111111-1111-4111-8111-111111111111' and channel='instagram'
+and external_contact_id='900000000004';
+insert into public.sessions(id,client_id,artist_id,appointment_type,status,start_at,end_at,
+ duration_hours,price,currency,created_at) values
+ ('f06d1111-1111-4111-8111-111111111111','f01d1111-1111-4111-8111-111111111111',
+ 'a1111111-1111-4111-8111-111111111111','in_person_consultation','confirmed',
+ date_trunc('day',now())+interval '84 days 11 hours',
+ date_trunc('day',now())+interval '84 days 11 hours 30 minutes',0.5,null,'GBP',now());
+select ok((select p.cancel_payload~'^booking_action:[0-9a-f]{64}
+rollback;
+
+ from crm_private.booking_card_instagram_payloads p
+ join crm_private.booking_cards b on b.id=p.booking_card_id
+ where b.session_id='f06d1111-1111-4111-8111-111111111111' and b.superseded_at IS NULL),
+ 'Instagram card includes a valid one-time cancel action');
+select is((select public.service_apply_instagram_booking_card_action(
+  'a1111111-1111-4111-8111-111111111111','vladimir-instagram','900000000004',
+  'ig_mid_CARDTEST00000017',now(),p.cancel_payload,'Cancel booking')->>'applied'
+ from crm_private.booking_card_instagram_payloads p
+ join crm_private.booking_cards b on b.id=p.booking_card_id
+ where b.session_id='f06d1111-1111-4111-8111-111111111111' and b.superseded_at IS NULL),
+ 'true','verified client can cancel through the Instagram booking card');
+select is((select status::text from public.sessions
+ where id='f06d1111-1111-4111-8111-111111111111'),
+ 'cancelled','Instagram cancellation updates the canonical session');
 
 select * from finish(true);
 rollback;
