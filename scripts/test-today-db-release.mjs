@@ -25,6 +25,20 @@ assert.throws(() => verifyTodayLineage(placementTransition.replace(
   '20261021074511 | 20261021074511', '20261021074511 | '
 )));
 
+// Only the exact voice-note migration may follow the deployed database head.
+const audioTransition = [
+  ' Local | Remote | Time',
+  ' 20261105165000 | 20261105165000 | t',
+  ' 20261106010000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(audioTransition), '20261106010000');
+for (const invalid of [
+  audioTransition + '\n 20261106011000 | | t',
+  audioTransition.replace('20261106010000 | |','20261106011000 | |'),
+  audioTransition.replace('20261105165000 | 20261105165000','20261105165000 | '),
+  audioTransition + '\n | 20261106020000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);

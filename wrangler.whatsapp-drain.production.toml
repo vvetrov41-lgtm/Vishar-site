@@ -15,6 +15,7 @@ SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 WHATSAPP_DRAIN_ENABLED = "false"
 WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"
 WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"
+WHATSAPP_AUDIO_TRANSCRIPTION_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
 # The deploy gate verifies the exact secret-name set before enabling the cron:
@@ -25,3 +26,7 @@ WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"
 # `vladimir-production` and `kristina-production`. Each envelope carries only
 # that artist's own Meta phone number id and access token. There is no global
 # WhatsApp fallback and no shared phone number binding on this Worker.
+
+# Inference binding is non-secret and restricted to the private drain Worker.
+[ai]
+binding = "AI"

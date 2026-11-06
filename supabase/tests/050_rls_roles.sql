@@ -521,6 +521,11 @@ insert into expected_function_acl values
   ('public.fail_enquiry_intake(uuid,text)', false, false, true),
   ('public.record_outbox_attempt(uuid,boolean,text)', false, false, true),
   ('public.record_whatsapp_inbound_message(uuid,text,text,text,timestamptz,text,text)', false, false, true),
+  -- Signed audio reception queues a Meta media ID in a private, leased
+  -- backend-only job. Neither anon nor CRM browser operators can call it.
+  ('public.service_queue_whatsapp_audio_transcription(uuid,text,text,text)', false, false, true),
+  ('public.service_claim_whatsapp_audio_transcriptions(text,integer,integer)', false, false, true),
+  ('public.service_complete_whatsapp_audio_transcription(uuid,text,text,text)', false, false, true),
   ('public.record_whatsapp_message_status(uuid,text,text,text,timestamptz)', false, false, true),
   ('public.claim_whatsapp_outbox(text,integer,integer)', false, false, true),
   ('public.claim_whatsapp_outbox_by_id(uuid,text,integer)', false, false, true),
