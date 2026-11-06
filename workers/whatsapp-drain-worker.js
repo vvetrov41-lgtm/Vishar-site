@@ -132,6 +132,23 @@ export async function handleInternalDrain(
     }
   }
 
+  let outboundResponse;
+  try {
+    const result = await drain(env);
+    const summary = {
+      claimed: result.claimed,
+      succeeded: result.succeeded,
+      failed: result.failed,
+      unrecorded: result.unrecorded,
+    };
+    console.log('whatsapp outbox drain', JSON.stringify(summary));
+    outboundResponse = json({ ok: true, skipped: false, ...summary });
+  } catch (error) {
+    const errorCode = safeFailureCode(error);
+    console.error('whatsapp outbox drain failed', JSON.stringify({ code: errorCode }));
+    outboundResponse = json({ ok: false, errorCode }, 200);
+  }
+
   // Audio is independent of outbound sends. An ASR failure must never
   // delay a client reply or cause an outbound retry. The feature flag is the
   // rollback switch, and the Worker runs on the existing shared scheduler.
@@ -148,22 +165,7 @@ export async function handleInternalDrain(
       }));
     }
   }
-
-  try {
-    const result = await drain(env);
-    const summary = {
-      claimed: result.claimed,
-      succeeded: result.succeeded,
-      failed: result.failed,
-      unrecorded: result.unrecorded,
-    };
-    console.log('whatsapp outbox drain', JSON.stringify(summary));
-    return json({ ok: true, skipped: false, ...summary });
-  } catch (error) {
-    const errorCode = safeFailureCode(error);
-    console.error('whatsapp outbox drain failed', JSON.stringify({ code: errorCode }));
-    return json({ ok: false, errorCode }, 200);
-  }
+  return outboundResponse;
 }
 
 export default {
