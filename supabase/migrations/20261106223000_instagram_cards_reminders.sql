@@ -537,7 +537,8 @@ begin
      and crm_private.client_send_block_reason(p_client_id,'email'::public.message_template_channel,
        'service'::public.message_classification) is null then
     channel:='email'; outcome:='selected';
-    evidence_source:='instagram_unavailable_email_fallback';
+    -- Keep the verified conversation as the evidence source; do not invent
+    -- a new enum value for the channel-decision audit row.
   end if;
   return next;
 end;
