@@ -35,6 +35,9 @@ expectIncludes(tracked, 'preview_urls = false', 'tracked config');
 expectIncludes(tracked, 'VISHAR_ENVIRONMENT = "production"', 'tracked config');
 expectIncludes(tracked, 'SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"', 'tracked config');
 expectIncludes(tracked, 'WHATSAPP_DRAIN_ENABLED = "false"', 'tracked config');
+expectIncludes(tracked, 'WHATSAPP_AUDIO_TRANSCRIPTION_ENABLED = "false"', 'tracked config');
+expectIncludes(tracked, '[ai]', 'tracked config');
+expectIncludes(tracked, 'binding = "AI"', 'tracked config');
 expectIncludes(tracked, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"', 'tracked config');
   expectIncludes(tracked, 'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"', 'tracked config');
 expectExcludes(tracked, '[triggers]', 'tracked config');
@@ -64,6 +67,7 @@ try {
   const generatedRaw = fs.readFileSync(generatedPath, 'utf8');
   const generated = directivesOf(generatedRaw);
   expectIncludes(generated, 'WHATSAPP_DRAIN_ENABLED = "true"', 'generated config');
+  expectIncludes(generated, 'WHATSAPP_AUDIO_TRANSCRIPTION_ENABLED = "true"', 'generated config');
   expectIncludes(generated, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"', 'generated config');
   expectIncludes(generated, 'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "true"', 'generated config');
   expectIncludes(generated, '[triggers]', 'generated config');
@@ -77,6 +81,7 @@ try {
   expectExcludes(generated, '"ARTIST_WHATSAPP_VLADIMIR_HPRODUCTION"', 'generated config');
   expectExcludes(generated, '"ARTIST_WHATSAPP_KRISTINA_HPRODUCTION"', 'generated config');
   expectExcludes(generated, 'WHATSAPP_DRAIN_ENABLED = "false"', 'generated config');
+  expectExcludes(generated, 'WHATSAPP_AUDIO_TRANSCRIPTION_ENABLED = "false"', 'generated config');
   expectExcludes(generated, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"', 'generated config');
   expectExcludes(generated, 'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"', 'generated config');
 
