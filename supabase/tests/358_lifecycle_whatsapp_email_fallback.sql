@@ -240,5 +240,98 @@ select is((select count(*)::integer from public.email_messages m
  where m.client_id='f9821111-1111-4111-8111-111111111111'),1,
  'one video consultation reminder is queued via Gmail');
 
+-- Maps stays inside the approved fourth body parameter, with no new Meta
+-- placeholders. The fixtures are synthetic and the outer transaction rolls back.
+select is(crm_private.lifecycle_whatsapp_location_with_map(
+ 'Studio A',null),'Studio A','missing Maps URL leaves the street address intact');
+select is(crm_private.lifecycle_whatsapp_location_with_map(
+ 'Studio A','https://example.com/unsafe'),'Studio A',
+ 'non-Google link is not added to an appointment');
+select is(crm_private.lifecycle_whatsapp_location_with_map(
+ 'Studio A','https://maps.app.goo.gl/fixture123'),
+ E'Studio A\nGoogle Maps: https://maps.app.goo.gl/fixture123',
+ 'approved Google Maps domain is appended as a single address parameter');
+select is(crm_private.lifecycle_whatsapp_location_with_map(
+ 'Studio A','https://maps.app.goo.gl/'||repeat('x',1010)),
+ 'Studio A','overlong template parameter falls back to the original address');
+
+insert into crm_private.booking_card_artist_settings(
+ artist_id,studio_name,studio_address,studio_map_url,appointment_start_from
+) select a.id,'Label Tattoo Private',
+ '16 Exhibition House, Addison Bridge Place, London W14 8XP',
+ 'https://maps.app.goo.gl/fixture123',null from preferred_route_artist a
+on conflict (artist_id) do update set
+ studio_name=excluded.studio_name,
+ studio_address=excluded.studio_address,
+ studio_map_url=excluded.studio_map_url,
+ appointment_start_from=null;
+
+-- The already-enrolled tattoo fixture advances into its 24-hour reminder.
+update public.sessions set
+ start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '23 hours 55 minutes',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '27 hours 55 minutes'
+where id='f9805555-5555-4555-8555-555555555555';
+set local role service_role;
+select lives_ok($select * from public.service_run_automation_tick(500)$,
+ '24-hour WhatsApp reminder with map link queues without provider requests');
+reset role;
+select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+   and p.purpose='session_reminder_24h' limit 1),
+ E'16 Exhibition House, Addison Bridge Place, London W14 8XP\nGoogle Maps: https://maps.app.goo.gl/fixture123',
+ '24-hour template variable four includes the current address and map link');
+select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+   and p.purpose='session_reminder_24h' limit 1),5,
+ 'approved 24-hour Meta template still receives precisely five variables');
+
+-- New linked client: in-person consultation gets Maps without changing
+-- the five-parameter Meta consultation template.
+update crm_private.lifecycle_whatsapp_template_registry t
+set approval_status='APPROVED',provider_template_id='999888777666555',verified_at=now()
+where t.artist_id=(select id from preferred_route_artist)
+  and t.purpose='consultation_reminder';
+insert into public.clients(id,full_name,email,phone,preferred_contact)
+values('f9831111-1111-4111-8111-111111111111','Consult Maps Fixture',
+ 'consult-maps@example.test','+447700901891','WhatsApp');
+insert into public.communication_conversations(
+ id,artist_id,channel,integration_key,external_contact_id,client_id,link_state,state
+) select 'f9833333-3333-4333-8333-333333333333',a.id,
+ 'whatsapp','vladimir-production','447700901891',
+ 'f9831111-1111-4111-8111-111111111111','linked','open'
+from preferred_route_artist a;
+insert into public.sessions(
+ id,artist_id,client_id,appointment_type,status,start_at,end_at
+) select 'f9835555-5555-4555-8555-555555555555',a.id,
+ 'f9831111-1111-4111-8111-111111111111',
+ 'in_person_consultation','confirmed',
+ date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '9 days',
+ date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '9 days 30 minutes'
+from preferred_route_artist a;
+select is(crm_private.enrol_booked_session_in_lifecycle(
+ 'f9835555-5555-4555-8555-555555555555','maps_consultation_test'),
+ 'enrolled','in-person consultation enrolled with approved Meta template');
+set local role service_role;
+select lives_ok($select * from public.service_run_automation_tick(500)$,
+ 'future consultation job is materialized without contacting Meta');
+reset role;
+update public.sessions set
+ start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '23 hours 5 minutes',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '23 hours 35 minutes'
+where id='f9835555-5555-4555-8555-555555555555';
+set local role service_role;
+select lives_ok($select * from public.service_run_automation_tick(500)$,
+ 'in-person consultation WhatsApp reminder with Maps queued');
+reset role;
+select like((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9835555-5555-4555-8555-555555555555'
+ and p.purpose='consultation_reminder' limit 1),
+ '%Google Maps: https://maps.app.goo.gl/fixture123',
+ 'in-person consultation variable four includes the configured Maps link');
+select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9835555-5555-4555-8555-555555555555'
+ and p.purpose='consultation_reminder' limit 1),5,
+ 'approved consultation Meta template keeps exactly five variables');
+
 select * from finish();
 rollback;
