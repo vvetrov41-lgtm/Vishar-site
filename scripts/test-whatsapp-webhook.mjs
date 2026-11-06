@@ -694,6 +694,46 @@ await test('signed non-WhatsApp objects are acknowledged without persistence', a
   assert.equal(db.calls.length, 0);
 });
 
+await test('signed voice note queues its Meta media id privately after inbound persistence', async () => {
+  const db = fakeSupabase();
+  const audio = {
+    from: '447700900001', id: 'wamid.SYNTHETICAUDIO0001', timestamp: TS,
+    type: 'audio', audio: { id: '123456789012', mime_type: 'audio/ogg', voice: true },
+  };
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({ messages: [audio] }), V_SECRET), env(), db,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(db.calls.map(c => c.name), [
+    'record_whatsapp_inbound_message',
+    'service_queue_whatsapp_audio_transcription',
+  ]);
+  assert.equal(db.calls[0].args.p_message_type, 'audio');
+  assert.equal(db.calls[0].args.p_body, null);
+  assert.deepEqual(db.calls[1].args, {
+    p_artist_id: V_ID, p_integration_key: 'vladimir-production',
+    p_provider_message_id: audio.id, p_media_id: audio.audio.id,
+  });
+});
+
+await test('failed media queue persistence makes the webhook retryable', async () => {
+  const audio = {
+    from: '447700900001', id: 'wamid.SYNTHETICAUDIO0002', timestamp: TS,
+    type: 'audio', audio: { id: '123456789012' },
+  };
+  const db = fakeSupabase();
+  db.rpc = async (name,args) => {
+    db.calls.push({name,args});
+    if (name === 'service_queue_whatsapp_audio_transcription') throw new Error('queue down');
+    return { changed:true };
+  };
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({ messages: [audio] }), V_SECRET), env(), db,
+  );
+  assert.equal(response.status, 503);
+  assert.equal(db.calls.length,2);
+});
+
 if (failures > 0) {
   console.error(`WhatsApp webhook tests failed: ${failures} of ${passes + failures}`);
   process.exit(1);
