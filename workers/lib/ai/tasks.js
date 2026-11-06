@@ -11,13 +11,10 @@
 // them: they are reachable through the router and the guarded probe, and are
 // wired to a caller when a CRM surface actually needs them.
 //
-// Chain order is a cost decision, and on Workers AI the cheap tier is Llama 8B,
-// not DeepSeek: DeepSeek V4 Flash costs $0.44/$1.32 per M against Llama's
-// $0.15-ish, and it additionally requires the Workers Paid plan. So the two
-// short, high-volume public assistant replies stay on Llama and escalate to
-// DeepSeek only if that fails, while the tasks that actually benefit from
-// reasoning, structure or a long context lead with DeepSeek. Every one of these
-// orders is overridable server-side via `AI_ROUTE_<TASK>`.
+// Provider order is a cost and reliability decision. The default chains mirror
+// the verified production routing: Llama and Qwen for public/CRM text, and
+// Qwen with Workers AI fallback for extraction, classification and reasoning.
+// No retired model may be reintroduced when an environment override is absent.
 
 /** A request may never touch more than this many providers, whatever a route says. */
 export const MAX_PROVIDERS_PER_REQUEST = 2;
@@ -61,7 +58,7 @@ const TASKS = Object.freeze({
   concept_consult: {
     capability: 'drafting',
     modality: 'text',
-    chain: ['workers_ai', 'deepseek'],
+    chain: ['workers_ai', 'qwen'],
     timeoutMs: 15_000,
     maxOutputTokens: 500,
     temperature: 0.4,
@@ -70,7 +67,7 @@ const TASKS = Object.freeze({
   aftercare_support: {
     capability: 'drafting',
     modality: 'text',
-    chain: ['workers_ai', 'deepseek'],
+    chain: ['workers_ai', 'qwen'],
     timeoutMs: 15_000,
     maxOutputTokens: 600,
     temperature: 0.2,
@@ -81,7 +78,7 @@ const TASKS = Object.freeze({
   text_extraction: {
     capability: 'extraction',
     modality: 'text',
-    chain: ['deepseek', 'workers_ai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 20_000,
     maxOutputTokens: 800,
     temperature: 0,
@@ -90,7 +87,7 @@ const TASKS = Object.freeze({
   text_classification: {
     capability: 'classification',
     modality: 'text',
-    chain: ['deepseek', 'workers_ai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 15_000,
     maxOutputTokens: 200,
     temperature: 0,
@@ -99,20 +96,18 @@ const TASKS = Object.freeze({
   text_summarization: {
     capability: 'summarization',
     modality: 'text',
-    chain: ['deepseek', 'workers_ai'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 20_000,
     maxOutputTokens: 600,
     temperature: 0.2,
     structured: false,
   },
-  // DeepSeek-first: reasoning is what this tier is for. Qwen backs it up rather
-  // than OpenAI, because DeepSeek is gated behind Workers Paid and OpenAI needs
-  // a key: pairing the two would leave this task with nothing on an account
-  // that has neither. Qwen also reasons and is not plan-gated.
+  // Production-verified: Qwen leads reasoning with Workers AI fallback.
+  // Neither tier requires a separate vendor key or an unavailable legacy model.
   high_quality_reasoning: {
     capability: 'reasoning',
     modality: 'text',
-    chain: ['deepseek', 'qwen'],
+    chain: ['qwen', 'workers_ai'],
     timeoutMs: 30_000,
     maxOutputTokens: 1_200,
     temperature: 0.2,

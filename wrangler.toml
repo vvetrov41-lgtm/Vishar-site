@@ -80,8 +80,7 @@ AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
 # configuration, not code: change them here (or override them as Worker
 # variables) without touching the router.
 #
-# The deployed plan intentionally uses Qwen plus the Workers AI Llama/Gemma
-# tier only. DeepSeek is not part of the production or preview route plan.
+# The deployed plan uses Qwen plus Workers AI Llama/Gemma only.
 # The optional OpenAI adapter remains available for an explicitly configured
 # future route, but is not required by the current production AI path.
 #

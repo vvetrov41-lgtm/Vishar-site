@@ -31,13 +31,11 @@ import {
   TASK_NAMES,
   resolveTask,
 } from './tasks.js';
-import * as deepseek from './providers/deepseek.js';
 import * as openai from './providers/openai.js';
 import * as qwen from './providers/qwen.js';
 import * as workersAi from './providers/workers-ai.js';
 
 export const PROVIDERS = Object.freeze({
-  [deepseek.id]: deepseek,
   [qwen.id]: qwen,
   [openai.id]: openai,
   [workersAi.id]: workersAi,
