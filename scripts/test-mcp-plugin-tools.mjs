@@ -547,4 +547,70 @@ for (const claims of [
   assert.equal(actionCalled, false);
 }
 
+
+{
+  // A read may be retried after a transient Service Binding rejection.
+  let attempts = 0;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }),
+    env({ async fetch() {
+      attempts += 1;
+      if (attempts === 1) throw new Error('transient service binding rejection');
+      return Response.json({ items: [] });
+    } }),
+    authFetch(),
+  );
+  assert.equal((await response.json()).result.isError, false);
+  assert.equal(attempts, 2, 'read retried once after transport failure');
+}
+
+{
+  // A non-JSON Cloudflare 503 is retried for reads, without exposing its body.
+  let attempts = 0;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }),
+    env({ async fetch() {
+      attempts += 1;
+      return attempts === 1
+        ? new Response('no healthy upstream', { status: 503 })
+        : Response.json({ items: [] });
+    } }),
+    authFetch(),
+  );
+  assert.equal((await response.json()).result.isError, false);
+  assert.equal(attempts, 2, 'read retried after upstream 503');
+}
+
+{
+  // Never repeat a write whose outcome might already have taken effect.
+  let attempts = 0;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/call', { name: 'crm_create_internal_note', arguments: { body: 'synthetic test only', client_id: USER } }),
+    env({ async fetch() {
+      attempts += 1;
+      return new Response('no healthy upstream', { status: 503 });
+    } }),
+    authFetch(),
+  );
+  const result = await response.json();
+  assert.equal(result.result.isError, true);
+  assert.equal(JSON.parse(result.result.content[0].text).error, 'upstream_unavailable');
+  assert.equal(attempts, 1, 'unsafe write must never be replayed');
+}
+
+{
+  // Permission errors are definitive and must not be retried.
+  let attempts = 0;
+  const response = await handlePluginMcpRequest(
+    rpcRequest('tools/call', { name: 'crm_list_clients', arguments: { limit: 10 } }),
+    env({ async fetch() {
+      attempts += 1;
+      return Response.json({ error: 'permission_denied' }, { status: 403 });
+    } }),
+    authFetch(),
+  );
+  assert.equal((await response.json()).result.isError, true);
+  assert.equal(attempts, 1);
+}
+
 console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict issuer/audience/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
