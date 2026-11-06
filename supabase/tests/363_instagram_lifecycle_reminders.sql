@@ -34,15 +34,23 @@ from (values
 where c.channel='instagram' and c.artist_id='a1111111-1111-4111-8111-111111111111'
   and c.external_contact_id=v.ext;
 
-insert into public.sessions(id,artist_id,client_id,appointment_type,status,start_at,end_at)
-select v.sid::uuid,'a1111111-1111-4111-8111-111111111111',v.cid::uuid,
+insert into public.projects(id,client_id,artist_id,title)
+select v.pid::uuid,v.cid::uuid,'a1111111-1111-4111-8111-111111111111',
+ 'Synthetic Instagram lifecycle project'
+from (values
+ ('f98a2222-2222-4222-8222-222222222222','f98a1111-1111-4111-8111-111111111111'),
+ ('f98b2222-2222-4222-8222-222222222222','f98b1111-1111-4111-8111-111111111111')
+) v(pid,cid);
+
+insert into public.sessions(id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at)
+select v.sid::uuid,'a1111111-1111-4111-8111-111111111111',v.cid::uuid,v.pid::uuid,
  'tattoo_session','confirmed',
  date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '30 days',
  date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '30 days 4 hours'
 from (values
- ('f98a5555-5555-4555-8555-555555555555','f98a1111-1111-4111-8111-111111111111'),
- ('f98b5555-5555-4555-8555-555555555555','f98b1111-1111-4111-8111-111111111111')
-) v(sid,cid);
+ ('f98a5555-5555-4555-8555-555555555555','f98a1111-1111-4111-8111-111111111111','f98a2222-2222-4222-8222-222222222222'),
+ ('f98b5555-5555-4555-8555-555555555555','f98b1111-1111-4111-8111-111111111111','f98b2222-2222-4222-8222-222222222222')
+) v(sid,cid,pid);
 select is(crm_private.enrol_booked_session_in_lifecycle(
  'f98a5555-5555-4555-8555-555555555555','instagram_lifecycle_test'),
  'enrolled','fresh Instagram-preferred tattoo session enrolled');
