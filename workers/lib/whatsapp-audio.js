@@ -111,7 +111,10 @@ export async function transcribeWhatsappAudio(env, job, fetchImpl = fetch) {
   } catch {
     failure('whatsapp_audio_meta_invalid');
   }
-  if (!validMediaUrl(descriptor?.url) || !ALLOWED_MIME.has(descriptor?.mime_type)
+  const mime = typeof descriptor?.mime_type === 'string'
+    ? descriptor.mime_type.split(';', 1)[0].trim().toLowerCase()
+    : '';
+  if (!validMediaUrl(descriptor?.url) || !ALLOWED_MIME.has(mime)
       || !Number.isFinite(Number(descriptor?.file_size))
       || Number(descriptor.file_size) < 1
       || Number(descriptor.file_size) > MAX_AUDIO_BYTES) {
