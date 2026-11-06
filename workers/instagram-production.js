@@ -715,10 +715,19 @@ function instagramPrepare(db) {
     // Lifecycle notices use the SAME durable outbox and Meta 24h preflight.
     // A session edit, opt-out or closed window makes the leased intent ineligible
     // before any provider request is started.
-    const lifecycleRows = await db.rpc('service_resolve_instagram_lifecycle_payload', {
-      p_outbox_id: job.outbox_id,
-      p_worker_id: workerId,
-    });
+    // Code is released before its database migration. Only the exact
+    // PostgREST "function not found" response is a safe compatibility case.
+    // Once the migration is live, every other RPC error must fail closed.
+    let lifecycleRows;
+    try {
+      lifecycleRows = await db.rpc('service_resolve_instagram_lifecycle_payload', {
+        p_outbox_id: job.outbox_id,
+        p_worker_id: workerId,
+      });
+    } catch (error) {
+      if (error?.pgcode !== 'PGRST202') throw error;
+      lifecycleRows = [{ is_lifecycle: false }];
+    }
     const lifecycleList = Array.isArray(lifecycleRows) ? lifecycleRows : lifecycleRows == null ? [] : [lifecycleRows];
     if (lifecycleList.length !== 1) return { skipErrorCode: 'instagram_lifecycle_resolution_invalid' };
     const life = lifecycleList[0];
@@ -754,10 +763,17 @@ function instagramPrepare(db) {
         || !BOOKING_ACTION_PAYLOAD.test(row.reschedule_payload ?? '')) {
       return { skipErrorCode: 'instagram_booking_card_payload_invalid' };
     }
-    const cancelPayload = await db.rpc('service_resolve_instagram_booking_card_cancel_payload', {
-      p_outbox_id: job.outbox_id,
-      p_worker_id: workerId,
-    });
+    let cancelPayload = null;
+    try {
+      cancelPayload = await db.rpc('service_resolve_instagram_booking_card_cancel_payload', {
+        p_outbox_id: job.outbox_id,
+        p_worker_id: workerId,
+      });
+    } catch (error) {
+      if (error?.pgcode !== 'PGRST202') throw error;
+      // Existing cards were issued with two buttons. Missing new RPC is
+      // permitted only during a worker-before-database protected rollout.
+    }
     if (cancelPayload != null && !BOOKING_ACTION_PAYLOAD.test(cancelPayload)) {
       return { skipErrorCode: 'instagram_booking_card_payload_invalid' };
     }
