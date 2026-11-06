@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import sharp from 'sharp';
 
-const imagePath = 'assets/og/og-london-2026.jpg';
+const imagePath = 'assets/og/og-london-2026-nov.jpg';
 const imageUrl = 'https://vishartattoo.com/' + imagePath;
 const pages = [
   "index.html",
