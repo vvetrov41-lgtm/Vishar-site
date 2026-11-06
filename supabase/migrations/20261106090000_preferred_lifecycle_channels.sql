@@ -506,7 +506,7 @@ begin
 
   return 'queued';
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION crm_private.queue_lifecycle_whatsapp_job(p_job_id uuid)
@@ -749,7 +749,7 @@ begin
   end;
   return 'queued';
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION crm_private.guard_lifecycle_email_conversation_channel()
@@ -770,7 +770,7 @@ begin
   end if;
   return new;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION crm_private.classify_lifecycle_channel_failure()
@@ -795,7 +795,7 @@ begin
   end if;
   return new;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION crm_private.lifecycle_delivery_snapshot_current(p_email_message_id uuid)
@@ -819,7 +819,7 @@ begin
     then return false; end if;
  return v_snapshot.members=crm_private.lifecycle_email_members(v_job.session_id,v_job.message_purpose);
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.service_resolve_whatsapp_lifecycle_payload(p_outbox_id uuid, p_worker_id text)
@@ -898,7 +898,7 @@ begin
    and o.leased_by=p_worker_id and o.lease_expires_at>now()
    and m.artist_id=o.artist_id;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION public.service_set_lifecycle_whatsapp_delivery_enabled(p_artist_id uuid, p_enabled boolean)
@@ -942,7 +942,7 @@ begin
  end if;
  return jsonb_build_object('artist_id',p_artist_id,'enabled',p_enabled);
 end;
-$function$
+$function$;
 
 
 -- Suppress obsolete WhatsApp requeues after a preference change to Email.
@@ -1034,5 +1034,5 @@ begin
  ) on conflict do nothing;
  return new;
 end;
-$function$
+$function$;
 
