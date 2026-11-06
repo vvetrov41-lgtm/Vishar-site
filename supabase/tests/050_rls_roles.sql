@@ -701,6 +701,7 @@ insert into expected_function_acl values
   ('public.service_list_unenriched_participants(text,integer)', false, false, true),
   ('public.service_authorize_instagram_connection(uuid,uuid)', false, false, true),
   ('public.service_set_instagram_integration(uuid,text,text,text,text[])', false, false, true),
+  ('public.service_set_instagram_welcome_mode(uuid,text,text,text[],boolean)', false, false, true),
   ('public.service_disable_instagram_integration(uuid,text,text)', false, false, true),
   ('public.service_resolve_instagram_route(text)', false, false, true),
   ('public.service_resolve_instagram_booking_card_payload(uuid,text)', false, false, true),
