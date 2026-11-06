@@ -836,7 +836,7 @@ async function enforceRateLimit(request, env, route) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (!configured(env)) return json(404, { error: 'not_found' });
     const url = new URL(request.url);
 
@@ -856,7 +856,16 @@ export default {
       } catch {
         return json(503, { ok: false });
       }
-      return handleInstagramWebhook(request, env, db);
+      return handleInstagramWebhook(request, env, db, {
+        onInbound: () => {
+          // The next shared */5 cron remains the fallback. Event-driven wakeup
+          // removes the normal wait without bypassing the durable DB claim,
+          // provider send-intent, or annual deduplication guard.
+          if (env?.INSTAGRAM_DRAIN_ENABLED === 'true' && typeof ctx?.waitUntil === 'function') {
+            ctx.waitUntil(runScheduled(env));
+          }
+        },
+      });
     }
 
     const limited = await enforceRateLimit(
