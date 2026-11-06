@@ -146,14 +146,16 @@ select lives_ok($$select * from public.service_run_automation_tick(500)$$,
 reset role;
 select is((select status::text from public.automation_jobs
  where session_id='f9577777-7777-4777-8777-777777777777'
- and message_purpose='session_reminder_72h'),'failed',
- 'the email-only reminder refuses a WhatsApp-first conversation');
+ and message_purpose='session_reminder_72h'),'completed',
+ 'unavailable WhatsApp utility transport uses a durable email fallback');
 select is((select count(*)::int from public.email_messages
- where client_id='f9533333-3333-4333-8333-333333333333'),0,
- 'a WhatsApp-first client is not silently emailed');
-select cmp_ok((select count(*)::int from public.notifications n
- join public.automation_jobs j on n.dedupe_key like 'lifecycle_destination:'||j.id::text||':%'
- where j.session_id='f9577777-7777-4777-8777-777777777777'),'>',0,
- 'the artist receives an actionable single-job route alert');
+ where client_id='f9533333-3333-4333-8333-333333333333'),1,
+ 'client still gets one service reminder by Gmail');
+select is((select reason from crm_private.lifecycle_email_fallbacks f
+ join public.automation_jobs j on j.id=f.job_id
+ where j.session_id='f9577777-7777-4777-8777-777777777777'
+ and j.message_purpose='session_reminder_72h'),
+ 'whatsapp_unavailable',
+ 'fallback is explicitly audited, not a silent channel switch');
 select * from finish();
 rollback;
