@@ -1,4 +1,5 @@
 import { drainWhatsappOutbox } from './lib/whatsapp-drain.js';
+import { drainWhatsappAudioTranscriptions } from './lib/whatsapp-audio.js';
 import { maintainWhatsappBookingTemplates } from './lib/whatsapp-booking-templates.js';
 import { maintainWhatsappLifecycleTemplates } from './lib/whatsapp-booking-templates.js';
 import { maintainWhatsappCoexistenceState } from './lib/whatsapp-booking-templates.js';
@@ -128,6 +129,23 @@ export async function handleInternalDrain(
       }));
       // An unavailable Meta template-admin route must never block ordinary
       // authorised WhatsApp replies or booking-card sends.
+    }
+  }
+
+  // Audio is independent of outbound sends. An ASR failure must never
+  // delay a client reply or cause an outbound retry. The feature flag is the
+  // rollback switch, and the Worker runs on the existing shared scheduler.
+  if (env?.WHATSAPP_AUDIO_TRANSCRIPTION_ENABLED === 'true') {
+    try {
+      const audio = await drainWhatsappAudioTranscriptions(env);
+      console.log('whatsapp audio transcription', JSON.stringify({
+        claimed: audio.claimed, succeeded: audio.succeeded,
+        failed: audio.failed, unrecorded: audio.unrecorded,
+      }));
+    } catch (error) {
+      console.error('whatsapp audio transcription failed', JSON.stringify({
+        code: safeFailureCode(error),
+      }));
     }
   }
 
