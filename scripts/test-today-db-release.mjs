@@ -135,3 +135,13 @@ for (const invalid of [
   preferredChannel.replace('20261106010000 | 20261106010000','20261106010000 | '),
   preferredChannel + '\n | 20261106095000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// Annual welcome preparation: only the exact additive disabled migration.
+const annualWelcome = ' Local | Remote | Time\n 20261106180000 | 20261106180000 | t\n 20261106184619 | | t';
+assert.equal(verifyTodayLineage(annualWelcome), '20261106184619');
+for (const invalid of [
+ annualWelcome + '\n 20261106190000 | | t',
+ annualWelcome.replace('20261106184619 | |', '20261106184620 | |'),
+ annualWelcome.replaceAll('20261106180000','20261106170000'),
+ annualWelcome + '\n | 20261106183000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
