@@ -1,3 +1,18 @@
+import { KRISTINA_PRIVACY_NOTICE_VERSION } from '../workers/lib/validation.js';
+
+// Only the pre-deploy guard can tolerate the known older TattooAI privacy
+// version. The post-deploy probe MUST reach invalid_file_extension, proving
+// the new backend accepted consent while still rejecting this synthetic file.
+const PREDEPLOY_PRIVACY_BRIDGE_FLAG = '--predeploy-known-privacy-bridge';
+const allowPredeployPrivacyBridge = process.argv.length === 3
+  && process.argv[2] === PREDEPLOY_PRIVACY_BRIDGE_FLAG;
+if (process.argv.length > 2 && !allowPredeployPrivacyBridge) {
+  throw new Error('Unknown Kristina booking probe option.');
+}
+if (allowPredeployPrivacyBridge && KRISTINA_PRIVACY_NOTICE_VERSION !== '2026-11-03') {
+  throw new Error('Pre-deploy privacy bridge is only allowed for Kristina notice 2026-11-03.');
+}
+
 const pageUrl = 'https://www.kristinavishar.com/booking/';
 const scriptUrl = 'https://www.kristinavishar.com/site.js';
 const apiUrl = 'https://www.kristinavishar.com/api/booking';
@@ -138,12 +153,19 @@ try {
   throw new Error(`Kristina booking endpoint returned non-JSON HTTP ${response.status}`);
 }
 
-if (response.status !== 400 || body?.code !== 'invalid_file_extension') {
+const refusedInvalidFile = response.status === 400 && body?.code === 'invalid_file_extension';
+const transitionalPrivacyMismatch = allowPredeployPrivacyBridge
+  && response.status === 400 && body?.code === 'privacy_notice_not_acknowledged';
+if (!refusedInvalidFile && !transitionalPrivacyMismatch) {
   throw new Error(
     `Kristina booking endpoint contract changed: HTTP ${response.status}, code ${String(body?.code ?? 'missing')}`,
   );
 }
-
-console.log(
-  `Kristina live booking contract (${v2 ? 'enquiry-v2' : 'legacy'}) is healthy: page, scripts, same-origin adapter and TattooAI validation all reached without persistence.`,
-);
+if (transitionalPrivacyMismatch) {
+  console.warn('Kristina pre-deploy privacy notice drift confirmed without persistence;'
+    + ' post-deploy validation MUST reject the invalid file instead.');
+} else {
+  console.log(
+    `Kristina live booking contract (${v2 ? 'enquiry-v2' : 'legacy'}) is healthy: page, scripts, same-origin adapter and TattooAI validation all reached without persistence.`,
+  );
+}

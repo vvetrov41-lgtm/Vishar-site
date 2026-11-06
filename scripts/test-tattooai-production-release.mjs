@@ -37,6 +37,27 @@ expectIncludes("test \"$bypass_status\" = '404'", 'unknown multipart path reject
 expectIncludes("-F 'preflight=1'", 'minimal non-persistent route-bypass probe body');
 expectIncludes("host='https://api.vishartattoo.com/'", 'first-party API host readback');
 expectIncludes('node scripts/probe-kristina-live-booking-contract.mjs', 'Kristina live booking release guard');
+expectIncludes('node scripts/test-tattooai-production-release.mjs', 'release guard self-test in CI');
+expectIncludes(
+  'Verify Kristina public booking contract before deployment\n'
+    + '        # Previous production TattooAI',
+  'pre-deploy known privacy gap is explicitly scoped',
+);
+expectIncludes(
+  'run: node scripts/probe-kristina-live-booking-contract.mjs --predeploy-known-privacy-bridge',
+  'pre-deploy exception only for known privacy-version mismatch',
+);
+expectIncludes(
+  'Verify Kristina public booking contract after deployment\n'
+    + '        run: node scripts/probe-kristina-live-booking-contract.mjs\n',
+  'strict post-deployment acceptance without exception',
+);
+if (!probeKristinaContract.includes("KRISTINA_PRIVACY_NOTICE_VERSION !== '2026-11-03'")
+  || !probeKristinaContract.includes("body?.code === 'privacy_notice_not_acknowledged'")
+  || !probeKristinaContract.includes("body?.code === 'invalid_file_extension'")
+  || !probeKristinaContract.includes('!refusedInvalidFile && !transitionalPrivacyMismatch')) {
+  throw new Error('Kristina pre-deploy exception must be tightly scoped with strict post-deploy contract');
+}
 
 const kristinaProbeRuns = workflow.match(/node scripts\/probe-kristina-live-booking-contract\.mjs/g) || [];
 if (kristinaProbeRuns.length !== 2) {

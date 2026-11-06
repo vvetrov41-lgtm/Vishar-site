@@ -47,6 +47,7 @@ jobs:
           node scripts/audit-root-dependencies.mjs --self-test
           node scripts/audit-root-dependencies.mjs --audit-level=moderate
           npm run test:worker
+          node scripts/test-tattooai-production-release.mjs
           npm run test:enquiry-ai
           node scripts/test-public-booking-slugs.mjs
           npm run check:worker-bundle
@@ -60,7 +61,10 @@ jobs:
           if (/^\s*\[triggers\]\s*$/m.test(text) || /^\s*crons\s*=/m.test(text)) throw new Error('TattooAI must not own a standalone Cron Trigger');
           NODE
       - name: Verify Kristina public booking contract before deployment
-        run: node scripts/probe-kristina-live-booking-contract.mjs
+        # Previous production TattooAI can still reject Kristina's 2026-11-03
+        # notice; only this specific non-persisting 400 is tolerated predeploy.
+        # The after-deployment acceptance below remains strict.
+        run: node scripts/probe-kristina-live-booking-contract.mjs --predeploy-known-privacy-bridge
 
 
   deploy:
