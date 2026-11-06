@@ -943,3 +943,96 @@ begin
  return jsonb_build_object('artist_id',p_artist_id,'enabled',p_enabled);
 end;
 $function$
+
+
+-- Suppress obsolete WhatsApp requeues after a preference change to Email.
+CREATE OR REPLACE FUNCTION crm_private.reissue_pre_send_obsolete_whatsapp()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'crm_private'
+AS $function$
+declare
+ j public.automation_jobs%rowtype;
+ r public.automation_rules%rowtype;
+ s public.sessions%rowtype;
+ v_due timestamptz;
+begin
+ if new.kind<>'whatsapp_message' or old.status<>'leased'
+    or new.status<>'dead' or new.last_error_code<>'whatsapp_lifecycle_obsolete'
+    or new.provider_send_started_at is not null
+    or new.communication_message_id is null
+ then return new; end if;
+
+ select job.* into j
+ from crm_private.lifecycle_whatsapp_payloads p
+ join public.automation_jobs job on job.id=p.automation_job_id
+ where p.communication_message_id=new.communication_message_id
+   and p.artist_id=new.artist_id and job.artist_id=new.artist_id
+   and job.status='completed';
+ if not found then return new; end if;
+
+ -- Keep the old provider message in CRM as failed, never as successfully sent.
+ update public.communication_messages m
+ set status='failed',failed_at=now(),
+     error_code='whatsapp_lifecycle_obsolete',updated_at=now()
+ where m.id=new.communication_message_id
+   and m.artist_id=new.artist_id and m.status='queued';
+
+ if j.lifecycle_revision>=1000 or exists(
+   select 1 from public.automation_jobs later
+   where later.rule_id=j.rule_id and later.session_id=j.session_id
+     and later.lifecycle_revision>j.lifecycle_revision
+ ) then return new; end if;
+
+ select * into r from public.automation_rules
+ where id=j.rule_id and artist_id=j.artist_id
+   and is_enabled and version=j.rule_version;
+ select * into s from public.sessions
+ where id=j.session_id and artist_id=j.artist_id;
+ if r.id is null or s.id is null
+   or s.appointment_type is distinct from j.condition_appointment_type
+   or (j.schedule_anchor='session_start' and s.status<>'confirmed')
+   or (j.schedule_anchor='session_end' and s.status<>'completed')
+   or crm_private.client_send_block_reason(s.client_id,'whatsapp','service') is not null
+   or crm_private.lifecycle_selected_channel(s.client_id,j.artist_id)<>'whatsapp'
+ then return new; end if;
+
+ v_due:=case j.schedule_anchor when 'session_start' then s.start_at
+   when 'session_end' then coalesce(s.actual_end_at,s.end_at)
+   else null::timestamptz end + make_interval(mins=>j.anchor_offset_minutes);
+ if v_due is null then return new; end if;
+
+ if v_due<now()-interval '15 minutes' then
+   insert into public.notifications(
+     recipient_profile_id,artist_id,notification_type,title,body,
+     priority,status,dedupe_key,scheduled_at,delivered_at
+   )
+   select recipient.profile_id,j.artist_id,
+     'automation.lifecycle_obsolete_requires_review',
+     'Automatic message needs review',
+     'An automatic WhatsApp message was cancelled before delivery after an appointment changed. Its replacement is now past due and requires review.',
+     'high','delivered',
+     'lifecycle_wa_obsolete_late:'||j.id::text||':'||recipient.profile_id::text,
+     now(),now()
+   from crm_private.automation_notification_recipients(j.artist_id) recipient
+   on conflict (dedupe_key) do nothing;
+   return new;
+ end if;
+
+ insert into public.automation_jobs(
+   rule_id,rule_version,event_id,artist_id,action_type,action_title,
+   action_body,action_priority,schedule_anchor,anchor_offset_minutes,
+   condition_appointment_type,message_purpose,message_channel,
+   message_locale,session_id,scheduled_at,lifecycle_revision
+ ) values (
+   j.rule_id,j.rule_version,j.event_id,j.artist_id,
+   j.action_type,j.action_title,j.action_body,j.action_priority,
+   j.schedule_anchor,j.anchor_offset_minutes,j.condition_appointment_type,
+   j.message_purpose,j.message_channel,j.message_locale,j.session_id,v_due,
+   j.lifecycle_revision+1
+ ) on conflict do nothing;
+ return new;
+end;
+$function$
+
