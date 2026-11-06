@@ -154,7 +154,7 @@ export async function transcribeWhatsappAudio(env, job, fetchImpl = fetch) {
 }
 
 export async function drainWhatsappAudioTranscriptions(env, {
-  supabase = createSupabaseClient(env),
+  supabase = null,
   fetchImpl = fetch,
   workerId = 'audio-' + crypto.randomUUID().replace(/-/g, ''),
 } = {}) {
@@ -164,7 +164,8 @@ export async function drainWhatsappAudioTranscriptions(env, {
   if (env?.VISHAR_ENVIRONMENT !== 'production') {
     failure('whatsapp_audio_environment_invalid');
   }
-  const rows = await supabase.rpc('service_claim_whatsapp_audio_transcriptions', {
+  const db = supabase || createSupabaseClient(env);
+  const rows = await db.rpc('service_claim_whatsapp_audio_transcriptions', {
     p_worker_id: workerId, p_limit: 3, p_lease_seconds: 180,
   });
   if (!Array.isArray(rows) || rows.length > 3) failure('whatsapp_audio_claim_invalid');
@@ -179,7 +180,7 @@ export async function drainWhatsappAudioTranscriptions(env, {
       errorCode = safeCode(error);
     }
     try {
-      await supabase.rpc('service_complete_whatsapp_audio_transcription', {
+      await db.rpc('service_complete_whatsapp_audio_transcription', {
         p_job_id: raw.job_id,
         p_worker_id: workerId,
         p_transcript: transcript,
