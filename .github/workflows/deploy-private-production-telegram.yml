@@ -155,8 +155,10 @@ jobs:
       - name: Install locked root dependencies
         run: npm ci
 
-      - name: Audit root dependencies
-        run: npm audit --audit-level=moderate
+      - name: Audit root dependencies with bounded Tailwind dev-only exceptions
+        run: |
+          node scripts/audit-root-dependencies.mjs --self-test
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Re-run focused Telegram production boundaries
         run: |
@@ -191,7 +193,7 @@ jobs:
           SECRET_LIST="$secrets_json" node <<'NODE'
           const values = JSON.parse(process.env.SECRET_LIST || '[]');
           const actual = values.map((entry) => entry?.name).filter(Boolean).sort();
-          const expected = [
+          const required = [
             'ARTIST_TELEGRAM_KRISTINA_HPRODUCTION',
             'ARTIST_TELEGRAM_VLADIMIR_HPRODUCTION',
             'META_ADS_VLADIMIR_ACCESS_TOKEN',
@@ -199,8 +201,11 @@ jobs:
             'TELEGRAM_BOT_TOKEN',
             'TELEGRAM_WEBHOOK_SECRET',
           ].sort();
-          if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-            throw new Error(`Production Telegram Worker secret-name set is not exact; expected ${expected.join(', ')}`);
+          const metaToken = 'META_ADS_VLADIMIR_ACCESS_TOKEN';
+          if (process.env.ENABLE_META_ADS === 'true') required.push(metaToken);
+          const allowed = new Set([...required, metaToken]);
+          if (required.some(name => !actual.includes(name)) || actual.some(name => !allowed.has(name))) {
+            throw new Error('Production Worker secret-name set has missing required or unexpected names');
           }
           NODE
 
