@@ -301,6 +301,22 @@ async function ingestMessages(value, route, supabase) {
       p_message_type: messageType,
       p_body: body,
     });
+
+    // The signed webhook carries a short-lived Meta media identifier, never
+    // the audio bytes. Store it only in the private retry queue, after the
+    // idempotent inbound record exists. A failed queue write returns 503 so
+    // Meta may retry; no transcription work delays the webhook response.
+    if (messageType === 'audio') {
+      const mediaId = typeof message?.audio?.id === 'string' ? message.audio.id.trim() : '';
+      if (/^[0-9]{5,32}$/.test(mediaId)) {
+        await supabase.rpc('service_queue_whatsapp_audio_transcription', {
+          p_artist_id: route.artistId,
+          p_integration_key: route.integrationKey,
+          p_provider_message_id: providerMessageId,
+          p_media_id: mediaId,
+        });
+      }
+    }
   }
 }
 
