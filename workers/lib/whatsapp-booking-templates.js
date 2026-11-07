@@ -583,6 +583,37 @@ const LIFECYCLE_UTILITY_DEFINITIONS = Object.freeze({
   }),
 });
 
+// The v2 reminder is deliberately a NEW Meta Utility template. Existing v1
+// templates remain byte-for-byte unchanged while Meta reviews the new names.
+// Once approved, the database can opt Vladimir in without changing arity.
+const PERSONAL_REMINDER_V2 = Object.freeze({
+  session_reminder_72h: Object.freeze({
+    text: [
+      "Hi {{1}}, it's {{2}}.",
+      '',
+      "I'm looking forward to seeing you for your tattoo appointment.",
+      'Your booked dates and start times: {{3}}',
+      '',
+      'The 72-hour cancellation period applies separately to each booked date.',
+      'My preparation guide is linked in the button below. If anything changes, reply here.',
+    ].join('\n'),
+  }),
+  session_reminder_24h: Object.freeze({
+    text: [
+      "Hi {{1}}, it's {{2}}.",
+      '',
+      "Just a reminder that your tattoo appointment with me starts tomorrow.",
+      'Your booked dates and start times: {{3}}',
+      'Studio: {{4}}',
+      '',
+      'Please confirm your full booking here: {{5}}',
+      'My preparation guide is linked in the button below.',
+      'If you need another time, reply to me here.',
+    ].join('\n'),
+  }),
+});
+const PREPARATION_FAQ_URL = 'https://vishartattoo.com/faq/';
+
 function lifecycleTemplateDefinition(purpose, name, language) {
   const definition = LIFECYCLE_UTILITY_DEFINITIONS[purpose];
   if (!definition || !TEMPLATE_NAME.test(name) || !TEMPLATE_LANGUAGE.test(language)) {
@@ -590,13 +621,27 @@ function lifecycleTemplateDefinition(purpose, name, language) {
       code: 'whatsapp_template_contract_invalid',
     });
   }
+  const personalised = (
+    (purpose === 'session_reminder_72h'
+      && name === 'vishar_lifecycle_reminder_72h_v2')
+    || (purpose === 'session_reminder_24h'
+      && name === 'vishar_lifecycle_reminder_24h_v2')
+  );
+  const bodyText = personalised ? PERSONAL_REMINDER_V2[purpose].text : definition.text;
   return {
     name, language, category: 'UTILITY',
-    components: [{
-      type: 'BODY',
-      text: definition.text,
-      example: { body_text: [definition.examples] },
-    }],
+    components: [
+      ...(personalised ? [{ type: 'HEADER', format: 'TEXT', text: 'Tattoo appointment reminder' }] : []),
+      {
+        type: 'BODY',
+        text: bodyText,
+        example: { body_text: [definition.examples] },
+      },
+      ...(personalised ? [{
+        type: 'BUTTONS',
+        buttons: [{ type: 'URL', text: 'How to prepare', url: PREPARATION_FAQ_URL }],
+      }] : []),
+    ],
   };
 }
 
@@ -813,6 +858,7 @@ export const __testing = Object.freeze({
   adminBinding,
   resolveTemplate,
   templateDefinition,
+  lifecycleTemplateDefinition,
   safeErrorCode,
   readProviderError,
   readWabaHealth,

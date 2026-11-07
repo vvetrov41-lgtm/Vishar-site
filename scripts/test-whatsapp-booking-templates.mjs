@@ -39,6 +39,37 @@ function env() {
 }
 
 {
+  // A new Meta-approved name is required for a body/header/button change.
+  // The existing v1 approval must never be silently reinterpreted as v2.
+  for (const [purpose, name, expectedArity] of [
+    ['session_reminder_72h', 'vishar_lifecycle_reminder_72h_v2', 3],
+    ['session_reminder_24h', 'vishar_lifecycle_reminder_24h_v2', 5],
+  ]) {
+    const card = __testing.lifecycleTemplateDefinition(purpose, name, 'en_GB');
+    assert.equal(card.category, 'UTILITY');
+    assert.deepEqual(card.components[0], {
+      type: 'HEADER', format: 'TEXT', text: 'Tattoo appointment reminder',
+    });
+    assert.equal(card.components[1].type, 'BODY');
+    assert.match(card.components[1].text, /it's \{\{2\}\}/);
+    assert.match(card.components[1].text, /with me|seeing you/);
+    assert.doesNotMatch(card.components[1].text, /sessions with \{\{2\}\}/);
+    assert.equal(card.components[1].example.body_text[0].length, expectedArity);
+    assert.deepEqual(card.components[2].buttons, [{
+      type: 'URL', text: 'How to prepare', url: 'https://vishartattoo.com/faq/',
+    }]);
+  }
+  for (const [purpose, name] of [
+    ['session_reminder_72h', 'vishar_lifecycle_reminder_72h_v1'],
+    ['session_reminder_24h', 'vishar_lifecycle_reminder_24h_v1'],
+  ]) {
+    const legacy = __testing.lifecycleTemplateDefinition(purpose, name, 'en_GB');
+    assert.equal(legacy.components.length, 1, 'v1 Meta content must not change');
+    assert.equal(legacy.components[0].type, 'BODY');
+  }
+}
+
+{
   const tattoo = __testing.templateDefinition(
     'tattoo',
     'booking_card_tattoo_v1',
