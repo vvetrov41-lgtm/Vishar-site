@@ -145,3 +145,19 @@ for (const invalid of [
  annualWelcome.replaceAll('20261106180000','20261106170000'),
  annualWelcome + '\n | 20261106183000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// Staged v2 Meta Utility candidates never replace the active v1 registry.
+// Only this single migration can follow the 072200 production head.
+const reminderCandidate = [
+  ' Local | Remote | Time',
+  ' 20261107210000 | 20261107210000 | t',
+  ' 20261107220000 | 20261107220000 | t',
+  ' 20261107230000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(reminderCandidate), '20261107230000');
+for (const invalid of [
+  reminderCandidate + '\n 20261107231000 | | t',
+  reminderCandidate.replace('20261107230000 | |', '20261107240000 | |'),
+  reminderCandidate.replace('20261107220000 | 20261107220000', '20261107220000 | '),
+  reminderCandidate + '\n | 20261107250000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
