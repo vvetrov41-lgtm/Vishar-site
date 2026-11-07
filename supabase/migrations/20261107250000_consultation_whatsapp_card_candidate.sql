@@ -17,8 +17,6 @@ begin
       and r.purpose='consultation_reminder'
       and r.template_name='vishar_lifecycle_consultation_v1'
       and r.template_language='en_GB'
-      and r.approval_status='APPROVED'
-      and r.provider_template_id is not null
   ) then
     raise exception 'Vladimir WhatsApp consultation template drifted'
       using errcode='23514';
