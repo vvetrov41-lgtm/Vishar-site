@@ -270,7 +270,7 @@ describe('an email conversation', () => {
 
     expect(await screen.findByText('Waiting for your approval')).toBeInTheDocument();
     expect(screen.getByText('Hi Diana, here is the deposit link for your first session.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve and send' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Check before sending' })).toBeInTheDocument();
     // The CRM has no direct-send path, so this screen must not grow one.
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
@@ -284,9 +284,14 @@ describe('an email conversation', () => {
       rpcCalls,
     });
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Approve and send' }));
-    // Sending words to a client is consequential, so it goes through the same
-    // dialog every other consequential action uses.
+    // First click only checks the draft; the owner has not approved it.
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true, issues: [] })));
+    try {
+      fireEvent.click(await screen.findByRole('button', { name: 'Check before sending' }));
+      expect(rpcCalls.find((entry) => entry.name === 'approve_email_draft')).toBeUndefined();
+      fireEvent.click(await screen.findByRole('button', { name: 'Approve and send' }));
+    } finally { vi.unstubAllGlobals(); }
+    // Approval is still a separate consequential action in a dialog.
     const dialog = await screen.findByRole('alertdialog');
     fireEvent.click(within(dialog).getByRole('button', { name: 'Approve and send' }));
 

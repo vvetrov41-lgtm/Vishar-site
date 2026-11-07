@@ -236,7 +236,13 @@ describe('conversation detail', () => {
 
     const composer = await screen.findByPlaceholderText('Write a reply…');
     fireEvent.change(composer, { target: { value: 'On my way' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    // The review is advisory, read-only and requires a second deliberate click.
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true, issues: [] })));
+    try {
+      fireEvent.click(screen.getByRole('button', { name: 'Check before sending' }));
+      expect(rpcCalls.find((call) => call.name === 'queue_communication_message')).toBeUndefined();
+      fireEvent.click(await screen.findByRole('button', { name: 'Send' }));
+    } finally { vi.unstubAllGlobals(); }
 
     await waitFor(() => {
       const call = rpcCalls.find((entry) => entry.name === 'queue_communication_message');
