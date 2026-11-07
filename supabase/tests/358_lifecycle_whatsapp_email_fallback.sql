@@ -343,7 +343,7 @@ set local role service_role;
 select lives_ok('select * from public.service_run_automation_tick(500)',
  'in-person consultation WhatsApp reminder with Maps queued');
 reset role;
-select ok((select (p.body_parameters->>3) LIKE '%Google Maps: https://maps.app.goo.gl/fixture123'
+select ok((select (p.body_parameters->>3) LIKE '%Google Maps: https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
@@ -352,11 +352,23 @@ select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecyc
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),5,
  'approved consultation Meta template keeps exactly five variables');
-select ok((select (p.body_parameters->>3) LIKE 'Label Tattoo Private, 16 Exhibition House%'
+select ok((select (p.body_parameters->>3) LIKE 'Label Tattoo Kensington, Unit B, York House%'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
  'in-person consultation does not reuse the obsolete studio address');
+select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9835555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),
+ (select crm_private.lifecycle_whatsapp_location_with_map(
+   concat_ws(', ', l.studio_name,l.studio_address),l.studio_map_url)
+  from crm_private.consultation_email_location() l),
+ 'in-person WhatsApp and Gmail consultations resolve exactly the same current studio');
+select is((select position(chr(10) in p.body_parameters->>3)
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9835555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),0,
+ 'consultation Google Maps Meta parameter remains single line');
 select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com/appointments/respond/%'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
