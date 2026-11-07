@@ -796,7 +796,7 @@ await test('keyword-free bound Gmail reply reaches the enquiry observer and clie
     db, gmailAuth, gmailTarget, gmailThread(body, { subject: 'Re: 19 Oct' }));
 
   const observed = db.calls.find((entry) => entry.name === 'service_observe_gmail_enquiry_ai');
-  assert.equal(observed.args.p_source_text, 'Subject: Re: 19 Oct\\n\\n' + body,
+  assert.equal(observed.args.p_source_text, 'Subject: Re: 19 Oct\n\n' + body,
     'the bounded enquiry observer sees the scoped continuation');
 
   const recorded = db.calls.find((entry) => entry.name === 'service_record_gmail_client_message');
