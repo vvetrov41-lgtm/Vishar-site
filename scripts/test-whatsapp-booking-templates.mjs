@@ -66,10 +66,10 @@ function env() {
     type: 'HEADER', format: 'TEXT', text: 'Consultation reminder',
   });
   assert.equal(consultationCard.components[1].type, 'BODY');
-  assert.match(consultationCard.components[1].text, /it's \\{\\{2\\}\\}/);
+  assert.match(consultationCard.components[1].text, /it's \{\{2\}\}/);
   assert.match(consultationCard.components[1].text, /our in-person consultation/);
   assert.match(consultationCard.components[1].text, /I'll see you/);
-  assert.doesNotMatch(consultationCard.components[1].text, /consultation with \\{\\{2\\}\\}/);
+  assert.doesNotMatch(consultationCard.components[1].text, /consultation with \{\{2\}\}/);
   assert.equal(consultationCard.components[1].example.body_text[0].length, 5);
   assert.deepEqual(consultationCard.components[2].buttons, [{
     type: 'URL', text: 'Studio directions',
