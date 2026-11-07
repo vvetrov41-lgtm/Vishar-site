@@ -192,3 +192,18 @@ for (const invalid of [
   consultationCardCandidate.replace('20261107250000 | |', '20261107252000 | |'),
   consultationCardCandidate.replace('20261107240000 | 20261107240000', '20261107240000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Provider-approved consultation cards may only promote after the candidate.
+const consultationCardPromotion = [
+  ' Local | Remote | Time',
+  ' 20261107240000 | 20261107240000 | t',
+  ' 20261107250000 | 20261107250000 | t',
+  ' 20261108000000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(consultationCardPromotion), '20261108000000');
+for (const invalid of [
+  consultationCardPromotion + '\n 20261108001000 | | t',
+  consultationCardPromotion.replace('20261108000000 | |', '20261108003000 | |'),
+  consultationCardPromotion.replace('20261107250000 | 20261107250000', '20261107250000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));

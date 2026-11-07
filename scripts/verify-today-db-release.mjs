@@ -48,6 +48,8 @@ export function verifyTodayLineage(source) {
     ['20261107233000', '20261107240000'],
     // Stage consultation first-person card without switching live v1 sends.
     ['20261107240000', '20261107250000'],
+    // Promote only after live Meta approval and no in-flight v1 consultation.
+    ['20261107250000', '20261108000000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
