@@ -67,7 +67,7 @@ begin
           and reg.approval_status='APPROVED'
           and reg.provider_template_id is not null
           and reg.verified_at>now()-interval '24 hours'
-          and c.external_contact_id ~ '^[1-9][0-9]{5,19}
+          and c.external_contact_id ~ '^[1-9][0-9]{5,19}$'
           and c.integration_key ~ '^[a-z][a-z0-9_-]{2,79}$'
           and not exists (
             select 1 from jsonb_array_elements(t.body_parameters) p(v)
