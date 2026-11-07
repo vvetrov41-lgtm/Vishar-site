@@ -4,7 +4,7 @@
 import { runModelTask } from '../lib/ai/router.js';
 
 const PATH = '/crm/outgoing-message-review';
-const CRM_ORIGIN = 'https://crm.vishartattoo.com';
+const CRM_ORIGINS = new Set(['https://crm.vishartattoo.com', 'https://app.vishartattoo.com']);
 const TOKEN_RE = /^[A-Za-z0-9._~-]{32,8192}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_BODY = 6000;
@@ -32,8 +32,8 @@ function headers(request) {
   return {
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
-    ...(origin === CRM_ORIGIN ? {
-      'Access-Control-Allow-Origin': CRM_ORIGIN,
+    ...(CRM_ORIGINS.has(origin) ? {
+      'Access-Control-Allow-Origin': origin,
       'Access-Control-Allow-Headers': 'Authorization, Content-Type',
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
       'Access-Control-Max-Age': '300',
@@ -65,7 +65,7 @@ export async function handleOutgoingMessageReview(request, env, deps = {}) {
   if (env.OUTGOING_AI_REVIEW_ENABLED !== 'true') return respond(request, 404, { error: 'not_found' });
   if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: headers(request) });
   if (request.method !== 'POST') return respond(request, 405, { error: 'method_not_allowed' });
-  if (request.headers.get('Origin') !== CRM_ORIGIN) return respond(request, 403, { error: 'origin_denied' });
+  if (!CRM_ORIGINS.has(request.headers.get('Origin'))) return respond(request, 403, { error: 'origin_denied' });
   if (!String(request.headers.get('Content-Type') || '').toLowerCase().startsWith('application/json'))
     return respond(request, 415, { error: 'invalid_content_type' });
   const token = (request.headers.get('Authorization') || '').match(/^Bearer (.+)$/)?.[1];

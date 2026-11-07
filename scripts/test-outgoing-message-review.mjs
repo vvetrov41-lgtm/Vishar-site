@@ -82,6 +82,15 @@ await test('strict issue contract prevents arbitrary response leakage',()=>{
   assert.equal(__testing.validIssues({issues:[],text:'client text'}),null);
   assert.deepEqual(__testing.validIssues({issues:[]}),[]);
 });
+await test('internal operator origin is allowed without broadening CORS to arbitrary sites', async () => {
+  const allowedOrigin = 'https://app.vishartattoo.com';
+  const response = await handleOutgoingMessageReview(req(subject, { Origin: allowedOrigin }), env, {
+    fetchImpl: async () => Response.json(data),
+    runTask: async () => ({ ok: true, json: { issues: [] } }),
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Access-Control-Allow-Origin'), allowedOrigin);
+});
 await test('kill switch and OPTIONS are safe',async()=>{
   const options=await handleOutgoingMessageReview(new Request(url,{method:'OPTIONS',headers:{Origin:origin}}),env);
   assert.equal(options.status,204);
