@@ -277,6 +277,8 @@ describe('an email conversation', () => {
 
   it('approves a human draft through the audited RPC, once the operator agrees', async () => {
     const rpcCalls: { name: string; args: Record<string, unknown> | undefined }[] = [];
+    // The API captures its fetch implementation when SessionProvider is built.
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true, issues: [] })));
     renderWithSession(<App />, {
       role: 'owner',
       path: `/inbox/email/enquiry-${ENQUIRY_ID}`,
@@ -285,7 +287,6 @@ describe('an email conversation', () => {
     });
 
     // First click only checks the draft; the owner has not approved it.
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true, issues: [] })));
     try {
       fireEvent.click(await screen.findByRole('button', { name: 'Check before sending' }));
       expect(rpcCalls.find((entry) => entry.name === 'approve_email_draft')).toBeUndefined();

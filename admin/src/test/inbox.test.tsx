@@ -229,6 +229,8 @@ describe('conversation detail', () => {
   });
 
   it('queues a reply against the conversation, never a recipient', async () => {
+    // The review API captures fetch while the SessionProvider is constructed.
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true, issues: [] })));
     const { rpcCalls } = renderWithSession(<App />, {
       role: 'booking_manager',
       path: `/inbox/${LINKED_CONVERSATION_ID}`,
@@ -237,7 +239,6 @@ describe('conversation detail', () => {
     const composer = await screen.findByPlaceholderText('Write a reply…');
     fireEvent.change(composer, { target: { value: 'On my way' } });
     // The review is advisory, read-only and requires a second deliberate click.
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ ok: true, issues: [] })));
     try {
       fireEvent.click(screen.getByRole('button', { name: 'Check before sending' }));
       expect(rpcCalls.find((call) => call.name === 'queue_communication_message')).toBeUndefined();
