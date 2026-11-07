@@ -740,6 +740,8 @@ insert into expected_function_acl values
   ('public.claim_whatsapp_coexistence_sync(uuid,text,text,text)', false, true, false),
   ('public.record_whatsapp_coexistence_sync_accepted(uuid,text)', false, true, false),
   ('public.service_resolve_whatsapp_lifecycle_payload(uuid,text)', false, false, true),
+  ('public.service_claim_whatsapp_template_smoke_test()', false, false, true),
+  ('public.service_record_whatsapp_template_smoke_result(uuid,boolean,text,text)', false, false, true),
   ('public.service_record_automation_scheduler_heartbeat()', false, false, true),
   ('public.service_sweep_lifecycle_failure_alerts(integer)', false, false, true),
   ('public.list_automation_rules(uuid)', false, true, false),
