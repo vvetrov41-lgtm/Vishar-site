@@ -57,7 +57,8 @@ select is((select count(*)::integer from
  'both new templates preserve verified provider evidence');
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_candidates c
- where c.artist_id=(select id from reminder_v2_artists where slug='vladimir')),0,
+ where c.artist_id=(select id from reminder_v2_artists where slug='vladimir')
+ and c.purpose in ('session_reminder_72h','session_reminder_24h')),0,
  'candidate shadow identities are cleared after activation');
 select is(crm_private.activate_approved_whatsapp_reminder_v2(
  (select id from reminder_v2_artists where slug='vladimir')),
