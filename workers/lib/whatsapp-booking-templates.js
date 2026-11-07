@@ -587,6 +587,18 @@ const LIFECYCLE_UTILITY_DEFINITIONS = Object.freeze({
 // templates remain byte-for-byte unchanged while Meta reviews the new names.
 // Once approved, the database can opt Vladimir in without changing arity.
 const PERSONAL_REMINDER_V2 = Object.freeze({
+  consultation_reminder: Object.freeze({
+    text: [
+      "Hi {{1}}, it's {{2}}.",
+      '',
+      "Just a reminder that our in-person consultation is tomorrow at {{3}}.",
+      "I'll see you at {{4}}.",
+      '',
+      'Please confirm your attendance here: {{5}}',
+      "If you need to change the time, just reply to me here.",
+      'You can find the studio directions using the button below.',
+    ].join('\\n'),
+  }),
   session_reminder_72h: Object.freeze({
     text: [
       "Hi {{1}}, it's {{2}}.",
@@ -626,12 +638,14 @@ function lifecycleTemplateDefinition(purpose, name, language) {
       && name === 'vishar_lifecycle_reminder_72h_v2')
     || (purpose === 'session_reminder_24h'
       && name === 'vishar_lifecycle_reminder_24h_v2')
+    || (purpose === 'consultation_reminder'
+      && name === 'vishar_lifecycle_consultation_v2')
   );
   const bodyText = personalised ? PERSONAL_REMINDER_V2[purpose].text : definition.text;
   return {
     name, language, category: 'UTILITY',
     components: [
-      ...(personalised ? [{ type: 'HEADER', format: 'TEXT', text: 'Tattoo appointment reminder' }] : []),
+      ...(personalised ? [{ type: 'HEADER', format: 'TEXT', text: purpose === 'consultation_reminder' ? 'Consultation reminder' : 'Tattoo appointment reminder' }] : []),
       {
         type: 'BODY',
         text: bodyText,
@@ -639,7 +653,9 @@ function lifecycleTemplateDefinition(purpose, name, language) {
       },
       ...(personalised ? [{
         type: 'BUTTONS',
-        buttons: [{ type: 'URL', text: 'How to prepare', url: PREPARATION_FAQ_URL }],
+        buttons: [purpose === 'consultation_reminder'
+          ? { type: 'URL', text: 'Studio directions', url: 'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic' }
+          : { type: 'URL', text: 'How to prepare', url: PREPARATION_FAQ_URL }],
       }] : []),
     ],
   };

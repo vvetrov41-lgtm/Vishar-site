@@ -177,3 +177,18 @@ for (const invalid of [
   approvedReminderActivation.replace('20261107233000 | 20261107233000', '20261107233000 | '),
   approvedReminderActivation + '\n | 20261107250000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Consultation v2 Meta candidate is isolated from active v1 deliveries.
+const consultationCardCandidate = [
+  ' Local | Remote | Time',
+  ' 20261107233000 | 20261107233000 | t',
+  ' 20261107240000 | 20261107240000 | t',
+  ' 20261107250000 | | t',
+].join('\\n');
+assert.equal(verifyTodayLineage(consultationCardCandidate), '20261107250000');
+for (const invalid of [
+  consultationCardCandidate + '\\n 20261107251000 | | t',
+  consultationCardCandidate.replace('20261107250000 | |', '20261107252000 | |'),
+  consultationCardCandidate.replace('20261107240000 | 20261107240000', '20261107240000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));
