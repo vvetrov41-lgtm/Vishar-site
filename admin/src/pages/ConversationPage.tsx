@@ -22,6 +22,7 @@ import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
+import type { OutgoingReviewIssue } from '../lib/outgoing-review-api';
 import { ClientContextStrip } from '../components/ClientContextStrip';
 import { ConversationOperatorState } from '../components/ConversationOperatorState';
 import { can } from '../lib/permissions';
@@ -75,6 +76,12 @@ const COPY = {
     replyPlaceholder: 'Write a reply…',
     send: 'Send',
     sending: 'Sending…',
+    reviewing: 'Checking…',
+    reviewFirst: 'Check before sending',
+    reviewClean: 'AI found no obvious contradiction. Confirm the details yourself before sending.',
+    reviewWarnings: 'AI found items worth checking. Edit the text or send manually if you are sure.',
+    reviewUnavailable: 'AI check is unavailable. Check the details yourself before sending.',
+    sendAnyway: 'Send anyway',
     archived: 'Archived',
     archive: 'Archive',
     unarchive: 'Move back to the inbox',
@@ -128,6 +135,12 @@ const COPY = {
     replyPlaceholder: 'Написать ответ…',
     send: 'Отправить',
     sending: 'Отправляем…',
+    reviewing: 'Проверяем…',
+    reviewFirst: 'Проверить перед отправкой',
+    reviewClean: 'AI не нашёл явных противоречий. Проверь детали самостоятельно перед отправкой.',
+    reviewWarnings: 'AI нашёл спорные моменты. Исправь текст или отправь вручную, если всё верно.',
+    reviewUnavailable: 'Проверка AI недоступна. Проверь детали самостоятельно перед отправкой.',
+    sendAnyway: 'Всё равно отправить',
     archived: 'В архиве',
     archive: 'В архив',
     unarchive: 'Вернуть в список',
@@ -157,6 +170,7 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [body, setBody] = useState('');
+  const [review, setReview] = useState<{ target: string; body: string; issues: OutgoingReviewIssue[]; unavailable: boolean } | null>(null);
 
   const {
     data: conversation, loading, error, reload,
@@ -231,6 +245,21 @@ export function ConversationPage({ conversationId }: { conversationId: string })
     event.preventDefault();
     const text = body.trim();
     if (!text) return;
+    // This first click only asks for a read-only AI review. The second click
+    // is the artist's independent action to queue the unchanged message.
+    if (!review || review.target !== conversationId || review.body !== text) {
+      setBusy(true);
+      setActionError(null);
+      try {
+        const result = await api.reviewOutgoingMessage({ conversationId, body: text });
+        setReview({ target: conversationId, body: text, issues: result.issues, unavailable: false });
+      } catch {
+        // Never call a failed AI check a success. Allow an explicit manual
+        // override rather than blocking urgent client replies indefinitely.
+        setReview({ target: conversationId, body: text, issues: [], unavailable: true });
+      } finally { setBusy(false); }
+      return;
+    }
     setBusy(true);
     setActionError(null);
     try {
@@ -242,6 +271,7 @@ export function ConversationPage({ conversationId }: { conversationId: string })
         outcome: 'queued',
       });
       setBody('');
+      setReview(null);
       reloadMessages();
       reload();
     } catch (cause) {
@@ -436,12 +466,24 @@ export function ConversationPage({ conversationId }: { conversationId: string })
               maxLength={1000}
               disabled={busy}
               placeholder={copy.replyPlaceholder}
-              onChange={(event) => setBody(event.target.value)}
+              onChange={(event) => { setBody(event.target.value); setReview(null); }}
             />
             <p className="notice">{copy.windowNotice}</p>
+            {review && review.target === conversationId && review.body === body.trim() ? (
+              <div className={review.unavailable || review.issues.length ? 'notice warn' : 'notice'} role="status">
+                <p>{review.unavailable ? copy.reviewUnavailable
+                  : review.issues.length ? copy.reviewWarnings : copy.reviewClean}</p>
+                {review.issues.length > 0 ? (
+                  <ul>{review.issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>
+                ) : null}
+              </div>
+            ) : null}
             <div className="actions">
               <button type="submit" className="primary" disabled={busy || !body.trim()}>
-                {busy ? copy.sending : copy.send}
+                {busy ? (review ? copy.sending : copy.reviewing)
+                  : review && review.body === body.trim() && review.target === conversationId
+                    ? (review.unavailable || review.issues.length ? copy.sendAnyway : copy.send)
+                    : copy.reviewFirst}
               </button>
             </div>
           </form>

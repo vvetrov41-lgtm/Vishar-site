@@ -13,6 +13,7 @@ import { ClientContextStrip } from '../components/ClientContextStrip';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import type { LiveGmailMessage } from '../lib/email-api';
+import type { OutgoingReviewIssue } from '../lib/outgoing-review-api';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
 import { can } from '../lib/permissions';
@@ -46,6 +47,7 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
   const [editingDraft, setEditingDraft] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [emailReview, setEmailReview] = useState<{ id: string; updatedAt: string | null; body: string; issues: OutgoingReviewIssue[]; unavailable: boolean } | null>(null);
 
   const { data, loading, error, reload } = useAsync<ThreadView>(
     async () => {
@@ -105,9 +107,26 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
     [api, threadKey],
   );
 
-  async function approve(messageId: string) {
+  async function approve(message: EmailMessageDetail) {
     setActionError(null);
     setNotice(null);
+    // A change to the stored body or revision makes an earlier review invalid.
+    const currentReview = emailReview && emailReview.id === message.id
+      && emailReview.updatedAt === (message.updated_at ?? null) && emailReview.body === message.body;
+    if (!currentReview) {
+      setBusy(true);
+      try {
+        const result = await api.reviewOutgoingMessage({ emailMessageId: message.id, body: message.body });
+        setEmailReview({ id: message.id, updatedAt: message.updated_at ?? null, body: message.body,
+          issues: result.issues, unavailable: false });
+      } catch {
+        // A failed check is visibly unverified, and the next click is an
+        // explicit manual override; no approval occurs in this branch.
+        setEmailReview({ id: message.id, updatedAt: message.updated_at ?? null, body: message.body,
+          issues: [], unavailable: true });
+      } finally { setBusy(false); }
+      return;
+    }
     const confirmed = await confirmDialog({
       title: copy.confirmTitle,
       message: copy.confirmBody,
@@ -117,7 +136,8 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
     if (!confirmed) return;
     setBusy(true);
     try {
-      await api.approveEmailDraft(messageId);
+      await api.approveEmailDraft(message.id);
+      setEmailReview(null);
       setNotice(copy.approved);
       reload();
     } catch (cause) {
@@ -211,10 +231,26 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
                   type="button"
                   className="primary"
                   disabled={busy || editingDraft}
-                  onClick={() => { void approve(actionable.id); }}
+                  onClick={() => { void approve(actionable); }}
                 >
-                  {copy.approve}
+                  {busy ? copy.reviewing :
+                    emailReview && emailReview.id === actionable.id
+                      && emailReview.updatedAt === (actionable.updated_at ?? null)
+                      && emailReview.body === actionable.body
+                      ? (emailReview.unavailable || emailReview.issues.length ? copy.sendAnyway : copy.approve)
+                      : copy.reviewFirst}
                 </button>
+                {emailReview && emailReview.id === actionable.id
+                    && emailReview.updatedAt === (actionable.updated_at ?? null)
+                    && emailReview.body === actionable.body ? (
+                  <div className={emailReview.unavailable || emailReview.issues.length ? 'notice warn' : 'notice'} role="status">
+                    <p>{emailReview.unavailable ? copy.reviewUnavailable
+                      : emailReview.issues.length ? copy.reviewWarnings : copy.reviewClean}</p>
+                    {emailReview.issues.length ? (
+                      <ul>{emailReview.issues.map((issue, index) => <li key={index}>{issue.message}</li>)}</ul>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : (
               <p className="notice" role="status">{copy.approvalNotYours}</p>
@@ -368,6 +404,12 @@ const COPY = {
     dismissConfirmTitle: 'Dismiss this warning?',
     dismissConfirmBody: 'The email will stay in CRM history as “Cancelled” and will no longer require attention.',
     approve: 'Approve and send',
+    reviewFirst: 'Check before sending',
+    reviewing: 'Checking…',
+    reviewClean: 'AI found no obvious contradiction. Check details yourself before sending.',
+    reviewWarnings: 'AI found items to check. Edit the draft or send manually if you are sure.',
+    reviewUnavailable: 'AI check unavailable. Check the details yourself before sending.',
+    sendAnyway: 'Send anyway',
     approved: 'Approved. It now goes out through the send queue.',
     approveFailed: 'Could not approve that email.',
     approvalNotYours: 'Only the studio owner can approve an email for sending.',
@@ -429,6 +471,12 @@ const COPY = {
     dismissConfirmTitle: 'Закрыть это уведомление?',
     dismissConfirmBody: 'Письмо останется в истории со статусом «Отменено» и больше не будет требовать внимания.',
     approve: 'Утвердить и отправить',
+    reviewFirst: 'Проверить перед отправкой',
+    reviewing: 'Проверяем…',
+    reviewClean: 'AI не нашёл явных противоречий. Проверь детали самостоятельно.',
+    reviewWarnings: 'AI нашёл спорные моменты. Исправь черновик или отправь вручную, если всё верно.',
+    reviewUnavailable: 'Проверка AI недоступна. Проверь детали самостоятельно.',
+    sendAnyway: 'Всё равно отправить',
     approved: 'Утверждено. Письмо уйдёт через очередь отправки.',
     approveFailed: 'Не удалось утвердить письмо.',
     approvalNotYours: 'Утверждать письма может только владелец студии.',

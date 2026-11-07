@@ -683,6 +683,7 @@ insert into expected_function_acl values
   ('public.set_communication_conversation_state(uuid,text)', false, true, false),
   ('public.set_conversation_not_crm(uuid,boolean)', false, true, false),
   ('public.get_conversation_attention(uuid)', false, true, false),
+  ('public.get_outgoing_message_review_context(uuid,uuid)', false, true, false),
   ('public.link_communication_conversation_client(uuid,uuid)', false, true, false),
   ('public.create_client_from_communication(uuid,text,text,text,text)', false, true, false),
   ('public.create_client_from_communication(uuid,text,text,text,text,boolean)', false, true, false),

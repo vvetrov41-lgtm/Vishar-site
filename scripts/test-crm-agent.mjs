@@ -787,18 +787,17 @@ await test('a Gmail reply body reaches client memory with its scope intact', asy
   assert.equal(recorded.args.p_direction, 'inbound');
 });
 
-await test('client memory gets the reply even when the enquiry gate declines it', async () => {
+await test('keyword-free bound Gmail reply reaches the enquiry observer and client memory', async () => {
   const db = gmailDb();
-  // The reviewer's failing case, on a thread whose subject names nothing the
-  // enquiry relevance gate looks for. That gate is right for deciding whether
-  // to draft an enquiry reply and wrong for client memory, where a message on
-  // an already-bound thread is relevant by construction.
+  // The exact artist, client and enquiry are already authorized before this
+  // call; keyword-free continuations must reach both bounded observers.
   const body = 'Yes, 19 October works, but could we change the dragon to black & grey?';
   await enqueueGmailEnquiryAnalysis(
     db, gmailAuth, gmailTarget, gmailThread(body, { subject: 'Re: 19 Oct' }));
 
   const observed = db.calls.find((entry) => entry.name === 'service_observe_gmail_enquiry_ai');
-  assert.equal(observed.args.p_source_text, null, 'the enquiry path still declines it');
+  assert.equal(observed.args.p_source_text, 'Subject: Re: 19 Oct\n\n' + body,
+    'the bounded enquiry observer sees the scoped continuation');
 
   const recorded = db.calls.find((entry) => entry.name === 'service_record_gmail_client_message');
   assert.equal(recorded.args.p_body, body, 'client memory still receives what the client wrote');

@@ -18,10 +18,9 @@ function clientStatePayload(body, timestamp) {
 /**
  * Records what the client actually wrote, for the client brief.
  *
- * Deliberately NOT gated by the keyword relevance test below. That test exists
- * to stop the enquiry path drafting a reply to unrelated mail, and it is the
- * wrong question here: a message on a thread already bound to this artist,
- * client and enquiry is relevant to that client's state by construction. A
+ * The authenticated caller and the database bind the exact artist, client
+ * and enquiry. No lexical keyword gate should hide a reply from the client
+ * brief or from the gated enquiry-analysis job. A
  * reply reading "yes, 19 October works, but could we change the dragon to
  * black and grey?" names no tattoo keyword and is exactly what the brief must
  * not miss.
@@ -89,10 +88,12 @@ export async function enqueueGmailEnquiryAnalysis(db, auth, target, thread) {
     const candidate = inbound && typeof message.body === 'string' && message.body.trim()
       ? `Subject: ${String(message.subject || '').slice(0, 500)}\n\n${message.body}`.replace(/\u0000/g, '').slice(0, MAX_SOURCE_CHARS)
       : null;
-    // Conservative relevance gate: this MVP does not enrich unrelated mail.
-    // Short follow-ups with no tattoo context remain available in Gmail as usual.
-    const sourceText = candidate && /\b(tattoo\w*|booking|enquir\w*|consultation|cover[ -]?up|sleeve|forearm|trident|neptune|poseidon)\b|тату|эскиз|рукав|перекрыти|нептун|посейдон/iu.test(candidate)
-      ? candidate : null;
+    // An authorized (artist, client, enquiry, provider thread) is already
+    // scoped more tightly than keyword matching. The database owns the
+    // historical baseline, unchanged-message dedupe and ambiguous-enquiry
+    // checks. Do not miss a new reply such as "Yes, 8 December works" merely
+    // because it contains no tattoo-related keyword.
+    const sourceText = candidate;
     const result = await db.backendRpc('service_observe_gmail_enquiry_ai', {
       p_artist_id: auth.artist_id,
       p_enquiry_id: auth.enquiry_id,
