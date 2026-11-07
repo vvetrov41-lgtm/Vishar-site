@@ -24,7 +24,8 @@ export async function drainWhatsappTemplateSmokeTest(env, {
     && ROUTE_KEY.test(job.integration_key ?? '')
     && WA_ID.test(job.contact_wa_id ?? '')
     && job.purpose === 'consultation_reminder'
-    && job.template_name === 'vishar_lifecycle_consultation_v1'
+    && ['vishar_lifecycle_consultation_v1',
+      'vishar_lifecycle_consultation_v2'].includes(job.template_name)
     && job.template_language === 'en_GB'
     && Array.isArray(job.body_parameters)
     && job.body_parameters.length === 5

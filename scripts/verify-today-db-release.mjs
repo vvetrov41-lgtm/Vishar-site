@@ -46,6 +46,8 @@ export function verifyTodayLineage(source) {
     ['20261107230000', '20261107233000'],
     // Promote only provider-approved first-person WhatsApp reminder v2 cards.
     ['20261107233000', '20261107240000'],
+    // Stage consultation first-person card without switching live v1 sends.
+    ['20261107240000', '20261107250000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

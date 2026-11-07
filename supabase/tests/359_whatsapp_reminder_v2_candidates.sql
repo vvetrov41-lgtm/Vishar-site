@@ -9,7 +9,8 @@ grant select on reminder_candidate_artists to public;
 
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_candidates
- where artist_id=(select id from reminder_candidate_artists where slug='vladimir')),2,
+ where artist_id=(select id from reminder_candidate_artists where slug='vladimir')
+ and purpose in ('session_reminder_72h','session_reminder_24h')),2,
  'only Vladimir has two pending reminder card candidates');
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_candidates
@@ -17,7 +18,8 @@ select is((select count(*)::integer
  'Kristina has no inadvertent v2 candidate');
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_candidates
- where approval_status='UNKNOWN' and provider_template_id is null),2,
+ where approval_status='UNKNOWN' and provider_template_id is null
+ and purpose in ('session_reminder_72h','session_reminder_24h')),2,
  'candidate approvals are not fabricated');
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_registry

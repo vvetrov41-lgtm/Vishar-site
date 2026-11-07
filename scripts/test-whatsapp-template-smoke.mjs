@@ -88,4 +88,27 @@ const source = {
   });
   assert.equal(result.unrecorded,1,'unknown send never retries');
 }
+{
+  // A newly Meta-approved v2 consultation template can be smoke-tested once,
+  // without creating a fake appointment or falling back to body-only v1.
+  let sends = 0;
+  const v2 = { ...source, template_name: 'vishar_lifecycle_consultation_v2' };
+  const result = await drainWhatsappTemplateSmokeTest({}, {
+    supabase: { async rpc(name, payload) {
+      if (name === 'service_claim_whatsapp_template_smoke_test') return [v2];
+      assert.equal(payload.p_accepted, true);
+      assert.equal(payload.p_provider_message_id, 'wamid.v2fixture');
+      return true;
+    } },
+    async send(_env, _route, message) {
+      sends++;
+      assert.equal(message.templateName, 'vishar_lifecycle_consultation_v2');
+      assert.equal(message.purpose, 'consultation_reminder');
+      assert.deepEqual(message.bodyParameters, v2.body_parameters);
+      return { delivered: true, providerMessageId: 'wamid.v2fixture' };
+    },
+  });
+  assert.equal(sends, 1);
+  assert.equal(result.accepted, 1);
+}
 console.log('One-shot WhatsApp Meta smoke tests passed');

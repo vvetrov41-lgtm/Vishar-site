@@ -59,6 +59,27 @@ function env() {
       type: 'URL', text: 'How to prepare', url: 'https://vishartattoo.com/faq/',
     }]);
   }
+  const consultationCard = __testing.lifecycleTemplateDefinition(
+    'consultation_reminder', 'vishar_lifecycle_consultation_v2', 'en_GB',
+  );
+  assert.deepEqual(consultationCard.components[0], {
+    type: 'HEADER', format: 'TEXT', text: 'Consultation reminder',
+  });
+  assert.equal(consultationCard.components[1].type, 'BODY');
+  assert.match(consultationCard.components[1].text, /it's \{\{2\}\}/);
+  assert.match(consultationCard.components[1].text, /our in-person consultation/);
+  assert.match(consultationCard.components[1].text, /I'll see you/);
+  assert.doesNotMatch(consultationCard.components[1].text, /consultation with \{\{2\}\}/);
+  assert.equal(consultationCard.components[1].example.body_text[0].length, 5);
+  assert.deepEqual(consultationCard.components[2].buttons, [{
+    type: 'URL', text: 'Studio directions',
+    url: 'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic',
+  }]);
+  const legacyConsultation = __testing.lifecycleTemplateDefinition(
+    'consultation_reminder', 'vishar_lifecycle_consultation_v1', 'en_GB',
+  );
+  assert.equal(legacyConsultation.components.length, 1);
+
   for (const [purpose, name] of [
     ['session_reminder_72h', 'vishar_lifecycle_reminder_72h_v1'],
     ['session_reminder_24h', 'vishar_lifecycle_reminder_24h_v1'],
