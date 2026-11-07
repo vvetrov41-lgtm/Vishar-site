@@ -44,6 +44,8 @@ export function verifyTodayLineage(source) {
     ['20261107220000', '20261107230000'],
     // One-shot Meta template smoke tests never create fake CRM appointments.
     ['20261107230000', '20261107233000'],
+    // Promote only provider-approved first-person WhatsApp reminder v2 cards.
+    ['20261107233000', '20261107240000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

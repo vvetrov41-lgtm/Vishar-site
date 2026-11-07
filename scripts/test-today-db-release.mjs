@@ -161,3 +161,19 @@ for (const invalid of [
   reminderCandidate.replace('20261107220000 | 20261107220000', '20261107220000 | '),
   reminderCandidate + '\n | 20261107250000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// Live v2 reminder promotion is permitted only after provider-preapproval
+// and one-shot WhatsApp template smoke migration are already deployed.
+const approvedReminderActivation = [
+  ' Local | Remote | Time',
+  ' 20261107230000 | 20261107230000 | t',
+  ' 20261107233000 | 20261107233000 | t',
+  ' 20261107240000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(approvedReminderActivation), '20261107240000');
+for (const invalid of [
+  approvedReminderActivation + '\n 20261107241000 | | t',
+  approvedReminderActivation.replace('20261107240000 | |', '20261107242000 | |'),
+  approvedReminderActivation.replace('20261107233000 | 20261107233000', '20261107233000 | '),
+  approvedReminderActivation + '\n | 20261107250000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
