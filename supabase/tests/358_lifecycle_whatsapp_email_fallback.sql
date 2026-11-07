@@ -249,8 +249,12 @@ select is(crm_private.lifecycle_whatsapp_location_with_map(
  'non-Google link is not added to an appointment');
 select is(crm_private.lifecycle_whatsapp_location_with_map(
  'Studio A','https://maps.app.goo.gl/fixture123'),
- E'Studio A\nGoogle Maps: https://maps.app.goo.gl/fixture123',
+ E'Studio A | Google Maps: https://maps.app.goo.gl/fixture123',
  'approved Google Maps domain is appended as a single address parameter');
+select is(crm_private.lifecycle_whatsapp_location_with_map(
+ E'  Studio  A\nRoom\t B  ','https://maps.app.goo.gl/fixture123'),
+ 'Studio A Room B | Google Maps: https://maps.app.goo.gl/fixture123',
+ 'Meta template variables have no newlines, tabs, or repeated spaces');
 select is(crm_private.lifecycle_whatsapp_location_with_map(
  'Studio A','https://maps.app.goo.gl/'||repeat('x',1010)),
  'Studio A','overlong template parameter falls back to the original address');
@@ -289,7 +293,7 @@ reset role;
 select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9805555-5555-4555-8555-555555555555'
    and p.purpose='session_reminder_24h' limit 1),
- E'16 Exhibition House, Addison Bridge Place, London W14 8XP\nGoogle Maps: https://maps.app.goo.gl/fixture123',
+ E'16 Exhibition House, Addison Bridge Place, London W14 8XP | Google Maps: https://maps.app.goo.gl/fixture123',
  '24-hour template variable four includes the current address and map link');
 select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9805555-5555-4555-8555-555555555555'
