@@ -40,6 +40,8 @@ export function verifyTodayLineage(source) {
     ['20261107080000', '20261107210000'],
     // Keep in-person WhatsApp consultation location aligned with Gmail.
     ['20261107210000', '20261107220000'],
+    // Stage v2 provider candidates; active WhatsApp v1 delivery stays untouched.
+    ['20261107220000', '20261107230000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
