@@ -657,10 +657,42 @@ await test('enquiry AI queues only scoped live inbound with deterministic provid
   assert.deepEqual(await run({ subject: 'Cheap backlinks', body: 'Marketing proposal.' }), { status: 'existing', thread_context_id: contextId });
   assert.deepEqual(await run({}, { ...auth, artist_id: 'a2222222-2222-4222-8222-222222222222' }), { status: 'skipped' });
   assert.equal(calls.length, 5);
-  assert.equal(calls.at(-1).p_source_text, null);
+  assert.equal(calls.at(-1).p_source_text, 'Subject: Cheap backlinks\n\nMarketing proposal.');
   assert.deepEqual(await enqueueGmailEnquiryAnalysis(db, auth, target,
     { providerThreadId: 'thread-tattoo-1', messages: [message, { ...message, direction: 'outbound' }] }), { status: 'skipped' });
   assert.equal(calls.length, 5);
+});
+
+await test('a short authorized Gmail continuation without tattoo keywords reaches the enquiry observer', async () => {
+  const auth = { artist_id: artistId, enquiry_id: enquiryId, client_id: clientId };
+  const target = { ...auth, client_email: 'client@example.test', mailbox_email: 'studio@example.test' };
+  const observed = [];
+  const db = {
+    async backendRpc(name, args) {
+      observed.push({ name, args });
+      if (name === 'service_record_gmail_client_message') return { status: 'recorded' };
+      if (name === 'service_observe_gmail_enquiry_ai') return {
+        status: 'queued', thread_context_id: '96330000-0000-4000-8000-000000000001',
+      };
+      throw new Error('unexpected_rpc');
+    },
+  };
+  const result = await enqueueGmailEnquiryAnalysis(db, auth, target, {
+    providerThreadId: 'thread-existing',
+    messages: [{
+      direction: 'inbound', from: target.client_email, to: target.mailbox_email,
+      provider_message_id: 'msg-followup', subject: 'Re: Our conversation',
+      body: 'Sounds good, let us do December.',
+    }],
+  });
+  assert.equal(result.status, 'queued');
+  assert.equal(observed[0].name, 'service_record_gmail_client_message');
+  assert.equal(observed[1].name, 'service_observe_gmail_enquiry_ai');
+  assert.equal(observed[1].args.p_source_text,
+    'Subject: Re: Our conversation\n\nSounds good, let us do December.');
+  assert.equal(observed[1].args.p_artist_id, artistId);
+  assert.equal(observed[1].args.p_enquiry_id, enquiryId);
+  assert.equal(observed[1].args.p_client_id, clientId);
 });
 
 await test('Gmail AI keeps injected IDs in bounded untrusted text and logs no failure content', async () => {
