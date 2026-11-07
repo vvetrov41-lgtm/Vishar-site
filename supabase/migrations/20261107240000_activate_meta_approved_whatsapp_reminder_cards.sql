@@ -23,6 +23,16 @@ begin
     raise exception 'unapproved reminder artist' using errcode='42501';
   end if;
 
+  -- Serialize against the existing lifecycle enqueue function, which
+  -- reads this registry without row-level locks. The enqueue transaction
+  -- holds ACCESS SHARE on this table until it commits; ACCESS EXCLUSIVE
+  -- therefore waits for every earlier v1 enqueue to finish and prevents
+  -- new enqueue transactions reading v1 before promotion commits.
+  -- Acquire it before row locks to avoid lock-order deadlocks. The table is
+  -- small, and this migration does not call any network provider.
+  lock table crm_private.lifecycle_whatsapp_template_registry
+    in access exclusive mode;
+
   -- Lock both source and target rows before checking provider evidence.
   perform 1 from crm_private.lifecycle_whatsapp_template_registry t
     where t.artist_id=p_artist_id
@@ -57,7 +67,9 @@ begin
     and c.approval_status='APPROVED'
     and c.provider_template_id is not null
     and c.verified_at > now()-interval '24 hours'
-    and c.last_failure_code is null;
+    -- Historical transient errors do not supersede a newer Meta APPROVED
+    -- response with a real provider ID and recent verified_at timestamp.
+    ;
   if v_count<>2 then
     return 'waiting_for_meta_approval';
   end if;
