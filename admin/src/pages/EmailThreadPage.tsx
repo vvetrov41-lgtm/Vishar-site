@@ -112,17 +112,17 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
     setNotice(null);
     // A change to the stored body or revision makes an earlier review invalid.
     const currentReview = emailReview && emailReview.id === message.id
-      && emailReview.updatedAt === message.updated_at && emailReview.body === message.body;
+      && emailReview.updatedAt === (message.updated_at ?? null) && emailReview.body === message.body;
     if (!currentReview) {
       setBusy(true);
       try {
         const result = await api.reviewOutgoingMessage({ emailMessageId: message.id, body: message.body });
-        setEmailReview({ id: message.id, updatedAt: message.updated_at, body: message.body,
+        setEmailReview({ id: message.id, updatedAt: message.updated_at ?? null, body: message.body,
           issues: result.issues, unavailable: false });
       } catch {
         // A failed check is visibly unverified, and the next click is an
         // explicit manual override; no approval occurs in this branch.
-        setEmailReview({ id: message.id, updatedAt: message.updated_at, body: message.body,
+        setEmailReview({ id: message.id, updatedAt: message.updated_at ?? null, body: message.body,
           issues: [], unavailable: true });
       } finally { setBusy(false); }
       return;
@@ -235,13 +235,13 @@ export function EmailThreadPage({ threadKey }: { threadKey: string }) {
                 >
                   {busy ? copy.reviewing :
                     emailReview && emailReview.id === actionable.id
-                      && emailReview.updatedAt === actionable.updated_at
+                      && emailReview.updatedAt === (actionable.updated_at ?? null)
                       && emailReview.body === actionable.body
                       ? (emailReview.unavailable || emailReview.issues.length ? copy.sendAnyway : copy.approve)
                       : copy.reviewFirst}
                 </button>
                 {emailReview && emailReview.id === actionable.id
-                    && emailReview.updatedAt === actionable.updated_at
+                    && emailReview.updatedAt === (actionable.updated_at ?? null)
                     && emailReview.body === actionable.body ? (
                   <div className={emailReview.unavailable || emailReview.issues.length ? 'notice warn' : 'notice'} role="status">
                     <p>{emailReview.unavailable ? copy.reviewUnavailable
