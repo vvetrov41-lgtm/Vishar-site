@@ -3,6 +3,11 @@
 begin;
 select no_plan();
 
+select ok(position('lock table crm_private.lifecycle_whatsapp_template_registry'
+ in lower(pg_get_functiondef(
+ 'crm_private.activate_approved_whatsapp_reminder_v2(uuid)'::regprocedure)))>0,
+ 'promotion serializes against the existing registry-reading scheduler');
+
 create temporary table reminder_v2_artists as
 select id,slug from public.artists where slug in ('vladimir','kristina');
 grant select on reminder_v2_artists to public;
@@ -33,13 +38,13 @@ where t.artist_id=(select id from reminder_v2_artists where slug='vladimir')
   and t.purpose in ('session_reminder_72h','session_reminder_24h');
 update crm_private.lifecycle_whatsapp_template_candidates c
 set approval_status='APPROVED',provider_template_id='123456789012346',
-    verified_at=now(),last_failure_code=null
+    verified_at=now(),last_failure_code='whatsapp_template_rate_limited'
 where c.artist_id=(select id from reminder_v2_artists where slug='vladimir')
   and c.purpose in ('session_reminder_72h','session_reminder_24h');
 
 select is(crm_private.activate_approved_whatsapp_reminder_v2(
  (select id from reminder_v2_artists where slug='vladimir')),
- 'activated','approved provider candidates become the live reminder identities');
+ 'activated','a later approved Meta verification supersedes any historical failure');
 select is((select count(*)::integer from
  crm_private.lifecycle_whatsapp_template_registry t
  where t.artist_id=(select id from reminder_v2_artists where slug='vladimir')
