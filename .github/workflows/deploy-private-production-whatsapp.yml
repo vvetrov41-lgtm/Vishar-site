@@ -167,6 +167,7 @@ jobs:
           node scripts/test-whatsapp-routing.mjs
           node scripts/test-whatsapp-drain.mjs
           node scripts/test-whatsapp-drain-worker.mjs
+          node scripts/test-whatsapp-template-smoke.mjs
           node scripts/test-whatsapp-audio.mjs
           node scripts/test-whatsapp-production-secret-names.mjs
           npm run test:whatsapp-production

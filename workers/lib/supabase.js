@@ -45,6 +45,8 @@ export const ALLOWED_RPCS = new Set([
   'service_begin_communication_send',
   'service_resolve_whatsapp_booking_card_payload',
   'service_resolve_whatsapp_lifecycle_payload',
+  'service_claim_whatsapp_template_smoke_test',
+  'service_record_whatsapp_template_smoke_result',
   'service_claim_lifecycle_whatsapp_template_targets',
   'service_record_lifecycle_whatsapp_template_status',
   'service_record_lifecycle_whatsapp_template_failure',

@@ -1,4 +1,5 @@
 import { drainWhatsappOutbox } from './lib/whatsapp-drain.js';
+import { drainWhatsappTemplateSmokeTest } from './lib/whatsapp-template-smoke.js';
 import { drainWhatsappAudioTranscriptions } from './lib/whatsapp-audio.js';
 import { maintainWhatsappBookingTemplates } from './lib/whatsapp-booking-templates.js';
 import { maintainWhatsappLifecycleTemplates } from './lib/whatsapp-booking-templates.js';
@@ -72,6 +73,7 @@ export async function handleInternalDrain(
   maintainTemplates = maintainWhatsappBookingTemplates,
   maintainLifecycleTemplates = maintainWhatsappLifecycleTemplates,
   probeCoexistence = maintainWhatsappCoexistenceState,
+  smokeTest = drainWhatsappTemplateSmokeTest,
 ) {
   if (env?.VISHAR_ENVIRONMENT !== 'production' || env?.WHATSAPP_DRAIN_ENABLED !== 'true') {
     return json({ ok: true, skipped: true, claimed: 0, succeeded: 0, failed: 0, unrecorded: 0 });
@@ -147,6 +149,23 @@ export async function handleInternalDrain(
     const errorCode = safeFailureCode(error);
     console.error('whatsapp outbox drain failed', JSON.stringify({ code: errorCode }));
     outboundResponse = json({ ok: false, errorCode }, 200);
+  }
+
+  // A controlled owner-directed template test is separate from client
+  // lifecycle jobs. Database claims one immutable request BEFORE Meta is
+  // contacted; a failed/ambiguous call is never automatically replayed.
+  if (env?.WHATSAPP_TEMPLATE_SMOKE_ENABLED === 'true') {
+    try {
+      const result = await smokeTest(env);
+      console.log('whatsapp template smoke', JSON.stringify({
+        claimed: result.claimed, accepted: result.accepted,
+        failed: result.failed, unrecorded: result.unrecorded,
+      }));
+    } catch (error) {
+      console.error('whatsapp template smoke failed', JSON.stringify({
+        code: safeFailureCode(error),
+      }));
+    }
   }
 
   // Audio is independent of outbound sends. An ASR failure must never

@@ -16,6 +16,7 @@ WHATSAPP_DRAIN_ENABLED = "false"
 WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "false"
 WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "false"
 WHATSAPP_AUDIO_TRANSCRIPTION_ENABLED = "false"
+WHATSAPP_TEMPLATE_SMOKE_ENABLED = "false"
 
 # Required encrypted production Worker secrets are deliberately absent here.
 # The deploy gate verifies the exact secret-name set before enabling the cron:
