@@ -597,7 +597,7 @@ const PERSONAL_REMINDER_V2 = Object.freeze({
       'Please confirm your attendance here: {{5}}',
       "If you need to change the time, just reply to me here.",
       'You can find the studio directions using the button below.',
-    ].join('\\n'),
+    ].join('\n'),
   }),
   session_reminder_72h: Object.freeze({
     text: [

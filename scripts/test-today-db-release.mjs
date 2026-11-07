@@ -185,10 +185,10 @@ const consultationCardCandidate = [
   ' 20261107233000 | 20261107233000 | t',
   ' 20261107240000 | 20261107240000 | t',
   ' 20261107250000 | | t',
-].join('\\n');
+].join('\n');
 assert.equal(verifyTodayLineage(consultationCardCandidate), '20261107250000');
 for (const invalid of [
-  consultationCardCandidate + '\\n 20261107251000 | | t',
+  consultationCardCandidate + '\n 20261107251000 | | t',
   consultationCardCandidate.replace('20261107250000 | |', '20261107252000 | |'),
   consultationCardCandidate.replace('20261107240000 | 20261107240000', '20261107240000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
