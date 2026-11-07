@@ -25,6 +25,7 @@ import {
   handleAppointmentClientActionRequest,
   isAppointmentClientActionPath,
 } from './routes/appointment-client-action.js';
+import { handleOutgoingMessageReview, isOutgoingMessageReviewPath } from './routes/outgoing-message-review.js';
 import {
   handleAiRouterProbeRequest,
   isAiRouterProbePath,
@@ -267,6 +268,9 @@ export default {
 
     // Manual CRM translation: CORS for the CRM origin only, never the
     // public booking origins. Rate-limited like every other public POST.
+    if (isOutgoingMessageReviewPath(request)) {
+      return handleOutgoingMessageReview(request, env);
+    }
     if (isEnquiryTranslationPath(request)) {
       return handleEnquiryTranslationRequest(request, env);
     }

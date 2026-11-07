@@ -75,6 +75,15 @@ const TASKS = Object.freeze({
   },
 
   // --- declared text capabilities -------------------------------------------
+  outgoing_message_review: {
+    capability: 'classification',
+    modality: 'text',
+    chain: ['qwen', 'workers_ai'],
+    timeoutMs: 20_000,
+    maxOutputTokens: 700,
+    temperature: 0,
+    structured: true,
+  },
   text_extraction: {
     capability: 'extraction',
     modality: 'text',
