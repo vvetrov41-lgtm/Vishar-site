@@ -83,8 +83,8 @@ function env() {
     type: 'HEADER', format: 'TEXT', text: 'Consultation reminder',
   });
   assert.equal(consultationV3.components[1].example.body_text[0].length, 3);
-  assert.equal((consultationV3.components[1].text.match(/\\{\\{[123]\\}\\}/g) || []).length, 3);
-  assert.doesNotMatch(consultationV3.components[1].text, /it's.*Vladimir|it's \\{\\{2\\}\\}|your consultation with/i);
+  assert.equal((consultationV3.components[1].text.match(/\{\{[123]\}\}/g) || []).length, 3);
+  assert.doesNotMatch(consultationV3.components[1].text, /it's.*Vladimir|it's \{\{2\}\}|your consultation with/i);
   assert.deepEqual(consultationV3.components[2].buttons, [
     { type: 'QUICK_REPLY', text: 'Confirm consultation' },
     { type: 'QUICK_REPLY', text: 'Need another time' },
