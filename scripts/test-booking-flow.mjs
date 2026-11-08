@@ -664,6 +664,7 @@ await test('failed valid Kristina intake is emailed once with consent and no CRM
   const mailEnv = {
     ...env, BOOKING_SOURCE_KEY:'kristina-website',
     ALLOWED_ORIGINS:'https://vishartattoo.com,https://www.kristinavishar.com',
+    BOOKING_FALLBACK_ENABLED:'true',
     BOOKING_FALLBACK_GMAIL_SERVICE: {
       async deliverFailedBooking(p) {accepted.push(p);return {accepted:true,deduplicated:false};},
     },
@@ -694,7 +695,7 @@ await test('a failed valid Vladimir intake uses Vladimir route and never leaks v
   stubBackend({rpc:{create_trusted_enquiry_intake:async()=>new Response('{}',{status:503})}});
   const calls=[];
   const {response,payload}=await send(enquiryForm(),{
-    env:{...env,BOOKING_FALLBACK_GMAIL_SERVICE:{async deliverFailedBooking(p){calls.push(p);return {accepted:true};}}},
+    env:{...env,BOOKING_FALLBACK_ENABLED:'true',BOOKING_FALLBACK_GMAIL_SERVICE:{async deliverFailedBooking(p){calls.push(p);return {accepted:true};}}},
   });
   assert.equal(response.status,202);
   assert.equal(payload.saved,false);

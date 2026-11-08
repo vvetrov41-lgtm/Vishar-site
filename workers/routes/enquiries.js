@@ -573,7 +573,8 @@ async function handleEnquiryIntakeInternal(
     if (fallbackContext && [
       'enquiry_rejected', 'database_unavailable', 'intake_incomplete',
       'storage_upload_failed', 'intake_finalisation_failed',
-    ].includes(safe.code) && env?.BOOKING_FALLBACK_GMAIL_SERVICE) {
+    ].includes(safe.code) && env?.BOOKING_FALLBACK_ENABLED === 'true'
+      && env?.BOOKING_FALLBACK_GMAIL_SERVICE) {
       try {
         const result = await env.BOOKING_FALLBACK_GMAIL_SERVICE.deliverFailedBooking({
           ...fallbackContext, failureCode: safe.code,
