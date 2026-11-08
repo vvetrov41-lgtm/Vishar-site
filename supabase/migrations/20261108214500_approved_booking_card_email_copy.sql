@@ -80,12 +80,8 @@ BEGIN
   END IF;
 
   v_video := v_card.appointment_type='video_consultation'::public.appointment_type;
-  IF v_card.card_kind='consultation_booked'
-     AND v_card.appointment_type='in_person_consultation'::public.appointment_type THEN
-    SELECT l.studio_name,l.studio_address,l.studio_map_url
-      INTO v_settings.studio_name,v_settings.studio_address,v_settings.studio_map_url
-    FROM crm_private.consultation_email_location() l;
-  END IF;
+  -- Use the current artist-scoped location (Exhibition House), not the
+  -- legacy consultation_email_location() York House override.
 
   v_first_name := split_part(btrim(v_client_name),' ',1);
   v_date := to_char(v_card.start_at AT TIME ZONE v_card.timezone,'FMDay, FMDD FMMonth YYYY');
