@@ -442,7 +442,7 @@ function utf8B64url(value) {
   return b64urlEncode(encoder.encode(value));
 }
 
-function buildRawMessage({ toEmail, subject, body, htmlBody = null, rfc822MessageId, inReplyTo, references }) {
+function buildRawMessage({ toEmail, subject, body, htmlBody = null, rfc822MessageId, inReplyTo, references, attachments = [] }) {
   const to = safeEmail(toEmail);
   const safeSubject = safeHeader(subject);
   const messageId = safeHeader(rfc822MessageId);
@@ -467,6 +467,34 @@ function buildRawMessage({ toEmail, subject, body, htmlBody = null, rfc822Messag
   const refs = safeHeader(references, 4096);
   if (replyTo) lines.push(`In-Reply-To: ${replyTo}`);
   if (refs) lines.push(`References: ${refs}`);
+
+  if (attachments.length) {
+    // MIME parts limited to image bytes already sniffed by the intake Worker.
+    if (hasHtml || attachments.length > 3) throw new Error('gmail_attachments_invalid');
+    let total = 0;
+    const boundary = 'vishar-mixed-' + messageId.replace(/[^A-Za-z0-9]/g, '').slice(-42);
+    lines.push('Content-Type: multipart/mixed; boundary="' + boundary + '"', '',
+      '--' + boundary, 'Content-Type: text/plain; charset=UTF-8',
+      'Content-Transfer-Encoding: 8bit', '', body);
+    for (const attachment of attachments) {
+      if (!attachment || !(attachment.bytes instanceof Uint8Array)
+        || !['image/jpeg', 'image/png', 'image/webp'].includes(attachment.mimeType)
+        || attachment.bytes.byteLength < 1 || attachment.bytes.byteLength > 4 * 1024 * 1024)
+        throw new Error('gmail_attachments_invalid');
+      total += attachment.bytes.byteLength;
+      if (total > 8 * 1024 * 1024) throw new Error('gmail_attachments_invalid');
+      const safeName = String(attachment.name || 'reference.jpg')
+        .replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 90);
+      const raw = b64urlEncode(attachment.bytes).replace(/-/g, '+').replace(/_/g, '/');
+      const encoded = (raw + '='.repeat((4 - raw.length % 4) % 4)).match(/.{1,76}/g)?.join('\r\n') || '';
+      lines.push('--' + boundary,
+        'Content-Type: ' + attachment.mimeType + '; name="' + safeName + '"',
+        'Content-Disposition: attachment; filename="' + safeName + '"',
+        'Content-Transfer-Encoding: base64', '', encoded);
+    }
+    lines.push('--' + boundary + '--');
+    return lines.join('\r\n');
+  }
 
   if (!hasHtml) {
     lines.push(
@@ -499,13 +527,13 @@ function buildRawMessage({ toEmail, subject, body, htmlBody = null, rfc822Messag
 }
 
 async function sendMessage(accessToken, {
-  toEmail, subject, body, htmlBody = null, emailMessageId, threadId, inReplyTo, references, fetchImpl = fetch,
+  toEmail, subject, body, htmlBody = null, attachments = [], emailMessageId, threadId, inReplyTo, references, fetchImpl = fetch,
 }) {
   const rfc822MessageId = deterministicRfc822MessageId(emailMessageId);
   const existing = await findMessageByRfc822Id(accessToken, rfc822MessageId, fetchImpl);
   if (existing) return { providerMessageId: existing.id, providerThreadId: existing.threadId, deduplicated: true, rfc822MessageId };
 
-  const raw = buildRawMessage({ toEmail, subject, body, htmlBody, rfc822MessageId, inReplyTo, references });
+  const raw = buildRawMessage({ toEmail, subject, body, htmlBody, rfc822MessageId, inReplyTo, references, attachments });
   const payload = { raw: utf8B64url(raw) };
   if (threadId) {
     if (!safeProviderId(threadId)) throw new Error('gmail_thread_id_invalid');

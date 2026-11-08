@@ -682,6 +682,9 @@ await test('failed valid Kristina intake is emailed once with consent and no CRM
   assert.equal(accepted[0].privacyAcknowledged,true);
   assert.equal(accepted[0].privacyNoticeVersion,'2026-11-03');
   assert.equal(accepted[0].files.length,1);
+  assert.equal(accepted[0].attachments.length,1);
+  assert.equal(accepted[0].attachments[0].mimeType,'image/jpeg');
+  assert.ok(accepted[0].attachments[0].bytes instanceof Uint8Array);
   assert.equal(calls.uploads.length,0);
   assert.equal(calls.telegram,0);
   assert.ok(!capturedLines().some(s=>s.includes('client@example.test')||s.includes('Test Client')));

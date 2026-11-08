@@ -249,6 +249,15 @@ async function handleEnquiryIntakeInternal(
         discoverySourceDetail: enquiry.discoverySourceDetail,
         privacyAcknowledged: true, privacyNoticeVersion: enquiry.privacyNoticeVersion,
         files: files.map(f => ({ name: f.original_filename || 'reference', size: f.byte_size })),
+        // Validated image bytes stay in memory and travel only over a
+        // same-account private Service Binding. Gmail caps at 8 MiB.
+        attachments: files.reduce((picked,f)=>{
+          const used = picked.reduce((sum,a)=>sum+a.bytes.byteLength,0);
+          if(picked.length<3 && used+f.byte_size<=8*1024*1024)
+            picked.push({name:f.original_filename||'reference.jpg',
+              mimeType:f.mime_type,bytes:f.bytes});
+          return picked;
+        },[]),
       };
     }
 

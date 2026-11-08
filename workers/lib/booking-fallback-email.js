@@ -33,6 +33,14 @@ export function formatFailedBooking(value) {
     || typeof value.phone !== 'string' || value.phone.length > 50
   ) throw new Error('booking_fallback_payload_invalid');
 
+  const attachments = Array.isArray(value.attachments) ? value.attachments : [];
+  if (attachments.length > 3 || attachments.some(a =>
+    !a || !(a.bytes instanceof Uint8Array)
+    || !['image/jpeg','image/png','image/webp'].includes(a.mimeType)
+    || a.bytes.byteLength < 1 || a.bytes.byteLength > 4*1024*1024
+    || typeof a.name !== 'string' || a.name.length > 128)
+    || attachments.reduce((n,a)=>n+a.bytes.byteLength,0)>8*1024*1024)
+    throw new Error('booking_fallback_attachments_invalid');
   const files = Array.isArray(value.files) ? value.files : [];
   if (files.length > 6 || files.some(f =>
     typeof f?.name !== 'string' || f.name.length > 128
@@ -61,7 +69,10 @@ export function formatFailedBooking(value) {
     'Privacy accepted: yes, notice ' + value.privacyNoticeVersion,
     'Reference files: ' + (files.length || 'none'),
     ...files.map((f, index) => (index + 1) + '. ' + clean(f.name, 128) + ' (' + f.size + ' bytes)'),
-    'Note: original images are NOT attached. Request them from the client.',
+    attachments.length===files.length
+      ? 'All validated reference images are attached.'
+      : 'Only ' + attachments.length + ' of ' + files.length +
+        ' images attached (email size cap). Request missing originals from the client.',
     '',
     'Sent by the independent Gmail failover when durable CRM intake failed.',
   ];
@@ -70,6 +81,7 @@ export function formatFailedBooking(value) {
     subject: 'Booking failed - manual review - ' + value.artist + ' - ' + value.idempotencyKey.slice(0, 8),
     body: lines.join('\n').slice(0, 7900),
     emailMessageId: value.idempotencyKey,
+    attachments,
   };
 }
 
@@ -93,6 +105,14 @@ export async function deliverFailedBookingMail(env, value, {
   // sendMessage searches Gmail by deterministic RFC822 Message-ID first.
   // A replay with the same client-generated idempotency UUID cannot send again
   // once Gmail has indexed the first delivery.
+  const receiptKey = 'booking-fallback:delivered:' + value.artist + ':' + value.idempotencyKey;
+  const store = env.GMAIL_OAUTH_STATE;
+  if (store?.get && await store.get(receiptKey)==='sent')
+    return {accepted:true,deduplicated:true};
   const delivered = await send(accessToken, { ...email, fetchImpl });
+  if (delivered.providerMessageId && store?.put) {
+    try { await store.put(receiptKey, 'sent', {expirationTtl:7*24*60*60}); }
+    catch { /* Gmail acceptance remains authoritative; replay searches its Message-ID */ }
+  }
   return { accepted: Boolean(delivered.providerMessageId), deduplicated: delivered.deduplicated === true };
 }

@@ -10,6 +10,7 @@ const payload={
   phone:'+447700900001',preferredReply:'Email',
   idea:'Black and grey sleeve',placement:'Forearm',size:'20cm',
   files:[{name:'reference.jpg',size:1024}],
+  attachments:[{name:'reference.jpg',mimeType:'image/jpeg',bytes:new Uint8Array([255,216,255,12])}],
 };
 let count=0;
 const test=(desc,fn)=>{try{fn();count++;}catch(e){console.error('FAIL',desc,e);process.exitCode=1;}};
@@ -18,6 +19,8 @@ test('Kristina route is hardcoded, never chosen by user',()=>{
   assert.equal(mail.toEmail,'bookings@kristinavishar.com');
   assert.match(mail.body,/Client Test/);
   assert.match(mail.body,/reference.jpg/);
+  assert.match(mail.body,/All validated reference images are attached/);
+  assert.equal(mail.attachments.length,1);
   assert.match(mail.body,/NOT confirmed as saved/);
   assert.doesNotMatch(mail.body,/attacker@example.com/);
 });
@@ -30,6 +33,7 @@ test('wrong origin, consent, failure state and malicious filename rejected',()=>
     {origin:'https://attacker.example'},{privacyAcknowledged:false},
     {failureCode:'invalid_email'},{idempotencyKey:'not-uuid'},
     {files:[{name:'oversized',size:20*1024*1024}]},
+    {attachments:[{name:'x.jpg',mimeType:'text/html',bytes:new Uint8Array([1,2])}]},
   ])assert.throws(()=>formatFailedBooking({...payload,...change}));
 });
 const mocks={
