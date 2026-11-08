@@ -345,7 +345,7 @@ set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok(
   $$select * from public.service_resolve_appointment_client_action(
-      (select token from t_action_tokens where action='request_reschedule'))$,
+      (select token from t_action_tokens where action='request_reschedule'))$$,
   '42501', null,
   'the reschedule-request URL becomes stale after an appointment version changes'
 );
