@@ -1022,7 +1022,8 @@ await test('the AI route keeps its contract on an active model', async () => {
   const { response, payload } = await sendJson({ type: 'idea', message: 'A wolf' }, aiEnv);
   assert.equal(response.status, 200);
   assert.deepEqual(payload, { response: 'Concept: a raven.' });
-  assert.equal(seen[0].model, '@cf/meta/llama-3.1-8b-instruct-fast');
+  assert.equal(seen[0].model, '@cf/google/gemma-4-26b-a4b-it');
+  assert.equal(seen[0].input.chat_template_kwargs?.enable_thinking, false);
   assert.equal(seen[0].options.messages[0].role, 'system');
   assert.match(seen[0].options.messages[0].content, /AI Concept Consultant for Vladimir Vishar/);
   assert.equal(seen[0].options.messages[1].content, 'A wolf');
