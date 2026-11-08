@@ -108,16 +108,19 @@ join public.artists a on a.id = s.artist_id
 where s.id = 'fa611111-1111-4111-8111-111111111111';
 
 select ok(
-  (select body like '%Deposit paid: £250%'
-          and body like '%Remaining balance: £730%'
-          and html_body like '%I&#39;ll be there%'
-          and html_body like '%Need another time%'
+  (select body like '%Deposit received: £250%'
+          and body like '%Remaining balance on the day: £730%'
+          and html_body like '%Get directions%'
+          and html_body like '%How to prepare%'
+          and html_body not like '%I&#39;ll be there%'
+          and html_body not like '%Need another time%'
+          and body not like '%Artist:%'
    from crm_private.render_booking_card_email(
      'fa711111-1111-4111-8111-111111111111',
      repeat('c', 64),
      repeat('d', 64)
    )),
-  'tattoo Email card renders canonical money and the two client actions'
+  'tattoo Email card renders verified money and preparation/directions, without re-confirmation'
 );
 
 select ok(
