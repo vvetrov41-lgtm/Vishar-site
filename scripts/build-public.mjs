@@ -39,6 +39,7 @@ export const PUBLIC_PAGES = [
   'colour-realism-tattoo-london/index.html',
   'cover-up-tattoo-london/index.html',
   'faq/index.html',
+  'arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html',
   'healed-tattoos/index.html',
   'large-scale-realism-tattoo-london/index.html',
   'portrait-tattoo-artist-london/index.html',
