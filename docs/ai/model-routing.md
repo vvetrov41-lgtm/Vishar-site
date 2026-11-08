@@ -56,14 +56,26 @@ The router does not throw into a request path.
 
 | Task | Modality | Default chain | Live today |
 |---|---|---|---|
-| `concept_consult` | text | Llama → Qwen | yes, `/ai-tools/` idea assistant |
-| `aftercare_support` | text | Llama → Qwen | yes, `/aftercare/` assistant |
+| `concept_consult` | text | Gemma 4 → Qwen | yes, `/ai-tools/` idea assistant |
+| `aftercare_support` | text | Gemma 4 → Qwen | yes, `/ai-tools/` aftercare assistant |
 | `text_summarization` | text | Qwen → Llama | declared |
 | `text_classification` | text, JSON | Qwen → Llama | declared |
 | `text_extraction` | text, JSON | Qwen → Llama | declared |
 | `high_quality_reasoning` | text | Qwen → Llama | declared |
 | `vision_reference_understanding` | vision | Qwen → Gemma | declared |
 | `vision_document_extraction` | vision, JSON | Qwen → Gemma | declared |
+
+### Why Gemma 4 serves the public assistants
+
+The Concept Consultant and Aftercare Assistant now use a task-specific
+Workers AI model override for `@cf/google/gemma-4-26b-a4b-it`, with Qwen as the
+second provider. The shared Workers AI model remains Llama 3.1 8B Fast for CRM
+client state and other short tasks. The Gemma adapter disables thinking so the
+public response reaches the browser within the existing bounded output budget;
+it also avoids empty thinking-only completions. Synthetic Cloudflare inference
+confirmed Gemma availability without creating a customer record or sending a
+message. The browser uses the first-party `api.vishartattoo.com` endpoint, as
+already deployed by the site's separate `main` branch.
 
 ### Why Llama and Qwen remain
 

@@ -374,15 +374,41 @@ await test('a failing Qwen call falls through to Llama on the same binding', asy
   assert.equal(result.attempts[0].errorCode, 'provider_unavailable');
 });
 
-await test('the live public chain still lands on Llama first', async () => {
-  const stub = aiBinding(() => ({ response: 'Concept: a raven.' }));
-  const result = await router.runModelTask(
-    { AI: stub.AI }, 'concept_consult', textInput, { fetchImpl: forbiddenFetch() });
+await test('both public assistants use Gemma 4 with thinking disabled; CRM keeps Llama', async () => {
+  for (const task of ['concept_consult', 'aftercare_support']) {
+    const plan = tasks.resolveTask({}, task, router.PROVIDER_IDS);
+    assert.deepEqual([...plan.chain], ['workers_ai', 'qwen']);
+    assert.equal(plan.workersAiModel, GEMMA_MODEL, task);
+    const stub = aiBinding(() => ({ response: 'Studio guidance.' }));
+    const result = await router.runModelTask(
+      { AI: stub.AI }, task, textInput, { fetchImpl: forbiddenFetch() });
+    assert.equal(result.ok, true, task);
+    assert.equal(result.provider, 'workers_ai');
+    assert.equal(result.model, GEMMA_MODEL);
+    assert.equal(result.fallbackUsed, false);
+    assert.equal(stub.calls.length, 1);
+    assert.equal(stub.calls[0].input.chat_template_kwargs?.enable_thinking, false);
+  }
+  const crmPlan = tasks.resolveTask({}, 'crm_client_state', router.PROVIDER_IDS);
+  assert.equal(crmPlan.workersAiModel, null, 'client state must stay on the shared Llama tier');
+  const crmStub = aiBinding(() => ({ response: 'Client state.' }));
+  assert.equal(llama.configure({ AI: crmStub.AI }, 'text')?.model, LLAMA_MODEL,
+    'the shared CRM text tier stays on Llama 3.1 Fast');
+});
 
-  assert.equal(result.provider, 'workers_ai');
-  assert.equal(result.model, LLAMA_MODEL);
-  assert.equal(result.fallbackUsed, false);
-  assert.equal(stub.calls.length, 1, 'the cheap tier answers without invoking Qwen');
+await test('a Gemma 4 public assistant failure falls back to Qwen once', async () => {
+  for (const task of ['concept_consult', 'aftercare_support']) {
+    const stub = aiBinding((model) => model === GEMMA_MODEL
+      ? new Error('model not available on this plan')
+      : { response: 'Safe fallback answer.' });
+    const result = await router.runModelTask(
+      { AI: stub.AI }, task, textInput, { fetchImpl: forbiddenFetch() });
+    assert.equal(result.ok, true);
+    assert.equal(result.provider, 'qwen');
+    assert.equal(result.model, QWEN_MODEL);
+    assert.equal(result.fallbackUsed, true);
+    assert.deepEqual(stub.calls.map(call => call.model), [GEMMA_MODEL, QWEN_MODEL]);
+  }
 });
 
 await test('Qwen vision failure falls through to Gemma on the same binding', async () => {

@@ -1,11 +1,8 @@
 // Shared transport for Cloudflare-hosted models on the `AI` binding.
 //
-// Three logical provider tiers now execute here — the incumbent Llama tier,
-// DeepSeek and Qwen — because Cloudflare hosts all three. The binding is the
-// transport; it is deliberately not the abstraction. Each tier keeps its own
-// adapter with its own model identifiers, modalities and configuration keys, so
-// the router still selects a *provider*, and moving one tier back to a vendor
-// API later touches only that adapter.
+// The Llama/Gemma Workers AI tier and Qwen both run through Cloudflare's AI
+// binding, while remaining separate router providers. A task can pin Gemma 4
+// without moving the global CRM model away from Llama 3.1 Fast.
 //
 // No API key exists on this path. `env.AI` is a binding, billed through the
 // Cloudflare account, so a tier is "configured" exactly when the binding is
