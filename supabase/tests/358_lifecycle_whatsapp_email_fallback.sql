@@ -375,5 +375,111 @@ select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com
  and p.purpose='consultation_reminder' limit 1),
  'consultation confirmation parameter is a valid full booking URL');
 
+
+-- The v3 reminder uses two real one-time appointment capabilities, not
+-- decorative buttons or an unrelated website URL. Synthetic records below
+-- exist ONLY inside this rollback transaction.
+update crm_private.lifecycle_whatsapp_template_registry
+set template_name='vishar_lifecycle_consultation_v3',
+    approval_status='APPROVED', provider_template_id='999888777666556',
+    verified_at=now()
+where artist_id=(select id from preferred_route_artist)
+  and purpose='consultation_reminder';
+
+insert into public.clients(id,full_name,email,phone,preferred_contact) values
+ ('f9841111-1111-4111-8111-111111111111','Consult Button Fixture',
+  'consult-buttons@example.test','+447700901892','WhatsApp');
+insert into public.communication_conversations(
+ id,artist_id,channel,integration_key,external_contact_id,client_id,link_state,state
+) select 'f9843333-3333-4333-8333-333333333333',a.id,
+ 'whatsapp','vladimir-production','447700901892',
+ 'f9841111-1111-4111-8111-111111111111','linked','open'
+from preferred_route_artist a;
+insert into public.sessions(
+ id,artist_id,client_id,appointment_type,status,start_at,end_at
+) select 'f9845555-5555-4555-8555-555555555555',a.id,
+ 'f9841111-1111-4111-8111-111111111111',
+ 'in_person_consultation','confirmed',
+ date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '9 days',
+ date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '9 days 30 minutes'
+from preferred_route_artist a;
+select is(crm_private.enrol_booked_session_in_lifecycle(
+ 'f9845555-5555-4555-8555-555555555555','v3_consultation_button_fixture'),
+ 'enrolled','v3 consultation enrolled without a real provider send');
+set local role service_role;
+select lives_ok('select * from public.service_run_automation_tick(500)',
+ 'future v3 consultation job materializes');
+reset role;
+update public.sessions set
+ start_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '23 hours 5 minutes',
+ end_at=date_bin('5 minutes',now(),'2000-01-01'::timestamptz)+interval '23 hours 35 minutes'
+where id='f9845555-5555-4555-8555-555555555555';
+set local role service_role;
+select lives_ok('select * from public.service_run_automation_tick(500)',
+ 'v3 consultation reminder queues its card and capabilities');
+reset role;
+
+select is((select p.template_name from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9845555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),
+ 'vishar_lifecycle_consultation_v3','actual outgoing template identity is v3');
+select is((select jsonb_array_length(p.body_parameters)
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9845555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),5,
+ 'three body variables and two private button tokens are stored');
+select is((select p.body_parameters->>0 from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9845555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),'Consult',
+ 'first body variable is the client name, not the artist introduction');
+select ok((select p.body_parameters->>2 like '%Google Maps: https://maps.app.goo.gl/%'
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9845555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),
+ 'third visible parameter contains the current studio map');
+select ok((select
+ (p.body_parameters->>3) ~ '^booking_action:[0-9a-f]{64}
+
+ and (p.body_parameters->>4) ~ '^booking_action:[0-9a-f]{64}
+
+ and p.body_parameters->>3 <> p.body_parameters->>4
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9845555-5555-4555-8555-555555555555'
+   and p.purpose='consultation_reminder' limit 1),
+ 'both buttons carry unique valid one-use booking action payloads');
+
+create temporary table v3_button_fixture as
+select p.body_parameters->>3 as confirm_payload,
+       p.body_parameters->>4 as reschedule_payload
+from crm_private.lifecycle_whatsapp_payloads p
+where p.session_id='f9845555-5555-4555-8555-555555555555'
+  and p.purpose='consultation_reminder';
+grant select on v3_button_fixture to public;
+select is((select count(*)::integer
+ from crm_private.appointment_client_action_tokens t
+ cross join v3_button_fixture f
+ where t.session_id='f9845555-5555-4555-8555-555555555555'
+   and t.action='confirm_attendance'
+   and t.token_hash=encode(extensions.digest(substring(f.confirm_payload from 16),'sha256'),'hex')),
+ 1,'confirm quick reply resolves to a real appointment capability');
+select is((select count(*)::integer
+ from crm_private.appointment_client_action_tokens t
+ cross join v3_button_fixture f
+ where t.session_id='f9845555-5555-4555-8555-555555555555'
+   and t.action='request_reschedule'
+   and t.token_hash=encode(extensions.digest(substring(f.reschedule_payload from 16),'sha256'),'hex')),
+ 1,'reschedule quick reply resolves to a real appointment capability');
+
+set local role service_role;
+select is((select (public.service_apply_whatsapp_booking_card_action(
+ (select id from preferred_route_artist),
+ 'vladimir-production','447700901892','wamid.SYNTHETICV3CONFIRM001',
+ now(),f.confirm_payload)->>'applied')::boolean from v3_button_fixture f),
+ true,'signed v3 WhatsApp button changes attendance via existing webhook RPC');
+reset role;
+select is((select client_response::text from public.sessions
+ where id='f9845555-5555-4555-8555-555555555555'),
+ 'attendance_confirmed','quick reply actually records client confirmation');
+
 select * from finish();
 rollback;
