@@ -24,16 +24,16 @@ select is((select count(*)::int from public.automation_events where entity_id='f
 
 
 
--- Place the first appointment within 24 hours; the next is the following day.
-update public.sessions set start_at=date_trunc('hour',now())+interval '20 hours',end_at=date_trunc('hour',now())+interval '24 hours' where id='f9500000-0000-4000-8000-000000000001';
-update public.sessions set start_at=date_trunc('hour',now())+interval '44 hours',end_at=date_trunc('hour',now())+interval '48 hours' where id='f9500000-0000-4000-8000-000000000002';
+-- Place the first appointment within 72 hours; the next is the following day.
+update public.sessions set start_at=date_trunc('hour',now())+interval '68 hours',end_at=date_trunc('hour',now())+interval '72 hours' where id='f9500000-0000-4000-8000-000000000001';
+update public.sessions set start_at=date_trunc('hour',now())+interval '92 hours',end_at=date_trunc('hour',now())+interval '96 hours' where id='f9500000-0000-4000-8000-000000000002';
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
-select lives_ok($$select * from public.service_run_automation_tick(500)$$,'24-hour grouped reminder is queued');
+select lives_ok($$select * from public.service_run_automation_tick(500)$$,'72-hour grouped reminder is queued');
 reset role;
 create temporary table lifecycle_token as select substring(m.body from '/appointments/respond/([0-9a-f]{64})') raw_token
 from public.email_messages m join public.automation_jobs j on j.id=m.automation_job_id
-where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_24h';
+where j.session_id='f9500000-0000-4000-8000-000000000001' and j.message_purpose='session_reminder_72h';
 grant select on lifecycle_token to public;
 select is((select count(*)::int from lifecycle_token where raw_token is not null),1,'one confirmation capability is available');
 update public.sessions set start_at=start_at+interval '10 days',end_at=end_at+interval '10 days' where id='f9500000-0000-4000-8000-000000000002';
