@@ -1025,6 +1025,8 @@ await test('the AI route keeps its contract on an active model', async () => {
   assert.equal(seen[0].options.chat_template_kwargs?.enable_thinking, false);
   assert.equal(seen[0].options.messages[0].role, 'system');
   assert.match(seen[0].options.messages[0].content, /AI Concept Consultant for Vladimir Vishar/);
+  assert.match(seen[0].options.messages[0].content, /Design feasibility and ageing/);
+  assert.match(seen[0].options.messages[0].content, /suggest simplifying secondary elements or using a larger area/);
   assert.equal(seen[0].options.messages[1].content, 'A wolf');
 });
 

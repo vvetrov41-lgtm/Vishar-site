@@ -77,6 +77,11 @@ confirmed Gemma availability without creating a customer record or sending a
 message. The browser uses the first-party `api.vishartattoo.com` endpoint, as
 already deployed by the site's separate `main` branch.
 
+Concept Consultant also checks whether an idea contains too many detailed
+subjects for its described placement and size. For crowded small pieces, it
+suggests simplifying secondary elements or using a larger area instead of
+promising that fine details will remain readable.
+
 ### Why Llama and Qwen remain
 
 Production routes use the tested Llama 8B tier for short, routine responses,
