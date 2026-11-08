@@ -100,9 +100,11 @@ select is((select total_remaining from crm_private.booking_group_card_summary(
 select ok((select m.body like '%sessions are booked%'
  from public.email_messages m join group_cards b on b.id=m.booking_card_id),
  'the client receives plural group confirmation text');
-select ok((select m.body like '%Confirm all sessions:%'
+select ok((select m.body like '%Remaining balance across the booked dates: £2,190%'
+    and m.body not like '%Confirm all sessions:%'
+    and m.html_body like '%Get directions%'
  from public.email_messages m join group_cards b on b.id=m.booking_card_id),
- 'one grouped confirmation link is rendered in Email');
+ 'grouped Email shows verified aggregate balance and no redundant attendance button');
 
 -- The link may be resolved and used by the same public appointment action route.
 create temporary table confirmed_token(raw_token text);

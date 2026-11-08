@@ -37,9 +37,10 @@ select is(
 );
 
 select ok(
- (select html_body like '%Unit B, York House, Avonmore Place%'
-    and html_body like '%maps.app.goo.gl/zfTRAJ4MXEHcHf3S6%'
-    and html_body not like '%Addison Bridge Place%'
+ (select html_body like '%16 Exhibition House, Addison Bridge Place%'
+    and html_body like '%vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/%'
+    and html_body not like '%Unit B, York House%'
+    and html_body not like '%Confirm attendance%'
   from crm_private.render_booking_card_email(
     (select id from crm_private.booking_cards
      where session_id='dc102222-2222-4222-8222-222222222222'
@@ -49,8 +50,9 @@ select ok(
 );
 
 select ok(
- (select body like '%Unit B, York House, Avonmore Place%'
-    and body like '%maps.app.goo.gl/zfTRAJ4MXEHcHf3S6%'
+ (select body like '%16 Exhibition House, Addison Bridge Place%'
+    and body like '%vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/%'
+    and body not like '%Confirm attendance:%'
   from crm_private.render_booking_card_email(
     (select id from crm_private.booking_cards
      where session_id='dc102222-2222-4222-8222-222222222222'
