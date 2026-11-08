@@ -15,3 +15,8 @@
 
 /assets/vendor/*
   Cache-Control: public, max-age=31536000, immutable
+
+/arrival/7f2bc57edcd447adbe549e36a5a1830f/*
+  X-Robots-Tag: noindex, nofollow, noarchive, noimageindex
+  Cache-Control: private, no-store, max-age=0
+  Referrer-Policy: no-referrer
