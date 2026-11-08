@@ -70,6 +70,7 @@ select ok(
           and body like '%if a deposit applies to this booking, it is non-refundable if you cancel within 72 hours of the scheduled start time.%'
    from public.message_templates
    where workspace_id = (select workspace_id from t_artist)
+     and artist_id is null
      and purpose = 'session_reminder_72h'
      and status = 'active'),
   'the 72-hour reminder states the deposit rule without claiming every booking has a deposit'

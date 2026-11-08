@@ -39,9 +39,11 @@ select is(
 );
 
 select ok(
-  pg_get_functiondef('crm_private.decorate_consultation_reminder_email()'::regprocedure)
-    like '%crm_private.consultation_reminder_action_urls(new.body)%',
-  'email trigger consumes the explicitly ordered URL extractor'
+  pg_get_functiondef('crm_private.render_approved_lifecycle_email_html(uuid,text,text)'::regprocedure)
+    like '%crm_private.consultation_reminder_action_urls(p_body)%'
+  and pg_get_functiondef('crm_private.decorate_consultation_reminder_email()'::regprocedure)
+    like '%crm_private.render_approved_lifecycle_email_html(%',
+  'new email decorator renders approved buttons from the ordered URL extractor'
 );
 
 select * from finish(true);
