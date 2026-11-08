@@ -10,25 +10,35 @@ INSERT INTO public.clients(id,full_name,email) VALUES (
   'reminder-actions@example.test'
 );
 
+INSERT INTO public.projects(id,client_id,artist_id,title) VALUES (
+  'ff205555-5555-4555-8555-555555555555',
+  'ff201111-1111-4111-8111-111111111111',
+  'a1111111-1111-4111-8111-111111111111',
+  'Reminder actions synthetic project'
+);
+
 INSERT INTO public.sessions(
-  id,client_id,artist_id,appointment_type,status,
+  id,client_id,artist_id,project_id,appointment_type,status,
   start_at,end_at,duration_hours,currency
 ) VALUES
 ('ff202222-2222-4222-8222-222222222222',
  'ff201111-1111-4111-8111-111111111111',
  'a1111111-1111-4111-8111-111111111111',
+ 'ff205555-5555-4555-8555-555555555555',
  'tattoo_session','confirmed',
  date_trunc('hour',now())+interval '36 days',
  date_trunc('hour',now())+interval '36 days 7 hours',7,'GBP'),
 ('ff203333-3333-4333-8333-333333333333',
  'ff201111-1111-4111-8111-111111111111',
  'a1111111-1111-4111-8111-111111111111',
+ NULL,
  'in_person_consultation','confirmed',
  date_trunc('hour',now())+interval '37 days',
  date_trunc('hour',now())+interval '37 days 30 minutes',0.5,'GBP'),
 ('ff204444-4444-4444-8444-444444444444',
  'ff201111-1111-4111-8111-111111111111',
  'a1111111-1111-4111-8111-111111111111',
+ NULL,
  'video_consultation','confirmed',
  date_trunc('hour',now())+interval '38 days',
  date_trunc('hour',now())+interval '38 days 30 minutes',0.5,'GBP');
