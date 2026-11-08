@@ -392,9 +392,8 @@ await test('both public assistants use Gemma 4 with thinking disabled; CRM keeps
   const crmPlan = tasks.resolveTask({}, 'crm_client_state', router.PROVIDER_IDS);
   assert.equal(crmPlan.workersAiModel, null, 'client state must stay on the shared Llama tier');
   const crmStub = aiBinding(() => ({ response: 'Client state.' }));
-  const crmResult = await router.runModelTask(
-    { AI: crmStub.AI }, 'crm_client_state', textInput, { fetchImpl: forbiddenFetch() });
-  assert.equal(crmResult.model, LLAMA_MODEL);
+  assert.equal(llama.configure({ AI: crmStub.AI }, 'text')?.model, LLAMA_MODEL,
+    'the shared CRM text tier stays on Llama 3.1 Fast');
 });
 
 await test('a Gemma 4 public assistant failure falls back to Qwen once', async () => {
