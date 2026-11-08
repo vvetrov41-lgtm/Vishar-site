@@ -73,11 +73,16 @@ $du_old$;
   -- the 24h reminder takes precedence. Never deliver two same-tick
   -- reminders or create competing confirmation capabilities.
   if v_job.message_purpose='session_reminder_72h'
-     and v_job.artist_id in (
-       'a1111111-1111-4111-8111-111111111111'::uuid,
-       'a2222222-2222-4222-8222-222222222222'::uuid
+     and exists (
+       select 1 from crm_private.booking_card_artist_settings b
+       where b.artist_id=v_job.artist_id
+         and b.arrival_guide_url is not null
      )
      and v_session.start_at <= now()+interval '24 hours'
+     and crm_private.client_send_block_reason(
+       v_session.client_id,v_job.message_channel,
+       'service'::public.message_classification
+     ) is null
      and exists (
        select 1 from public.automation_jobs j24
        where j24.session_id=v_session.id
