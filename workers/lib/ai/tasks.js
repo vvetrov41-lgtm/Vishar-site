@@ -11,9 +11,9 @@
 // them: they are reachable through the router and the guarded probe, and are
 // wired to a caller when a CRM surface actually needs them.
 //
-// Provider order is a cost and reliability decision. The default chains mirror
-// the verified production routing: Llama and Qwen for public/CRM text, and
-// Qwen with Workers AI fallback for extraction, classification and reasoning.
+// Provider order is a cost and reliability decision. The default chains use
+// Gemma 4 and Qwen for the public tattoo/aftercare assistants, Llama and Qwen
+// for CRM text, and Qwen with Workers AI for extraction and classification.
 // No retired model may be reintroduced when an environment override is absent.
 
 /** A request may never touch more than this many providers, whatever a route says. */
@@ -59,6 +59,9 @@ const TASKS = Object.freeze({
     capability: 'drafting',
     modality: 'text',
     chain: ['workers_ai', 'qwen'],
+    // Public idea analysis needs composition detail. Keep short CRM tasks on
+    // the faster shared Llama, but give visitors the stronger Gemma 4 tier.
+    workersAiModel: '@cf/google/gemma-4-26b-a4b-it',
     timeoutMs: 15_000,
     maxOutputTokens: 500,
     temperature: 0.4,
@@ -68,6 +71,9 @@ const TASKS = Object.freeze({
     capability: 'drafting',
     modality: 'text',
     chain: ['workers_ai', 'qwen'],
+    // The aftercare assistant follows a detailed studio-specific safety policy.
+    // Pin the capable, cost-controlled Gemma 4 model with Qwen as backup.
+    workersAiModel: '@cf/google/gemma-4-26b-a4b-it',
     timeoutMs: 15_000,
     maxOutputTokens: 600,
     temperature: 0.2,

@@ -107,6 +107,9 @@ AI_MODEL_QWEN_TEXT = "@cf/qwen/qwen3.8-27b"
 AI_MODEL_OPENAI_TEXT = "gpt-4o-mini"
 AI_MODEL_OPENAI_VISION = "gpt-4o-mini"
 AI_MODEL_WORKERS_AI_TEXT = "@cf/meta/llama-3.1-8b-instruct-fast"
+# Public site assistants alone use Gemma 4. CRM remains on the fast Llama tier.
+AI_MODEL_WORKERS_AI_CONCEPT_CONSULT = "@cf/google/gemma-4-26b-a4b-it"
+AI_MODEL_WORKERS_AI_AFTERCARE_SUPPORT = "@cf/google/gemma-4-26b-a4b-it"
 AI_MODEL_WORKERS_AI_VISION = "@cf/google/gemma-4-26b-a4b-it"
 
 # Marks this build as willing to serve the operator probe at /internal/ai-router.
