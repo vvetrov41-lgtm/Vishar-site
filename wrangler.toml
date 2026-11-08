@@ -31,6 +31,12 @@ name = "INTAKE_PREFLIGHT_RATE_LIMIT"
 namespace_id = "1012"
 simple = { limit = 10, period = 60 }
 
+# Private worker-to-worker Gmail emergency backup. No Gmail credentials or
+# public send endpoint are available on the booking Worker.
+[[services]]
+binding = "BOOKING_FALLBACK_GMAIL_SERVICE"
+service = "vishar-gmail-production"
+
 [ai]
 binding = "AI"
 

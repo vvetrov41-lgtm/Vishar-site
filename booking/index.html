@@ -316,7 +316,9 @@
         // now is it safe to forget the key and replace the form with a clear
         // terminal success state.
         clearIdempotencyKey();
-        const successText = result.reference
+        const successText = result.emailFallback
+          ? 'The CRM could not save your enquiry, but your details were sent to Vladimir by email for manual review. He will contact you. Reference photos may need to be resent.'
+          : result.reference
           ? 'Your enquiry is saved as ' + result.reference + '. Vladimir will review it personally.'
           : 'Your enquiry has been sent directly to Vladimir.';
         form.reset();
