@@ -63,6 +63,10 @@ const VENDOR_FONT_FILES = [
   { rel: 'assets/vendor/fonts/ibm-plex-mono/5.2.7/ibm-plex-mono-latin-400-normal.woff2', sha256: '08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7' },
   { rel: 'assets/vendor/fonts/ibm-plex-mono/5.2.7/LICENSE', sha256: '23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f' },
 ];
+// Unlisted appointment guidance is intentionally excluded from indexable site navigation/SEO checks.
+const UNLISTED_ARRIVAL_PAGES = new Set(['arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html']);
+const isIndexableHtmlPage = (file) => rel(file) !== NOT_FOUND_FILE_REL && !UNLISTED_ARRIVAL_PAGES.has(rel(file));
+
 const FONTS_STYLESHEET_REFERENCE = '/assets/css/fonts.css';
 const FONTS_BOOK_STYLESHEET_REFERENCE = '/assets/css/fonts-book.css';
 const PORTFOLIO_NUMBERS = Array.from({ length: 20 }, (_, i) => String(i + 1).padStart(2, '0'));
@@ -676,6 +680,7 @@ async function checkPagesReferenceLocalFontStylesheets(htmlFiles) {
     const contents = await readFile(file, 'utf8');
     const fileRel = rel(file);
     const isBookPage = fileRel === 'book/index.html';
+    if (UNLISTED_ARRIVAL_PAGES.has(fileRel)) continue; // Embedded self-contained styles and no public nav.
 
     if (!contents.includes(FONTS_STYLESHEET_REFERENCE)) {
       fail(`${fileRel} does not reference ${FONTS_STYLESHEET_REFERENCE}.`);
@@ -894,7 +899,7 @@ async function readSitemapEntries() {
 async function checkCanonicalTags(htmlFiles) {
   const sitemapEntries = await readSitemapEntries();
   const sitemapLocs = new Set((sitemapEntries || []).map((entry) => entry.loc).filter(Boolean));
-  const indexablePages = htmlFiles.filter((file) => rel(file) !== NOT_FOUND_FILE_REL);
+  const indexablePages = htmlFiles.filter(isIndexableHtmlPage);
 
   for (const file of indexablePages) {
     const fileRel = rel(file);
@@ -1008,7 +1013,7 @@ async function checkSitemapConsistency(htmlFiles) {
     }
   }
 
-  const indexablePages = htmlFiles.filter((file) => rel(file) !== NOT_FOUND_FILE_REL);
+  const indexablePages = htmlFiles.filter(isIndexableHtmlPage);
   const expectedUrlToFile = new Map();
   for (const file of indexablePages) {
     const fileRel = rel(file);
@@ -1049,14 +1054,14 @@ async function checkH1Counts(htmlFiles) {
 }
 
 async function checkTitlesAndDescriptions(htmlFiles) {
-  const indexablePages = htmlFiles.filter((file) => rel(file) !== NOT_FOUND_FILE_REL);
+  const indexablePages = htmlFiles.filter(isIndexableHtmlPage);
   const titlesByFile = new Map();
   const descriptionsByFile = new Map();
 
   for (const file of htmlFiles) {
     const fileRel = rel(file);
     const contents = await readFile(file, 'utf8');
-    const isIndexable = fileRel !== NOT_FOUND_FILE_REL;
+    const isIndexable = isIndexableHtmlPage(file);
 
     const titleMatches = [...contents.matchAll(/<title(?:\s[^>]*)?>([\s\S]*?)<\/title>/gi)];
     if (titleMatches.length !== 1) {
@@ -1115,7 +1120,7 @@ async function checkRobotsIndexability(htmlFiles) {
   for (const file of htmlFiles) {
     const fileRel = rel(file);
     const contents = await readFile(file, 'utf8');
-    const isNotFoundPage = fileRel === NOT_FOUND_FILE_REL;
+    const isNotFoundPage = fileRel === NOT_FOUND_FILE_REL || UNLISTED_ARRIVAL_PAGES.has(fileRel);
 
     const robotsTags = findTags(contents, 'meta').filter((tag) => {
       const attrs = extractTagAttributes(tag);
@@ -1409,6 +1414,7 @@ async function checkRawHtmlSharedContent(htmlFiles) {
 
   for (const file of htmlFiles) {
     const fileRel = rel(file);
+    if (UNLISTED_ARRIVAL_PAGES.has(fileRel)) continue; // Direct-link-only page has no public nav/footer.
     const contents = await readFile(file, 'utf8');
 
     if (!/<nav\b[^>]*aria-label="Main"/i.test(contents)) {
