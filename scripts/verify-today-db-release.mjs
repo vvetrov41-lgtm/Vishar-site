@@ -52,6 +52,8 @@ export function verifyTodayLineage(source) {
     ['20261107250000', '20261108000000'],
     // New consultation Meta candidate and one-use quick-reply capabilities.
     ['20261108000000', '20261108010000'],
+    // Promote only real Meta-approved v3 QR reminder without in-flight v2.
+    ['20261108010000', '20261108020000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
