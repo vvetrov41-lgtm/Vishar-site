@@ -3,6 +3,39 @@
 -- Preserves the canonical booking-card eligibility, deposit allocation, idempotent
 -- delivery, token security, short-lived action capabilities and immutable sent history.
 -- There are deliberately NO Confirm/Reschedule/Cancel controls immediately on booking.
+-- Keep each artist's links in protected server-side settings, not SQL
+-- function source. This also makes future address updates data-only changes.
+ALTER TABLE crm_private.booking_card_artist_settings
+  ADD COLUMN IF NOT EXISTS arrival_guide_url text,
+  ADD COLUMN IF NOT EXISTS preparation_guide_url text;
+
+UPDATE crm_private.booking_card_artist_settings
+SET arrival_guide_url='https://vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/',
+    preparation_guide_url='https://vishartattoo.com/faq/'
+WHERE artist_id='a1111111-1111-4111-8111-111111111111'::uuid;
+
+UPDATE crm_private.booking_card_artist_settings
+SET arrival_guide_url='https://www.kristinavishar.com/arrival/8be014526ee14b7190c8c559c59624ea/',
+    preparation_guide_url='https://www.kristinavishar.com/faq/'
+WHERE artist_id='a2222222-2222-4222-8222-222222222222'::uuid;
+
+-- Both links are required for enabled email booking confirmations. Do not
+-- silently fall back to an unrelated public Maps pin or untrusted URL.
+DO $guards$
+BEGIN
+  IF (SELECT count(*) FROM crm_private.booking_card_artist_settings
+      WHERE artist_id IN (
+        'a1111111-1111-4111-8111-111111111111'::uuid,
+        'a2222222-2222-4222-8222-222222222222'::uuid
+      )
+        AND arrival_guide_url LIKE 'https://%'
+        AND preparation_guide_url LIKE 'https://%') <> 2 THEN
+    RAISE EXCEPTION 'Booking-card arrival URLs missing for a configured artist'
+      USING errcode='23514';
+  END IF;
+END;
+$guards$;
+
 CREATE OR REPLACE FUNCTION crm_private.render_booking_card_email(
   p_booking_card_id uuid,
   p_confirm_token text,
@@ -69,14 +102,11 @@ BEGIN
      OR nullif(btrim(v_settings.client_action_base_url),'') IS NULL
   THEN RETURN; END IF;
 
-  IF v_card.artist_id='a1111111-1111-4111-8111-111111111111'::uuid THEN
-    v_arrival_url := 'https://vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/';
-    v_prep_url := 'https://vishartattoo.com/faq/';
-  ELSIF v_card.artist_id='a2222222-2222-4222-8222-222222222222'::uuid THEN
-    v_arrival_url := 'https://www.kristinavishar.com/arrival/8be014526ee14b7190c8c559c59624ea/';
-    v_prep_url := 'https://www.kristinavishar.com/faq/';
-  ELSE
-    RETURN; -- Never expose a private arrival route to an unknown artist.
+  v_arrival_url := v_settings.arrival_guide_url;
+  v_prep_url := v_settings.preparation_guide_url;
+  IF v_arrival_url IS NULL OR v_arrival_url NOT LIKE 'https://%'
+     OR v_prep_url IS NULL OR v_prep_url NOT LIKE 'https://%' THEN
+    RETURN; -- No link guessing or unintended public location fallback.
   END IF;
 
   v_video := v_card.appointment_type='video_consultation'::public.appointment_type;
