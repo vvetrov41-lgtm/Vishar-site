@@ -1003,9 +1003,8 @@ await test('book-waitlist still rejects an invalid email', async () => {
   assert.equal(payload.error, 'A valid email is required.');
 });
 
-// The prompts, the request shape and the response contract are unchanged. The
-// model id is not: Cloudflare retired `@cf/meta/llama-3.1-8b-instruct` on
-// 2026-05-30, and calling it is what made every live assistant request throw.
+// Both public assistants pin Gemma 4 with thinking disabled. CRM still uses
+// Llama Fast; this test checks the real root JSON route without sending a lead.
 await test('the AI route keeps its contract on an active model', async () => {
   const seen = [];
   const aiEnv = {
@@ -1023,17 +1022,26 @@ await test('the AI route keeps its contract on an active model', async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(payload, { response: 'Concept: a raven.' });
   assert.equal(seen[0].model, '@cf/google/gemma-4-26b-a4b-it');
-  assert.equal(seen[0].input.chat_template_kwargs?.enable_thinking, false);
+  assert.equal(seen[0].options.chat_template_kwargs?.enable_thinking, false);
   assert.equal(seen[0].options.messages[0].role, 'system');
   assert.match(seen[0].options.messages[0].content, /AI Concept Consultant for Vladimir Vishar/);
   assert.equal(seen[0].options.messages[1].content, 'A wolf');
 });
 
-await test('the aftercare prompt is still selected by type', async () => {
-  let systemPrompt = '';
-  const aiEnv = { ...env, AI: { run: async (_m, o) => { systemPrompt = o.messages[0].content; return { response: 'ok' }; } } };
-  await sendJson({ type: 'aftercare', message: 'Is redness normal?' }, aiEnv);
+await test('the aftercare assistant keeps studio guidance and selects Gemma 4', async () => {
+  let systemPrompt = '', selected = '', options;
+  const aiEnv = { ...env, AI: { run: async (model, input) => {
+    selected = model;
+    options = input;
+    systemPrompt = input.messages[0].content;
+    return { response: 'ok' };
+  } } };
+  await sendJson({ type: 'aftercare', message: 'Can I use normal soap?' }, aiEnv);
+  assert.equal(selected, '@cf/google/gemma-4-26b-a4b-it');
+  assert.equal(options.chat_template_kwargs?.enable_thinking, false);
   assert.match(systemPrompt, /aftercare assistant/);
+  assert.match(systemPrompt, /mild fragrance-free soap/);
+  assert.match(systemPrompt, /plain text, not Markdown/);
 });
 
 await test('OPTIONS and non-POST behaviour is unchanged', async () => {
