@@ -73,6 +73,14 @@ expectFlag(kristinaSend, 'GMAIL_VLADIMIR_ENABLED', 'true');
 expectFlag(kristinaSend, 'GMAIL_KRISTINA_ENABLED', 'true');
 expectNoGmailCron(kristinaSend);
 
+const releaseWorkflow = readFileSync('.github/workflows/gmail-production-rollout.yml','utf8');
+assert.match(releaseWorkflow,/PHASE" = 'bootstrap'/);
+assert.match(releaseWorkflow,/workers\/scripts\/\$GMAIL_WORKER_NAME\/settings/);
+assert.match(releaseWorkflow,/GMAIL_OAUTH_STATE" and \.type=="kv_namespace"/);
+assert.match(releaseWorkflow,/GMAIL_OAUTH_TOKENS" and \.type=="kv_namespace"/);
+assert.match(releaseWorkflow,/4bdea97be49c4ca8975f95391a7ffdf1/);
+assert.match(releaseWorkflow,/143c9044f0ff4acd93f6c9cf7d022a66/);
+assert.match(releaseWorkflow,/test "\$state_id" != "\$tokens_id"/);
 console.log('Gmail rollout phase tests passed: 5, direct Gmail cron disabled in every phase');
 
 const project = { id: 'vfjexhfdbrjmuxfdvbdx', name: 'vishar-crm-production', region: 'eu-west-2', status: 'ACTIVE_HEALTHY' };

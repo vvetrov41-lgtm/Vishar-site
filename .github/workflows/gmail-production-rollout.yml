@@ -101,28 +101,44 @@ jobs:
           PHASE: ${{ steps.phase.outputs.phase }}
         run: |
           set -euo pipefail
-          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
-          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json')
-
-          resolve_namespace() {
-            local title="$1"
-            local listing id created
-            listing="$(curl --fail --silent --show-error "${auth[@]}" "$api?per_page=100")"
-            id="$(jq -r --arg title "$title" '.result[]? | select(.title == $title) | .id' <<<"$listing")"
-            if [ -z "$id" ] && [ "$PHASE" = 'bootstrap' ]; then
-              created="$(jq -nc --arg title "$title" '{title:$title}' | curl --fail --silent --show-error "${auth[@]}" -X POST --data-binary @- "$api")"
-              jq -e '.success == true' <<<"$created" >/dev/null
-              id="$(jq -r '.result.id' <<<"$created")"
-            fi
-            if ! [[ "$id" =~ ^[0-9a-f]{32}$ ]]; then
-              echo "Dedicated Gmail namespace $title is unavailable." >&2
-              exit 1
-            fi
-            printf '%s' "$id"
-          }
-
-          state_id="$(resolve_namespace "$GMAIL_STATE_NAMESPACE_TITLE")"
-          tokens_id="$(resolve_namespace "$GMAIL_TOKENS_NAMESPACE_TITLE")"
+          # Redeployment reads namespace IDs from the current Gmail Worker.
+          # The protected Worker token has no account-wide KV list permission.
+          # Bootstrap retains explicit KV creation when originally required.
+          if [ "$PHASE" = 'bootstrap' ]; then
+            api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
+            resolve_namespace() {
+              local title="$1"
+              local listing id created
+              listing="$(curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' "$api?per_page=100")"
+              jq -e '.success == true' <<<"$listing" >/dev/null
+              id="$(jq -r --arg title "$title" '.result[]? | select(.title == $title) | .id' <<<"$listing")"
+              if [ -z "$id" ]; then
+                created="$(jq -nc --arg title "$title" '{title:$title}' | curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' -X POST --data-binary @- "$api")"
+                jq -e '.success == true' <<<"$created" >/dev/null
+                id="$(jq -r '.result.id' <<<"$created")"
+              fi
+              [[ "$id" =~ ^[0-9a-f]{32}$ ]] || exit 1
+              printf '%s' "$id"
+            }
+            state_id="$(resolve_namespace "$GMAIL_STATE_NAMESPACE_TITLE")"
+            tokens_id="$(resolve_namespace "$GMAIL_TOKENS_NAMESPACE_TITLE")"
+          else
+            existing="$(curl --fail --silent --show-error -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/$GMAIL_WORKER_NAME/settings")"
+            jq -e '.success == true and (.result.bindings | type == "array")' <<<"$existing" >/dev/null
+            state_id="$(jq -er '[.result.bindings[] |
+              select(.name=="GMAIL_OAUTH_STATE" and .type=="kv_namespace") |
+              .namespace_id] | if length==1 then .[0] else error("state binding drift") end' <<<"$existing")"
+            tokens_id="$(jq -er '[.result.bindings[] |
+              select(.name=="GMAIL_OAUTH_TOKENS" and .type=="kv_namespace") |
+              .namespace_id] | if length==1 then .[0] else error("token binding drift") end' <<<"$existing")"
+            # Pin independently verified production namespace IDs and fail
+            # closed on resource changes or wrong Cloudflare account.
+            test "$state_id" = '4bdea97be49c4ca8975f95391a7ffdf1'
+            test "$tokens_id" = '143c9044f0ff4acd93f6c9cf7d022a66'
+          fi
+          [[ "$state_id" =~ ^[0-9a-f]{32}$ ]]
+          [[ "$tokens_id" =~ ^[0-9a-f]{32}$ ]]
           test "$state_id" != "$tokens_id"
           echo "state_id=$state_id" >> "$GITHUB_OUTPUT"
           echo "tokens_id=$tokens_id" >> "$GITHUB_OUTPUT"
