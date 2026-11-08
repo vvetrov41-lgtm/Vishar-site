@@ -50,6 +50,8 @@ export function verifyTodayLineage(source) {
     ['20261107240000', '20261107250000'],
     // Promote only after live Meta approval and no in-flight v1 consultation.
     ['20261107250000', '20261108000000'],
+    // New consultation Meta candidate and one-use quick-reply capabilities.
+    ['20261108000000', '20261108010000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

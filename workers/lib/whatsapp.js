@@ -307,10 +307,16 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
   const language = typeof message?.language === 'string' ? message.language.trim() : '';
   const params = message?.bodyParameters;
   if (!WA_ID.test(to)) return { delivered: false, errorCode: 'whatsapp_destination_invalid' };
+  const consultationV3 = templateName === 'vishar_lifecycle_consultation_v3';
   if (!LIFECYCLE_UTILITY_PURPOSES.has(purpose)
     || !TEMPLATE_NAME.test(templateName) || !TEMPLATE_LANGUAGE.test(language)
     || !Array.isArray(params) || params.length < 1 || params.length > 10
-    || params.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1024)) {
+    || params.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1024)
+    || (consultationV3 && (purpose !== 'consultation_reminder'
+      || params.length !== 5
+      || !BOOKING_ACTION_PAYLOAD.test(params[3])
+      || !BOOKING_ACTION_PAYLOAD.test(params[4])
+      || params[3] === params[4]))) {
     return { delivered: false, errorCode: 'whatsapp_template_invalid' };
   }
 
@@ -330,8 +336,16 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
           template: {
             name: templateName,
             language: { code: language },
-            components: [{ type: 'body',
-              parameters: params.map((text) => ({ type: 'text', text })) }],
+            components: [
+              { type: 'body',
+                parameters: (consultationV3 ? params.slice(0, 3) : params)
+                  .map((text) => ({ type: 'text', text })) },
+              ...(consultationV3 ? [3, 4].map((index, position) => ({
+                type: 'button', sub_type: 'quick_reply',
+                index: String(position),
+                parameters: [{ type: 'payload', payload: params[index] }],
+              })) : []),
+            ],
           },
         }),
         redirect: 'manual',

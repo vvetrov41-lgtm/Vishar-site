@@ -510,6 +510,60 @@ await test('unknown errors collapse to one generic connector code', () => {
   assert.equal(__testing.safeErrorCode({ code: 'whatsapp_rate_limited' }), 'whatsapp_rate_limited');
 });
 
+await test('consultation v3 sends three visible parameters and two appointment quick replies', async () => {
+  const params = ['Kristina', '8 November 2026 12:00',
+    'Label Tattoo Kensington, London W14 8RL',
+    'booking_action:' + 'a'.repeat(64),
+    'booking_action:' + 'b'.repeat(64)];
+  const { fetchImpl, graphCalls, rpcCalls } = makeFetch({
+    lifecyclePayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_lifecycle: true,
+        communication_message_id: claimedJob().whatsapp_message_id,
+        artist_id: claimedJob().artist_id,
+        purpose: 'consultation_reminder',
+        template_name: 'vishar_lifecycle_consultation_v3',
+        template_language: 'en_GB', body_parameters: params,
+        delivery_allowed: true,
+      }],
+    },
+  });
+  const result = await drainWhatsappOutboxById(env, {
+    outboxId: VLADIMIR_OUTBOX, fetchImpl,
+  });
+  assert.equal(result.outcome, 'succeeded');
+  assert.equal(graphCalls.length, 1);
+  const components = graphCalls[0].body.template.components;
+  assert.equal(graphCalls[0].body.template.name, 'vishar_lifecycle_consultation_v3');
+  assert.equal(components.length, 3);
+  assert.deepEqual(components[0].parameters.map(p => p.text), params.slice(0, 3));
+  assert.equal(components[1].sub_type, 'quick_reply');
+  assert.equal(components[1].index, '0');
+  assert.equal(components[1].parameters[0].payload, params[3]);
+  assert.equal(components[2].sub_type, 'quick_reply');
+  assert.equal(components[2].index, '1');
+  assert.equal(components[2].parameters[0].payload, params[4]);
+  assert.equal(rpcCalls.filter(c => c.name === 'service_begin_communication_send').length, 1);
+});
+
+await test('consultation v3 malformed or duplicate action token fails without Meta contact', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  for (const params of [
+    ['Alex', 'tomorrow', 'studio', 'not-a-token', 'booking_action:' + 'b'.repeat(64)],
+    ['Alex', 'tomorrow', 'studio', 'booking_action:' + 'a'.repeat(64), 'booking_action:' + 'a'.repeat(64)],
+    ['Alex', 'tomorrow', 'studio'],
+  ]) {
+    const result = await sendWhatsappUtilityTemplate(env, route(), {
+      to: '447700900001', purpose: 'consultation_reminder',
+      templateName: 'vishar_lifecycle_consultation_v3', language: 'en_GB',
+      bodyParameters: params,
+    }, fetchImpl);
+    assert.equal(result.delivered, false);
+    assert.equal(result.errorCode, 'whatsapp_template_invalid');
+  }
+  assert.equal(graphCalls.length, 0);
+});
+
 await test('body-only lifecycle Utility template is sent without booking-card components', async () => {
   const { fetchImpl, graphCalls } = makeFetch();
   const result = await sendWhatsappUtilityTemplate(env, route(), {

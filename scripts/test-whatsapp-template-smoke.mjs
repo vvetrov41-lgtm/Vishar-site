@@ -111,4 +111,27 @@ const source = {
   assert.equal(sends, 1);
   assert.equal(result.accepted, 1);
 }
+{
+  // A v3 test can demonstrate the two buttons without any real client booking.
+  const v3 = { ...source, template_name: 'vishar_lifecycle_consultation_v3',
+    body_parameters: ['Kristina', 'TEST ONLY - no appointment',
+      'Label Tattoo Kensington, London W14 8RL',
+      'booking_action:' + 'c'.repeat(64), 'booking_action:' + 'd'.repeat(64)] };
+  let count = 0;
+  const result = await drainWhatsappTemplateSmokeTest({}, {
+    supabase: { async rpc(name, args) {
+      if (name === 'service_claim_whatsapp_template_smoke_test') return [v3];
+      assert.equal(args.p_accepted, true);
+      return true;
+    } },
+    async send(_env, _route, m) {
+      count++;
+      assert.equal(m.templateName, 'vishar_lifecycle_consultation_v3');
+      assert.deepEqual(m.bodyParameters, v3.body_parameters);
+      return { delivered: true, providerMessageId: 'wamid.v3fixture' };
+    },
+  });
+  assert.equal(count, 1);
+  assert.equal(result.accepted, 1);
+}
 console.log('One-shot WhatsApp Meta smoke tests passed');

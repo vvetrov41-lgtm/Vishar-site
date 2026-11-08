@@ -155,7 +155,13 @@ function validateLifecycleTemplatePayload(payload, job) {
       || !Array.isArray(payload.body_parameters)
       || payload.body_parameters.length < 1 || payload.body_parameters.length > 10
       || payload.body_parameters.some((v) =>
-        typeof v !== 'string' || !v.trim() || v.length > 1024)) {
+        typeof v !== 'string' || !v.trim() || v.length > 1024)
+      || (payload.template_name === 'vishar_lifecycle_consultation_v3'
+        && (payload.purpose !== 'consultation_reminder'
+          || payload.body_parameters.length !== 5
+          || !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[3])
+          || !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[4])
+          || payload.body_parameters[3] === payload.body_parameters[4]))) {
     throw new WhatsappDrainError('whatsapp_lifecycle_payload_invalid');
   }
   return {

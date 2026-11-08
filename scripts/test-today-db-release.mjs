@@ -207,3 +207,19 @@ for (const invalid of [
   consultationCardPromotion.replace('20261108000000 | |', '20261108003000 | |'),
   consultationCardPromotion.replace('20261107250000 | 20261107250000', '20261107250000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Stage first-person v3 consultation with two Meta quick replies, only after
+// approved production v2. No zero-evidence activation in clean CI.
+const consultV3Candidate = [
+  ' Local | Remote | Time',
+  ' 20261107250000 | 20261107250000 | t',
+  ' 20261108000000 | 20261108000000 | t',
+  ' 20261108010000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(consultV3Candidate), '20261108010000');
+for (const invalid of [
+  consultV3Candidate + '\n 20261108012000 | | t',
+  consultV3Candidate.replace('20261108010000 | |', '20261108020000 | |'),
+  consultV3Candidate.replace('20261108000000 | 20261108000000', '20261108000000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));
