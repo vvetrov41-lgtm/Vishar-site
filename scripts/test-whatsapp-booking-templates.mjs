@@ -75,6 +75,20 @@ function env() {
     type: 'URL', text: 'Studio directions',
     url: 'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic',
   }]);
+  const consultationV3 = __testing.lifecycleTemplateDefinition(
+    'consultation_reminder', 'vishar_lifecycle_consultation_v3', 'en_GB',
+  );
+  assert.equal(consultationV3.category, 'UTILITY');
+  assert.deepEqual(consultationV3.components[0], {
+    type: 'HEADER', format: 'TEXT', text: 'Consultation reminder',
+  });
+  assert.equal(consultationV3.components[1].example.body_text[0].length, 3);
+  assert.equal((consultationV3.components[1].text.match(/\\{\\{[123]\\}\\}/g) || []).length, 3);
+  assert.doesNotMatch(consultationV3.components[1].text, /it's.*Vladimir|it's \\{\\{2\\}\\}|your consultation with/i);
+  assert.deepEqual(consultationV3.components[2].buttons, [
+    { type: 'QUICK_REPLY', text: 'Confirm consultation' },
+    { type: 'QUICK_REPLY', text: 'Need another time' },
+  ]);
   const legacyConsultation = __testing.lifecycleTemplateDefinition(
     'consultation_reminder', 'vishar_lifecycle_consultation_v1', 'en_GB',
   );
