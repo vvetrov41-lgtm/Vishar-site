@@ -82,6 +82,7 @@ export const PUBLIC_ASSET_DIRS = [
   'assets/large-scale',
   'assets/og',
   'assets/portfolio',
+  'assets/studio-arrival',
   'assets/portraits',
   'assets/vendor',
 ];
