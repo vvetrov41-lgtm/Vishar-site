@@ -223,3 +223,19 @@ for (const invalid of [
   consultV3Candidate.replace('20261108010000 | |', '20261108020000 | |'),
   consultV3Candidate.replace('20261108000000 | 20261108000000', '20261108000000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Two-button consultation v3 activates only when the prior candidate has
+// a provider-approved identity and the expected migration head is live.
+const consultationV3Activation = [
+  ' Local | Remote | Time',
+  ' 20261108000000 | 20261108000000 | t',
+  ' 20261108010000 | 20261108010000 | t',
+  ' 20261108020000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(consultationV3Activation), '20261108020000');
+for(const invalid of [
+  consultationV3Activation + '\n 20261108021000 | | t',
+  consultationV3Activation.replace('20261108020000 | |','20261108030000 | |'),
+  consultationV3Activation.replace('20261108010000 | 20261108010000','20261108010000 | '),
+]) assert.throws(()=>verifyTodayLineage(invalid));
