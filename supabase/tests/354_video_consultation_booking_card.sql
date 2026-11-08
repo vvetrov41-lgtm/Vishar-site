@@ -36,14 +36,17 @@ select ok(
  'no prices or deposits appear on video consultation cards'
 );
 select ok(
- (select body ilike '%video consultation%' and body like '%Confirm video call:%'
+ (select body like '%WhatsApp video consultation%'
+   and body like '%video call you on WhatsApp at the scheduled time%'
+   and body not like '%Confirm video call%'
+   and html_body not like '%Get directions%'
    and body not like '%' || (select studio_address from crm_private.booking_card_artist_settings
      where artist_id='a1111111-1111-4111-8111-111111111111') || '%'
   from crm_private.render_booking_card_email(
     (select id from crm_private.booking_cards
       where session_id='da202222-2222-4222-8222-222222222222' and superseded_at is null),
     repeat('a',64),repeat('b',64))),
- 'video confirmation email has online wording and no studio address'
+ 'WhatsApp video confirmation is first person and has no studio address'
 );
 select is(
  (select whatsapp_video_template_status from crm_private.booking_card_artist_settings
