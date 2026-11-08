@@ -438,11 +438,11 @@ select ok((select p.body_parameters->>2 like '%Google Maps: https://maps.app.goo
    and p.purpose='consultation_reminder' limit 1),
  'third visible parameter contains the current studio map');
 select ok((select
- (p.body_parameters->>3) ~ '^booking_action:[0-9a-f]{64}
-
- and (p.body_parameters->>4) ~ '^booking_action:[0-9a-f]{64}
-
- and p.body_parameters->>3 <> p.body_parameters->>4
+ (p.body_parameters->>3) ~ '^booking_action:[0-9a-f]{64}'
+ and (p.body_parameters->>4) ~ '^booking_action:[0-9a-f]{64}'
+ and char_length(p.body_parameters->>3)=79
+ and char_length(p.body_parameters->>4)=79
+ and (p.body_parameters->>3) <> (p.body_parameters->>4)
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9845555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),
