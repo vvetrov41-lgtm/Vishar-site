@@ -65,6 +65,36 @@ $old$;
     )
   ) then
 $new$;
+  v_before_dual text := $du_old$
+  -- Resolve at the scheduled execution time, not only on enrolment.
+$du_old$;
+  v_after_dual text := $du_new$
+  -- If an appointment was made late and both windows are already due,
+  -- the 24h reminder takes precedence. Never deliver two same-tick
+  -- reminders or create competing confirmation capabilities.
+  if v_job.message_purpose='session_reminder_72h'
+     and v_job.artist_id in (
+       'a1111111-1111-4111-8111-111111111111'::uuid,
+       'a2222222-2222-4222-8222-222222222222'::uuid
+     )
+     and v_session.start_at <= now()+interval '24 hours'
+     and exists (
+       select 1 from public.automation_jobs j24
+       where j24.session_id=v_session.id
+         and j24.artist_id=v_job.artist_id
+         and j24.message_purpose='session_reminder_24h'
+         and j24.status='pending'
+         and j24.scheduled_at<=now()
+     ) then
+    update public.automation_jobs
+    set status='cancelled',cancelled_at=now(),
+        last_error_category='appointment_ineligible'
+    where id=p_job_id;
+    return 'cancelled';
+  end if;
+
+  -- Resolve at the scheduled execution time, not only on enrolment.
+$du_new$;
   v_before_confirm text := $c_old$
         if v_job.message_purpose='session_reminder_24h' then
           perform crm_private.register_lifecycle_confirmation(v_confirm_token,v_session.id);
@@ -80,12 +110,14 @@ $c_old$;
 $c_new$;
 BEGIN
   IF position(v_new IN v_fn)>0 THEN RETURN; END IF;
-  IF position(v_old IN v_fn)=0 OR position(v_before_confirm IN v_fn)=0 THEN
+  IF position(v_old IN v_fn)=0 OR position(v_before_confirm IN v_fn)=0
+     OR position(v_before_dual IN v_fn)=0 THEN
     RAISE EXCEPTION 'Unexpected live lifecycle executor; refusing template rollout'
       USING errcode='23514';
   END IF;
   v_fn := replace(v_fn,v_old,v_new);
   v_fn := replace(v_fn,v_before_confirm,v_after_confirm);
+  v_fn := replace(v_fn,v_before_dual,v_after_dual);
   EXECUTE v_fn;
 END;
 $patch_lifecycle$;
