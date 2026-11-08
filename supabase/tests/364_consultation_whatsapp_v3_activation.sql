@@ -20,8 +20,18 @@ select throws_ok($$select crm_private.activate_approved_consultation_whatsapp_v3
  'a2222222-2222-4222-8222-222222222222'::uuid)$$,
  '42501',null,'other artist cannot be promoted');
 
+-- Clean fixture has v1 and an unapproved v2 shadow; model a previously
+-- approved v2 and newly created v3 shadow only inside this transaction.
+delete from crm_private.lifecycle_whatsapp_template_candidates
+where artist_id='a1111111-1111-4111-8111-111111111111'::uuid
+  and purpose='consultation_reminder';
+insert into crm_private.lifecycle_whatsapp_template_candidates
+  (artist_id,purpose,template_name,template_language)
+values ('a1111111-1111-4111-8111-111111111111'::uuid,
+ 'consultation_reminder','vishar_lifecycle_consultation_v3','en_GB');
 update crm_private.lifecycle_whatsapp_template_registry
-   set approval_status='APPROVED',provider_template_id='123456789012345',
+   set template_name='vishar_lifecycle_consultation_v2',
+       approval_status='APPROVED',provider_template_id='123456789012345',
        verified_at=now()
  where artist_id='a1111111-1111-4111-8111-111111111111'::uuid
    and purpose='consultation_reminder';
@@ -51,7 +61,7 @@ select is(crm_private.activate_approved_consultation_whatsapp_v3(
  'already_active','promotion is idempotent');
 select is((select template_name from crm_private.lifecycle_whatsapp_template_registry
  where artist_id='a2222222-2222-4222-8222-222222222222'::uuid
-   and purpose='consultation_reminder'), 'vishar_lifecycle_consultation_v2',
+   and purpose='consultation_reminder'), 'vishar_lifecycle_consultation_v1',
  'other artists are isolated');
 select is((select count(*)::integer from crm_private.lifecycle_whatsapp_template_registry
  where artist_id='a1111111-1111-4111-8111-111111111111'::uuid
