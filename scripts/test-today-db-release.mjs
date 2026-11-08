@@ -223,3 +223,19 @@ for (const invalid of [
   consultV3Candidate.replace('20261108010000 | |', '20261108020000 | |'),
   consultV3Candidate.replace('20261108000000 | 20261108000000', '20261108000000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Kristina's 2026-11-03 notice must be accepted before a booking can persist.
+// Only one safe, pre-reviewed consent allowlist migration may be pending.
+const kristinaPrivacyRepair = [
+  ' Local | Remote | Time',
+  ' 20261108000000 | 20261108000000 | t',
+  ' 20261108010000 | 20261108010000 | t',
+  ' 20261108015000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(kristinaPrivacyRepair), '20261108015000');
+for(const invalid of [
+  kristinaPrivacyRepair + '\n 20261108020000 | | t',
+  kristinaPrivacyRepair.replace('20261108015000 | |','20261108020000 | |'),
+  kristinaPrivacyRepair.replace('20261108010000 | 20261108010000','20261108010000 | '),
+]) assert.throws(()=>verifyTodayLineage(invalid));

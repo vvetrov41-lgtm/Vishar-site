@@ -52,6 +52,9 @@ export function verifyTodayLineage(source) {
     ['20261107250000', '20261108000000'],
     // New consultation Meta candidate and one-use quick-reply capabilities.
     ['20261108000000', '20261108010000'],
+    // Restore Kristina's consented booking flow: her 2026-11-03 notice is live
+    // in the Worker but missing from the SQL durable-intake version allowlist.
+    ['20261108010000', '20261108015000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
