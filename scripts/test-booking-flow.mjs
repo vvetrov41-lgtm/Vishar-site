@@ -663,6 +663,7 @@ await test('failed valid Kristina intake is emailed once with consent and no CRM
   const accepted = [];
   const mailEnv = {
     ...env, BOOKING_SOURCE_KEY:'kristina-website',
+    ALLOWED_ORIGINS:'https://vishartattoo.com,https://www.kristinavishar.com',
     BOOKING_FALLBACK_GMAIL_SERVICE: {
       async deliverFailedBooking(p) {accepted.push(p);return {accepted:true,deduplicated:false};},
     },
