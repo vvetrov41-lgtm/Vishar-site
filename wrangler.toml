@@ -31,6 +31,12 @@ name = "INTAKE_PREFLIGHT_RATE_LIMIT"
 namespace_id = "1012"
 simple = { limit = 10, period = 60 }
 
+# Private worker-to-worker Gmail emergency backup. No Gmail credentials or
+# public send endpoint are available on the booking Worker.
+[[services]]
+binding = "BOOKING_FALLBACK_GMAIL_SERVICE"
+service = "vishar-gmail-production"
+
 [ai]
 binding = "AI"
 
@@ -43,6 +49,8 @@ SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 SUPABASE_PUBLISHABLE_KEY = "sb_publishable_c-0ZoGd5j8OfpC1NL5ehMg_4LB5t79M"
 OUTGOING_AI_REVIEW_ENABLED = "true"
 VISHAR_ENVIRONMENT = "production"
+# Emergency email backup kill switch. Disable independently of CRM and Gmail.
+BOOKING_FALLBACK_ENABLED = "true"
 # Intake extraction is off (2026-10-04): it duplicated the booking form, was
 # shown nowhere, and every automatic draft it produced was discarded. The
 # database switch crm_private.enquiry_ai_config is off as well.

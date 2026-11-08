@@ -656,6 +656,75 @@ await test('a Supabase RPC failure returns a retryable error and stores nothing'
   assert.equal(calls.telegram, 0, 'nothing is announced that was not saved');
 });
 
+await test('failed valid Kristina intake is emailed once with consent and no CRM success claim', async () => {
+  const calls = stubBackend({
+    rpc: { create_trusted_enquiry_intake: async () => new Response('{}', {status:400}) },
+  });
+  const accepted = [];
+  const mailEnv = {
+    ...env, BOOKING_SOURCE_KEY:'kristina-website',
+    ALLOWED_ORIGINS:'https://vishartattoo.com,https://www.kristinavishar.com',
+    BOOKING_FALLBACK_ENABLED:'true',
+    BOOKING_FALLBACK_GMAIL_SERVICE: {
+      async deliverFailedBooking(p) {accepted.push(p);return {accepted:true,deduplicated:false};},
+    },
+  };
+  const form=enquiryForm({fields:{privacyNoticeVersion:'2026-11-03'}});
+  const {response,payload}=await send(form,{
+    origin:'https://www.kristinavishar.com',env:mailEnv,
+  });
+  assert.equal(response.status,202);
+  assert.equal(payload.ok,true);
+  assert.equal(payload.saved,false);
+  assert.equal(payload.emailFallback,true);
+  assert.equal(accepted.length,1);
+  assert.equal(accepted[0].artist,'kristina');
+  assert.equal(accepted[0].idempotencyKey,'11111111-2222-4333-8444-555555555555');
+  assert.equal(accepted[0].privacyAcknowledged,true);
+  assert.equal(accepted[0].privacyNoticeVersion,'2026-11-03');
+  assert.equal(accepted[0].files.length,1);
+  assert.equal(accepted[0].attachments.length,1);
+  assert.equal(accepted[0].attachments[0].mimeType,'image/jpeg');
+  assert.ok(accepted[0].attachments[0].bytes instanceof Uint8Array);
+  assert.equal(calls.uploads.length,0);
+  assert.equal(calls.telegram,0);
+  assert.ok(!capturedLines().some(s=>s.includes('client@example.test')||s.includes('Test Client')));
+});
+
+await test('a failed valid Vladimir intake uses Vladimir route and never leaks visitor-chosen recipients', async()=>{
+  stubBackend({rpc:{create_trusted_enquiry_intake:async()=>new Response('{}',{status:503})}});
+  const calls=[];
+  const {response,payload}=await send(enquiryForm(),{
+    env:{...env,BOOKING_FALLBACK_ENABLED:'true',BOOKING_FALLBACK_GMAIL_SERVICE:{async deliverFailedBooking(p){calls.push(p);return {accepted:true};}}},
+  });
+  assert.equal(response.status,202);
+  assert.equal(payload.saved,false);
+  assert.equal(calls[0].artist,'vladimir');
+  assert.equal(calls[0].origin,'https://vishartattoo.com');
+  assert.equal(calls.length,1);
+});
+
+await test('fallback failure preserves original database error and does not misreport rescue',async()=>{
+  stubBackend({rpc:{create_trusted_enquiry_intake:async()=>new Response('{}',{status:500})}});
+  const {response,payload}=await send(enquiryForm(),{
+    env:{...env,BOOKING_FALLBACK_GMAIL_SERVICE:{
+      async deliverFailedBooking(){return {accepted:false,errorCode:'booking_fallback_disabled'};},
+    }},
+  });
+  assert.equal(response.status,503);
+  assert.equal(payload.code,'database_unavailable');
+});
+
+await test('no fallback email for invalid privacy consent even with Gmail service bound',async()=>{
+  const calls=[];
+  stubBackend();
+  const {response}=await send(enquiryForm({fields:{privacyAcknowledged:'false'}}),{
+    env:{...env,BOOKING_FALLBACK_GMAIL_SERVICE:{async deliverFailedBooking(p){calls.push(p);return {accepted:true};}}},
+  });
+  assert.equal(response.status,400);
+  assert.deepEqual(calls,[]);
+});
+
 await test('a rejected enquiry (4xx from the database) is not reported as retryable', async () => {
   stubBackend({
     rpc: { create_trusted_enquiry_intake: async () => new Response('{}', { status: 400 }) },

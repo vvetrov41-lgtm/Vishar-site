@@ -63,6 +63,7 @@ async function handleEnquiryIntakeInternal(
   const startedAt = Date.now();
   const hostedMode = Boolean(hostedSourceId);
   let responseCors = cors;
+  let fallbackContext = null;
 
   try {
     const origin = request.headers.get('Origin') || '';
@@ -230,6 +231,35 @@ async function handleEnquiryIntakeInternal(
     const metaAdsContext = readMetaAdsMeasurementContext(form, origin);
     const touchAttribution = readConsentedTouchAttribution(form);
     const files = await parseEnquiryFiles(form, { project });
+    // Snapshot only validated and consented data; no PII is logged on failure.
+    // Source AND exact observed origin must match. This prevents a third-party
+    // form from choosing the emergency email recipient.
+    const fallbackArtist = bookingConfig.sourceKey === 'kristina-website'
+      && origin === 'https://www.kristinavishar.com' ? 'kristina'
+      : bookingConfig.sourceKey === 'vladimir-website'
+        && origin === 'https://vishartattoo.com' ? 'vladimir' : null;
+    if (fallbackArtist && enquiry.privacyAcknowledged === true) {
+      fallbackContext = {
+        artist: fallbackArtist, origin, idempotencyKey,
+        name: enquiry.name, email: enquiry.email, phone: enquiry.phone,
+        preferredReply: enquiry.preferredReply, idea: enquiry.idea,
+        placement: enquiry.placement, size: enquiry.size,
+        projectType: enquiry.projectType, coverUp: enquiry.coverUp,
+        timing: enquiry.timing, discoverySource: enquiry.discoverySource,
+        discoverySourceDetail: enquiry.discoverySourceDetail,
+        privacyAcknowledged: true, privacyNoticeVersion: enquiry.privacyNoticeVersion,
+        files: files.map(f => ({ name: f.original_filename || 'reference', size: f.byte_size })),
+        // Validated image bytes stay in memory and travel only over a
+        // same-account private Service Binding. Gmail caps at 8 MiB.
+        attachments: files.reduce((picked,f)=>{
+          const used = picked.reduce((sum,a)=>sum+a.bytes.byteLength,0);
+          if(picked.length<3 && used+f.byte_size<=8*1024*1024)
+            picked.push({name:f.original_filename||'reference.jpg',
+              mimeType:f.mime_type,bytes:f.bytes});
+          return picked;
+        },[]),
+      };
+    }
 
     if (!supabase) supabase = createSupabaseClient(env, fetchImpl);
     const storage = createStorageClient(supabase, fetchImpl);
@@ -540,6 +570,34 @@ async function handleEnquiryIntakeInternal(
       ? error
       : toRequestError(error);
 
+    if (fallbackContext && [
+      'enquiry_rejected', 'database_unavailable', 'intake_incomplete',
+      'storage_upload_failed', 'intake_finalisation_failed',
+    ].includes(safe.code) && env?.BOOKING_FALLBACK_ENABLED === 'true'
+      && env?.BOOKING_FALLBACK_GMAIL_SERVICE) {
+      try {
+        const result = await env.BOOKING_FALLBACK_GMAIL_SERVICE.deliverFailedBooking({
+          ...fallbackContext, failureCode: safe.code,
+        });
+        if (result?.accepted === true) {
+          logger.warn('enquiry.emergency_email_accepted', {
+            route: 'enquiries', artist: fallbackContext.artist, errorCode: safe.code,
+            deduplicated: result.deduplicated === true,
+          });
+          return jsonResponse({
+            ok: true, saved: false, emailFallback: true,
+            message: 'The CRM could not save your enquiry, but your details were sent by email for manual review. The artist will contact you.',
+          }, 202, responseCors);
+        }
+        logger.error('enquiry.emergency_email_unavailable', {
+          route: 'enquiries', errorCode: result?.errorCode || 'fallback_unavailable',
+        });
+      } catch {
+        logger.error('enquiry.emergency_email_unavailable', {
+          route: 'enquiries', errorCode: 'fallback_unavailable',
+        });
+      }
+    }
     if (safe.status >= 500) {
       logger.error('enquiry.failed', {
         route: 'enquiries',

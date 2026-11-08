@@ -404,6 +404,39 @@ await test('HTML email uses multipart alternative with a plain-text fallback', a
   assert.match(raw, />I'll be there<\/a>/);
 });
 
+await test('bounded fallback images are attached as safe MIME image parts', async()=>{
+  let posted;
+  const image=new Uint8Array([0xff,0xd8,0xff,0xe0,0x00,0x01]);
+  await sendMessage('access',{
+    toEmail:'bookings@kristinavishar.com',
+    subject:'Booking failed - manual review',
+    body:'Original CRM intake failed. Contact client.',
+    emailMessageId:'55555555-5555-4555-8555-555555555555',
+    attachments:[{name:'Client photo\r\nBcc: malicious@example.test.jpg',mimeType:'image/jpeg',bytes:image}],
+    fetchImpl:async(url,options={})=>{
+      if(String(url).includes('/messages?'))return Response.json({messages:[]});
+      if(String(url).endsWith('/messages/send')&&options.method==='POST'){
+        posted=JSON.parse(options.body);
+        return Response.json({id:'msg_fb_1234',threadId:'thread_fb_1234'});
+      }
+      throw new Error('unexpected endpoint');
+    },
+  });
+  const raw=Buffer.from(posted.raw,'base64url').toString('utf8');
+  assert.match(raw,/Content-Type: multipart\/mixed/);
+  assert.match(raw,/Content-Disposition: attachment; filename="Client_photo__Bcc__malicious_example.test.jpg"/);
+  assert.match(raw,/Content-Type: image\/jpeg/);
+  assert.match(raw,/\/9j\/4AAB/);
+  assert.doesNotMatch(raw,/\r\nBcc: malicious/);
+  await assert.rejects(sendMessage('access',{
+    toEmail:'bookings@kristinavishar.com',subject:'A',body:'B',
+    emailMessageId:'66666666-6666-4666-8666-666666666666',
+    attachments:[{name:'bad.txt',mimeType:'text/html',bytes:new Uint8Array([1])}],
+    fetchImpl:async(url)=>String(url).includes('/messages?')
+      ? Response.json({messages:[]}) : Promise.reject(new Error('must not send')),
+  }),/gmail_attachments_invalid/);
+});
+
 await test('malformed Gmail send response fails closed and is not reported as sent', async () => {
   await assert.rejects(
     sendMessage('access', {

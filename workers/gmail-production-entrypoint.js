@@ -1,4 +1,5 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { deliverFailedBookingMail } from './lib/booking-fallback-email.js';
 import gmailWorker, { drainEmailOutbox } from './gmail-production.js';
 import { handleCompleteGmailDiscoveryRequest } from './gmail-complete-discovery-api.js';
 import {
@@ -43,6 +44,18 @@ export default class GmailProductionEntrypoint extends WorkerEntrypoint {
     const operatorResponse = await handleGmailOperatorRequest(request, this.env);
     if (operatorResponse) return operatorResponse;
     return gmailWorker.fetch(request, this.env);
+  }
+
+  async deliverFailedBooking(payload) {
+    // Callable only over same-account Cloudflare Service Binding; not in fetch().
+    try {
+      return await deliverFailedBookingMail(this.env, payload);
+    } catch (error) {
+      const code = error instanceof Error && /^booking_fallback_[a-z0-9_]{2,60}$/.test(error.message)
+        ? error.message : 'booking_fallback_delivery_failed';
+      console.error(JSON.stringify({ event: 'booking_fallback.failed', code }));
+      return { accepted: false, errorCode: code };
+    }
   }
 
   async drainApprovedEmailOutbox() {
