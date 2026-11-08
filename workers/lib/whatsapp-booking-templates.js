@@ -624,6 +624,17 @@ const PERSONAL_REMINDER_V2 = Object.freeze({
     ].join('\n'),
   }),
 });
+const PERSONAL_CONSULTATION_V3 = [
+  'Hi {{1}},',
+  '',
+  'Just a reminder that we have a consultation tomorrow:',
+  '{{2}}',
+  '',
+  'Details: {{3}}',
+  '',
+  'Please use the buttons below to confirm or request another time.',
+].join('\n');
+
 const PREPARATION_FAQ_URL = 'https://vishartattoo.com/faq/';
 
 function lifecycleTemplateDefinition(purpose, name, language) {
@@ -641,17 +652,30 @@ function lifecycleTemplateDefinition(purpose, name, language) {
     || (purpose === 'consultation_reminder'
       && name === 'vishar_lifecycle_consultation_v2')
   );
-  const bodyText = personalised ? PERSONAL_REMINDER_V2[purpose].text : definition.text;
+  const consultationV3 = purpose === 'consultation_reminder'
+    && name === 'vishar_lifecycle_consultation_v3';
+  const bodyText = consultationV3 ? PERSONAL_CONSULTATION_V3
+    : personalised ? PERSONAL_REMINDER_V2[purpose].text : definition.text;
+  const examples = consultationV3
+    ? ['Kristina', 'Sunday, 8 November 2026 at 10:00',
+      'Label Tattoo Kensington, Unit B, York House, Avonmore Place, London W14 8RL']
+    : definition.examples;
   return {
     name, language, category: 'UTILITY',
     components: [
-      ...(personalised ? [{ type: 'HEADER', format: 'TEXT', text: purpose === 'consultation_reminder' ? 'Consultation reminder' : 'Tattoo appointment reminder' }] : []),
+      ...((personalised || consultationV3) ? [{ type: 'HEADER', format: 'TEXT', text: purpose === 'consultation_reminder' ? 'Consultation reminder' : 'Tattoo appointment reminder' }] : []),
       {
         type: 'BODY',
         text: bodyText,
-        example: { body_text: [definition.examples] },
+        example: { body_text: [examples] },
       },
-      ...(personalised ? [{
+      ...(consultationV3 ? [{
+        type: 'BUTTONS',
+        buttons: [
+          { type: 'QUICK_REPLY', text: 'Confirm consultation' },
+          { type: 'QUICK_REPLY', text: 'Need another time' },
+        ],
+      }] : personalised ? [{
         type: 'BUTTONS',
         buttons: [purpose === 'consultation_reminder'
           ? { type: 'URL', text: 'Studio directions', url: 'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic' }

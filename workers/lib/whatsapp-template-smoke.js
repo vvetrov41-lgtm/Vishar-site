@@ -25,12 +25,17 @@ export async function drainWhatsappTemplateSmokeTest(env, {
     && WA_ID.test(job.contact_wa_id ?? '')
     && job.purpose === 'consultation_reminder'
     && ['vishar_lifecycle_consultation_v1',
-      'vishar_lifecycle_consultation_v2'].includes(job.template_name)
+      'vishar_lifecycle_consultation_v2',
+      'vishar_lifecycle_consultation_v3'].includes(job.template_name)
     && job.template_language === 'en_GB'
     && Array.isArray(job.body_parameters)
     && job.body_parameters.length === 5
     && job.body_parameters.every((s) => typeof s === 'string'
-      && s.length >= 1 && s.length <= 1024 && !/[\r\n\t]/.test(s));
+      && s.length >= 1 && s.length <= 1024 && !/[\r\n\t]/.test(s))
+    && (job.template_name !== 'vishar_lifecycle_consultation_v3'
+      || (/^booking_action:[0-9a-f]{64}$/.test(job.body_parameters[3])
+        && /^booking_action:[0-9a-f]{64}$/.test(job.body_parameters[4])
+        && job.body_parameters[3] !== job.body_parameters[4]));
   if (!UUID.test(job.test_id ?? '')) throw new Error('whatsapp_smoke_id_invalid');
 
   let result = { delivered: false, errorCode: 'whatsapp_smoke_payload_invalid' };
