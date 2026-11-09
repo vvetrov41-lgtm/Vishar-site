@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { __testing, onRequest, onRequestPost } from '../admin/functions/api/whatsapp/meta-review/template.js';
+import * as reviewRoute from '../admin/functions/api/whatsapp/meta-review/template.js';
+
+const { __testing, onRequest } = reviewRoute;
+assert.equal('onRequestPost' in reviewRoute, false, 'Pages must dispatch POST through the CORS wrapper');
 
 const ENDPOINT = 'https://crm.vishartattoo.com/api/whatsapp/meta-review/template';
 const OWNER_ID = '11111111-1111-4111-8111-111111111111';
@@ -79,7 +82,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
   const originalFetch = globalThis.fetch;
   globalThis.fetch = authorizedFetch(calls);
   try {
-    const response = await onRequestPost({ request: request('create'), env: env() });
+    const response = await onRequest({ request: request('create'), env: env() });
     assert.equal(response.status, 200);
     assert.equal(response.headers.get('x-vishar-review-handler'), 'template-v1');
     assert.deepEqual(await response.json(), {
@@ -112,7 +115,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
     }],
   });
   try {
-    const response = await onRequestPost({ request: request('delete'), env: env() });
+    const response = await onRequest({ request: request('delete'), env: env() });
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { ok: true, action: 'delete', deleted: true });
     assert.equal(calls.some((call) => String(call.target).includes(`message_templates?name=${__testing.TEMPLATE_NAME}`)), true);
@@ -134,7 +137,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
     }],
   });
   try {
-    const response = await onRequestPost({ request: request('status'), env: env() });
+    const response = await onRequest({ request: request('status'), env: env() });
     assert.equal(response.status, 200);
     const payload = await response.json();
     assert.equal(payload.ok, true);
@@ -154,7 +157,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
     throw new Error('network must stay untouched while review gate is off');
   };
   try {
-    const response = await onRequestPost({
+    const response = await onRequest({
       request: request('status'),
       env: env({ META_REVIEW_TEMPLATE_ENABLED: 'false' }),
     });
@@ -167,7 +170,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
 }
 
 {
-  const response = await onRequestPost({
+  const response = await onRequest({
     request: request('status'),
     env: env({ META_REVIEW_WABA_ID: '341184815737145', META_REVIEW_ACCESS_TOKEN: '' }),
   });
@@ -201,7 +204,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
 }
 
 {
-  const response = await onRequestPost({
+  const response = await onRequest({
     request: request('status', { origin: 'https://evil.example' }),
     env: env(),
   });
