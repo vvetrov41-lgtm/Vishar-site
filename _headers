@@ -24,3 +24,8 @@
 /assets/studio-arrival/*
   X-Robots-Tag: noindex, noimageindex
   Cache-Control: public, max-age=604800, stale-while-revalidate=86400
+
+/visit/*
+  X-Robots-Tag: noindex, nofollow, noarchive, noimageindex
+  Cache-Control: private, no-store, max-age=0
+  Referrer-Policy: no-referrer
