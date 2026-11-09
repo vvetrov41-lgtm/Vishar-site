@@ -8,6 +8,10 @@ SELECT lives_ok(
  $$SELECT * FROM public.service_claim_whatsapp_template_proposals(8)$$,
  'Backend claim registers the 12 approved-design proposals without Meta sends'
 );
+SELECT lives_ok(
+ $$SELECT * FROM public.service_claim_whatsapp_template_proposals(8)$$,
+ 'Periodic Meta proposal maintenance is idempotent and cannot create duplicate rows'
+);
 RESET ROLE;
 
 SELECT is(
