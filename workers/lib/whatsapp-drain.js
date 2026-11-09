@@ -144,6 +144,12 @@ const LIFECYCLE_PURPOSES = new Set([
 ]);
 function validateLifecycleTemplatePayload(payload, job) {
   if (!payload || payload.is_lifecycle !== true) return null;
+  const reviewedActionSpec = ({
+    vishar_lifecycle_consultation_v3: { purpose: 'consultation_reminder', body: 3, actions: 2 },
+    vishar_lifecycle_consultation_v4: { purpose: 'consultation_reminder', body: 3, actions: 2 },
+    vishar_lifecycle_reminder_72h_v3: { purpose: 'session_reminder_72h', body: 2, actions: 2 },
+    vishar_lifecycle_reminder_24h_v3: { purpose: 'session_reminder_24h', body: 2, actions: 1 },
+  })[payload.template_name] ?? null;
   if (payload.communication_message_id !== job.whatsapp_message_id
       || payload.artist_id !== job.artist_id
       || typeof payload.delivery_allowed !== 'boolean'
@@ -156,12 +162,13 @@ function validateLifecycleTemplatePayload(payload, job) {
       || payload.body_parameters.length < 1 || payload.body_parameters.length > 10
       || payload.body_parameters.some((v) =>
         typeof v !== 'string' || !v.trim() || v.length > 1024)
-      || (payload.template_name === 'vishar_lifecycle_consultation_v3'
-        && (payload.purpose !== 'consultation_reminder'
-          || payload.body_parameters.length !== 5
-          || !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[3])
-          || !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[4])
-          || payload.body_parameters[3] === payload.body_parameters[4]))) {
+      || (reviewedActionSpec && (
+        payload.purpose !== reviewedActionSpec.purpose
+        || payload.body_parameters.length !== reviewedActionSpec.body + reviewedActionSpec.actions
+        || payload.body_parameters.slice(reviewedActionSpec.body).some(
+          x => !/^booking_action:[0-9a-f]{64}$/.test(x))
+        || new Set(payload.body_parameters.slice(reviewedActionSpec.body)).size
+          !== reviewedActionSpec.actions))) {
     throw new WhatsappDrainError('whatsapp_lifecycle_payload_invalid');
   }
   return {
