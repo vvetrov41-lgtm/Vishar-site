@@ -82,4 +82,30 @@ for (const [artist_id,arrival_guide_url,preparation_guide_url] of artists) {
     assert.throws(()=>__testing.definition(wrongHost));
   }
 }
-console.log('All 12 reviewed WhatsApp proposals keep approved copy and artist-isolated URLs.');
+// Stage a single Vladimir-only 72h candidate. The previous v3 identity stays
+// intact; real attendance/reschedule actions occupy button indices 0 and 1,
+// while a static FAQ URL is the third button.
+const reminder72hCandidate=__testing.definition({
+  artist_id:artists[0][0],
+  arrival_guide_url:artists[0][1],
+  preparation_guide_url:artists[0][2],
+  kind:'reminder_72h_button',
+  template_name:'vishar_lifecycle_reminder_72h_v4',
+  template_language:'en_GB',
+});
+const buttons72h=reminder72hCandidate.components.find(c=>c.type==='BUTTONS').buttons;
+assert.deepEqual(buttons72h.map(x=>[x.type,x.text]),[
+  ['QUICK_REPLY','Confirm attendance'],
+  ['QUICK_REPLY','Need another time'],
+  ['URL','How to prepare'],
+]);
+assert.equal(buttons72h[2].url,'https://vishartattoo.com/faq/');
+assert.equal(reminder72hCandidate.components[0].text.includes('Preparation guide: https://'),false);
+assert.ok(__testing.matches({
+  ...reminder72hCandidate,id:'1234567890123',status:'PENDING',
+},reminder72hCandidate));
+const changedFaq=structuredClone(reminder72hCandidate);
+changedFaq.components.at(-1).buttons[2].url='https://different.example/faq/';
+assert.equal(__testing.matches(changedFaq,reminder72hCandidate),false);
+
+console.log('12 reviewed WhatsApp templates plus one Vladimir-only 72h three-button candidate passed.');
