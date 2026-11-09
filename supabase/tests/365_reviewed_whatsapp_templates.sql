@@ -2,6 +2,13 @@
 -- It never creates a production booking, sends WhatsApp or calls Meta.
 BEGIN;
 SELECT no_plan();
+SELECT set_config('request.jwt.claims','{"role":"service_role"}',true);
+SET LOCAL ROLE service_role;
+SELECT lives_ok(
+ $SELECT * FROM public.service_claim_whatsapp_template_proposals(8)$,
+ 'Backend claim registers the 12 approved-design proposals without Meta sends'
+);
+RESET ROLE;
 
 SELECT is(
  (SELECT count(*)::integer FROM crm_private.whatsapp_template_proposals
