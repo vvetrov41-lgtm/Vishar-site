@@ -564,6 +564,80 @@ await test('consultation v3 malformed or duplicate action token fails without Me
   assert.equal(graphCalls.length, 0);
 });
 
+await test('reviewed booking v2 templates have body only; static approved URL buttons require no runtime components', async () => {
+  for (const [templateName, bodyParameters] of [
+    ['booking_card_tattoo_v2', ['Alex', 'Monday 16 November', '12:00', '£250', 'Remaining balance on the day', '£730']],
+    ['booking_card_consultation_v2', ['Alex', 'Monday 16 November', '12:00']],
+    ['booking_card_video_consultation_v2', ['Alex', 'Monday 16 November', '12:00']],
+  ]) {
+    const { fetchImpl, graphCalls } = makeFetch();
+    const result = await sendWhatsappTemplate(env, route(), {
+      to: '447700900001', templateName, language: 'en_GB',
+      bodyParameters, location: null, quickReplies: [],
+    }, fetchImpl);
+    assert.equal(result.delivered, true);
+    assert.equal(graphCalls.length, 1);
+    assert.deepEqual(graphCalls[0].body.template.components, [{
+      type: 'body', parameters: bodyParameters.map(text => ({ type: 'text', text })),
+    }]);
+  }
+});
+
+await test('reviewed booking v2 rejects incorrect parameter arity before Meta request', async () => {
+  const { fetchImpl, graphCalls } = makeFetch();
+  const result = await sendWhatsappTemplate(env, route(), {
+    to: '447700900001', templateName: 'booking_card_tattoo_v2',
+    language: 'en_GB', bodyParameters: ['Alex', 'tomorrow'],
+    location: null, quickReplies: [],
+  }, fetchImpl);
+  assert.equal(result.delivered, false);
+  assert.equal(result.errorCode, 'whatsapp_template_invalid');
+  assert.equal(graphCalls.length, 0);
+});
+
+await test('reviewed lifecycle v3/v4 templates separate visible body from action tokens', async () => {
+  const confirm = 'booking_action:' + 'a'.repeat(64);
+  const reschedule = 'booking_action:' + 'b'.repeat(64);
+  for (const [templateName, purpose, params, bodyCount] of [
+    ['vishar_lifecycle_reminder_72h_v3', 'session_reminder_72h',
+      ['Alex', 'Monday 16 November 12:00', confirm, reschedule], 2],
+    ['vishar_lifecycle_reminder_24h_v3', 'session_reminder_24h',
+      ['Alex', '12:00', reschedule], 2],
+    ['vishar_lifecycle_consultation_v4', 'consultation_reminder',
+      ['Alex', 'Monday 16 November 12:00', 'In person, London', confirm, reschedule], 3],
+  ]) {
+    const { fetchImpl, graphCalls } = makeFetch();
+    const result = await sendWhatsappUtilityTemplate(env, route(), {
+      to: '447700900001', purpose, templateName, language: 'en_GB', bodyParameters: params,
+    }, fetchImpl);
+    assert.equal(result.delivered, true);
+    assert.equal(graphCalls.length, 1);
+    const components = graphCalls[0].body.template.components;
+    assert.deepEqual(components[0].parameters.map(p => p.text), params.slice(0, bodyCount));
+    assert.deepEqual(components.slice(1).map(p => p.parameters[0].payload), params.slice(bodyCount));
+    assert.equal(components.length, 1 + params.length - bodyCount);
+  }
+});
+
+await test('reviewed lifecycle templates reject missing, duplicate, or mismatched actions', async () => {
+  const confirm = 'booking_action:' + 'a'.repeat(64);
+  const { fetchImpl, graphCalls } = makeFetch();
+  for (const [templateName, purpose, params] of [
+    ['vishar_lifecycle_reminder_72h_v3', 'session_reminder_72h', ['Alex', 'tomorrow', confirm, confirm]],
+    ['vishar_lifecycle_reminder_24h_v3', 'session_reminder_24h', ['Alex', '12:00']],
+    ['vishar_lifecycle_consultation_v4', 'consultation_reminder', ['Alex', 'tomorrow', 'Studio', 'nope', confirm]],
+    ['vishar_lifecycle_reminder_72h_v3', 'session_reminder_24h',
+      ['Alex', 'tomorrow', confirm, 'booking_action:' + 'b'.repeat(64)]],
+  ]) {
+    const result = await sendWhatsappUtilityTemplate(env, route(), {
+      to: '447700900001', purpose, templateName, language: 'en_GB', bodyParameters: params,
+    }, fetchImpl);
+    assert.equal(result.delivered, false);
+    assert.equal(result.errorCode, 'whatsapp_template_invalid');
+  }
+  assert.equal(graphCalls.length, 0);
+});
+
 await test('body-only lifecycle Utility template is sent without booking-card components', async () => {
   const { fetchImpl, graphCalls } = makeFetch();
   const result = await sendWhatsappUtilityTemplate(env, route(), {

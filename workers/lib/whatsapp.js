@@ -171,7 +171,14 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   const language = typeof message?.language === 'string' ? message.language.trim() : '';
   const bodyParameters = Array.isArray(message?.bodyParameters) ? message.bodyParameters : null;
   const location = message?.location;
-  const videoBookingTemplate = templateName === 'booking_card_video_consultation_v1';
+  const reviewedBookingArity = ({
+    booking_card_tattoo_v2: 6,
+    booking_card_consultation_v2: 3,
+    booking_card_video_consultation_v2: 3,
+  })[templateName] ?? null;
+  const reviewedBookingV2 = reviewedBookingArity !== null;
+  const videoBookingTemplate = templateName === 'booking_card_video_consultation_v1'
+    || templateName === 'booking_card_video_consultation_v2';
   const quickReplies = Array.isArray(message?.quickReplies) ? message.quickReplies : null;
 
   if (!WA_ID.test(to)) return { delivered: false, errorCode: 'whatsapp_destination_invalid' };
@@ -182,6 +189,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
     !bodyParameters
     || bodyParameters.length < 1
     || bodyParameters.length > 10
+    || (reviewedBookingV2 && bodyParameters.length !== reviewedBookingArity)
     || bodyParameters.some((value) => (
       typeof value !== 'string'
       || !value.trim()
@@ -196,7 +204,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   const locationName = typeof location?.name === 'string' ? location.name.trim() : '';
   const locationAddress = typeof location?.address === 'string' ? location.address.trim() : '';
   if (
-    !videoBookingTemplate && (
+    !videoBookingTemplate && !reviewedBookingV2 && (
       !Number.isFinite(latitude) || latitude < -90 || latitude > 90
       || !Number.isFinite(longitude) || longitude < -180 || longitude > 180
       || !locationName || locationName.length > 256
@@ -207,10 +215,10 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   }
 
   if (
-    !quickReplies
-    || quickReplies.length !== 2
-    || quickReplies.some((value) => typeof value !== 'string' || !BOOKING_ACTION_PAYLOAD.test(value))
-    || quickReplies[0] === quickReplies[1]
+    !reviewedBookingV2 && !quickReplies
+    || (!reviewedBookingV2 && quickReplies.length !== 2)
+    || (!reviewedBookingV2 && quickReplies.some((value) => typeof value !== 'string' || !BOOKING_ACTION_PAYLOAD.test(value)))
+    || (!reviewedBookingV2 && quickReplies[0] === quickReplies[1])
   ) {
     return { delivered: false, errorCode: 'whatsapp_template_invalid' };
   }
@@ -234,7 +242,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
             name: templateName,
             language: { code: language },
             components: [
-              ...(videoBookingTemplate ? [] : [{
+              ...(videoBookingTemplate || reviewedBookingV2 ? [] : [{
                 type: 'header',
                 parameters: [{
                   type: 'location',
@@ -250,6 +258,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
                 type: 'body',
                 parameters: bodyParameters.map((value) => ({ type: 'text', text: value })),
               },
+              ...(!reviewedBookingV2 ? [
               {
                 type: 'button',
                 sub_type: 'quick_reply',
@@ -261,7 +270,8 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
                 sub_type: 'quick_reply',
                 index: '1',
                 parameters: [{ type: 'payload', payload: quickReplies[1] }],
-              },
+              }
+              ] : []),
             ],
           },
         }),
@@ -307,16 +317,21 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
   const language = typeof message?.language === 'string' ? message.language.trim() : '';
   const params = message?.bodyParameters;
   if (!WA_ID.test(to)) return { delivered: false, errorCode: 'whatsapp_destination_invalid' };
-  const consultationV3 = templateName === 'vishar_lifecycle_consultation_v3';
+  const reviewedActionSpec = ({
+    vishar_lifecycle_consultation_v3: { purpose: 'consultation_reminder', body: 3, actions: 2 },
+    vishar_lifecycle_consultation_v4: { purpose: 'consultation_reminder', body: 3, actions: 2 },
+    vishar_lifecycle_reminder_72h_v3: { purpose: 'session_reminder_72h', body: 2, actions: 2 },
+    vishar_lifecycle_reminder_24h_v3: { purpose: 'session_reminder_24h', body: 2, actions: 1 },
+  })[templateName] ?? null;
   if (!LIFECYCLE_UTILITY_PURPOSES.has(purpose)
     || !TEMPLATE_NAME.test(templateName) || !TEMPLATE_LANGUAGE.test(language)
     || !Array.isArray(params) || params.length < 1 || params.length > 10
     || params.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1024)
-    || (consultationV3 && (purpose !== 'consultation_reminder'
-      || params.length !== 5
-      || !BOOKING_ACTION_PAYLOAD.test(params[3])
-      || !BOOKING_ACTION_PAYLOAD.test(params[4])
-      || params[3] === params[4]))) {
+    || (reviewedActionSpec && (
+      purpose !== reviewedActionSpec.purpose
+      || params.length !== reviewedActionSpec.body + reviewedActionSpec.actions
+      || params.slice(reviewedActionSpec.body).some(x => !BOOKING_ACTION_PAYLOAD.test(x))
+      || new Set(params.slice(reviewedActionSpec.body)).size !== reviewedActionSpec.actions))) {
     return { delivered: false, errorCode: 'whatsapp_template_invalid' };
   }
 
@@ -338,13 +353,15 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
             language: { code: language },
             components: [
               { type: 'body',
-                parameters: (consultationV3 ? params.slice(0, 3) : params)
+                parameters: (reviewedActionSpec ? params.slice(0, reviewedActionSpec.body) : params)
                   .map((text) => ({ type: 'text', text })) },
-              ...(consultationV3 ? [3, 4].map((index, position) => ({
-                type: 'button', sub_type: 'quick_reply',
-                index: String(position),
-                parameters: [{ type: 'payload', payload: params[index] }],
-              })) : []),
+              ...(reviewedActionSpec
+                ? params.slice(reviewedActionSpec.body).map((payload, position) => ({
+                  type: 'button', sub_type: 'quick_reply',
+                  index: String(position),
+                  parameters: [{ type: 'payload', payload }],
+                }))
+                : []),
             ],
           },
         }),
