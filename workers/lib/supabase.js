@@ -50,6 +50,9 @@ export const ALLOWED_RPCS = new Set([
   'service_claim_lifecycle_whatsapp_template_targets',
   'service_record_lifecycle_whatsapp_template_status',
   'service_record_lifecycle_whatsapp_template_failure',
+  // Meta-reviewed Utility candidates: provider-only maintenance, no client send.
+  'service_claim_whatsapp_template_proposals',
+  'service_record_whatsapp_template_proposal',
   'service_apply_whatsapp_booking_card_action',
   'service_claim_booking_card_template_targets',
   'service_record_booking_card_template_status',
