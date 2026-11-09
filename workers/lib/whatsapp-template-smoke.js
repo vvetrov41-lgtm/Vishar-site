@@ -47,7 +47,7 @@ export async function drainWhatsappTemplateSmokeTest(env, {
     && Array.isArray(params)
     && params.length === contract.count
     && params.every((s) => typeof s === 'string'
-      && s.length >= 1 && s.length <= 1024 && !/[\\r\\n\\t]/.test(s))
+      && s.length >= 1 && s.length <= 1024 && !/[\r\n\t]/.test(s))
     && actions.every((token) => /^booking_action:[0-9a-f]{64}$/.test(token))
     && new Set(actions).size === actions.length;
   if (!UUID.test(job.test_id ?? '')) throw new Error('whatsapp_smoke_id_invalid');
