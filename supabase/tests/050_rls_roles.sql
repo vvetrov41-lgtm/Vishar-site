@@ -884,6 +884,8 @@ insert into expected_function_acl values
   ('public.service_claim_video_booking_template_targets(integer)', false, false, true),
   ('public.service_record_video_booking_template_status(uuid,text)', false, false, true),
   ('public.service_record_booking_card_template_status(uuid,text,text,text,jsonb,jsonb)', false, false, true),
+  ('public.service_claim_whatsapp_template_proposals(integer)', false, false, true),
+  ('public.service_record_whatsapp_template_proposal(uuid,text,text,text,text,text)', false, false, true),
   ('public.service_resolve_whatsapp_booking_card_payload(uuid,text)', false, false, true),
 
   -- Invoicing (20260920121000). Browser-callable and finance-gated: every one
