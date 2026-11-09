@@ -161,7 +161,26 @@ function validateLifecycleTemplatePayload(payload, job) {
           || payload.body_parameters.length !== 5
           || !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[3])
           || !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[4])
-          || payload.body_parameters[3] === payload.body_parameters[4]))) {
+          || payload.body_parameters[3] === payload.body_parameters[4]))
+      || (['vishar_lifecycle_reminder_72h_v3',
+           'vishar_lifecycle_reminder_24h_v3',
+           'vishar_lifecycle_consultation_v4'].includes(payload.template_name)
+        && (() => {
+          const name = payload.template_name;
+          const purpose = name.includes('72h') ? 'session_reminder_72h'
+            : name.includes('24h') ? 'session_reminder_24h' : 'consultation_reminder';
+          const bodyCount = purpose === 'session_reminder_72h' ? 4
+            : purpose === 'session_reminder_24h' ? 3 : 5;
+          const indices = purpose === 'session_reminder_72h' ? [2, 3]
+            : purpose === 'session_reminder_24h' ? [2] : [3, 4];
+          return payload.purpose !== purpose
+            || payload.template_language !== 'en_GB'
+            || payload.body_parameters.length !== bodyCount
+            || indices.some((i) =>
+              !/^booking_action:[0-9a-f]{64}$/.test(payload.body_parameters[i]))
+            || (indices.length === 2
+              && payload.body_parameters[indices[0]] === payload.body_parameters[indices[1]]);
+        })())) {
     throw new WhatsappDrainError('whatsapp_lifecycle_payload_invalid');
   }
   return {
