@@ -77,8 +77,8 @@ select is(
      and (position('{{confirm_link}}' in t.body)>0
           or position('{{reschedule_link}}' in t.body)>0
           or position('{{cancel_link}}' in t.body)>0)),
-  0,
-  '72h reminder stays action-free so same-tick overdue jobs cannot invalidate each other'
+  2,
+  'both known artist overrides send approved confirm and reschedule actions at 72h'
 );
 
 select ok(
@@ -189,20 +189,21 @@ select is(
 select is(
   (select count(*)::int from crm_private.appointment_client_action_tokens
    where session_id=(select id from t_72h_session)),
-  0, '72h-only execution creates no appointment capability rows'
+  3, '72h-only execution creates a private one-use capability set'
 );
 select ok(
-  (select body not like '%/appointments/respond/%'
+  (select body like '%Confirm attendance:%'
+      and body like '%Need another time:%'
       and body like '%non-refundable if you cancel within 72 hours%'
    from public.email_messages
    where automation_job_id=(
      select id from public.automation_jobs
      where session_id=(select id from t_72h_session) and anchor_offset_minutes=-4320)),
-  '72h email keeps deposit policy and contains no action URL'
+  '72h email keeps deposit policy and offers only the two approved actions'
 );
 
--- A 20h-ahead tattoo makes both 72h and 24h jobs due on the same tick. Only the
--- 24h email may mint, so one valid three-action set survives.
+-- A 20h-ahead tattoo makes both windows due on one tick. The obsolete
+-- 72h reminder is suppressed; the 24h reminder sends only the reschedule link.
 select pg_temp.as_owner();
 set local role authenticated;
 create temporary table t_tattoo as
@@ -227,22 +228,25 @@ set local role service_role;
 select pg_temp.tick();
 reset role;
 
-select set_eq(
-  $$select anchor_offset_minutes from public.automation_jobs
-    where session_id=(select id from t_tattoo)
-      and status='completed'::public.automation_job_status$$,
-  $$values (-4320), (-1440)$$,
-  'both overdue tattoo reminders complete in the same tick'
+select is(
+  (select status::text from public.automation_jobs
+   where session_id=(select id from t_tattoo) and anchor_offset_minutes=-4320),
+  'cancelled','late 72h reminder is suppressed before a duplicate send'
+);
+select is(
+  (select status::text from public.automation_jobs
+   where session_id=(select id from t_tattoo) and anchor_offset_minutes=-1440),
+  'completed','24h reminder is sent once'
 );
 select is(
   (select count(*)::int from crm_private.appointment_client_action_tokens
    where session_id=(select id from t_tattoo)
      and consumed_at is null and invalidated_at is null),
-  3, 'same-tick execution leaves exactly one active three-action capability set'
+  3, 'one private capability set survives, only reschedule URL is displayed'
 );
 
 create temporary table t_24h_message as
-select m.id, m.body, m.automation_job_id
+select m.id,m.body,m.automation_job_id
 from public.email_messages m
 where m.automation_job_id=(
   select j.id from public.automation_jobs j
@@ -252,42 +256,35 @@ grant select on t_24h_message to public;
 
 select ok(
   (select body not like '%{{%'
-      and body like '%Confirm attendance:%'
-      and body like '%Request a different time:%'
-      and body like '%Cancel this appointment:%'
-      and body like '%Your current appointment stays booked until we contact you and agree a new time.%'
-      and body like '%non-refundable if you cancel within 72 hours%'
+      and body not like '%Confirm attendance:%'
+      and body not like '%Cancel this appointment:%'
+      and body like '%Need another time:%'
+      and body like '%arrival/%'
+      and body like '%No need to reply if everything is still fine%'
    from t_24h_message),
-  '24h tattoo copy is fully rendered and preserves reschedule plus deposit semantics'
+  '24h tattoo copy has only reschedule link and arrival instructions'
 );
 select is(
   (select ((length(body)-length(replace(body,'https://booking.vishartattoo.com/appointments/respond/','')))
            / length('https://booking.vishartattoo.com/appointments/respond/'))::int
    from t_24h_message),
-  3, '24h tattoo email contains exactly three branded action links'
+  1,'24h tattoo Email contains exactly one client-visible action URL'
 );
 
 create temporary table t_links as
 select
-  substring(replace(body, E'\n', ' ') from 'Confirm attendance: https://booking[.]vishartattoo[.]com/appointments/respond/([0-9a-f]{64})') as confirm_token,
-  substring(replace(body, E'\n', ' ') from 'Request a different time: https://booking[.]vishartattoo[.]com/appointments/respond/([0-9a-f]{64})') as reschedule_token,
-  substring(replace(body, E'\n', ' ') from 'Cancel this appointment: https://booking[.]vishartattoo[.]com/appointments/respond/([0-9a-f]{64})') as cancel_token,
+  substring(replace(body,E'\n',' ') from 'Need another time: https://booking[.]vishartattoo[.]com/appointments/respond/([0-9a-f]{64})') as reschedule_token,
   body as original_body
 from t_24h_message;
 grant select on t_links to public;
 
 select ok(
-  (select confirm_token ~ '^[0-9a-f]{64}$'
-      and reschedule_token ~ '^[0-9a-f]{64}$'
-      and cancel_token ~ '^[0-9a-f]{64}$'
-   from t_links),
-  'all three raw capabilities appear only in the outbound email with the exact 256-bit shape'
+  (select reschedule_token ~ '^[0-9a-f]{64}$' from t_links),
+  'one visible reschedule capability has exact 256-bit shape'
 );
 
 create temporary table t_action_tokens as
-select 'confirm_attendance'::text as action, confirm_token as token from t_links
-union all select 'request_reschedule', reschedule_token from t_links
-union all select 'cancel', cancel_token from t_links;
+select 'request_reschedule'::text as action,reschedule_token as token from t_links;
 grant select on t_action_tokens to public;
 
 select is(
@@ -297,52 +294,40 @@ select is(
      on t.session_id=(select id from t_tattoo)
     and t.action::text=x.action
     and t.token_hash=encode(extensions.digest(x.token,'sha256'),'hex')),
-  3, 'private registry stores the SHA-256 digest for each email capability'
+  1, 'the visible reschedule URL matches the private SHA-256 capability registry'
 );
 select ok(
-  (select bool_and(o.payload::text not like '%' || x.token || '%')
-   from public.integration_outbox o cross join t_action_tokens x
+  (select bool_and(o.payload::text not like '%'||x.token||'%')
+   from public.integration_outbox o CROSS JOIN t_action_tokens x
    where o.email_message_id=(select id from t_24h_message)),
-  'approved-email outbox metadata does not copy raw appointment capabilities'
+  'outbox metadata never copies the client-visible action capability'
 );
 
 set local role service_role;
-select set_config('request.jwt.claims', '{"role":"service_role"}', true);
-select is(
-  (select action::text from public.service_resolve_appointment_client_action(
-    (select token from t_action_tokens where action='confirm_attendance'))),
-  'confirm_attendance', 'email confirm token resolves to confirm attendance'
-);
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select is(
   (select action::text from public.service_resolve_appointment_client_action(
     (select token from t_action_tokens where action='request_reschedule'))),
-  'request_reschedule', 'email reschedule token resolves to request reschedule'
+  'request_reschedule','24h client-visible token resolves only to request for new time'
 );
-select is(
-  (select action::text from public.service_resolve_appointment_client_action(
-    (select token from t_action_tokens where action='cancel'))),
-  'cancel', 'email cancel token resolves to cancel'
-);
--- Replay only through the public tick boundary. The private executor remains
--- intentionally unavailable even to service_role.
 select pg_temp.tick();
 reset role;
 
 select is(
   (select body from public.email_messages where id=(select id from t_24h_message)),
   (select original_body from t_links),
-  'repeated automation tick preserves the exact action URLs already stored in the email'
+  'retry preserves the exact action URL already stored in Email'
 );
 select is(
   (select count(*)::int from public.email_messages
    where automation_job_id=(select automation_job_id from t_24h_message)),
-  1, 'repeated automation tick cannot duplicate the lifecycle email'
+  1,'retry cannot duplicate the lifecycle Email'
 );
 select is(
   (select count(*)::int from crm_private.appointment_client_action_tokens
    where session_id=(select id from t_tattoo)
      and consumed_at is null and invalidated_at is null),
-  3, 'repeated automation tick does not rotate the existing capability set'
+  3,'retry does not rotate the private capability set'
 );
 
 select pg_temp.as_owner();
@@ -360,9 +345,9 @@ set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok(
   $$select * from public.service_resolve_appointment_client_action(
-      (select token from t_action_tokens where action='confirm_attendance'))$$,
+      (select token from t_action_tokens where action='request_reschedule'))$$,
   '42501', null,
-  'an action URL from the previous appointment version becomes stale after reschedule'
+  'the reschedule-request URL becomes stale after an appointment version changes'
 );
 reset role;
 
@@ -407,14 +392,16 @@ select is(
 select ok(
   (select body not like '%{{%'
       and ((length(body)-length(replace(body,'https://booking.vishartattoo.com/appointments/respond/','')))
-           / length('https://booking.vishartattoo.com/appointments/respond/'))::int = 3
-      and body like '%Your current appointment stays booked until we contact you and agree a new time.%'
+           / length('https://booking.vishartattoo.com/appointments/respond/'))::int = 2
+      and body like '%Confirm consultation:%'
+      and body like '%Need another time:%'
+      and body not like '%Cancel this appointment:%'
    from public.email_messages
    where automation_job_id=(
      select id from public.automation_jobs
      where session_id=(select id from t_consult)
        and message_purpose='consultation_reminder')),
-  'consultation email renders three branded links with request-only reschedule wording'
+  'consultation email shows only approved confirm and reschedule links'
 );
 
 select * from finish();
