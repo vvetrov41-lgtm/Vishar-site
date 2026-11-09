@@ -31,7 +31,7 @@ function env(overrides = {}) {
   };
 }
 
-function authorizedFetch(calls, { templates = [], createId = '987654321001234' } = {}) {
+function authorizedFetch(calls, { templates = [], createId = '987654321001234', createError = null } = {}) {
   let rows = structuredClone(templates);
   return async (url, init = {}) => {
     const target = String(url);
@@ -52,6 +52,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
     }
     if (target === `https://graph.facebook.com/v25.0/${REVIEW_WABA}/message_templates` && method === 'POST') {
       assert.equal(init.headers.authorization, `Bearer ${REVIEW_TOKEN}`);
+      if (createError) return Response.json({ error: createError }, { status: 400 });
       const payload = JSON.parse(String(init.body));
       assert.deepEqual(payload, {
         name: __testing.TEMPLATE_NAME,
@@ -210,6 +211,53 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
   });
   assert.equal(response.status, 403);
   assert.deepEqual(await response.json(), { ok: false, error: 'origin_not_allowed' });
+}
+
+// Meta create failure must surface as 424 JSON, never 502: Cloudflare replaces an
+// origin 502 with its own HTML page, which hid stage/graph_code in production.
+for (const origin of ['https://crm.vishartattoo.com', 'https://app.vishartattoo.com']) {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = authorizedFetch(calls, {
+    createError: {
+      code: 100,
+      error_subcode: 2388024,
+      message: `Invalid parameter ${REVIEW_TOKEN}`,
+      error_user_msg: `Template language or category is not supported. ref ${REVIEW_TOKEN}`,
+    },
+  });
+  try {
+    const response = await onRequest({ request: request('create', { origin }), env: env() });
+    assert.equal(response.status, 424);
+    assert.notEqual(response.status, 502);
+    assert.equal(response.headers.get('x-vishar-review-handler'), 'template-v1');
+    if (origin === 'https://app.vishartattoo.com') {
+      assert.equal(response.headers.get('access-control-allow-origin'), origin);
+      assert.equal(response.headers.get('access-control-expose-headers'), 'x-vishar-review-handler');
+    }
+    const payload = await response.json();
+    assert.deepEqual(payload, {
+      ok: false,
+      error: 'meta_request_failed',
+      stage: 'meta_create',
+      graph_code: 100,
+      graph_subcode: 2388024,
+      upstream_status: 400,
+      graph_message: 'Template language or category is not supported. ref [redacted]',
+    });
+    assert.equal(JSON.stringify(payload).includes(REVIEW_TOKEN), false);
+    assert.equal(calls.filter((call) => String(call.target).includes('/message_templates')).length, 2,
+      'a failed create must not retry or create a duplicate');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+{
+  assert.equal(__testing.UPSTREAM_FAILURE_STATUS, 424);
+  assert.equal(__testing.safeGraphMessage(null), null);
+  assert.equal(__testing.safeGraphMessage({ message: 'a\nb' }), 'a b');
+  assert.equal(__testing.safeGraphMessage({ message: 'x'.repeat(500) }).length <= 240, true);
 }
 
 console.log('WhatsApp Meta review template probe checks passed.');

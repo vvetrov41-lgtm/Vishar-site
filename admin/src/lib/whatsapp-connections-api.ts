@@ -377,6 +377,10 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
         if (payload && Number.isInteger(payload.graph_code)) details.push(`graph_code=${payload.graph_code}`);
         if (payload && Number.isInteger(payload.graph_subcode)) details.push(`graph_subcode=${payload.graph_subcode}`);
         if (payload && Number.isInteger(payload.upstream_status)) details.push(`upstream_status=${payload.upstream_status}`);
+        if (payload && typeof payload.stage === 'string' && /^[a-z_]{1,40}$/.test(payload.stage)) details.push(`stage=${payload.stage}`);
+        if (payload && typeof payload.graph_message === 'string' && payload.graph_message) {
+          details.push(`graph_message="${payload.graph_message.slice(0, 240)}"`);
+        }
         throw new ApiError(`Meta review template failed: ${details.join(' ')}.`);
       }
       return assertMetaReviewResponse(payload, action);
