@@ -4,6 +4,7 @@ import { drainWhatsappAudioTranscriptions } from './lib/whatsapp-audio.js';
 import { maintainWhatsappBookingTemplates } from './lib/whatsapp-booking-templates.js';
 import { maintainWhatsappLifecycleTemplates } from './lib/whatsapp-booking-templates.js';
 import { maintainWhatsappCoexistenceState } from './lib/whatsapp-booking-templates.js';
+import { maintainWhatsappTemplateProposals } from './lib/whatsapp-reviewed-proposals.js';
 
 // Outbound WhatsApp drain. It has no public surface: workers_dev and preview
 // URLs are off and the Worker has no route. Production invokes it from the
@@ -131,6 +132,25 @@ export async function handleInternalDrain(
       }));
       // An unavailable Meta template-admin route must never block ordinary
       // authorised WhatsApp replies or booking-card sends.
+    }
+  }
+
+  // Isolated Meta review staging. New templates cannot be delivered by the
+  // active booking-card/lifecycle senders until a separate approval-gated release.
+  if (env?.WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED === 'true') {
+    try {
+      const summary = await maintainWhatsappTemplateProposals(env);
+      console.log('whatsapp reviewed template proposals', JSON.stringify({
+        targets: summary.targets,
+        checked: summary.checked,
+        created: summary.created,
+        approved: summary.approved,
+        failed: summary.failed,
+      }));
+    } catch (error) {
+      console.error('whatsapp reviewed template proposals failed', JSON.stringify({
+        code: safeFailureCode(error),
+      }));
     }
   }
 
