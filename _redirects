@@ -8,3 +8,7 @@
 /cover-up-tattoo-manchester /cover-up-tattoo-london/ 301
 /cover-up-tattoo-manchester/ /cover-up-tattoo-london/ 301
 /cover-up-tattoo-manchester/index.html /cover-up-tattoo-london/ 301
+
+# Private arrival guide vanity link (internal rewrite keeps /visit/ visible)
+/visit /arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html 200
+/visit/ /arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html 200
