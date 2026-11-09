@@ -27,7 +27,9 @@ UPDATE crm_private.whatsapp_template_proposals p SET
  WHEN 'reminder_24h' THEN '1679245973610644'
  WHEN 'reminder_consultation' THEN '1725181715729712' END,
  verified_at=now()
-WHERE artist_id='a1111111-1111-4111-8111-111111111111'::uuid;
+WHERE artist_id='a1111111-1111-4111-8111-111111111111'::uuid
+  AND kind IN ('booking_tattoo','booking_consultation','booking_video',
+    'reminder_72h','reminder_24h','reminder_consultation');
 UPDATE crm_private.booking_card_artist_settings SET
  whatsapp_enabled=true,whatsapp_tattoo_template_name='booking_card_tattoo_v1',
  whatsapp_consultation_template_name='booking_card_consultation_v1',

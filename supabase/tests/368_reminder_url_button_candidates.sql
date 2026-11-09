@@ -22,8 +22,8 @@ SELECT ok(position('consultation_reminder' in
 SELECT is(crm_private.activate_reminder_url_buttons(
   'a1111111-1111-4111-8111-111111111111'::uuid),
   'waiting_for_meta_approval','Cannot switch before real Meta approval');
-SELECT throws_ok($SELECT crm_private.activate_reminder_url_buttons(
-  'a2222222-2222-4222-8222-222222222222'::uuid)$,
+SELECT throws_ok($$SELECT crm_private.activate_reminder_url_buttons(
+  'a2222222-2222-4222-8222-222222222222'::uuid)$$,
   '42501',NULL,'Kristina cannot be promoted');
 SELECT ok(
   NOT has_function_privilege('anon',
