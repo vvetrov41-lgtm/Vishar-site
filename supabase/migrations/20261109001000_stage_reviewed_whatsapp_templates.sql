@@ -144,25 +144,21 @@ GRANT EXECUTE ON FUNCTION public.service_claim_whatsapp_template_proposals(integ
 GRANT EXECUTE ON FUNCTION public.service_record_whatsapp_template_proposal(uuid,text,text,text,text,text)
   TO service_role;
 
-INSERT INTO crm_private.whatsapp_template_proposals (
- artist_id,kind,template_name,template_language
-)
-SELECT a.id,v.kind,v.name,'en_GB'
-FROM public.artists a
-CROSS JOIN (
- VALUES
- ('booking_tattoo','booking_card_tattoo_v2'),
- ('booking_consultation','booking_card_consultation_v2'),
- ('booking_video','booking_card_video_consultation_v2'),
- ('reminder_72h','vishar_lifecycle_reminder_72h_v3'),
- ('reminder_24h','vishar_lifecycle_reminder_24h_v3'),
- ('reminder_consultation','vishar_lifecycle_consultation_v4')
-) AS v(kind,name)
-WHERE a.id IN (
- 'a1111111-1111-4111-8111-111111111111'::uuid,
- 'a2222222-2222-4222-8222-222222222222'::uuid
-)
-ON CONFLICT (artist_id,kind) DO NOTHING;
+INSERT INTO crm_private.whatsapp_template_proposals
+ (artist_id,kind,template_name,template_language)
+VALUES
+ ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_tattoo','booking_card_tattoo_v2','en_GB'),
+ ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_consultation','booking_card_consultation_v2','en_GB'),
+ ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_video','booking_card_video_consultation_v2','en_GB'),
+ ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
+ ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
+ ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB'),
+ ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_tattoo','booking_card_tattoo_v2','en_GB'),
+ ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_consultation','booking_card_consultation_v2','en_GB'),
+ ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_video','booking_card_video_consultation_v2','en_GB'),
+ ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
+ ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
+ ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB');
 
 DO $guard$
 BEGIN
