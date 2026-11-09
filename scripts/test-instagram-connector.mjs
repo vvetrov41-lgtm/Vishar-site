@@ -1178,7 +1178,9 @@ await test('the connector service credential can call only the intended RPCs', (
     'service_list_unenriched_participants',
     'service_record_instagram_webhook_delivery',
     'service_record_instagram_webhook_subscription',
+    'service_resolve_instagram_booking_card_cancel_payload',
     'service_resolve_instagram_booking_card_payload',
+    'service_resolve_instagram_lifecycle_payload',
     'service_resolve_instagram_route',
     'service_set_instagram_integration',
     'service_update_communication_participant',
@@ -1221,7 +1223,7 @@ function cardPayload(overrides = {}) {
   };
 }
 
-function cardDrainDouble(payloadRow) {
+function cardDrainDouble(payloadRow, { cancelPayload = null, lifecycleRow = null } = {}) {
   const calls = [];
   return {
     calls,
@@ -1230,6 +1232,8 @@ function cardDrainDouble(payloadRow) {
       if (name === 'claim_communication_outbox') return [claimedJob({ body: 'Your consultation is booked.' })];
       if (name === 'resolve_outbox_route') return [route()];
       if (name === 'service_resolve_instagram_booking_card_payload') return payloadRow ? [payloadRow] : [];
+      if (name === 'service_resolve_instagram_booking_card_cancel_payload') return cancelPayload;
+      if (name === 'service_resolve_instagram_lifecycle_payload') return [lifecycleRow ?? { is_lifecycle: false }];
       if (name === 'service_begin_communication_send') return { proceed: true };
       return { changed: true };
     },
@@ -1291,6 +1295,84 @@ await test('a booking card job sends the card text with two quick replies, never
   assert.deepEqual(bodies[0].message.quick_replies.map((reply) => reply.title), ["I'll be there", 'Need another time']);
   const order = db.calls.map((call) => call.name);
   assert.ok(order.indexOf('service_resolve_instagram_booking_card_payload') < order.indexOf('service_begin_communication_send'));
+});
+
+await test('new Instagram booking cards include a third cancellation quick reply', async () => {
+  const environment = env();
+  await storeToken(environment, tokenRecord());
+  const cancelPayload = `booking_action:${'c'.repeat(64)}`;
+  const db = cardDrainDouble(cardPayload(), { cancelPayload });
+  const bodies = [];
+  const result = await drainCommunicationOutbox({
+    supabase: db, channel: 'instagram',
+    deliver: workerTesting.instagramDeliver(environment, db, async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ message_id: 'ig_mid_CARD0000000003' }), { status: 200,
+        headers: { 'content-type': 'application/json' } });
+    }),
+    prepare: workerTesting.instagramPrepare(db),
+    workerId: 'instagram-test-worker',
+  });
+  assert.equal(result.succeeded, 1);
+  assert.deepEqual(bodies[0].message.quick_replies.map((x) => x.title),
+    ["I'll be there", 'Need another time', 'Cancel booking']);
+  assert.equal(bodies[0].message.quick_replies[2].payload, cancelPayload);
+});
+
+await test('Instagram lifecycle reminder carries three actions, not a raw timeline', async () => {
+  const environment = env();
+  await storeToken(environment, tokenRecord());
+  const body = 'Hi Sam, your appointment is tomorrow. Confirm: https://booking.example.test/';
+  const db = cardDrainDouble(null, { lifecycleRow: {
+    is_lifecycle: true,
+    communication_message_id: MESSAGE_ID,
+    artist_id: V_ARTIST,
+    delivery_allowed: true,
+    message_text: body,
+    quick_replies: [
+      { title: 'Confirm', payload: CONFIRM },
+      { title: 'Reschedule', payload: RESCHEDULE },
+      { title: 'Cancel booking', payload: `booking_action:${'c'.repeat(64)}` },
+    ],
+  } });
+  const bodies = [];
+  const result = await drainCommunicationOutbox({
+    supabase: db, channel: 'instagram',
+    deliver: workerTesting.instagramDeliver(environment, db, async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ message_id: 'ig_mid_LIFE000000002' }), { status: 200,
+        headers: { 'content-type': 'application/json' } });
+    }),
+    prepare: workerTesting.instagramPrepare(db), workerId: 'instagram-test-worker',
+  });
+  assert.equal(result.succeeded, 1);
+  assert.equal(bodies[0].message.text, body);
+  assert.equal(bodies[0].message.quick_replies.length, 3);
+  const order = db.calls.map(c => c.name);
+  assert.ok(order.indexOf('service_resolve_instagram_lifecycle_payload') < order.indexOf('service_begin_communication_send'));
+});
+
+await test('Instagram lifecycle expired window fails before provider request', async () => {
+  const environment = env();
+  await storeToken(environment, tokenRecord());
+  const db = cardDrainDouble(null, { lifecycleRow: {
+    is_lifecycle: true,communication_message_id: MESSAGE_ID,
+    artist_id: V_ARTIST,delivery_allowed:false,
+    message_text: 'Reminder',quick_replies:[],
+  } });
+  let posts = 0;
+  const result = await drainCommunicationOutbox({
+    supabase: db,channel:'instagram',
+    deliver: workerTesting.instagramDeliver(environment, db, async () => {
+      posts += 1;return new Response('{}');
+    }),
+    prepare: workerTesting.instagramPrepare(db),workerId:'instagram-test-worker',
+  });
+  assert.equal(result.failed,1);
+  assert.equal(posts,0);
+  assert.ok(!db.calls.some(c => c.name==='service_begin_communication_send'));
+  assert.equal(db.calls.find(c=>c.name==='record_communication_outbox_result').args.p_error_code,
+    'instagram_lifecycle_window_closed');
 });
 
 await test('an obsolete booking card is closed without contacting Instagram', async () => {

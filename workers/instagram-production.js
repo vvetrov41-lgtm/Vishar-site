@@ -712,6 +712,41 @@ const BOOKING_ACTION_PAYLOAD = /^booking_action:[0-9a-f]{64}$/;
  */
 function instagramPrepare(db) {
   return async (job, _route, workerId) => {
+    // Lifecycle notices use the SAME durable outbox and Meta 24h preflight.
+    // A session edit, opt-out or closed window makes the leased intent ineligible
+    // before any provider request is started.
+    // Code is released before its database migration. Only the exact
+    // PostgREST "function not found" response is a safe compatibility case.
+    // Once the migration is live, every other RPC error must fail closed.
+    let lifecycleRows;
+    try {
+      lifecycleRows = await db.rpc('service_resolve_instagram_lifecycle_payload', {
+        p_outbox_id: job.outbox_id,
+        p_worker_id: workerId,
+      });
+    } catch (error) {
+      if (error?.pgcode !== 'PGRST202') throw error;
+      lifecycleRows = [{ is_lifecycle: false }];
+    }
+    const lifecycleList = Array.isArray(lifecycleRows) ? lifecycleRows : lifecycleRows == null ? [] : [lifecycleRows];
+    if (lifecycleList.length !== 1) return { skipErrorCode: 'instagram_lifecycle_resolution_invalid' };
+    const life = lifecycleList[0];
+    if (life?.is_lifecycle === true) {
+      if (life.delivery_allowed !== true) return { skipErrorCode: 'instagram_lifecycle_window_closed' };
+      const replies = life.quick_replies;
+      if (life.communication_message_id !== job.communication_message_id
+        || life.artist_id !== job.artist_id
+        || typeof life.message_text !== 'string' || !life.message_text.trim()
+        || !Array.isArray(replies) || replies.length > 3
+        || replies.some((r) => typeof r?.title !== 'string'
+            || !BOOKING_ACTION_PAYLOAD.test(r?.payload ?? ''))) {
+        return { skipErrorCode: 'instagram_lifecycle_payload_invalid' };
+      }
+      return { extras: { bookingCard: {
+        text: life.message_text,
+        quickReplies: replies.length ? replies : null,
+      } } };
+    }
     const rows = await db.rpc('service_resolve_instagram_booking_card_payload', {
       p_outbox_id: job.outbox_id,
       p_worker_id: workerId,
@@ -728,15 +763,28 @@ function instagramPrepare(db) {
         || !BOOKING_ACTION_PAYLOAD.test(row.reschedule_payload ?? '')) {
       return { skipErrorCode: 'instagram_booking_card_payload_invalid' };
     }
+    let cancelPayload = null;
+    try {
+      cancelPayload = await db.rpc('service_resolve_instagram_booking_card_cancel_payload', {
+        p_outbox_id: job.outbox_id,
+        p_worker_id: workerId,
+      });
+    } catch (error) {
+      if (error?.pgcode !== 'PGRST202') throw error;
+      // Existing cards were issued with two buttons. Missing new RPC is
+      // permitted only during a worker-before-database protected rollout.
+    }
+    if (cancelPayload != null && !BOOKING_ACTION_PAYLOAD.test(cancelPayload)) {
+      return { skipErrorCode: 'instagram_booking_card_payload_invalid' };
+    }
+    const quickReplies = [
+      { title: row.message_text.includes('Confirm video call:') ? 'Confirm video call' : row.message_text.includes('Confirm all sessions:') ? 'Confirm all dates' : "I'll be there", payload: row.confirm_payload },
+      { title: 'Need another time', payload: row.reschedule_payload },
+    ];
+    if (cancelPayload) quickReplies.push({ title: 'Cancel booking', payload: cancelPayload });
     return {
       extras: {
-        bookingCard: {
-          text: row.message_text,
-          quickReplies: [
-            { title: row.message_text.includes('Confirm video call:') ? 'Confirm video call' : row.message_text.includes('Confirm all sessions:') ? 'Confirm all dates' : "I'll be there", payload: row.confirm_payload },
-            { title: 'Need another time', payload: row.reschedule_payload },
-          ],
-        },
+        bookingCard: { text: row.message_text, quickReplies },
       },
     };
   };

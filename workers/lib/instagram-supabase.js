@@ -28,6 +28,8 @@ const BACKEND_RPCS = new Set([
   'resolve_outbox_route',
   'service_begin_communication_send',
   'service_resolve_instagram_booking_card_payload',
+  'service_resolve_instagram_booking_card_cancel_payload',
+  'service_resolve_instagram_lifecycle_payload',
   'service_apply_instagram_booking_card_action',
 ]);
 
