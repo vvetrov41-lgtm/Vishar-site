@@ -33,12 +33,10 @@ SELECT is(
 
 SELECT is(
  (SELECT count(*)::integer FROM crm_private.booking_card_artist_settings
-   WHERE artist_id='a1111111-1111-4111-8111-111111111111'
-     AND whatsapp_tattoo_template_name='booking_card_tattoo_v1'
-     AND whatsapp_consultation_template_name='booking_card_consultation_v1'
-     AND whatsapp_video_template_name='booking_card_video_consultation_v1'
-     AND whatsapp_enabled),1,
- 'Vladimir approved current booking cards and send gate stay intact'
+   WHERE whatsapp_tattoo_template_name='booking_card_tattoo_v2'
+      OR whatsapp_consultation_template_name='booking_card_consultation_v2'
+      OR whatsapp_video_template_name='booking_card_video_consultation_v2'),0,
+ 'The migration does not promote reviewed booking templates to the live send settings'
 );
 
 SELECT is(
@@ -50,10 +48,12 @@ SELECT is(
 
 SELECT is(
  (SELECT count(*)::integer FROM crm_private.lifecycle_whatsapp_template_registry
-   WHERE artist_id='a1111111-1111-4111-8111-111111111111'
-     AND approval_status='APPROVED'
-     AND provider_template_id IS NOT NULL),5,
- 'Existing Vladimir lifecycle Meta templates remain approved'
+   WHERE template_name IN (
+     'vishar_lifecycle_reminder_72h_v3',
+     'vishar_lifecycle_reminder_24h_v3',
+     'vishar_lifecycle_consultation_v4'
+   )),0,
+ 'No new WhatsApp reminder template is promoted to the live registry before Meta approval'
 );
 
 SET LOCAL ROLE authenticated;
