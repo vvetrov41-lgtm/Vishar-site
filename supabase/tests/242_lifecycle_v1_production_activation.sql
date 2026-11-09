@@ -398,8 +398,8 @@ select is(
 select is(
   (select status::text from public.automation_jobs
    where session_id = (select id from t_tattoo) and anchor_offset_minutes = -4320),
-  'completed',
-  'the 72 hour reminder, also past due at this start, completes on the same tick'
+  'cancelled',
+  'a redundant 72 hour reminder is suppressed when the 24 hour message is already due'
 );
 
 select ok(
@@ -414,9 +414,10 @@ select ok(
 );
 
 select ok(
-  (select subject = 'Tomorrow: your tattoo appointment with Vladimir'
+  (select subject like 'Your tattoo session tomorrow |%'
       and body like 'Hi Activation,%'
-      and body like '%Vladimir%'
+      and body like '%Need another time:%'
+      and body not like '%Confirm attendance:%'
       and body not like '%{{%'
    from public.email_messages where automation_job_id = (select id from t_due)),
   'the shipped v1 copy renders fully from the live session'
