@@ -37,6 +37,17 @@ UPDATE crm_private.whatsapp_template_proposals
  WHERE artist_id='a1111111-1111-4111-8111-111111111111'::uuid
    AND kind IN ('reminder_24h_button','reminder_consultation_button',
                 'reminder_consultation_video');
+-- Local seed keeps original inactive template names. Only inside
+-- this rollback-only test, simulate the two currently active production
+-- template identities before the final approval-gated promotion.
+UPDATE crm_private.lifecycle_whatsapp_template_registry r
+SET template_name=CASE r.purpose
+  WHEN 'session_reminder_24h' THEN 'vishar_lifecycle_reminder_24h_v3'
+  ELSE 'vishar_lifecycle_consultation_v4' END,
+  approval_status='APPROVED',provider_template_id='123456789123456',
+  verified_at=now()
+WHERE r.artist_id='a1111111-1111-4111-8111-111111111111'::uuid
+  AND r.purpose IN ('session_reminder_24h','consultation_reminder');
 SELECT is(crm_private.activate_reminder_url_buttons(
   'a1111111-1111-4111-8111-111111111111'::uuid),
   'activated','Rollback-only approvals can promote both purposes');
