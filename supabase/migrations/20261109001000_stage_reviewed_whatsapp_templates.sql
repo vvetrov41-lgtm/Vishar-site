@@ -69,7 +69,7 @@ BEGIN
   ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
   ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
   ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB')
- ON CONFLICT (artist_id,kind) DO NOTHING;
+ ON CONFLICT ON CONSTRAINT whatsapp_template_proposals_pkey DO NOTHING;
  RETURN QUERY WITH candidates AS (
   SELECT p.artist_id,p.kind,p.template_name,p.template_language,
          i.integration_key,s.arrival_guide_url,s.preparation_guide_url,
