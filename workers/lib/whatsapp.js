@@ -322,6 +322,9 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
     vishar_lifecycle_consultation_v4: { purpose: 'consultation_reminder', body: 3, actions: 2 },
     vishar_lifecycle_reminder_72h_v3: { purpose: 'session_reminder_72h', body: 2, actions: 2 },
     vishar_lifecycle_reminder_24h_v3: { purpose: 'session_reminder_24h', body: 2, actions: 1 },
+    vishar_lifecycle_reminder_24h_v4: { purpose: 'session_reminder_24h', body: 2, actions: 1, actionStart: 1 },
+    vishar_lifecycle_consultation_v5: { purpose: 'consultation_reminder', body: 3, actions: 1, actionStart: 1 },
+    vishar_lifecycle_consultation_video_v1: { purpose: 'consultation_reminder', body: 3, actions: 1, actionStart: 0 },
   })[templateName] ?? null;
   if (!LIFECYCLE_UTILITY_PURPOSES.has(purpose)
     || !TEMPLATE_NAME.test(templateName) || !TEMPLATE_LANGUAGE.test(language)
@@ -358,7 +361,7 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
               ...(reviewedActionSpec
                 ? params.slice(reviewedActionSpec.body).map((payload, position) => ({
                   type: 'button', sub_type: 'quick_reply',
-                  index: String(position),
+                  index: String(position + (reviewedActionSpec.actionStart ?? 0)),
                   parameters: [{ type: 'payload', payload }],
                 }))
                 : []),

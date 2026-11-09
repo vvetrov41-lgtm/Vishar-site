@@ -241,4 +241,33 @@ for (const reminder of [
   assert.equal(sent,false);
   assert.equal(result.failed,1);
 }
+
+for (const [purpose, template_name, params] of [
+  ['session_reminder_24h', 'vishar_lifecycle_reminder_24h_v4',
+    ['Kristina', '12:00 (TEST ONLY)', 'booking_action:'+'4'.repeat(64)]],
+  ['consultation_reminder', 'vishar_lifecycle_consultation_v5',
+    ['Kristina', 'Tuesday 10 November 2026 (TEST ONLY)',
+      'Label Tattoo Private, London', 'booking_action:'+'5'.repeat(64)]],
+  ['consultation_reminder', 'vishar_lifecycle_consultation_video_v1',
+    ['Kristina', 'Tuesday 10 November 2026 (TEST ONLY)',
+      'Video consultation - no studio visit', 'booking_action:'+'6'.repeat(64)]],
+]) {
+  const job={...source,purpose,template_name,body_parameters:params};
+  let sent=0;
+  const result=await drainWhatsappTemplateSmokeTest({}, {
+    supabase:{async rpc(name,args){
+      if(name==='service_claim_whatsapp_template_smoke_test')return [job];
+      assert.equal(name,'service_record_whatsapp_template_smoke_result');
+      assert.equal(args.p_accepted,true);return true;
+    }},
+    async send(_env,_route,m){
+      sent++;
+      assert.equal(m.templateName,template_name);
+      assert.deepEqual(m.bodyParameters,params);
+      return {delivered:true,providerMessageId:'wamid.fixture'};
+    }
+  });
+  assert.equal(sent,1);
+  assert.equal(result.accepted,1);
+}
 console.log('One-shot WhatsApp Meta smoke tests passed');
