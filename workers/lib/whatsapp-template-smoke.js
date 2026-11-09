@@ -19,25 +19,37 @@ export async function drainWhatsappTemplateSmokeTest(env, {
   if (jobs.length !== 1) throw new Error('whatsapp_smoke_claim_invalid');
 
   const job = jobs[0];
+  const supported = {
+    consultation_reminder: {
+      vishar_lifecycle_consultation_v1: { count: 5, actions: 0 },
+      vishar_lifecycle_consultation_v2: { count: 5, actions: 0 },
+      vishar_lifecycle_consultation_v3: { count: 5, actions: 2 },
+      vishar_lifecycle_consultation_v4: { count: 5, actions: 2 },
+    },
+    session_reminder_72h: {
+      vishar_lifecycle_reminder_72h_v3: { count: 4, actions: 2 },
+    },
+    session_reminder_24h: {
+      vishar_lifecycle_reminder_24h_v3: { count: 3, actions: 1 },
+    },
+  };
+  const contract = Object.hasOwn(supported, job.purpose)
+    ? supported[job.purpose][job.template_name] : null;
+  const params = job.body_parameters;
+  const actions = contract && Array.isArray(params)
+    ? params.slice(contract.count - contract.actions) : [];
   const valid = UUID.test(job.test_id ?? '')
     && UUID.test(job.artist_id ?? '')
     && ROUTE_KEY.test(job.integration_key ?? '')
     && WA_ID.test(job.contact_wa_id ?? '')
-    && job.purpose === 'consultation_reminder'
-    && ['vishar_lifecycle_consultation_v1',
-      'vishar_lifecycle_consultation_v2',
-      'vishar_lifecycle_consultation_v3',
-      'vishar_lifecycle_consultation_v4'].includes(job.template_name)
+    && !!contract
     && job.template_language === 'en_GB'
-    && Array.isArray(job.body_parameters)
-    && job.body_parameters.length === 5
-    && job.body_parameters.every((s) => typeof s === 'string'
-      && s.length >= 1 && s.length <= 1024 && !/[\r\n\t]/.test(s))
-    && (!['vishar_lifecycle_consultation_v3',
-      'vishar_lifecycle_consultation_v4'].includes(job.template_name)
-      || (/^booking_action:[0-9a-f]{64}$/.test(job.body_parameters[3])
-        && /^booking_action:[0-9a-f]{64}$/.test(job.body_parameters[4])
-        && job.body_parameters[3] !== job.body_parameters[4]));
+    && Array.isArray(params)
+    && params.length === contract.count
+    && params.every((s) => typeof s === 'string'
+      && s.length >= 1 && s.length <= 1024 && !/[\\r\\n\\t]/.test(s))
+    && actions.every((token) => /^booking_action:[0-9a-f]{64}$/.test(token))
+    && new Set(actions).size === actions.length;
   if (!UUID.test(job.test_id ?? '')) throw new Error('whatsapp_smoke_id_invalid');
 
   let result = { delivered: false, errorCode: 'whatsapp_smoke_payload_invalid' };

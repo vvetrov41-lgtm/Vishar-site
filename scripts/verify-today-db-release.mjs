@@ -59,6 +59,8 @@ export function verifyTodayLineage(source) {
     ['20261109001000', '20261109140000'],
     // Promote six reviewed WhatsApp templates after Meta approval and new sender CI.
     ['20261109140000', '20261109170000'],
+    // Expand existing once-only Meta smoke test to both approved tattoo reminders.
+    ['20261109170000', '20261109180000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
