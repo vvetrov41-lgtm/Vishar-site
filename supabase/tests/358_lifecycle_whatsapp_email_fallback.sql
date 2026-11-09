@@ -343,7 +343,7 @@ set local role service_role;
 select lives_ok('select * from public.service_run_automation_tick(500)',
  'in-person consultation WhatsApp reminder with Maps queued');
 reset role;
-select ok((select (p.body_parameters->>3) LIKE '%Google Maps: https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic'
+select ok((select (p.body_parameters->>3) LIKE '%Google Maps: https://www.google.com/maps/search/?api=1&query=16%20Exhibition%20House%2C%20Addison%20Bridge%20Place%2C%20London%20W14%208XP'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
@@ -352,7 +352,7 @@ select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecyc
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),5,
  'approved consultation Meta template keeps exactly five variables');
-select ok((select (p.body_parameters->>3) LIKE 'Label Tattoo Kensington, Unit B, York House%'
+select ok((select (p.body_parameters->>3) LIKE 'Label Tattoo Private, 16 Exhibition House, Addison Bridge Place%'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
@@ -432,7 +432,7 @@ select is((select p.body_parameters->>0 from crm_private.lifecycle_whatsapp_payl
  where p.session_id='f9845555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),'Consult',
  'first body variable is the client name, not the artist introduction');
-select ok((select p.body_parameters->>2 like '%Google Maps: https://maps.app.goo.gl/%'
+select ok((select p.body_parameters->>2 like '%Google Maps: https://www.google.com/maps/search/?api=1&query=16%20Exhibition%20House%'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9845555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),
