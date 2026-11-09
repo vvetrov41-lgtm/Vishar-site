@@ -61,6 +61,8 @@ export function verifyTodayLineage(source) {
     ['20261109140000', '20261109170000'],
     // Expand existing once-only Meta smoke test to both approved tattoo reminders.
     ['20261109170000', '20261109180000'],
+    // Stage approval-gated reminder button templates; no live switch.
+    ['20261109180000', '20261109190000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
