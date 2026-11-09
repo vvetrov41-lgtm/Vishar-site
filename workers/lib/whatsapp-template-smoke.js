@@ -25,12 +25,15 @@ export async function drainWhatsappTemplateSmokeTest(env, {
       vishar_lifecycle_consultation_v2: { count: 5, actions: 0 },
       vishar_lifecycle_consultation_v3: { count: 5, actions: 2 },
       vishar_lifecycle_consultation_v4: { count: 5, actions: 2 },
+      vishar_lifecycle_consultation_v5: { count: 4, actions: 1 },
+      vishar_lifecycle_consultation_video_v1: { count: 4, actions: 1 },
     },
     session_reminder_72h: {
       vishar_lifecycle_reminder_72h_v3: { count: 4, actions: 2 },
     },
     session_reminder_24h: {
       vishar_lifecycle_reminder_24h_v3: { count: 3, actions: 1 },
+      vishar_lifecycle_reminder_24h_v4: { count: 3, actions: 1 },
     },
   };
   const contract = Object.hasOwn(supported, job.purpose)

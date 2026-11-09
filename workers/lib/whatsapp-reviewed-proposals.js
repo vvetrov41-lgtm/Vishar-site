@@ -13,6 +13,9 @@ const KINDS = Object.freeze({
   reminder_72h: 'vishar_lifecycle_reminder_72h_v3',
   reminder_24h: 'vishar_lifecycle_reminder_24h_v3',
   reminder_consultation: 'vishar_lifecycle_consultation_v4',
+  reminder_24h_button: 'vishar_lifecycle_reminder_24h_v4',
+  reminder_consultation_button: 'vishar_lifecycle_consultation_v5',
+  reminder_consultation_video: 'vishar_lifecycle_consultation_video_v1',
 });
 const ARTIST_DOMAINS = Object.freeze({
   'a1111111-1111-4111-8111-111111111111': 'vishartattoo.com',
@@ -104,6 +107,58 @@ function definition(target) {
       'No need to reply if everything is still fine. See you tomorrow!',
     ].join('\n');
     example=['Alex','12:00'];
+    buttons=[{type:'QUICK_REPLY',text:'Need another time'}];
+  } else if (target.kind === 'reminder_24h_button') {
+    text=[
+      'Hi {{1}},',
+      '',
+      'Just a reminder that your tattoo session starts tomorrow at {{2}}.',
+      '',
+      'Please open the arrival instructions using the button below before coming.',
+      'Your booking is already confirmed, so there is no need to confirm again.',
+      'If you need to change the time, use the other button.',
+      '',
+      'See you tomorrow!',
+    ].join('\n');
+    example=['Alex','12:00'];
+    buttons=[
+      {type:'URL',text:'Arrival instructions',url},
+      {type:'QUICK_REPLY',text:'Need another time'},
+    ];
+  } else if (target.kind === 'reminder_consultation_button') {
+    text=[
+      'Hi {{1}},',
+      '',
+      'Just a reminder about your consultation tomorrow, {{2}}.',
+      '',
+      'Studio: {{3}}',
+      '',
+      'Your appointment is already confirmed. No need to confirm again.',
+      'Use Get directions for the private studio arrival instructions.',
+      'If you need to change the time, use Need another time.',
+      '',
+      'See you tomorrow!',
+    ].join('\n');
+    example=['Alex','Tuesday, 10 November 2026 at 12:00',
+      'Label Tattoo Private, Exhibition House, London'];
+    buttons=[
+      {type:'URL',text:'Get directions',url},
+      {type:'QUICK_REPLY',text:'Need another time'},
+    ];
+  } else if (target.kind === 'reminder_consultation_video') {
+    text=[
+      'Hi {{1}},',
+      '',
+      'Just a reminder about your WhatsApp video consultation tomorrow, {{2}}.',
+      '',
+      '{{3}}',
+      '',
+      "I'll video call you on WhatsApp at the scheduled time.",
+      'Your appointment is already confirmed. No need to confirm again.',
+      'If you need another time, use the button below.',
+    ].join('\n');
+    example=['Alex','Tuesday, 10 November 2026 at 12:00',
+      'Video consultation: no studio visit'];
     buttons=[{type:'QUICK_REPLY',text:'Need another time'}];
   } else if (target.kind === 'reminder_consultation') {
     text=[

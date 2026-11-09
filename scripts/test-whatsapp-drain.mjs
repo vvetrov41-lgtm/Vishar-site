@@ -619,6 +619,29 @@ await test('reviewed lifecycle v3/v4 templates separate visible body from action
   }
 });
 
+await test('new URL + reschedule templates keep button index one', async () => {
+  const token='booking_action:'+'9'.repeat(64);
+  for (const [name,purpose,params,expectedIndex] of [
+    ['vishar_lifecycle_reminder_24h_v4','session_reminder_24h',['Alex','12:00',token],'1'],
+    ['vishar_lifecycle_consultation_v5','consultation_reminder',
+      ['Alex','Monday 16 November 12:00','Label Tattoo Private, London',token],'1'],
+    ['vishar_lifecycle_consultation_video_v1','consultation_reminder',
+      ['Alex','Monday 16 November 12:00','Video consultation',token],'0'],
+  ]) {
+    const {fetchImpl,graphCalls}=makeFetch();
+    const result=await sendWhatsappUtilityTemplate(env,route(),{
+      to:'447700900001',purpose,templateName:name,language:'en_GB',bodyParameters:params,
+    },fetchImpl);
+    assert.equal(result.delivered,true);
+    assert.equal(graphCalls.length,1);
+    const components=graphCalls[0].body.template.components;
+    assert.equal(components.length,2);
+    assert.equal(components[1].sub_type,'quick_reply');
+    assert.equal(components[1].index,expectedIndex);
+    assert.equal(components[1].parameters[0].payload,token);
+  }
+});
+
 await test('reviewed lifecycle templates reject missing, duplicate, or mismatched actions', async () => {
   const confirm = 'booking_action:' + 'a'.repeat(64);
   const { fetchImpl, graphCalls } = makeFetch();

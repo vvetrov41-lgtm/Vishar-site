@@ -149,6 +149,9 @@ function validateLifecycleTemplatePayload(payload, job) {
     vishar_lifecycle_consultation_v4: { purpose: 'consultation_reminder', body: 3, actions: 2 },
     vishar_lifecycle_reminder_72h_v3: { purpose: 'session_reminder_72h', body: 2, actions: 2 },
     vishar_lifecycle_reminder_24h_v3: { purpose: 'session_reminder_24h', body: 2, actions: 1 },
+    vishar_lifecycle_reminder_24h_v4: { purpose: 'session_reminder_24h', body: 2, actions: 1 },
+    vishar_lifecycle_consultation_v5: { purpose: 'consultation_reminder', body: 3, actions: 1 },
+    vishar_lifecycle_consultation_video_v1: { purpose: 'consultation_reminder', body: 3, actions: 1 },
   })[payload.template_name] ?? null;
   if (payload.communication_message_id !== job.whatsapp_message_id
       || payload.artist_id !== job.artist_id
