@@ -343,6 +343,7 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'service_claim_whatsapp_audio_transcriptions',
     // Read-only Meta Coexistence evidence.
     'service_claim_whatsapp_coexistence_targets',
+    'service_claim_whatsapp_template_proposals',
     'service_claim_whatsapp_template_smoke_test',
     'service_complete_whatsapp_audio_transcription',
     'service_queue_whatsapp_audio_transcription',
@@ -351,6 +352,7 @@ test('the RPC allow-list is exactly the intake surface', () => {
     'service_record_lifecycle_whatsapp_template_status',
     'service_record_video_booking_template_status',
     'service_record_whatsapp_coexistence_state',
+    'service_record_whatsapp_template_proposal',
     'service_record_whatsapp_template_smoke_result',
     // Leased, backend-only structured payloads for booking and lifecycle Utility templates.
     'service_resolve_whatsapp_booking_card_payload',
