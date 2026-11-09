@@ -46,6 +46,13 @@ assert.throws(() => verifyTodayLineage(consultationAddress.replace('202611092200
 assert.throws(() => verifyTodayLineage(consultationAddress + '\n 20261109230000 | | t'));
 assert.throws(() => verifyTodayLineage(consultationAddress.replace('20261109190000 | 20261109190000', '20261109190000 | ')));
 
+// The third-button candidate is the only migration allowed after the
+// already-confirmed London consultation location fix.
+const preparationButton = ' Local | Remote | Time\n 20261109220000 | 20261109220000 | t\n 20261109230000 | | t';
+assert.equal(verifyTodayLineage(preparationButton),'20261109230000');
+assert.throws(()=>verifyTodayLineage(preparationButton.replace('20261109230000 | |','20261109230100 | |')));
+assert.throws(()=>verifyTodayLineage(preparationButton+'\n 20261109231000 | | t'));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);
