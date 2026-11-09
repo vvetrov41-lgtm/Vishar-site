@@ -134,4 +134,52 @@ const source = {
   assert.equal(count, 1);
   assert.equal(result.accepted, 1);
 }
+{
+  // The live v4 consultation template has two quick replies and three body
+  // variables. A smoke send has no real appointment or action tokens.
+  const v4 = { ...source, template_name: 'vishar_lifecycle_consultation_v4',
+    body_parameters: ['Kristina', 'TEST ONLY - no appointment',
+      'TEST ONLY - Label Tattoo Private, London',
+      'booking_action:' + 'e'.repeat(64),
+      'booking_action:' + 'f'.repeat(64)] };
+  let sent = 0;
+  const result = await drainWhatsappTemplateSmokeTest({}, {
+    supabase: { async rpc(name, payload) {
+      if (name === 'service_claim_whatsapp_template_smoke_test') return [v4];
+      assert.equal(name, 'service_record_whatsapp_template_smoke_result');
+      assert.equal(payload.p_accepted, true);
+      assert.equal(payload.p_provider_message_id, 'wamid.v4fixture');
+      return true;
+    } },
+    async send(_env, route, msg) {
+      sent++;
+      assert.equal(route.integration_key, 'vladimir-production');
+      assert.equal(msg.templateName, 'vishar_lifecycle_consultation_v4');
+      assert.equal(msg.purpose, 'consultation_reminder');
+      assert.deepEqual(msg.bodyParameters, v4.body_parameters);
+      return { delivered: true, providerMessageId: 'wamid.v4fixture' };
+    },
+  });
+  assert.equal(sent, 1);
+  assert.deepEqual(result, { claimed:1, accepted:1, failed:0, unrecorded:0 });
+}
+{
+  // Invalid test buttons never contact Meta, even when v4 itself is approved.
+  const v4 = { ...source, template_name: 'vishar_lifecycle_consultation_v4',
+    body_parameters: ['Kristina', 'TEST ONLY - no appointment',
+      'TEST ONLY - London', 'booking_action:' + 'e'.repeat(64),
+      'booking_action:' + 'e'.repeat(64)] };
+  let sent = false;
+  const result = await drainWhatsappTemplateSmokeTest({}, {
+    supabase: { async rpc(name, payload) {
+      if (name === 'service_claim_whatsapp_template_smoke_test') return [v4];
+      assert.equal(name, 'service_record_whatsapp_template_smoke_result');
+      assert.equal(payload.p_error_code, 'whatsapp_smoke_payload_invalid');
+      return true;
+    } },
+    async send() { sent = true; },
+  });
+  assert.equal(sent, false);
+  assert.equal(result.failed, 1);
+}
 console.log('One-shot WhatsApp Meta smoke tests passed');

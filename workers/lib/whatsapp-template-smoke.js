@@ -26,13 +26,15 @@ export async function drainWhatsappTemplateSmokeTest(env, {
     && job.purpose === 'consultation_reminder'
     && ['vishar_lifecycle_consultation_v1',
       'vishar_lifecycle_consultation_v2',
-      'vishar_lifecycle_consultation_v3'].includes(job.template_name)
+      'vishar_lifecycle_consultation_v3',
+      'vishar_lifecycle_consultation_v4'].includes(job.template_name)
     && job.template_language === 'en_GB'
     && Array.isArray(job.body_parameters)
     && job.body_parameters.length === 5
     && job.body_parameters.every((s) => typeof s === 'string'
       && s.length >= 1 && s.length <= 1024 && !/[\r\n\t]/.test(s))
-    && (job.template_name !== 'vishar_lifecycle_consultation_v3'
+    && (!['vishar_lifecycle_consultation_v3',
+      'vishar_lifecycle_consultation_v4'].includes(job.template_name)
       || (/^booking_action:[0-9a-f]{64}$/.test(job.body_parameters[3])
         && /^booking_action:[0-9a-f]{64}$/.test(job.body_parameters[4])
         && job.body_parameters[3] !== job.body_parameters[4]));
