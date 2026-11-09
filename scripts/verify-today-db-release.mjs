@@ -57,6 +57,8 @@ export function verifyTodayLineage(source) {
     ['20261108010000', '20261108015000'],
     // Instagram booking cancellation and lifecycle after live Gmail/WhatsApp migrations.
     ['20261109001000', '20261109140000'],
+    // Promote six reviewed WhatsApp templates after Meta approval and new sender CI.
+    ['20261109140000', '20261109170000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
