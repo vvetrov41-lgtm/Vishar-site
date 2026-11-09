@@ -39,6 +39,13 @@ for (const invalid of [
   audioTransition + '\n | 20261106020000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
 
+// The consultation address fix is the sole permitted next DB migration.
+const consultationAddress = ' Local | Remote | Time\n 20261109190000 | 20261109190000 | t\n 20261109220000 | | t';
+assert.equal(verifyTodayLineage(consultationAddress), '20261109220000');
+assert.throws(() => verifyTodayLineage(consultationAddress.replace('20261109220000 | |', '20261109221000 | |')));
+assert.throws(() => verifyTodayLineage(consultationAddress + '\n 20261109230000 | | t'));
+assert.throws(() => verifyTodayLineage(consultationAddress.replace('20261109190000 | 20261109190000', '20261109190000 | ')));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);
