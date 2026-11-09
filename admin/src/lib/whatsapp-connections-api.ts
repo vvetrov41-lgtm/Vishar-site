@@ -350,7 +350,9 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
 
     async manageMetaReviewTemplate(action: 'create' | 'delete' | 'status'): Promise<MetaReviewTemplateResult> {
       const accessToken = await crmAccessToken();
-      const response = await fetch('/api/whatsapp/meta-review/template', {
+      const response = await fetch(embeddedSignupProvisionUrl(
+        '/api/whatsapp/meta-review/template', window.location.origin,
+      ), {
         method: 'POST',
         credentials: 'same-origin',
         cache: 'no-store',
@@ -366,6 +368,12 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
           ? payload.error
           : `meta_review_failed_http_${response.status}`;
         const details: string[] = [error];
+        if (!payload || typeof payload.error !== 'string') {
+          const ray = response.headers.get('cf-ray');
+          details.push(response.headers.get('x-vishar-review-handler') === 'template-v1'
+            ? 'handler=template-v1' : 'handler=not_reached');
+          if (ray && /^[a-z0-9-]{8,80}$/i.test(ray)) details.push(`cf_ray=${ray}`);
+        }
         if (payload && Number.isInteger(payload.graph_code)) details.push(`graph_code=${payload.graph_code}`);
         if (payload && Number.isInteger(payload.graph_subcode)) details.push(`graph_subcode=${payload.graph_subcode}`);
         if (payload && Number.isInteger(payload.upstream_status)) details.push(`upstream_status=${payload.upstream_status}`);
