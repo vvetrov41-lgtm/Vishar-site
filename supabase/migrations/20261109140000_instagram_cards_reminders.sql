@@ -141,17 +141,17 @@ begin
             then '' else E'\n' || btrim(v_settings.studio_map_url) end;
 
   if v_card.card_kind = 'tattoo_deposit_paid' then
-    v_headline := case when v_grouped then 'your ' || v_group.session_count || ' tattoo sessions with ' else 'your tattoo session with ' end || v_artist.display_name || case when v_grouped then ' are booked ✓' else ' is booked ✓' end;
+    v_headline := case when v_grouped then 'your ' || v_group.session_count || ' tattoo sessions with me are booked ✓' else 'your tattoo session with me is booked ✓' end;
     v_money := E'\n\nDeposit paid: '
       || crm_private.booking_card_money(case when v_grouped then v_group.total_deposit else v_card.deposit_paid end, v_card.currency)
-      || E'\nRemaining balance: '
+      || E'\nRemaining balance on the day: '
       || crm_private.booking_card_money(case when v_grouped then v_group.total_remaining else v_card.remaining_balance end, v_card.currency);
     v_body := case when v_grouped then 'Your ' || v_group.session_count || ' tattoo sessions are booked. ' else 'Your tattoo session is booked. ' end
       || 'Deposit paid: ' || crm_private.booking_card_money(case when v_grouped then v_group.total_deposit else v_card.deposit_paid end, v_card.currency)
-      || '. Remaining balance: '
+      || '. Remaining balance on the day: '
       || crm_private.booking_card_money(case when v_grouped then v_group.total_remaining else v_card.remaining_balance end, v_card.currency) || '.';
   elsif v_card.card_kind = 'consultation_booked' then
-    v_headline := case when v_video then 'your video consultation with ' else 'your consultation with ' end || v_artist.display_name || ' is booked ✓';
+    v_headline := case when v_video then 'your video consultation with me is booked ✓' else 'your consultation with me is booked ✓' end;
     v_body := case when v_video then 'Your video consultation is booked.' else 'Your consultation is booked.' end;
   else
     return null;
@@ -164,7 +164,11 @@ begin
     || case when v_video then E'\n\nPlease confirm you can join the video call: tap a button or use a link.' else E'\n\nPlease confirm so I know to expect you: tap a button below, or use a link.' end
     || E'\n' || case when v_video then 'Confirm video call: ' when v_grouped then 'Confirm all sessions: ' else 'I''ll be there: ' end || v_settings.client_action_base_url || p_confirm_token
     || E'\nNeed another time: ' || v_settings.client_action_base_url || p_reschedule_token
-    || E'\nCancel booking: ' || v_settings.client_action_base_url || p_cancel_token;
+    || E'\nCancel booking: ' || v_settings.client_action_base_url || p_cancel_token
+    || case when not v_video and v_settings.arrival_guide_url is not null
+      then E'\nGet directions: ' || v_settings.arrival_guide_url else '' end
+    || case when not v_video and v_settings.preparation_guide_url is not null
+      then E'\nHow to prepare: ' || v_settings.preparation_guide_url else '' end;
 
   if char_length(v_text) > 1000 then
     return null;
@@ -727,14 +731,15 @@ CREATE TABLE crm_private.lifecycle_instagram_payloads (
   members jsonb NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT instagram_lifecycle_buttons CHECK (
-    (purpose IN ('session_reminder_24h','consultation_reminder')
+    (purpose IN ('session_reminder_72h','consultation_reminder')
       AND confirm_payload ~ '^booking_action:[0-9a-f]{64}$'
       AND reschedule_payload ~ '^booking_action:[0-9a-f]{64}$'
-      AND cancel_payload ~ '^booking_action:[0-9a-f]{64}$'
-      AND confirm_payload<>reschedule_payload
-      AND confirm_payload<>cancel_payload
-      AND reschedule_payload<>cancel_payload)
-    OR (purpose NOT IN ('session_reminder_24h','consultation_reminder')
+      AND cancel_payload IS NULL AND confirm_payload<>reschedule_payload)
+    OR (purpose='session_reminder_24h'
+      AND confirm_payload IS NULL
+      AND reschedule_payload ~ '^booking_action:[0-9a-f]{64}$'
+      AND cancel_payload IS NULL)
+    OR (purpose NOT IN ('session_reminder_72h','session_reminder_24h','consultation_reminder')
       AND confirm_payload IS NULL AND reschedule_payload IS NULL
       AND cancel_payload IS NULL)
   )
@@ -895,26 +900,30 @@ BEGIN
    IF nullif(v_dates,'') IS NULL THEN RETURN 'unavailable'; END IF;
  END IF;
 
- IF j.message_purpose IN ('session_reminder_24h','consultation_reminder') THEN
+ IF j.message_purpose IN ('session_reminder_72h','session_reminder_24h','consultation_reminder') THEN
    SELECT max(x.raw_token) FILTER (WHERE x.action='confirm_attendance'),
-          max(x.raw_token) FILTER (WHERE x.action='request_reschedule'),
-          max(x.raw_token) FILTER (WHERE x.action='cancel')
-     INTO v_confirm_token,v_reschedule_token,v_cancel_token
+          max(x.raw_token) FILTER (WHERE x.action='request_reschedule')
+     INTO v_confirm_token,v_reschedule_token
    FROM crm_private.issue_appointment_client_actions(s.id) x;
-   v_confirm_url:=crm_private.lifecycle_whatsapp_confirmation_url(
-     cfg.client_action_base_url,v_confirm_token);
    v_reschedule_url:=crm_private.lifecycle_whatsapp_confirmation_url(
      cfg.client_action_base_url,v_reschedule_token);
-   v_cancel_url:=crm_private.lifecycle_whatsapp_confirmation_url(
-     cfg.client_action_base_url,v_cancel_token);
-   IF v_confirm_url IS NULL OR v_reschedule_url IS NULL OR v_cancel_url IS NULL
-      THEN RAISE EXCEPTION 'Instagram lifecycle actions unavailable' USING errcode='23514'; END IF;
-   IF j.message_purpose='session_reminder_24h' THEN
-     PERFORM crm_private.register_lifecycle_confirmation(v_confirm_token,s.id);
+   IF j.message_purpose IN ('session_reminder_72h','consultation_reminder') THEN
+     v_confirm_url:=crm_private.lifecycle_whatsapp_confirmation_url(
+       cfg.client_action_base_url,v_confirm_token);
+   ELSE
+     v_confirm_url:=NULL;
+     v_confirm_token:=NULL;
+   END IF;
+   v_cancel_token:=NULL;
+   v_cancel_url:=NULL;
+   IF v_reschedule_url IS NULL OR
+      (j.message_purpose IN ('session_reminder_72h','consultation_reminder')
+       AND v_confirm_url IS NULL) THEN
+      RAISE EXCEPTION 'Instagram lifecycle actions unavailable' USING errcode='23514';
    END IF;
  END IF;
 
- IF j.message_purpose IN ('session_reminder_24h','consultation_reminder')
+ IF j.message_purpose IN ('session_reminder_72h','session_reminder_24h','consultation_reminder')
     AND s.appointment_type<>'video_consultation' THEN
    IF nullif(btrim(cfg.studio_address),'') IS NULL THEN RETURN 'unavailable'; END IF;
    v_place:=concat_ws(', ',nullif(btrim(cfg.studio_name),''),btrim(cfg.studio_address));
@@ -922,30 +931,41 @@ BEGIN
  END IF;
 
  IF j.message_purpose='session_reminder_72h' THEN
-   v_text:='Hi '||v_first||', your tattoo sessions with '||a.display_name
+   v_text:='Hi '||v_first||', just a reminder that your tattoo sessions with me'
       ||' are coming up. Dates and times: '||v_dates
-      ||'. Each session has its own 72-hour cancellation period.';
- ELSIF j.message_purpose='session_reminder_24h' THEN
-   v_text:='Hi '||v_first||', your tattoo sessions with '||a.display_name
-      ||' start tomorrow. Booked dates: '||v_dates||E'\nStudio: '||v_place
+      ||'. Each session has its own 72-hour cancellation period.'
+      ||E'\nStudio: '||v_place
       ||E'\nConfirm: '||v_confirm_url
       ||E'\nReschedule: '||v_reschedule_url
-      ||E'\nCancel: '||v_cancel_url;
+      ||CASE WHEN cfg.arrival_guide_url IS NOT NULL
+         THEN E'\nGet directions: '||cfg.arrival_guide_url ELSE '' END
+      ||CASE WHEN cfg.preparation_guide_url IS NOT NULL
+         THEN E'\nHow to prepare: '||cfg.preparation_guide_url ELSE '' END;
+ ELSIF j.message_purpose='session_reminder_24h' THEN
+   v_text:='Hi '||v_first||', just a reminder that your tattoo session with me'
+      ||' starts tomorrow. Booked dates: '||v_dates
+      ||E'\nStudio: '||v_place
+      ||E'\nReschedule: '||v_reschedule_url
+      ||CASE WHEN cfg.arrival_guide_url IS NOT NULL
+         THEN E'\nGet directions: '||cfg.arrival_guide_url ELSE '' END
+      ||CASE WHEN cfg.preparation_guide_url IS NOT NULL
+         THEN E'\nHow to prepare: '||cfg.preparation_guide_url ELSE '' END;
  ELSIF j.message_purpose='consultation_reminder' THEN
    IF s.appointment_type NOT IN ('in_person_consultation','video_consultation')
      THEN RETURN 'unavailable'; END IF;
    v_dates:=to_char(s.start_at AT TIME ZONE a.timezone,'FMDay, FMDD FMMonth YYYY HH24:MI');
-   v_text:='Hi '||v_first||', your '
+   v_text:='Hi '||v_first||', just a reminder that our '
      ||CASE WHEN s.appointment_type='video_consultation'
        THEN 'video consultation' ELSE 'consultation' END
-     ||' with '||a.display_name||' is tomorrow at '||v_dates||'.'
+     ||' is tomorrow at '||v_dates||'.'
      ||E'\n'||CASE WHEN s.appointment_type='video_consultation'
        THEN 'Online consultation. No studio visit.'
        ELSE 'Studio: '||v_place END
      ||E'\nConfirm: '||v_confirm_url
      ||E'\nReschedule: '||v_reschedule_url
-     ||E'\nCancel: '||v_cancel_url;
- ELSE
+     ||CASE WHEN s.appointment_type<>'video_consultation'
+       AND cfg.arrival_guide_url IS NOT NULL
+       THEN E'\nGet directions: '||cfg.arrival_guide_url ELSE '' END; ELSE
    SELECT substring(tmpl.body from 'https://[a-z0-9.-]+/aftercare/')
      INTO v_guide
    FROM public.message_templates tmpl
@@ -959,12 +979,10 @@ BEGIN
    LIMIT 1;
    IF v_guide IS NULL THEN RETURN 'unavailable'; END IF;
    IF j.message_purpose='post_session_aftercare' THEN
-     v_text:='Hi '||v_first||', thank you for your tattoo session with '
-       ||a.display_name||'. Your aftercare guide: '||v_guide
+     v_text:='Hi '||v_first||', thanks for coming in for your tattoo session. Your aftercare guide: '||v_guide
        ||'. Reply here if you need advice.';
    ELSE
-     v_text:='Hi '||v_first||', how is your tattoo healing after your session with '
-       ||a.display_name||'? Your aftercare guide: '||v_guide
+     v_text:='Hi '||v_first||', how is your tattoo healing? Your aftercare guide: '||v_guide
        ||'. No need to reply if everything is fine.';
    END IF;
  END IF;
@@ -1025,11 +1043,13 @@ BEGIN
  RETURN QUERY
  SELECT p.automation_job_id IS NOT NULL,m.id,o.artist_id,
    p.purpose,p.message_text,
-   CASE WHEN p.purpose IN ('session_reminder_24h','consultation_reminder')
+   CASE WHEN p.purpose IN ('session_reminder_72h','consultation_reminder')
      THEN jsonb_build_array(
        jsonb_build_object('title','Confirm','payload',p.confirm_payload),
-       jsonb_build_object('title','Reschedule','payload',p.reschedule_payload),
-       jsonb_build_object('title','Cancel booking','payload',p.cancel_payload))
+       jsonb_build_object('title','Reschedule','payload',p.reschedule_payload))
+     WHEN p.purpose='session_reminder_24h'
+     THEN jsonb_build_array(
+       jsonb_build_object('title','Reschedule','payload',p.reschedule_payload))
      ELSE '[]'::jsonb END AS quick_replies,
    (
      p.automation_job_id IS NOT NULL
@@ -1737,7 +1757,7 @@ begin
         JOIN public.communication_messages m ON m.id=p.communication_message_id
         JOIN public.communication_conversations c ON c.id=m.conversation_id
         WHERE p.session_id=t.session_id AND p.artist_id=p_artist_id
-          AND p.purpose IN ('session_reminder_24h','consultation_reminder')
+          AND p.purpose IN ('session_reminder_72h','session_reminder_24h','consultation_reminder')
           AND p_payload IN (p.confirm_payload,p.reschedule_payload,p.cancel_payload)
           AND c.artist_id=p_artist_id AND c.channel='instagram'
           AND c.integration_key=p_integration_key

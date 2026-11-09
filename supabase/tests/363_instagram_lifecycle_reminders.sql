@@ -12,7 +12,9 @@ set instagram_enabled=true,email_enabled=true,whatsapp_enabled=false,
     client_action_base_url='https://booking.vishartattoo.com/appointments/respond/',
     studio_name='Label Tattoo Private',
     studio_address='16 Exhibition House, Addison Bridge Place, London W14 8XP',
-    studio_map_url='https://maps.app.goo.gl/fixture123'
+    studio_map_url='https://maps.app.goo.gl/fixture123',
+    arrival_guide_url='https://vishartattoo.com/arrival/test-ig-fixture/',
+    preparation_guide_url='https://vishartattoo.com/faq/'
 where artist_id='a1111111-1111-4111-8111-111111111111';
 
 -- Synthetic Gmail integration allows the fallback to create an outbox entry.
@@ -101,17 +103,19 @@ select is((select count(*)::integer from public.email_messages m
  'closed Instagram window produces one Gmail reminder');
 
 select ok((select p.message_text LIKE '%Google Maps: https://maps.app.goo.gl/fixture123%'
-   AND p.message_text LIKE '%Confirm: https://booking.%'
+   AND p.message_text NOT LIKE '%Confirm: https://booking.%'
    AND p.message_text LIKE '%Reschedule: https://booking.%'
-   AND p.message_text LIKE '%Cancel: https://booking.%'
-   AND p.confirm_payload~'^booking_action:[0-9a-f]{64}$'
+   AND p.message_text NOT LIKE '%Cancel: https://booking.%'
+   AND p.message_text LIKE '%Get directions: https://vishartattoo.com/arrival/test-ig-fixture/%'
+   AND p.message_text LIKE '%How to prepare: https://vishartattoo.com/faq/%'
+   AND p.confirm_payload IS NULL
    AND p.reschedule_payload~'^booking_action:[0-9a-f]{64}$'
-   AND p.cancel_payload~'^booking_action:[0-9a-f]{64}$'
+   AND p.cancel_payload IS NULL
    AND octet_length(convert_to(p.message_text,'UTF8'))<=1000
  from crm_private.lifecycle_instagram_payloads p
  where p.session_id='f98a5555-5555-4555-8555-555555555555'
  and p.purpose='session_reminder_24h'),
- 'Instagram 24h reminder has current studio map and all three actions');
+ 'Instagram 24h reminder has studio map and reschedule-only action');
 
 -- Pre-send gate uses authoritative lease, session, conversation and inbound age.
 update public.integration_outbox
