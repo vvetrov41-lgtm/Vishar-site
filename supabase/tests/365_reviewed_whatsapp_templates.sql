@@ -19,14 +19,14 @@ SELECT is(
   WHERE artist_id IN (
     'a1111111-1111-4111-8111-111111111111',
     'a2222222-2222-4222-8222-222222222222'
-  )),15,
- 'Twelve original proposals plus three review-only Vladimir replacements'
+  )),16,
+ 'Twelve original proposals plus four review-only Vladimir replacements'
 );
 
 SELECT is(
  (SELECT count(*)::integer FROM crm_private.whatsapp_template_proposals
-  WHERE approval_status='UNKNOWN' AND provider_template_id IS NULL),15,
- 'All fifteen proposals begin without invented Meta approval'
+  WHERE approval_status='UNKNOWN' AND provider_template_id IS NULL),16,
+ 'All sixteen proposals begin without invented Meta approval'
 );
 
 SELECT is(
