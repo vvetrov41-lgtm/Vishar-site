@@ -105,6 +105,7 @@ jobs:
           grep -Fq 'https://m.facebook.com' "$headers"
           grep -Fq 'https://staticxx.facebook.com' "$headers"
           grep -Fq 'https://graph.facebook.com' "$headers"
+          grep -Fq "connect-src 'self' https://crm.vishartattoo.com" "$headers"
           grep -Fq 'Cross-Origin-Opener-Policy: same-origin-allow-popups' "$headers"
           grep -Fq '/integrations/whatsapp*' "$headers"
           grep -Fq '! Cross-Origin-Opener-Policy' "$headers"

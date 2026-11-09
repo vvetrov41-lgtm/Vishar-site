@@ -180,7 +180,7 @@ async function deleteReviewTemplate(config) {
   return { deleted: true };
 }
 
-export async function onRequestPost(context) {
+async function handlePost(context) {
   const { request, env } = context;
   const url = new URL(request.url);
   if (url.origin !== PRODUCTION_CRM_ORIGIN
@@ -245,7 +245,7 @@ export async function onRequest(context) {
       vary: 'Origin',
     } });
   }
-  const response = request.method === 'POST' ? await onRequestPost(context)
+  const response = request.method === 'POST' ? await handlePost(context)
     : json({ ok: false, error: 'method_not_allowed' }, 405);
   if (operator) {
     response.headers.set('access-control-allow-origin', OPERATOR_CRM_ORIGIN);
