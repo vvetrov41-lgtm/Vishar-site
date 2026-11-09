@@ -65,6 +65,8 @@ export function verifyTodayLineage(source) {
     ['20261109180000', '20261109190000'],
     // Consultation reminder location only: remove York House, retain delivery contracts.
     ['20261109190000', '20261109220000'],
+    // Stage the FAQ URL as the third 72h WhatsApp button; live v3 stays active.
+    ['20261109220000', '20261109230000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
