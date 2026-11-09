@@ -48,8 +48,8 @@ def test_cloudflare_redirects_preserve_old_specialty_urls() -> None:
         })
     # The private /visit/ alias is an internal rewrite, not a public navigation link.
     expected.update({
-        "/visit /arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html 200",
-        "/visit/ /arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html 200",
+        "/visit /arrival/7f2bc57edcd447adbe549e36a5a1830f/ 200",
+        "/visit/ /arrival/7f2bc57edcd447adbe549e36a5a1830f/ 200",
     })
     assert expected == lines
     headers = (REPO / "_headers").read_text(encoding="utf-8")
