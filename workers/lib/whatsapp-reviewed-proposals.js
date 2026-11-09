@@ -11,6 +11,7 @@ const KINDS = Object.freeze({
   booking_consultation: 'booking_card_consultation_v2',
   booking_video: 'booking_card_video_consultation_v2',
   reminder_72h: 'vishar_lifecycle_reminder_72h_v3',
+  reminder_72h_button: 'vishar_lifecycle_reminder_72h_v4',
   reminder_24h: 'vishar_lifecycle_reminder_24h_v3',
   reminder_consultation: 'vishar_lifecycle_consultation_v4',
   reminder_24h_button: 'vishar_lifecycle_reminder_24h_v4',
@@ -94,6 +95,25 @@ function definition(target) {
     buttons=[
       {type:'QUICK_REPLY',text:'Confirm attendance'},
       {type:'QUICK_REPLY',text:'Need another time'},
+    ];
+  } else if (target.kind === 'reminder_72h_button') {
+    text=[
+      'Hi {{1}},',
+      '',
+      'Just a reminder that your tattoo session is coming up in three days.',
+      '',
+      'Date(s) and time(s): {{2}}',
+      '',
+      'Please remember that your deposit is non-refundable if you cancel within 72 hours of your appointment.',
+      '',
+      'Please use the buttons below to confirm your attendance or request another time.',
+      'Tap How to prepare for the preparation guide.',
+    ].join('\n');
+    example=['Alex','16 November 2026, 12:00'];
+    buttons=[
+      {type:'QUICK_REPLY',text:'Confirm attendance'},
+      {type:'QUICK_REPLY',text:'Need another time'},
+      {type:'URL',text:'How to prepare',url:faq},
     ];
   } else if (target.kind === 'reminder_24h') {
     text=[
