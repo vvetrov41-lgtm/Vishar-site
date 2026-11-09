@@ -143,6 +143,8 @@ describe('WhatsApp Connections safety', () => {
       .toBe('https://crm.vishartattoo.com/api/whatsapp/embedded-signup/provision');
     expect(embeddedSignupProvisionUrl('/api/whatsapp/embedded-signup/provision', 'https://crm.vishartattoo.com'))
       .toBe('/api/whatsapp/embedded-signup/provision');
+    expect(embeddedSignupProvisionUrl('/api/whatsapp/meta-review/template', 'https://app.vishartattoo.com'))
+      .toBe('https://crm.vishartattoo.com/api/whatsapp/meta-review/template');
     const mocks = clientFor();
     const api = createWhatsAppConnectionsApi(mocks.client);
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ ok: true, ready: true }));

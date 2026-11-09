@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { __testing, onRequestPost } from '../admin/functions/api/whatsapp/meta-review/template.js';
+import { __testing, onRequest, onRequestPost } from '../admin/functions/api/whatsapp/meta-review/template.js';
 
 const ENDPOINT = 'https://crm.vishartattoo.com/api/whatsapp/meta-review/template';
 const OWNER_ID = '11111111-1111-4111-8111-111111111111';
@@ -81,6 +81,7 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
   try {
     const response = await onRequestPost({ request: request('create'), env: env() });
     assert.equal(response.status, 200);
+    assert.equal(response.headers.get('x-vishar-review-handler'), 'template-v1');
     assert.deepEqual(await response.json(), {
       ok: true,
       action: 'create',
@@ -172,6 +173,31 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234' }
   });
   assert.equal(response.status, 500);
   assert.deepEqual(await response.json(), { ok: false, error: 'server_not_configured', stage: 'review_gate' });
+}
+
+{
+  const response = await onRequest({
+    request: new Request(ENDPOINT, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://app.vishartattoo.com',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type' },
+    }),
+    env: env(),
+  });
+  assert.equal(response.status, 204);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://app.vishartattoo.com');
+  assert.equal(response.headers.get('access-control-allow-headers'), 'authorization, content-type');
+}
+
+{
+  const response = await onRequest({
+    request: request('status', { origin: 'https://app.vishartattoo.com', authorization: 'Bearer invalid' }),
+    env: env(),
+  });
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://app.vishartattoo.com');
+  assert.deepEqual(await response.json(), { ok: false, error: 'crm_auth_required', stage: 'crm_owner' });
 }
 
 {
