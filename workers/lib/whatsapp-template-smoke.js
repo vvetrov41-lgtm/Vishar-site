@@ -30,6 +30,8 @@ export async function drainWhatsappTemplateSmokeTest(env, {
     },
     session_reminder_72h: {
       vishar_lifecycle_reminder_72h_v3: { count: 4, actions: 2 },
+      // Third button in approved v4 is a static FAQ URL, not a token.
+      vishar_lifecycle_reminder_72h_v4: { count: 4, actions: 2 },
     },
     session_reminder_24h: {
       vishar_lifecycle_reminder_24h_v3: { count: 3, actions: 1 },
