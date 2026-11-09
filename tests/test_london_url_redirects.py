@@ -46,7 +46,18 @@ def test_cloudflare_redirects_preserve_old_specialty_urls() -> None:
             f"/{old}/ /{new}/ 301",
             f"/{old}/index.html /{new}/ 301",
         })
+    # The private /visit/ alias is an internal rewrite, not a public navigation link.
+    expected.update({
+        "/visit /visit/ 301",
+        "/visit/ /arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html 200",
+    })
     assert expected == lines
+    headers = (REPO / "_headers").read_text(encoding="utf-8")
+    assert "/visit/*" in headers
+    assert "X-Robots-Tag: noindex, nofollow, noarchive, noimageindex" in headers
+    private_guide = (REPO / "arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html")
+    assert private_guide.is_file()
+    assert 'name="robots" content="noindex' in private_guide.read_text(encoding="utf-8")
 
 
 def test_public_source_does_not_link_to_old_specialty_routes() -> None:
