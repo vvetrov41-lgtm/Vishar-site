@@ -55,6 +55,8 @@ export function verifyTodayLineage(source) {
     // Restore Kristina's consented booking flow: her 2026-11-03 notice is live
     // in the Worker but missing from the SQL durable-intake version allowlist.
     ['20261108010000', '20261108015000'],
+    // Instagram booking cancellation and lifecycle after live Gmail/WhatsApp migrations.
+    ['20261109001000', '20261109140000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
