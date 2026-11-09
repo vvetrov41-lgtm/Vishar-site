@@ -63,6 +63,8 @@ export function verifyTodayLineage(source) {
     ['20261109170000', '20261109180000'],
     // Stage approval-gated reminder button templates; no live switch.
     ['20261109180000', '20261109190000'],
+    // Consultation reminder location only: remove York House, retain delivery contracts.
+    ['20261109190000', '20261109220000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
