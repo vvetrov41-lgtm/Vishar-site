@@ -34,8 +34,8 @@ reset role;
 select is((select count(*)::int from public.automation_events where entity_id='f9500000-0000-4000-8000-000000000002' and event_type='appointment.scheduled'),1,'missing future appointment is enrolled exactly once');
 
 
--- Make both 72-hour reminders due while preserving consecutive local days.
-update public.sessions set start_at=start_at-interval '29 days', end_at=end_at-interval '29 days'
+-- Make both 72-hour reminders due, but still before the 24-hour window, while preserving consecutive local days.
+update public.sessions set start_at=start_at-interval '28 days', end_at=end_at-interval '28 days'
 where project_id='f9522222-2222-4222-8222-222222222222';
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 select lives_ok($$select * from public.service_run_automation_tick(500)$$,'due jobs are processed');
