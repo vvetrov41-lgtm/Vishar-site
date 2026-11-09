@@ -48,9 +48,27 @@ BEGIN
    RAISE EXCEPTION 'WhatsApp template proposal maintenance is backend-only'
      USING errcode='42501';
  END IF;
- IF p_limit NOT BETWEEN 1 AND 20 THEN
+ IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 20 THEN
    RAISE EXCEPTION 'Invalid proposal claim limit' USING errcode='22023';
  END IF;
+ -- Proposals are registered on the first backend maintenance call, not
+ -- while Supabase is still applying startup migrations. This avoids a
+ -- transient artist-FK lock at bootstrap, and never changes send gates.
+ INSERT INTO crm_private.whatsapp_template_proposals
+  (artist_id,kind,template_name,template_language)
+ VALUES
+  ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_tattoo','booking_card_tattoo_v2','en_GB'),
+  ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_consultation','booking_card_consultation_v2','en_GB'),
+  ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_video','booking_card_video_consultation_v2','en_GB'),
+  ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
+  ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
+  ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB'),
+  ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_tattoo','booking_card_tattoo_v2','en_GB'),
+  ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_consultation','booking_card_consultation_v2','en_GB'),
+  ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_video','booking_card_video_consultation_v2','en_GB'),
+  ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
+  ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
+  ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB');
  RETURN QUERY WITH candidates AS (
   SELECT p.artist_id,p.kind,p.template_name,p.template_language,
          i.integration_key,s.arrival_guide_url,s.preparation_guide_url,
@@ -144,31 +162,4 @@ GRANT EXECUTE ON FUNCTION public.service_claim_whatsapp_template_proposals(integ
 GRANT EXECUTE ON FUNCTION public.service_record_whatsapp_template_proposal(uuid,text,text,text,text,text)
   TO service_role;
 
-INSERT INTO crm_private.whatsapp_template_proposals
- (artist_id,kind,template_name,template_language)
-VALUES
- ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_tattoo','booking_card_tattoo_v2','en_GB'),
- ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_consultation','booking_card_consultation_v2','en_GB'),
- ('a1111111-1111-4111-8111-111111111111'::uuid,'booking_video','booking_card_video_consultation_v2','en_GB'),
- ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
- ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
- ('a1111111-1111-4111-8111-111111111111'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB'),
- ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_tattoo','booking_card_tattoo_v2','en_GB'),
- ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_consultation','booking_card_consultation_v2','en_GB'),
- ('a2222222-2222-4222-8222-222222222222'::uuid,'booking_video','booking_card_video_consultation_v2','en_GB'),
- ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_72h','vishar_lifecycle_reminder_72h_v3','en_GB'),
- ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_24h','vishar_lifecycle_reminder_24h_v3','en_GB'),
- ('a2222222-2222-4222-8222-222222222222'::uuid,'reminder_consultation','vishar_lifecycle_consultation_v4','en_GB');
 
-DO $guard$
-BEGIN
- IF (SELECT count(*) FROM crm_private.whatsapp_template_proposals
-     WHERE artist_id IN (
-       'a1111111-1111-4111-8111-111111111111'::uuid,
-       'a2222222-2222-4222-8222-222222222222'::uuid
-     ))<>12 THEN
-   RAISE EXCEPTION 'Reviewed WhatsApp template proposals incomplete'
-     USING errcode='23514';
- END IF;
-END;
-$guard$;
