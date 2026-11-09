@@ -182,4 +182,63 @@ const source = {
   assert.equal(sent, false);
   assert.equal(result.failed, 1);
 }
+
+for (const [purpose, template_name, params, expectedButtons] of [
+  ['session_reminder_72h', 'vishar_lifecycle_reminder_72h_v3',
+    ['Kristina', 'TEST ONLY - no session booked, Monday 16 November 2026 at 12:00',
+      'booking_action:' + '1'.repeat(64), 'booking_action:' + '2'.repeat(64)], 2],
+  ['session_reminder_24h', 'vishar_lifecycle_reminder_24h_v3',
+    ['Kristina', 'TEST ONLY - no session booked, 12:00',
+      'booking_action:' + '3'.repeat(64)], 1],
+]) {
+  // The production test uses the already-approved template's actual
+  // preparation/arrival links and its Meta quick-reply structure.
+  const reminder = { ...source, purpose, template_name, body_parameters: params };
+  let count = 0;
+  const result = await drainWhatsappTemplateSmokeTest({}, {
+    supabase: { async rpc(name, payload) {
+      if (name === 'service_claim_whatsapp_template_smoke_test') return [reminder];
+      assert.equal(name, 'service_record_whatsapp_template_smoke_result');
+      assert.equal(payload.p_accepted, true);
+      return true;
+    } },
+    async send(_env, route, m) {
+      count++;
+      assert.equal(route.integration_key, 'vladimir-production');
+      assert.equal(m.purpose, purpose);
+      assert.equal(m.templateName, template_name);
+      assert.equal(m.language, 'en_GB');
+      assert.deepEqual(m.bodyParameters, params);
+      assert.equal(params.length - 2, expectedButtons);
+      return { delivered: true, providerMessageId: 'wamid.reminderfixture' };
+    },
+  });
+  assert.equal(count, 1);
+  assert.equal(result.accepted, 1);
+}
+for (const reminder of [
+  { ...source, purpose:'session_reminder_72h',
+    template_name:'vishar_lifecycle_reminder_72h_v3',
+    body_parameters:['Kristina','TEST ONLY', 'booking_action:'+'a'.repeat(64),
+      'booking_action:'+'a'.repeat(64)] },
+  { ...source, purpose:'session_reminder_24h',
+    template_name:'vishar_lifecycle_reminder_24h_v3',
+    body_parameters:['Kristina','TEST ONLY','no-button-token'] },
+  { ...source, purpose:'session_reminder_24h',
+    template_name:'vishar_lifecycle_reminder_72h_v3',
+    body_parameters:['Kristina','TEST ONLY','booking_action:'+'a'.repeat(64)] },
+]) {
+  let sent=false;
+  const result=await drainWhatsappTemplateSmokeTest({}, {
+    supabase:{async rpc(name, payload){
+      if(name==='service_claim_whatsapp_template_smoke_test') return [reminder];
+      assert.equal(name,'service_record_whatsapp_template_smoke_result');
+      assert.equal(payload.p_error_code,'whatsapp_smoke_payload_invalid');
+      return true;
+    }},
+    async send(){sent=true;},
+  });
+  assert.equal(sent,false);
+  assert.equal(result.failed,1);
+}
 console.log('One-shot WhatsApp Meta smoke tests passed');
