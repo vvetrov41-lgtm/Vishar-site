@@ -282,7 +282,7 @@ begin
 
   return v_message_id;
 end;
-$function$
+$function$;
 
 
 CREATE OR REPLACE FUNCTION crm_private.queue_lifecycle_whatsapp_job(p_job_id uuid)
@@ -586,7 +586,7 @@ begin
   end;
   return 'queued';
 end;
-$function$
+$function$;
 
 
 -- Promote six reviewed, Meta-approved WhatsApp templates for Vladimir only.
