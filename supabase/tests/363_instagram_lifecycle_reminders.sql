@@ -150,14 +150,20 @@ select is((select r.delivery_allowed::text
      and p.purpose='session_reminder_24h')), 'false',
  'closed window is blocked at pre-send, not just at enqueue');
 
+-- Save the leased outbox id as privileged setup. The Worker service_role
+-- correctly has no direct SELECT access to integration_outbox.
+create temporary table ig_lifecycle_outbox_ref as
+select o.id as outbox_id from public.integration_outbox o
+where o.dedupe_key = (
+  select 'instagram:lifecycle:'||p.automation_job_id::text
+  from crm_private.lifecycle_instagram_payloads p
+  where p.session_id='f98a5555-5555-4555-8555-555555555555'
+    and p.purpose='session_reminder_24h');
+grant select on ig_lifecycle_outbox_ref to service_role;
 set local role service_role;
 select lives_ok($$select public.record_communication_outbox_result(
-  o.id,'ig-lifecycle-test',false,null,'instagram_lifecycle_window_closed')
-  from public.integration_outbox o where o.dedupe_key = (
-   select 'instagram:lifecycle:'||p.automation_job_id::text
-   from crm_private.lifecycle_instagram_payloads p
-   where p.session_id='f98a5555-5555-4555-8555-555555555555'
-     and p.purpose='session_reminder_24h')$$,
+  (select outbox_id from ig_lifecycle_outbox_ref),
+  'ig-lifecycle-test',false,null,'instagram_lifecycle_window_closed')$$,
  'definitively unsent Instagram reminder is recorded');
 reset role;
 select is((select f.reason from crm_private.lifecycle_instagram_email_fallbacks f

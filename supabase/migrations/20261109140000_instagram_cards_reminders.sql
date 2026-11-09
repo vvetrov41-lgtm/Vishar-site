@@ -1797,3 +1797,275 @@ REVOKE ALL ON FUNCTION crm_private.create_booking_card_instagram(uuid,text,text,
  FROM public,anon,authenticated,service_role;
 REVOKE ALL ON FUNCTION crm_private.queue_booking_card_instagram(uuid,text,text,text)
  FROM public,anon,authenticated,service_role;
+
+-- Preserve session-cancellation invalidation of sibling capabilities while
+-- ensuring the single selected Instagram cancel token has one terminal state.
+CREATE OR REPLACE FUNCTION public.service_apply_appointment_client_action(p_token text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'pg_catalog', 'public', 'crm_private', 'extensions'
+AS $function$
+declare
+  v_hash text;
+  v_token_id uuid;
+  v_session_id uuid;
+  v_action public.appointment_client_action;
+  v_token_version integer;
+  v_expires_at timestamptz;
+  v_consumed_at timestamptz;
+  v_invalidated_at timestamptz;
+  v_status public.session_status;
+  v_artist_id uuid;
+  v_workspace_id uuid;
+  v_artist_name text;
+  v_client_id uuid;
+  v_enquiry_id uuid;
+  v_project_id uuid;
+  v_type public.appointment_type;
+  v_start_at timestamptz;
+  v_calendar_version integer;
+  v_calendar_event_id text;
+  v_response public.appointment_client_response;
+  v_notification_type text;
+  v_notification_title text;
+  v_notification_body text;
+  v_notification_priority public.notification_priority;
+begin
+  if not crm_private.is_service_backend() then
+    raise exception 'appointment client action mutation is backend-only'
+      using errcode = '42501';
+  end if;
+
+  if p_token is null or p_token !~ '^[0-9a-f]{64}$' then
+    raise exception 'appointment action is unavailable'
+      using errcode = '42501';
+  end if;
+
+  if coalesce(current_setting('vishar.group_booking_action_inner',true),'')<>'on'
+     and exists (select 1 from crm_private.appointment_client_action_tokens t
+       join crm_private.lifecycle_confirmation_snapshots x on x.token_id=t.id
+       where t.token_hash=encode(extensions.digest(p_token,'sha256'),'hex')) then
+    return crm_private.apply_lifecycle_confirmation(p_token);
+  end if;
+
+  -- A group token is applied to every snapshotted session atomically.
+  if coalesce(current_setting('vishar.group_booking_action_inner',true),'')<>'on'
+     and exists (select 1 from crm_private.appointment_client_action_tokens t
+       join crm_private.booking_card_group_action_tokens gt on gt.token_id=t.id
+       where t.token_hash=encode(extensions.digest(p_token,'sha256'),'hex')) then
+    return crm_private.apply_group_booking_card_action(p_token);
+  end if;
+
+  v_hash := encode(extensions.digest(p_token, 'sha256'), 'hex');
+
+  -- First resolve only the immutable token -> session identity without taking
+  -- a token-row lock. Every path that can mutate these capabilities locks the
+  -- session first, then a token row. Keeping one lock order avoids a deadlock
+  -- between reminder minting and a client POST arriving at the same moment.
+  select t.id, t.session_id
+    into v_token_id, v_session_id
+  from crm_private.appointment_client_action_tokens t
+  where t.token_hash = v_hash;
+
+  if not found then
+    raise exception 'appointment action is unavailable'
+      using errcode = '42501';
+  end if;
+
+  select s.status, s.artist_id, a.workspace_id, a.display_name,
+         s.client_id, s.enquiry_id, s.project_id, s.appointment_type,
+         s.start_at, s.calendar_version, s.calendar_event_id
+    into v_status, v_artist_id, v_workspace_id, v_artist_name,
+         v_client_id, v_enquiry_id, v_project_id, v_type,
+         v_start_at, v_calendar_version, v_calendar_event_id
+  from public.sessions s
+  join public.artists a on a.id = s.artist_id
+  join crm_private.artist_state st on st.artist_id = s.artist_id and st.is_active
+  where s.id = v_session_id
+  for update of s;
+
+  if not found
+     or v_status <> 'confirmed'::public.session_status
+     or v_start_at <= now() then
+    raise exception 'appointment action is unavailable'
+      using errcode = '42501';
+  end if;
+
+  -- Re-read and lock the capability only after the session lock. This closes
+  -- the race between the initial lookup and lock acquisition, while preserving
+  -- the same session -> token lock order used by the minting primitive.
+  select t.action, t.session_calendar_version, t.expires_at,
+         t.consumed_at, t.invalidated_at
+    into v_action, v_token_version, v_expires_at,
+         v_consumed_at, v_invalidated_at
+  from crm_private.appointment_client_action_tokens t
+  where t.id = v_token_id
+    and t.session_id = v_session_id
+    and t.token_hash = v_hash
+  for update;
+
+  if not found
+     or v_consumed_at is not null
+     or v_invalidated_at is not null
+     or v_expires_at <= now()
+     or v_token_version <> v_calendar_version then
+    raise exception 'appointment action is unavailable'
+      using errcode = '42501';
+  end if;
+
+  if v_action = 'confirm_attendance'::public.appointment_client_action then
+    v_response := 'attendance_confirmed'::public.appointment_client_response;
+    v_notification_type := 'appointment.attendance_confirmed';
+    v_notification_title := 'Client confirmed attendance';
+    v_notification_body := 'The client confirmed they plan to attend this appointment.';
+    v_notification_priority := 'low'::public.notification_priority;
+
+    update public.sessions s
+    set client_response = v_response,
+        client_response_at = now(),
+        client_response_calendar_version = v_calendar_version
+    where s.id = v_session_id;
+
+  elsif v_action = 'request_reschedule'::public.appointment_client_action then
+    v_response := 'reschedule_requested'::public.appointment_client_response;
+    v_notification_type := 'appointment.reschedule_requested';
+    v_notification_title := 'Client requested a reschedule';
+    v_notification_body := 'The appointment time has not changed. Contact the client and choose a new slot before rescheduling it in CRM.';
+    v_notification_priority := 'high'::public.notification_priority;
+
+    update public.sessions s
+    set client_response = v_response,
+        client_response_at = now(),
+        client_response_calendar_version = v_calendar_version
+    where s.id = v_session_id;
+
+  elsif v_action = 'cancel'::public.appointment_client_action then
+    v_notification_type := 'appointment.cancelled_by_client';
+    v_notification_title := 'Client cancelled an appointment';
+    v_notification_body := 'The client cancelled this appointment from the secure reminder link.';
+    v_notification_priority := 'high'::public.notification_priority;
+
+    -- Exact confirmed -> cancelled semantics from public.set_appointment_status:
+    -- increment the calendar version, preserve the activity projection and
+    -- enqueue a provider cancellation only when a calendar event already exists.
+    update public.sessions s
+    set status = 'cancelled'::public.session_status,
+        cancelled_at = now(),
+        calendar_version = s.calendar_version + 1
+    where s.id = v_session_id;
+
+    perform crm_private.log_artist_activity(
+      v_artist_id,
+      'appointment.status_changed',
+      'worker',
+      null,
+      v_client_id,
+      v_enquiry_id,
+      v_project_id,
+      v_session_id,
+      null,
+      jsonb_build_object(
+        'appointment_type', v_type,
+        'from_status', v_status,
+        'to_status', 'cancelled',
+        'source', 'client_action_link'
+      )
+    );
+
+    if v_calendar_event_id is not null then
+      perform crm_private.enqueue_outbox(
+        'calendar_cancel',
+        public.calendar_outbox_dedupe_key('cancel', v_session_id, v_calendar_version + 1),
+        jsonb_build_object(
+          'session_id', v_session_id,
+          'appointment_type', v_type,
+          'calendar_version', v_calendar_version + 1
+        ),
+        v_client_id, v_enquiry_id, v_project_id, v_session_id, null
+      );
+    end if;
+  else
+    raise exception 'appointment action is unavailable'
+      using errcode = '42501';
+  end if;
+
+  if v_action <> 'cancel'::public.appointment_client_action then
+    perform crm_private.log_artist_activity(
+      v_artist_id,
+      'appointment.client_response',
+      'worker',
+      null,
+      v_client_id,
+      v_enquiry_id,
+      v_project_id,
+      v_session_id,
+      null,
+      jsonb_build_object(
+        'response', v_response,
+        'calendar_version', v_calendar_version,
+        'source', 'client_action_link'
+      )
+    );
+  end if;
+
+  insert into public.notifications (
+    recipient_profile_id,
+    artist_id,
+    workspace_id,
+    notification_type,
+    title,
+    body,
+    entity_type,
+    entity_id,
+    priority,
+    status,
+    dedupe_key,
+    scheduled_at,
+    delivered_at
+  )
+  select
+    r.profile_id,
+    v_artist_id,
+    v_workspace_id,
+    v_notification_type,
+    v_notification_title,
+    v_notification_body,
+    'session',
+    v_session_id,
+    v_notification_priority,
+    'delivered'::public.notification_status,
+    'appointment_client_action:' || v_session_id::text || ':'
+      || v_calendar_version::text || ':' || v_action::text || ':' || r.profile_id::text,
+    now(),
+    now()
+  from crm_private.automation_notification_recipients(v_artist_id) r
+  on conflict (dedupe_key) do nothing;
+
+  -- Consume the chosen capability and invalidate its siblings atomically. A
+  -- retry or a contradictory click from the same reminder cannot mutate twice.
+  update crm_private.appointment_client_action_tokens t
+  -- Cancellation increments calendar_version and the session trigger may
+  -- invalidate this token. An already verified, locked selected token must
+  -- end consumed, never consumed AND invalidated (terminal-shape invariant).
+  set consumed_at = now(), invalidated_at = null
+  where t.id = v_token_id;
+
+  update crm_private.appointment_client_action_tokens t
+  set invalidated_at = now()
+  where t.session_id = v_session_id
+    and t.id <> v_token_id
+    and t.consumed_at is null
+    and t.invalidated_at is null;
+
+  return jsonb_build_object(
+    'action', v_action,
+    'outcome', case v_action
+      when 'confirm_attendance'::public.appointment_client_action then 'attendance_confirmed'
+      when 'request_reschedule'::public.appointment_client_action then 'reschedule_requested'
+      when 'cancel'::public.appointment_client_action then 'cancelled'
+    end,
+    'artist_display_name', v_artist_name
+  );
+end;
+$function$;
