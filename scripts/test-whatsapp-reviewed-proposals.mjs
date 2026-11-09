@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { ALLOWED_RPCS } from '../workers/lib/supabase.js';
 import { __testing } from '../workers/lib/whatsapp-reviewed-proposals.js';
 
+assert.ok(ALLOWED_RPCS.has('service_claim_whatsapp_template_proposals'));
+assert.ok(ALLOWED_RPCS.has('service_record_whatsapp_template_proposal'));
 const artists = [
   ['a1111111-1111-4111-8111-111111111111',
     'https://vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/',
