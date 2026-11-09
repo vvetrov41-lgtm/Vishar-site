@@ -7,6 +7,10 @@ const TEMPLATE_LANGUAGE = 'en_US';
 const TEMPLATE_CATEGORY = 'UTILITY';
 const TEMPLATE_BODY = 'Meta App Review permission demonstration. No customer data is used.';
 const MAX_BODY_BYTES = 2048;
+// Upstream (Meta/Supabase) failures must not use 502/504: Cloudflare replaces an
+// origin 502/504 with its own branded HTML page, which hides stage and graph_code.
+const UPSTREAM_FAILURE_STATUS = 424;
+const GRAPH_MESSAGE_MAX_CHARS = 240;
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -51,7 +55,7 @@ async function responseJson(response) {
 async function noFollowFetch(url, init = {}) {
   const response = await fetch(url, { ...init, redirect: 'manual' });
   if (response.status >= 300 && response.status < 400) {
-    throw Object.assign(new Error('upstream_redirect_rejected'), { status: 502 });
+    throw Object.assign(new Error('upstream_redirect_rejected'), { status: UPSTREAM_FAILURE_STATUS });
   }
   return response;
 }
@@ -97,6 +101,17 @@ function requireReviewConfiguration(env) {
   return { wabaId, accessToken };
 }
 
+function safeGraphMessage(error) {
+  const raw = typeof error?.error_user_msg === 'string' && error.error_user_msg
+    ? error.error_user_msg
+    : (typeof error?.message === 'string' ? error.message : '');
+  if (!raw) return null;
+  return raw
+    .replace(/[A-Za-z0-9_-]{32,}/g, '[redacted]')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .slice(0, GRAPH_MESSAGE_MAX_CHARS);
+}
+
 async function graph(url, accessToken, init = {}) {
   const response = await noFollowFetch(url, {
     ...init,
@@ -109,10 +124,11 @@ async function graph(url, accessToken, init = {}) {
   const payload = await responseJson(response);
   if (!response.ok) {
     throw Object.assign(new Error('meta_request_failed'), {
-      status: 502,
+      status: UPSTREAM_FAILURE_STATUS,
       graphCode: Number.isInteger(payload?.error?.code) ? payload.error.code : null,
       graphSubcode: Number.isInteger(payload?.error?.error_subcode) ? payload.error.error_subcode : null,
       upstreamStatus: response.status,
+      graphMessage: safeGraphMessage(payload?.error),
     });
   }
   return payload;
@@ -156,12 +172,12 @@ async function createReviewTemplate(config) {
     },
   );
   if (typeof payload?.id !== 'string' || !payload.id) {
-    throw Object.assign(new Error('meta_review_create_readback_failed'), { status: 502 });
+    throw Object.assign(new Error('meta_review_create_readback_failed'), { status: UPSTREAM_FAILURE_STATUS });
   }
 
   const after = await listReviewTemplates(config);
   const row = after.find((entry) => String(entry?.id || '') === payload.id) || null;
-  if (!row) throw Object.assign(new Error('meta_review_create_readback_failed'), { status: 502 });
+  if (!row) throw Object.assign(new Error('meta_review_create_readback_failed'), { status: UPSTREAM_FAILURE_STATUS });
   return safeTemplate(row);
 }
 
@@ -173,10 +189,10 @@ async function deleteReviewTemplate(config) {
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${config.wabaId}/message_templates`);
   url.searchParams.set('name', TEMPLATE_NAME);
   const payload = await graph(url.toString(), config.accessToken, { method: 'DELETE' });
-  if (payload?.success !== true) throw Object.assign(new Error('meta_review_delete_failed'), { status: 502 });
+  if (payload?.success !== true) throw Object.assign(new Error('meta_review_delete_failed'), { status: UPSTREAM_FAILURE_STATUS });
 
   const after = await listReviewTemplates(config);
-  if (after.length !== 0) throw Object.assign(new Error('meta_review_delete_readback_failed'), { status: 502 });
+  if (after.length !== 0) throw Object.assign(new Error('meta_review_delete_readback_failed'), { status: UPSTREAM_FAILURE_STATUS });
   return { deleted: true };
 }
 
@@ -226,6 +242,7 @@ async function handlePost(context) {
       if (Number.isInteger(error.graphCode)) body.graph_code = error.graphCode;
       if (Number.isInteger(error.graphSubcode)) body.graph_subcode = error.graphSubcode;
       if (Number.isInteger(error.upstreamStatus)) body.upstream_status = error.upstreamStatus;
+      if (typeof error.graphMessage === 'string' && error.graphMessage) body.graph_message = error.graphMessage;
     }
     return json(body, status);
   }
@@ -249,6 +266,7 @@ export async function onRequest(context) {
     : json({ ok: false, error: 'method_not_allowed' }, 405);
   if (operator) {
     response.headers.set('access-control-allow-origin', OPERATOR_CRM_ORIGIN);
+    response.headers.set('access-control-expose-headers', 'x-vishar-review-handler');
     response.headers.set('vary', 'Origin');
   }
   return response;
@@ -259,6 +277,8 @@ export const __testing = Object.freeze({
   TEMPLATE_LANGUAGE,
   TEMPLATE_CATEGORY,
   TEMPLATE_BODY,
+  UPSTREAM_FAILURE_STATUS,
   listReviewTemplates,
+  safeGraphMessage,
   safeTemplate,
 });
