@@ -174,6 +174,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   const reviewedBookingArity = ({
     booking_card_tattoo_v2: 6,
     booking_card_consultation_v2: 3,
+    booking_card_consultation_v3: 3,
     booking_card_video_consultation_v2: 3,
   })[templateName] ?? null;
   const reviewedBookingV2 = reviewedBookingArity !== null;
@@ -326,6 +327,7 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
     vishar_lifecycle_reminder_24h_v3: { purpose: 'session_reminder_24h', body: 2, actions: 1 },
     vishar_lifecycle_reminder_24h_v4: { purpose: 'session_reminder_24h', body: 2, actions: 1, actionStart: 1 },
     vishar_lifecycle_consultation_v5: { purpose: 'consultation_reminder', body: 3, actions: 1, actionStart: 1 },
+    vishar_lifecycle_consultation_v6: { purpose: 'consultation_reminder', body: 3, actions: 1, actionStart: 1 },
     vishar_lifecycle_consultation_video_v1: { purpose: 'consultation_reminder', body: 3, actions: 1, actionStart: 0 },
   })[templateName] ?? null;
   if (!LIFECYCLE_UTILITY_PURPOSES.has(purpose)

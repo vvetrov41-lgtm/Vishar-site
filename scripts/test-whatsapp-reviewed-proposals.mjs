@@ -108,4 +108,38 @@ const changedFaq=structuredClone(reminder72hCandidate);
 changedFaq.components.at(-1).buttons[2].url='https://different.example/faq/';
 assert.equal(__testing.matches(changedFaq,reminder72hCandidate),false);
 
+// Replacement Meta templates have new identities: no editing previously approved URL buttons.
+for (const [kind,template_name] of [
+  ['booking_consultation_directions','booking_card_consultation_v3'],
+  ['reminder_consultation_directions','vishar_lifecycle_consultation_v6'],
+]) {
+  const target={
+    artist_id:artists[0][0],arrival_guide_url:artists[0][1],
+    preparation_guide_url:artists[0][2],kind,template_name,
+    template_language:'en_GB',
+  };
+  const expected=__testing.definition(target);
+  const body=expected.components[0].text;
+  const buttons=expected.components.at(-1).buttons;
+  assert.equal(expected.name,template_name);
+  assert.equal(expected.category,'UTILITY');
+  assert.deepEqual(buttons.map(b=>b.text),
+    kind==='booking_consultation_directions'
+    ? ['Get directions'] : ['Get directions','Need another time']);
+  assert.equal(buttons[0].type,'URL');
+  assert.equal(buttons[0].url,'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic');
+  assert.ok(!buttons[0].url.includes('/arrival/'));
+  assert.ok(body.includes('York House'));
+  assert.ok(!body.includes('Exhibition House'));
+  assert.ok(!body.includes('private studio'));
+  assert.ok(!body.includes('Confirm consultation'));
+  assert.ok(!body.includes('Please confirm'));
+  assert.ok(__testing.matches({...expected,status:'PENDING',id:'1234567890123'},expected));
+  const wrong=structuredClone(expected);
+  wrong.components.at(-1).buttons[0].url=artists[0][1];
+  assert.equal(__testing.matches(wrong,expected),false);
+  assert.throws(()=>__testing.definition({...target,artist_id:artists[1][0],
+    arrival_guide_url:artists[1][1],preparation_guide_url:artists[1][2]}));
+}
+console.log('Reviewed Meta template identities and York House-only consultation buttons passed.');
 console.log('12 reviewed WhatsApp templates plus one Vladimir-only 72h three-button candidate passed.');
