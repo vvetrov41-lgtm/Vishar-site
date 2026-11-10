@@ -34,6 +34,17 @@ BEGIN
 END;
 $precondition$;
 
+-- Extend the private Meta review queue to the two existing lifecycle post-
+-- session purposes. It originally accepts only booking reminder identities.
+-- Approval status, provider evidence and key constraints remain unchanged.
+ALTER TABLE crm_private.lifecycle_whatsapp_template_candidates
+  DROP CONSTRAINT lifecycle_whatsapp_template_candidates_purpose_check,
+  ADD CONSTRAINT lifecycle_whatsapp_template_candidates_purpose_check
+  CHECK (purpose IN (
+    'session_reminder_72h','session_reminder_24h',
+    'consultation_reminder','post_session_aftercare','post_session_checkin'
+  ));
+
 -- Provider review is independent for each artist. Kristina remains gated
 -- until her WhatsApp Cloud API route becomes available.
 INSERT INTO crm_private.lifecycle_whatsapp_template_candidates(
