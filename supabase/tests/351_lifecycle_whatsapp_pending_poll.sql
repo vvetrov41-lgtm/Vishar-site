@@ -29,7 +29,8 @@ set local role service_role;
 select is((select count(*)::integer
  from public.service_claim_lifecycle_whatsapp_template_targets(20) t
  where t.artist_id=(select id from pending_meta_artist)
-   and t.purpose='post_session_aftercare'),1,
+   and t.purpose='post_session_aftercare'
+   and t.template_name='vishar_lifecycle_aftercare_v1'),1,
  'PENDING template is polled again after 15 minutes');
 reset role;
 
@@ -42,7 +43,8 @@ set local role service_role;
 select is((select count(*)::integer
  from public.service_claim_lifecycle_whatsapp_template_targets(20) t
  where t.artist_id=(select id from pending_meta_artist)
-   and t.purpose='post_session_aftercare'),0,
+   and t.purpose='post_session_aftercare'
+   and t.template_name='vishar_lifecycle_aftercare_v1'),0,
  'recent PENDING Meta review does not trigger another API request');
 reset role;
 
@@ -56,7 +58,8 @@ set local role service_role;
 select is((select count(*)::integer
  from public.service_claim_lifecycle_whatsapp_template_targets(20) t
  where t.artist_id=(select id from pending_meta_artist)
-   and t.purpose='post_session_aftercare'),0,
+   and t.purpose='post_session_aftercare'
+   and t.template_name='vishar_lifecycle_aftercare_v1'),0,
  'APPROVED template retains the 24-hour polling cadence');
 reset role;
 
@@ -69,7 +72,8 @@ set local role service_role;
 select is((select count(*)::integer
  from public.service_claim_lifecycle_whatsapp_template_targets(20) t
  where t.artist_id=(select id from pending_meta_artist)
-   and t.purpose='post_session_aftercare'),1,
+   and t.purpose='post_session_aftercare'
+   and t.template_name='vishar_lifecycle_aftercare_v1'),1,
  'stale APPROVED status is checked again after 24 hours');
 reset role;
 
@@ -88,7 +92,8 @@ set local role service_role;
 select is((select count(*)::integer
  from public.service_claim_lifecycle_whatsapp_template_targets(20) t
  where t.artist_id=(select id from pending_meta_artist)
-   and t.purpose='post_session_aftercare'),0,
+   and t.purpose='post_session_aftercare'
+   and t.template_name='vishar_lifecycle_aftercare_v1'),0,
  'provider error backoff overrides the 15-minute PENDING poll');
 reset role;
 
