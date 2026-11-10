@@ -53,6 +53,12 @@ assert.equal(verifyTodayLineage(preparationButton),'20261109230000');
 assert.throws(()=>verifyTodayLineage(preparationButton.replace('20261109230000 | |','20261109230100 | |')));
 assert.throws(()=>verifyTodayLineage(preparationButton+'\n 20261109231000 | | t'));
 
+// The consultation-venue correction is the sole release after the 09 Nov head.
+const venueSplit = ' Local | Remote | Time\n 20261109230000 | 20261109230000 | t\n 20261110020000 | | t';
+assert.equal(verifyTodayLineage(venueSplit),'20261110020000');
+assert.throws(()=>verifyTodayLineage(venueSplit.replace('20261110020000 | |','20261110021000 | |')));
+assert.throws(()=>verifyTodayLineage(venueSplit+'\n 20261110023000 | | t'));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);
