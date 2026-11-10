@@ -13,7 +13,7 @@ BEGIN
    WHERE s.artist_id='a1111111-1111-4111-8111-111111111111'::uuid
      AND s.studio_name='Label Tattoo Private'
      AND s.studio_address='16 Exhibition House, Addison Bridge Place, London W14 8XP'
-     AND s.whatsapp_consultation_template_name='booking_card_consultation_v2') THEN
+     AND s.whatsapp_consultation_template_name IN ('booking_card_consultation_v1','booking_card_consultation_v2')) THEN
     RAISE EXCEPTION 'Booking contract or tattoo studio changed concurrently';
  END IF;
 END;
