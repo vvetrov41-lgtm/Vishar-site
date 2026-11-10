@@ -264,3 +264,15 @@ for(const invalid of [
   kristinaPrivacyRepair.replace('20261108015000 | |','20261108020000 | |'),
   kristinaPrivacyRepair.replace('20261108010000 | 20261108010000','20261108010000 | '),
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+const postSessionFirstPersonTransition = [
+  ' Local | Remote | Time',
+  ' 20261110095000 | 20261110095000 | t',
+  ' 20261110200000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(postSessionFirstPersonTransition), '20261110200000');
+for (const invalid of [
+  postSessionFirstPersonTransition + '\n 20261110203000 | | t',
+  postSessionFirstPersonTransition.replace('20261110200000 | |', '20261110210000 | |'),
+  postSessionFirstPersonTransition.replace('20261110095000 | 20261110095000', '20261110095000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));
