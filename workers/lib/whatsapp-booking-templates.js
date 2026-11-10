@@ -637,7 +637,38 @@ const PERSONAL_CONSULTATION_V3 = [
 
 const PREPARATION_FAQ_URL = 'https://vishartattoo.com/faq/';
 
-function lifecycleTemplateDefinition(purpose, name, language) {
+// New Meta Utility identities. Approved v1 bodies and buttons are immutable.
+// The URL button avoids displaying a long link inside the message.
+const POST_SESSION_V2 = Object.freeze({
+  post_session_aftercare: Object.freeze({
+    name: 'vishar_lifecycle_aftercare_v2',
+    text: [
+      'Hi {{1}}, thank you for today.',
+      '',
+      'Please follow the healing instructions we discussed.',
+      'Tap the button below for my aftercare guide.',
+      '',
+      'If you need any advice while your tattoo heals, just reply to me here.',
+    ].join('\n'),
+  }),
+  post_session_checkin: Object.freeze({
+    name: 'vishar_lifecycle_checkin_v2',
+    text: [
+      'Hi {{1}}, how is your tattoo healing after our session?',
+      '',
+      'If you have any questions or concerns, just reply to me here.',
+      'No need to reply if everything is going well.',
+      '',
+      'My aftercare guide is available below.',
+    ].join('\n'),
+  }),
+});
+const POST_SESSION_ARTIST_URLS = Object.freeze({
+  'a1111111-1111-4111-8111-111111111111': 'https://vishartattoo.com/aftercare/',
+  'a2222222-2222-4222-8222-222222222222': 'https://www.kristinavishar.com/aftercare/',
+});
+
+function lifecycleTemplateDefinition(purpose, name, language, artistId = null) {
   const definition = LIFECYCLE_UTILITY_DEFINITIONS[purpose];
   if (!definition || !TEMPLATE_NAME.test(name) || !TEMPLATE_LANGUAGE.test(language)) {
     throw Object.assign(new Error('unsupported lifecycle template'), {
@@ -654,9 +685,16 @@ function lifecycleTemplateDefinition(purpose, name, language) {
   );
   const consultationV3 = purpose === 'consultation_reminder'
     && name === 'vishar_lifecycle_consultation_v3';
-  const bodyText = consultationV3 ? PERSONAL_CONSULTATION_V3
+  const postSessionV2 = POST_SESSION_V2[purpose]?.name === name;
+  if (postSessionV2 && !Object.hasOwn(POST_SESSION_ARTIST_URLS, artistId)) {
+    throw Object.assign(new Error('unknown post-session Meta artist'), {
+      code: 'whatsapp_template_contract_invalid',
+    });
+  }
+  const bodyText = postSessionV2 ? POST_SESSION_V2[purpose].text
+    : consultationV3 ? PERSONAL_CONSULTATION_V3
     : personalised ? PERSONAL_REMINDER_V2[purpose].text : definition.text;
-  const examples = consultationV3
+  const examples = postSessionV2 ? ['Alex'] : consultationV3
     ? ['Kristina', 'Sunday, 8 November 2026 at 10:00',
       'Label Tattoo Kensington, Unit B, York House, Avonmore Place, London W14 8RL']
     : definition.examples;
@@ -669,7 +707,13 @@ function lifecycleTemplateDefinition(purpose, name, language) {
         text: bodyText,
         example: { body_text: [examples] },
       },
-      ...(consultationV3 ? [{
+      ...(postSessionV2 ? [{
+        type: 'BUTTONS',
+        buttons: [{
+          type: 'URL', text: 'Aftercare guide',
+          url: POST_SESSION_ARTIST_URLS[artistId],
+        }],
+      }] : consultationV3 ? [{
         type: 'BUTTONS',
         buttons: [
           { type: 'QUICK_REPLY', text: 'Confirm consultation' },
@@ -741,6 +785,7 @@ export async function maintainWhatsappLifecycleTemplates(env, {
       if (matches.length === 0) {
         await createTemplate(binding, lifecycleTemplateDefinition(
           target.purpose, target.template_name, target.template_language,
+          target.artist_id,
         ), fetchImpl);
         summary.created += 1;
         rows = await listTemplates(binding, fetchImpl);
