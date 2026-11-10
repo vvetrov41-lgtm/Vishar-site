@@ -25,7 +25,7 @@ export interface WhatsAppProvisioningResult {
 
 export interface MetaReviewTemplateMetadata {
   id: string | null;
-  name: 'meta_review_permission_demo';
+  name: 'meta_review_permission_demo_v2';
   status: string | null;
   language: string;
   category: string;
@@ -156,7 +156,7 @@ function assertMetaReviewTemplate(value: unknown): MetaReviewTemplateMetadata {
   const row = value as Record<string, unknown>;
   if (
     (row.id !== null && typeof row.id !== 'string')
-    || row.name !== 'meta_review_permission_demo'
+    || row.name !== 'meta_review_permission_demo_v2'
     || (row.status !== null && typeof row.status !== 'string')
     || typeof row.language !== 'string'
     || typeof row.category !== 'string'
