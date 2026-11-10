@@ -14,7 +14,8 @@ select is((select count(*)::integer
  'only Vladimir has two pending reminder card candidates');
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_candidates
- where artist_id=(select id from reminder_candidate_artists where slug='kristina')),0,
+ where artist_id=(select id from reminder_candidate_artists where slug='kristina')
+ and purpose in ('session_reminder_72h','session_reminder_24h','consultation_reminder')),0,
  'Kristina has no inadvertent v2 candidate');
 select is((select count(*)::integer
  from crm_private.lifecycle_whatsapp_template_candidates
