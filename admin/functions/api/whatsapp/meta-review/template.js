@@ -5,7 +5,9 @@ const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const TEMPLATE_NAME = 'meta_review_permission_demo';
 const TEMPLATE_LANGUAGE = 'en_US';
 const TEMPLATE_CATEGORY = 'UTILITY';
-const TEMPLATE_BODY = 'Meta App Review permission demonstration. No customer data is used.';
+// UTILITY bodies must read as a transactional notice. Meta rejected the earlier
+// generic review sentence with graph_code 100 / subcode 2388025 (category invalid).
+const TEMPLATE_BODY = 'Your Vishar Tattoo enquiry has been received. We will reply in this chat with the next steps.';
 const MAX_BODY_BYTES = 2048;
 // Upstream (Meta/Supabase) failures must not use 502/504: Cloudflare replaces an
 // origin 502/504 with its own branded HTML page, which hides stage and graph_code.
