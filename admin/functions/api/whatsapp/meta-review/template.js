@@ -2,11 +2,11 @@ const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const OPERATOR_CRM_ORIGIN = 'https://app.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
-const TEMPLATE_NAME = 'meta_review_permission_demo';
+// v2: the original en_US meta_review_permission_demo on the review WABA was
+// deleted, and Meta blocks new en_US content under that name for 4 weeks
+// (graph_code 100, subcodes 2388025 and 2388023, 2026-11-10).
+const TEMPLATE_NAME = 'meta_review_permission_demo_v2';
 const TEMPLATE_LANGUAGE = 'en_US';
-// MARKETING, not UTILITY: an earlier en_US meta_review_permission_demo on the
-// review WABA was deleted, and Meta refuses any other category for that name
-// and language for 4 weeks (graph_code 100 / subcode 2388025, 2026-11-10).
 const TEMPLATE_CATEGORY = 'MARKETING';
 const TEMPLATE_BODY = 'Meta App Review permission demonstration. No customer data is used.';
 const MAX_BODY_BYTES = 2048;

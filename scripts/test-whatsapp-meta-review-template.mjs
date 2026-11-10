@@ -263,7 +263,7 @@ for (const origin of ['https://crm.vishartattoo.com', 'https://app.vishartattoo.
 {
   // Regression: Meta refuses UTILITY for this name+language while the deleted
   // en_US content is pending removal (graph_code 100, subcode 2388025).
-  assert.equal(__testing.TEMPLATE_NAME, 'meta_review_permission_demo');
+  assert.equal(__testing.TEMPLATE_NAME, 'meta_review_permission_demo_v2');
   assert.equal(__testing.TEMPLATE_LANGUAGE, 'en_US');
   assert.equal(__testing.TEMPLATE_CATEGORY, 'MARKETING');
 }

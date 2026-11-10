@@ -310,12 +310,12 @@ export function WhatsAppConnectionsPage() {
         <Section title={language === 'ru' ? 'Meta App Review' : 'Meta App Review'}>
           <p className="notice">
             {language === 'ru'
-              ? 'Изолированный сценарий для видео whatsapp_business_management. CRM может работать только с фиксированным шаблоном meta_review_permission_demo и только с review WABA, заданным на сервере. Клиентские данные и production WABA через этот экран выбрать нельзя.'
-              : 'Isolated whatsapp_business_management review flow. The CRM can only operate on the fixed meta_review_permission_demo template and the server-configured review WABA. Customer data and the production WABA cannot be selected here.'}
+              ? 'Изолированный сценарий для видео whatsapp_business_management. CRM может работать только с фиксированным шаблоном meta_review_permission_demo_v2 и только с review WABA, заданным на сервере. Клиентские данные и production WABA через этот экран выбрать нельзя.'
+              : 'Isolated whatsapp_business_management review flow. The CRM can only operate on the fixed meta_review_permission_demo_v2 template and the server-configured review WABA. Customer data and the production WABA cannot be selected here.'}
           </p>
           <dl className="definition">
             <dt>{language === 'ru' ? 'Шаблон' : 'Template'}</dt>
-            <dd><code>meta_review_permission_demo</code></dd>
+            <dd><code>meta_review_permission_demo_v2</code></dd>
             <dt>{language === 'ru' ? 'Readback' : 'Readback'}</dt>
             <dd>{reviewTemplate
               ? `${reviewTemplate.status ?? 'unknown'} · ${reviewTemplate.language} · ${reviewTemplate.category}`
