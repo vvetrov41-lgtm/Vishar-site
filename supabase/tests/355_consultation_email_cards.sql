@@ -26,20 +26,20 @@ insert into public.sessions (
 
 select is(
  (select studio_address from crm_private.consultation_email_location()),
- '16 Exhibition House, Addison Bridge Place, London W14 8XP',
- 'consultation studio uses current Exhibition House address'
+ 'Unit B, York House, Avonmore Place, London W14 8RL',
+ 'consultation studio is York House, separate from tattoo sessions'
 );
 
 select is(
  (select studio_map_url from crm_private.consultation_email_location()),
- 'https://www.google.com/maps/search/?api=1&query=16%20Exhibition%20House%2C%20Addison%20Bridge%20Place%2C%20London%20W14%208XP',
- 'location uses the configured current studio map'
+ 'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic',
+ 'consultation uses artist-provided Maps pin'
 );
 
 select ok(
- (select html_body like '%16 Exhibition House, Addison Bridge Place%'
-    and html_body like '%vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/%'
-    and html_body not like '%Unit B, York House%'
+ (select html_body like '%Unit B, York House, Avonmore Place%'
+    and html_body like '%maps.app.goo.gl/zfTRAJ4MXEHcHf3S6%'
+    and html_body not like '%16 Exhibition House%'
     and html_body not like '%Confirm attendance%'
   from crm_private.render_booking_card_email(
     (select id from crm_private.booking_cards
@@ -50,8 +50,8 @@ select ok(
 );
 
 select ok(
- (select body like '%16 Exhibition House, Addison Bridge Place%'
-    and body like '%vishartattoo.com/arrival/7f2bc57edcd447adbe549e36a5a1830f/%'
+ (select body like '%Unit B, York House, Avonmore Place%'
+    and body like '%maps.app.goo.gl/zfTRAJ4MXEHcHf3S6%'
     and body not like '%Confirm attendance:%'
   from crm_private.render_booking_card_email(
     (select id from crm_private.booking_cards
@@ -86,7 +86,7 @@ select ok(html like '%Confirm attendance%'
       and html like '%Request a different time%'
       and html like '%Cancel appointment%'
       and html like '%Get directions%'
-      and html like '%16 Exhibition House, Addison Bridge Place%'
+      and html like '%Unit B, York House, Avonmore Place%'
       and html like '%/respond/'||repeat('a',64)||'%',
       'Gmail reminder displays three action links, correct address and directions')
 from example;
