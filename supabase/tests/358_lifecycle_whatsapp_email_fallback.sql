@@ -432,7 +432,7 @@ select is((select p.body_parameters->>0 from crm_private.lifecycle_whatsapp_payl
  where p.session_id='f9845555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),'Consult',
  'first body variable is the client name, not the artist introduction');
-select ok((select p.body_parameters->>2 like '%Google Maps: https://www.google.com/maps/search/?api=1&query=16%20Exhibition%20House%'
+select ok((select p.body_parameters->>2 like '%Google Maps: https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6%'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9845555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),
