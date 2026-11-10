@@ -9,6 +9,7 @@ const NAME = /^[a-z0-9_]{1,512}$/;
 const KINDS = Object.freeze({
   booking_tattoo: 'booking_card_tattoo_v2',
   booking_consultation: 'booking_card_consultation_v2',
+  booking_consultation_directions: 'booking_card_consultation_v3',
   booking_video: 'booking_card_video_consultation_v2',
   reminder_72h: 'vishar_lifecycle_reminder_72h_v3',
   reminder_72h_button: 'vishar_lifecycle_reminder_72h_v4',
@@ -16,12 +17,21 @@ const KINDS = Object.freeze({
   reminder_consultation: 'vishar_lifecycle_consultation_v4',
   reminder_24h_button: 'vishar_lifecycle_reminder_24h_v4',
   reminder_consultation_button: 'vishar_lifecycle_consultation_v5',
+  reminder_consultation_directions: 'vishar_lifecycle_consultation_v6',
   reminder_consultation_video: 'vishar_lifecycle_consultation_video_v1',
 });
 const ARTIST_DOMAINS = Object.freeze({
   'a1111111-1111-4111-8111-111111111111': 'vishartattoo.com',
   'a2222222-2222-4222-8222-222222222222': 'www.kristinavishar.com',
 });
+
+// Correct consultation venue is a separate Meta-approved static URL. Never
+// replace the private tattoo-session arrival guide or edit an approved template.
+const YORK_HOUSE_MAP = 'https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic';
+const VLADIMIR_ID = 'a1111111-1111-4111-8111-111111111111';
+const NEW_CONSULTATION_KINDS = new Set([
+  'booking_consultation_directions','reminder_consultation_directions',
+]);
 
 function definition(target) {
   const domain = ARTIST_DOMAINS[target?.artist_id];
@@ -34,6 +44,10 @@ function definition(target) {
       || !new RegExp('^https://' + domain.replace(/\./g, '\\.') + '/arrival/[0-9a-f]{32}/$').test(url)
       || faq !== 'https://' + domain + '/faq/') {
     throw new Error('Invalid reviewed WhatsApp identity or link');
+  }
+  if (NEW_CONSULTATION_KINDS.has(target.kind)
+      && target.artist_id !== VLADIMIR_ID) {
+    throw new Error('Consultation-map template is not approved for this artist');
   }
   let text, example, buttons=[];
   if (target.kind === 'booking_tattoo') {
@@ -65,6 +79,19 @@ function definition(target) {
     ].join('\n');
     example=['Alex','Monday, 16 November 2026','12:00'];
     buttons=[{type:'URL',text:'Get directions',url}];
+  } else if (target.kind === 'booking_consultation_directions') {
+    text=[
+      'Hi {{1}},',
+      '',
+      'Your in-person consultation is booked for {{2}} at {{3}}.',
+      '',
+      'Studio: Label Tattoo Kensington, Unit B, York House, Avonmore Place, London W14 8RL.',
+      'Use Get directions below for the correct studio on Google Maps.',
+      '',
+      'Your booking is already confirmed. See you then!',
+    ].join('\\n');
+    example=['Alex','Monday, 16 November 2026','12:00'];
+    buttons=[{type:'URL',text:'Get directions',url:YORK_HOUSE_MAP}];
   } else if (target.kind === 'booking_video') {
     text=[
       'Hi {{1}},',
@@ -163,6 +190,26 @@ function definition(target) {
       'Label Tattoo Private, Exhibition House, London'];
     buttons=[
       {type:'URL',text:'Get directions',url},
+      {type:'QUICK_REPLY',text:'Need another time'},
+    ];
+  } else if (target.kind === 'reminder_consultation_directions') {
+    text=[
+      'Hi {{1}},',
+      '',
+      'Just a reminder about our in-person consultation tomorrow, {{2}}.',
+      '',
+      'Studio: {{3}}',
+      '',
+      'Your appointment is already confirmed. No need to confirm again.',
+      'Use Get directions for the York House studio on Google Maps.',
+      'If you need to change the time, use Need another time.',
+      '',
+      'See you tomorrow!',
+    ].join('\\n');
+    example=['Alex','Wednesday, 11 November 2026 at 12:00',
+      'Label Tattoo Kensington, Unit B, York House, Avonmore Place, London W14 8RL'];
+    buttons=[
+      {type:'URL',text:'Get directions',url:YORK_HOUSE_MAP},
       {type:'QUICK_REPLY',text:'Need another time'},
     ];
   } else if (target.kind === 'reminder_consultation_video') {
