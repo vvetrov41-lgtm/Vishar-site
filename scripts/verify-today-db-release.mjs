@@ -71,6 +71,9 @@ export function verifyTodayLineage(source) {
     ['20261109230000', '20261110020000'],
     // New York House WhatsApp proposal identities and fail-closed v2 protection.
     ['20261110020000', '20261110095000'],
+    // Correct third-person Meta aftercare/check-in and safeguard existing
+    // immediate / 24h timing. Stage v2; v1 falls back to first-person Email.
+    ['20261110095000', '20261110200000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
