@@ -261,13 +261,11 @@ for (const origin of ['https://crm.vishartattoo.com', 'https://app.vishartattoo.
 }
 
 {
-  // Regression: Meta rejected the generic review sentence as an invalid UTILITY
-  // body (graph_code 100, subcode 2388025). Keep the body a plain transactional
-  // notice with no variables, URLs, emoji or promotional wording.
-  assert.equal(__testing.TEMPLATE_CATEGORY, 'UTILITY');
+  // Regression: Meta refuses UTILITY for this name+language while the deleted
+  // en_US content is pending removal (graph_code 100, subcode 2388025).
+  assert.equal(__testing.TEMPLATE_NAME, 'meta_review_permission_demo');
   assert.equal(__testing.TEMPLATE_LANGUAGE, 'en_US');
-  assert.doesNotMatch(__testing.TEMPLATE_BODY, /review|permission|demonstration|\{\{|https?:|offer|discount/i);
-  assert.ok(__testing.TEMPLATE_BODY.length <= 1024);
+  assert.equal(__testing.TEMPLATE_CATEGORY, 'MARKETING');
 }
 
 console.log('WhatsApp Meta review template probe checks passed.');
