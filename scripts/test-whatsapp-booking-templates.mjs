@@ -792,3 +792,39 @@ function env() {
 }
 
 console.log('WhatsApp booking template maintenance tests passed.');
+
+
+{
+  // The provider-approved v1 aftercare/check-in is intentionally unchanged.
+  // New v2 first-person identities need the correct artist-specific static URL
+  // and only the client first-name BODY parameter.
+  for (const [artistId, url] of [
+    ['a1111111-1111-4111-8111-111111111111', 'https://vishartattoo.com/aftercare/'],
+    ['a2222222-2222-4222-8222-222222222222', 'https://www.kristinavishar.com/aftercare/'],
+  ]) {
+    for (const [purpose, name] of [
+      ['post_session_aftercare', 'vishar_lifecycle_aftercare_v2'],
+      ['post_session_checkin', 'vishar_lifecycle_checkin_v2'],
+    ]) {
+      const template = __testing.lifecycleTemplateDefinition(purpose, name, 'en_GB', artistId);
+      assert.equal(template.category, 'UTILITY');
+      assert.equal(template.components.length, 2);
+      assert.deepEqual(template.components[0].example.body_text, [['Alex']]);
+      assert.match(template.components[0].text, /Hi \{\{1\}\}/);
+      assert.doesNotMatch(template.components[0].text, /with \{\{2\}\}|Vladimir|Kristina/);
+      assert.deepEqual(template.components[1].buttons, [
+        { type: 'URL', text: 'Aftercare guide', url },
+      ]);
+      assert.equal(template.components[0].text.includes(url), false);
+    }
+    const legacy = __testing.lifecycleTemplateDefinition(
+      'post_session_aftercare', 'vishar_lifecycle_aftercare_v1', 'en_GB',
+    );
+    assert.equal(legacy.components.length, 1, 'approved v1 body must stay byte-identical');
+    assert.match(legacy.components[0].text, /with \{\{2\}\}/);
+  }
+  assert.throws(() => __testing.lifecycleTemplateDefinition(
+    'post_session_aftercare', 'vishar_lifecycle_aftercare_v2', 'en_GB',
+  ), /unknown post-session Meta artist/);
+}
+
