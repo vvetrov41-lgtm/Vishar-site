@@ -67,6 +67,8 @@ export function verifyTodayLineage(source) {
     ['20261109190000', '20261109220000'],
     // Stage the FAQ URL as the third 72h WhatsApp button; live v3 stays active.
     ['20261109220000', '20261109230000'],
+    // Restore the consultation venue split and avoid the wrong WhatsApp static link.
+    ['20261109230000', '20261110020000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
