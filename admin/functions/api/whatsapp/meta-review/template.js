@@ -4,7 +4,10 @@ const OPERATOR_CRM_ORIGIN = 'https://app.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const TEMPLATE_NAME = 'meta_review_permission_demo';
 const TEMPLATE_LANGUAGE = 'en_US';
-const TEMPLATE_CATEGORY = 'UTILITY';
+// MARKETING, not UTILITY: an earlier en_US meta_review_permission_demo on the
+// review WABA was deleted, and Meta refuses any other category for that name
+// and language for 4 weeks (graph_code 100 / subcode 2388025, 2026-11-10).
+const TEMPLATE_CATEGORY = 'MARKETING';
 const TEMPLATE_BODY = 'Meta App Review permission demonstration. No customer data is used.';
 const MAX_BODY_BYTES = 2048;
 // Upstream (Meta/Supabase) failures must not use 502/504: Cloudflare replaces an
