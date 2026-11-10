@@ -59,6 +59,11 @@ assert.equal(verifyTodayLineage(venueSplit),'20261110020000');
 assert.throws(()=>verifyTodayLineage(venueSplit.replace('20261110020000 | |','20261110021000 | |')));
 assert.throws(()=>verifyTodayLineage(venueSplit+'\n 20261110023000 | | t'));
 
+const yorkHouse = ' Local | Remote | Time\\n 20261110020000 | 20261110020000 | t\\n 20261110095000 | | t';
+assert.equal(verifyTodayLineage(yorkHouse),'20261110095000');
+assert.throws(()=>verifyTodayLineage(yorkHouse.replace('20261110095000 | |','20261110095100 | |')));
+assert.throws(()=>verifyTodayLineage(yorkHouse+'\\n 20261110100000 | | t'));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);
