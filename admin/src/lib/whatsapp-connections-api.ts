@@ -33,11 +33,12 @@ export interface MetaReviewTemplateMetadata {
 
 export interface MetaReviewTemplateResult {
   ok: true;
-  action: 'create' | 'delete' | 'status' | 'send';
+  action: 'create' | 'delete' | 'status' | 'send' | 'business';
   accepted?: boolean;
   message_id?: string;
   template?: MetaReviewTemplateMetadata | null;
   deleted?: boolean;
+  business?: { business_id: string; waba_id: string; waba_name: string | null };
 }
 
 export type ExistingWhatsAppProvisioningResult = WhatsAppProvisioningResult;
@@ -169,13 +170,26 @@ function assertMetaReviewTemplate(value: unknown): MetaReviewTemplateMetadata {
   return row as unknown as MetaReviewTemplateMetadata;
 }
 
-function assertMetaReviewResponse(value: unknown, expectedAction: 'create' | 'delete' | 'status' | 'send'): MetaReviewTemplateResult {
+function assertMetaReviewResponse(value: unknown, expectedAction: 'create' | 'delete' | 'status' | 'send' | 'business'): MetaReviewTemplateResult {
   if (!value || typeof value !== 'object') {
     throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   const row = value as Record<string, unknown>;
   if (row.ok !== true || row.action !== expectedAction) {
     throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+  }
+  if (expectedAction === 'business') {
+    const business = row.business && typeof row.business === 'object'
+      ? row.business as Record<string, unknown> : null;
+    if (!business || business.business_id !== '692776505711216'
+      || typeof business.waba_id !== 'string' || !/^[1-9][0-9]{5,30}$/.test(business.waba_id)
+      || (business.waba_name !== null && typeof business.waba_name !== 'string')) {
+      throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+    }
+    return { ok: true, action: 'business', business: {
+      business_id: business.business_id, waba_id: business.waba_id,
+      waba_name: business.waba_name as string | null,
+    } };
   }
   if (expectedAction === 'send') {
     if (row.accepted !== true || typeof row.message_id !== 'string'
@@ -359,7 +373,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
     },
 
     async manageMetaReviewTemplate(
-      action: 'create' | 'delete' | 'status' | 'send',
+      action: 'create' | 'delete' | 'status' | 'send' | 'business',
       recipient?: string,
       templateName?: string,
     ): Promise<MetaReviewTemplateResult> {
