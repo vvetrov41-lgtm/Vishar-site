@@ -28,7 +28,7 @@ const TECHNICAL_OR_BRAND_LITERALS = new Set([
   'WhatsApp',
   'https://example.com',
   'https://monzo.com/pay/r/…',
-  'meta_review_permission_demo_v2',
+  'meta_review_permission_demo_<timestamp>',
   'vishar_crm_bot',
 ]);
 
