@@ -17,8 +17,8 @@ select ok(
 update crm_private.booking_card_artist_settings
 set email_enabled = true,
     whatsapp_enabled = true,
-    whatsapp_consultation_template_name = 'booking_card_consultation_v1',
-    whatsapp_tattoo_template_name = 'booking_card_tattoo_v1',
+    whatsapp_consultation_template_name = 'booking_card_consultation_v3',
+    whatsapp_tattoo_template_name = 'booking_card_tattoo_v2',
     whatsapp_consultation_template_status = 'APPROVED',
     whatsapp_tattoo_template_status = 'APPROVED',
     appointment_start_from = null
@@ -36,6 +36,16 @@ where not exists (
     and i.integration_type = 'whatsapp'::public.artist_integration_type
     and i.integration_key = 'vladimir-production'
 );
+
+
+-- Reviewed first-person consultation card for the rollback-only fixture.
+INSERT INTO crm_private.whatsapp_template_proposals
+ (artist_id,kind,template_name,template_language,approval_status,provider_template_id,verified_at)
+VALUES ('a1111111-1111-4111-8111-111111111111','booking_consultation_directions',
+        'booking_card_consultation_v3','en_GB','APPROVED','123456789012345',now())
+ON CONFLICT (artist_id,kind) DO UPDATE
+SET template_name=EXCLUDED.template_name,approval_status=EXCLUDED.approval_status,
+    provider_template_id=EXCLUDED.provider_template_id,verified_at=EXCLUDED.verified_at;
 
 insert into public.clients (id, full_name, email, phone) values
   ('fe1a1111-1111-4111-8111-111111111111', 'Legacy Client', 'legacy@example.test', '+447700900501'),
