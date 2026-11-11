@@ -78,6 +78,8 @@ export function verifyTodayLineage(source) {
     ['20261110200000', '20261111060000'],
     // First-person outbound audit: one guarded DB migration; no client replays.
     ['20261111060000', '20261111072000'],
+    // Meta-approved first-person aftercare and check-in, Vladimir only.
+    ['20261111072000', '20261111083000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
