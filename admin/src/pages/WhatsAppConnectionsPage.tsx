@@ -69,6 +69,7 @@ export function WhatsAppConnectionsPage() {
   const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewTemplate, setReviewTemplate] = useState<MetaReviewTemplateMetadata | null>(null);
+  const [reviewRecipient, setReviewRecipient] = useState('');
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
 
@@ -107,7 +108,24 @@ export function WhatsAppConnectionsPage() {
     }
   }
 
-  async function runMetaReview(action: 'create' | 'delete' | 'status') {
+  async function runMetaReview(action: 'create' | 'delete' | 'status' | 'send') {
+    if (action === 'send') {
+      if (reviewTemplate?.status !== 'APPROVED' || !/^[+]?[1-9][0-9]{7,14}$/.test(reviewRecipient)) {
+        setActionError(language === 'ru'
+          ? 'Нужен одобренный тестовый шаблон и номер получателя в международном формате.'
+          : 'An approved review template and an international test recipient number are required.');
+        return;
+      }
+      const approved = await confirmDialog({
+        title: language === 'ru' ? 'Отправить тестовое WhatsApp?' : 'Send a test WhatsApp?',
+        message: language === 'ru'
+          ? `Отправить один тестовый шаблон на ${reviewRecipient}? Только если этот номер добавлен в Meta как тестовый получатель. Повторной отправки при ошибке не будет.`
+          : `Send one review template to ${reviewRecipient}? The number must be a registered Meta test recipient. Failed or ambiguous sends will not be retried.`,
+        confirmLabel: language === 'ru' ? 'Отправить один раз' : 'Send once',
+        cancelLabel: cancelLabelFor(language),
+      });
+      if (!approved) return;
+    }
     if (action === 'delete') {
       const approved = await confirmDialog({
         title: language === 'ru' ? 'Удалить тестовый шаблон?' : 'Delete the test template?',
@@ -129,7 +147,17 @@ export function WhatsAppConnectionsPage() {
           ? 'Проверка Meta App Review доступна только владельцу production CRM.'
           : 'Meta App Review controls are available only to the production CRM owner.');
       }
-      const result = await api.manageMetaReviewTemplate(action);
+      const result = await api.manageMetaReviewTemplate(
+        action,
+        action === 'send' ? reviewRecipient : undefined,
+        action === 'send' ? reviewTemplate?.name : undefined,
+      );
+      if (action === 'send') {
+        setReviewMessage(language === 'ru'
+          ? `Meta приняла тестовое сообщение: ${result.message_id}. Доставку проверь в WhatsApp получателя.`
+          : `Meta accepted the test message: ${result.message_id}. Check delivery in the recipient's WhatsApp.`);
+        return;
+      }
       if (action === 'delete') {
         setReviewTemplate(null);
         setReviewMessage(language === 'ru'
@@ -343,6 +371,34 @@ export function WhatsAppConnectionsPage() {
             </button>
             <button type="button" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('delete'); }}>
               {language === 'ru' ? 'Удалить тестовый шаблон' : 'Delete test template'}
+            </button>
+          </div>
+          <p className="notice">
+            {language === 'ru'
+              ? 'Видео whatsapp_business_messaging: используй только номер, заранее добавленный в Meta как тестовый получатель. Отправка идёт с изолированного review WABA. Никаких повторов при ошибке.'
+              : 'whatsapp_business_messaging demo: use only a recipient already registered in Meta for testing. Sending uses the isolated review WABA, with no retries.'}
+          </p>
+          <label htmlFor="meta-review-recipient">
+            {language === 'ru' ? 'Тестовый получатель (+44…)' : 'Registered test recipient (+44…)'}
+          </label>
+          <input
+            id="meta-review-recipient"
+            type="tel"
+            autoComplete="off"
+            value={reviewRecipient}
+            onChange={(event) => setReviewRecipient(event.target.value.trim())}
+            placeholder="+44..."
+            disabled={reviewBusy}
+          />
+          <div className="actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={reviewBusy || !api || reviewTemplate?.status !== 'APPROVED'
+                || !/^[+]?[1-9][0-9]{7,14}$/.test(reviewRecipient)}
+              onClick={() => { void runMetaReview('send'); }}
+            >
+              {language === 'ru' ? 'Отправить тестовое сообщение' : 'Send test message'}
             </button>
           </div>
         </Section>
