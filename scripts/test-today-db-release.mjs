@@ -282,3 +282,12 @@ for (const invalid of [
   postSessionFirstPersonTransition.replace('20261110200000 | |', '20261110210000 | |'),
   postSessionFirstPersonTransition.replace('20261110095000 | 20261110095000', '20261110095000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// First-person messages are the only allowed next production DB change.
+const firstPersonOutbound = ' Local | Remote | Time\n 20261111060000 | 20261111060000 | t\n 20261111072000 | | t';
+assert.equal(verifyTodayLineage(firstPersonOutbound), '20261111072000');
+for (const invalid of [
+  firstPersonOutbound + '\n 20261111072100 | | t',
+  firstPersonOutbound.replace('20261111072000 | |', '20261111080000 | |'),
+  firstPersonOutbound.replace('20261111060000 | 20261111060000', '20261111060000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));
