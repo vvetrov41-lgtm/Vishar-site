@@ -2,10 +2,12 @@ const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const OPERATOR_CRM_ORIGIN = 'https://app.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
-// v2: the original en_US meta_review_permission_demo on the review WABA was
-// deleted, and Meta blocks new en_US content under that name for 4 weeks
-// (graph_code 100, subcodes 2388025 and 2388023, 2026-11-10).
-const TEMPLATE_NAME = 'meta_review_permission_demo_v2';
+// Meta blocks new en_US content under a deleted template name for 4 weeks
+// (graph_code 100, subcodes 2388025 and 2388023). A fixed name therefore broke
+// the review flow after every Delete, so each create uses a server-generated
+// name: the fixed prefix plus a UTC timestamp. Clients never choose the name.
+const TEMPLATE_NAME_PREFIX = 'meta_review_permission_demo_';
+const TEMPLATE_NAME_PATTERN = /^meta_review_permission_demo_[0-9]{14}$/;
 const TEMPLATE_LANGUAGE = 'en_US';
 const TEMPLATE_CATEGORY = 'MARKETING';
 const TEMPLATE_BODY = 'Meta App Review permission demonstration. No customer data is used.';
@@ -143,13 +145,20 @@ async function listReviewTemplates(config) {
   url.searchParams.set('limit', '100');
   const payload = await graph(url.toString(), config.accessToken);
   const rows = Array.isArray(payload?.data) ? payload.data : [];
-  return rows.filter((row) => row && row.name === TEMPLATE_NAME);
+  return rows.filter((row) => row && typeof row.name === 'string' && TEMPLATE_NAME_PATTERN.test(row.name));
+}
+
+function generateTemplateName(now = new Date()) {
+  const stamp = now.toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const name = `${TEMPLATE_NAME_PREFIX}${stamp}`;
+  if (!TEMPLATE_NAME_PATTERN.test(name)) throw Object.assign(new Error('template_name_invalid'), { status: 500 });
+  return name;
 }
 
 function safeTemplate(row) {
   return {
     id: typeof row?.id === 'string' ? row.id : null,
-    name: TEMPLATE_NAME,
+    name: typeof row?.name === 'string' && TEMPLATE_NAME_PATTERN.test(row.name) ? row.name : null,
     status: typeof row?.status === 'string' ? row.status : null,
     language: typeof row?.language === 'string' ? row.language : TEMPLATE_LANGUAGE,
     category: typeof row?.category === 'string' ? row.category : TEMPLATE_CATEGORY,
@@ -159,6 +168,7 @@ function safeTemplate(row) {
 async function createReviewTemplate(config) {
   const before = await listReviewTemplates(config);
   if (before.length !== 0) throw Object.assign(new Error('meta_review_template_exists'), { status: 409 });
+  const name = generateTemplateName();
 
   const payload = await graph(
     `https://graph.facebook.com/${GRAPH_VERSION}/${config.wabaId}/message_templates`,
@@ -167,7 +177,7 @@ async function createReviewTemplate(config) {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: TEMPLATE_NAME,
+        name,
         language: TEMPLATE_LANGUAGE,
         category: TEMPLATE_CATEGORY,
         components: [{ type: 'BODY', text: TEMPLATE_BODY }],
@@ -190,7 +200,12 @@ async function deleteReviewTemplate(config) {
   if (before.length !== 1) throw Object.assign(new Error('meta_review_template_ambiguous'), { status: 409 });
 
   const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${config.wabaId}/message_templates`);
-  url.searchParams.set('name', TEMPLATE_NAME);
+  const target = before[0];
+  if (typeof target?.id !== 'string' || !/^[0-9]{1,30}$/.test(target.id)) {
+    throw Object.assign(new Error('meta_review_template_ambiguous'), { status: 409 });
+  }
+  url.searchParams.set('name', target.name);
+  url.searchParams.set('hsm_id', target.id);
   const payload = await graph(url.toString(), config.accessToken, { method: 'DELETE' });
   if (payload?.success !== true) throw Object.assign(new Error('meta_review_delete_failed'), { status: UPSTREAM_FAILURE_STATUS });
 
@@ -276,7 +291,9 @@ export async function onRequest(context) {
 }
 
 export const __testing = Object.freeze({
-  TEMPLATE_NAME,
+  TEMPLATE_NAME_PREFIX,
+  TEMPLATE_NAME_PATTERN,
+  generateTemplateName,
   TEMPLATE_LANGUAGE,
   TEMPLATE_CATEGORY,
   TEMPLATE_BODY,

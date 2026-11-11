@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { EmptyState, ErrorState, LoadingState, Section } from '../components/StateViews';
 import { useAsync } from '../components/AsyncData';
+import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { useLanguage } from '../lib/i18n';
 import { canShowArtistIntegration } from '../lib/integration-visibility';
 import {
@@ -107,6 +108,18 @@ export function WhatsAppConnectionsPage() {
   }
 
   async function runMetaReview(action: 'create' | 'delete' | 'status') {
+    if (action === 'delete') {
+      const approved = await confirmDialog({
+        title: language === 'ru' ? 'Удалить тестовый шаблон?' : 'Delete the test template?',
+        message: language === 'ru'
+          ? 'Шаблон удалится из review WABA. Следующее создание получит новое имя.'
+          : 'The template is removed from the review WABA. The next create will use a new name.',
+        confirmLabel: language === 'ru' ? 'Удалить' : 'Delete',
+        cancelLabel: cancelLabelFor(language),
+        tone: 'danger',
+      });
+      if (!approved) return;
+    }
     setReviewBusy(true);
     setActionError(null);
     setReviewMessage(null);
@@ -310,12 +323,12 @@ export function WhatsAppConnectionsPage() {
         <Section title={language === 'ru' ? 'Meta App Review' : 'Meta App Review'}>
           <p className="notice">
             {language === 'ru'
-              ? 'Изолированный сценарий для видео whatsapp_business_management. CRM может работать только с фиксированным шаблоном meta_review_permission_demo_v2 и только с review WABA, заданным на сервере. Клиентские данные и production WABA через этот экран выбрать нельзя.'
-              : 'Isolated whatsapp_business_management review flow. The CRM can only operate on the fixed meta_review_permission_demo_v2 template and the server-configured review WABA. Customer data and the production WABA cannot be selected here.'}
+              ? 'Изолированный сценарий для видео whatsapp_business_management. CRM может работать только с тестовыми шаблонами meta_review_permission_demo_<время> и только с review WABA, заданным на сервере. Клиентские данные и production WABA через этот экран выбрать нельзя.'
+              : 'Isolated whatsapp_business_management review flow. The CRM can only operate on meta_review_permission_demo_<timestamp> test templates and the server-configured review WABA. Customer data and the production WABA cannot be selected here.'}
           </p>
           <dl className="definition">
             <dt>{language === 'ru' ? 'Шаблон' : 'Template'}</dt>
-            <dd><code>meta_review_permission_demo_v2</code></dd>
+            <dd><code>{reviewTemplate?.name ?? 'meta_review_permission_demo_<timestamp>'}</code></dd>
             <dt>{language === 'ru' ? 'Readback' : 'Readback'}</dt>
             <dd>{reviewTemplate
               ? `${reviewTemplate.status ?? 'unknown'} · ${reviewTemplate.language} · ${reviewTemplate.category}`
