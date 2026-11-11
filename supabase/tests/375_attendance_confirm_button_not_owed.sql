@@ -62,18 +62,27 @@ create function pg_temp.respond(p_n int, p_response text) returns void language 
   where id = format('f3750000-0000-4000-8000-%s', lpad(p_n::text, 12, '0'))::uuid;
 $$;
 
+-- The helper is STABLE: it reads the snapshot of the calling statement, so each
+-- message is recorded in its own statement before the helper is asked about it.
+create temp table msg_375 (n int primary key, id uuid not null);
+
 -- 1. An ordinary message after the confirmation still waits.
+insert into msg_375 select 1, pg_temp.inbound(pg_temp.conv(1), 'text', now());
+select isnt(
+  (select count(*) from public.communication_messages m join msg_375 x on x.id = m.id),
+  0::bigint,
+  'fixture: the inbound message is recorded');
 select is(
-  crm_private.inbound_message_handled_by_booking(pg_temp.inbound(pg_temp.conv(1), 'text', now())),
+  crm_private.inbound_message_handled_by_booking((select id from msg_375 where n = 1)),
   null::timestamptz,
   '1. a text message after the appointment was confirmed is not handled by the booking');
 
 -- 2. The attendance-confirmation button is recorded with the response itself.
 select pg_temp.conv(2);
 select pg_temp.respond(2, 'attendance_confirmed');
+insert into msg_375 select 2, pg_temp.inbound('d3750000-0000-4000-8000-000000000002', 'button', now());
 select is(
-  crm_private.inbound_message_handled_by_booking(
-    pg_temp.inbound('d3750000-0000-4000-8000-000000000002', 'button', now())),
+  crm_private.inbound_message_handled_by_booking((select id from msg_375 where n = 2)),
   now(),
   '2. the attendance-confirmation button is handled at the moment of the response');
 select is(
@@ -84,27 +93,30 @@ select is(
 -- 3. A reschedule request arrives through a button too and must stay owed.
 select pg_temp.conv(3);
 select pg_temp.respond(3, 'reschedule_requested');
+insert into msg_375 select 3, pg_temp.inbound('d3750000-0000-4000-8000-000000000003', 'button', now());
 select is(
-  crm_private.inbound_message_handled_by_booking(
-    pg_temp.inbound('d3750000-0000-4000-8000-000000000003', 'button', now())),
+  crm_private.inbound_message_handled_by_booking((select id from msg_375 where n = 3)),
   null::timestamptz,
   '3. a reschedule-request button is not suppressed');
 
 -- 4. A button that was not recorded together with the confirmation stays owed.
+-- It is recorded after the three-day-old confirmation, so only the button rule
+-- could suppress it.
 select pg_temp.conv(4);
 select pg_temp.respond(4, 'attendance_confirmed');
+insert into msg_375
+select 4, pg_temp.inbound('d3750000-0000-4000-8000-000000000004', 'button', now() - interval '1 hour');
 select is(
-  crm_private.inbound_message_handled_by_booking(
-    pg_temp.inbound('d3750000-0000-4000-8000-000000000004', 'button', now() - interval '1 hour')),
+  crm_private.inbound_message_handled_by_booking((select id from msg_375 where n = 4)),
   null::timestamptz,
   '4. a button recorded at another time than the confirmation is not suppressed');
 
 -- 5. A text message sent in the same instant as a confirmation is still a message.
 select pg_temp.conv(5);
 select pg_temp.respond(5, 'attendance_confirmed');
+insert into msg_375 select 5, pg_temp.inbound('d3750000-0000-4000-8000-000000000005', 'text', now());
 select is(
-  crm_private.inbound_message_handled_by_booking(
-    pg_temp.inbound('d3750000-0000-4000-8000-000000000005', 'text', now())),
+  crm_private.inbound_message_handled_by_booking((select id from msg_375 where n = 5)),
   null::timestamptz,
   '5. only the button itself is treated as the action');
 
