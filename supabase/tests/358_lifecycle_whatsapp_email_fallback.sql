@@ -296,20 +296,20 @@ set local role service_role;
 select lives_ok('select * from public.service_run_automation_tick(500)',
  '24-hour WhatsApp reminder with map link queues without provider requests');
 reset role;
-select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
- where p.session_id='f9805555-5555-4555-8555-555555555555'
-   and p.purpose='session_reminder_24h' limit 1),
- E'16 Exhibition House, Addison Bridge Place, London W14 8XP | Google Maps: https://maps.app.goo.gl/fixture123',
- '24-hour template variable four includes the current address and map link');
-select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
- where p.session_id='f9805555-5555-4555-8555-555555555555'
-   and p.purpose='session_reminder_24h' limit 1),5,
- 'approved 24-hour Meta template still receives precisely five variables');
-select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com/appointments/respond/%'
+select ok((select (p.body_parameters->>1) ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9805555-5555-4555-8555-555555555555'
- and p.purpose='session_reminder_24h' limit 1),
- '24-hour confirmation parameter is a full booking URL, not a raw token');
+   and p.purpose='session_reminder_24h' limit 1),
+ '24-hour first-person reminder carries session start time');
+select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+   and p.purpose='session_reminder_24h' limit 1),3,
+ 'reviewed 24-hour card has first name, time and one booking action');
+select ok((select (p.body_parameters->>2) ~ '^booking_action:[0-9a-f]{64}$'
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+   and p.purpose='session_reminder_24h' limit 1),
+ '24-hour card exposes only a single-use reschedule capability');
 
 -- New linked client: in-person consultation gets Maps without changing
 -- the five-parameter Meta consultation template.
