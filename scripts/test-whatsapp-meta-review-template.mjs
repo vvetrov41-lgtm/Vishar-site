@@ -18,7 +18,7 @@ function request(action, overrides = {}) {
       authorization: overrides.authorization ?? 'Bearer crm-owner-session-token-for-test',
       'content-type': overrides.contentType ?? 'application/json',
     },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify(overrides.body ?? { action }),
   });
 }
 
@@ -313,4 +313,86 @@ for (const origin of ['https://crm.vishartattoo.com', 'https://app.vishartattoo.
   }
 }
 
-console.log('WhatsApp Meta review template probe checks passed.');
+// Messaging review: a single approved test template is sent only from the
+// isolated review WABA phone, to a registered test recipient, without retries.
+{
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  const base = authorizedFetch(calls, { templates: [{
+    id: '987654321001234', name: EXISTING_NAME, status: 'APPROVED',
+    language: __testing.TEMPLATE_LANGUAGE, category: __testing.TEMPLATE_CATEGORY,
+  }] });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    const method = String(init.method || 'GET').toUpperCase();
+    if (target.includes(`/${REVIEW_WABA}/phone_numbers`)) {
+      calls.push({ target, init });
+      assert.equal(init.headers.authorization, `Bearer ${REVIEW_TOKEN}`);
+      return Response.json({ data: [{ id: '111222333444555', platform_type: 'CLOUD_API' }] });
+    }
+    if (target === 'https://graph.facebook.com/v25.0/111222333444555/messages') {
+      calls.push({ target, init });
+      assert.equal(method, 'POST');
+      assert.equal(init.headers.authorization, `Bearer ${REVIEW_TOKEN}`);
+      assert.deepEqual(JSON.parse(String(init.body)), {
+        messaging_product: 'whatsapp',
+        to: '447700900123',
+        type: 'template',
+        template: { name: EXISTING_NAME, language: { code: 'en_US' } },
+      });
+      return Response.json({ messages: [{ id: 'wamid.HBgLTEST123456789' }] });
+    }
+    return base(url, init);
+  };
+  try {
+    const response = await onRequest({
+      request: request('send', { body: {
+        action: 'send', recipient: '+447700900123', template_name: EXISTING_NAME,
+      } }),
+      env: env({ META_REVIEW_SEND_ENABLED: 'true' }),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      ok: true, action: 'send', accepted: true, message_id: 'wamid.HBgLTEST123456789',
+    });
+    assert.equal(calls.filter((call) => String(call.target).endsWith('/messages')).length, 1);
+    assert.equal(JSON.stringify(calls).includes('341184815737145'), false);
+    assert.equal(JSON.stringify(calls).includes('462106700328578'), false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+for (const [label, body, overrides, status] of [
+  ['disabled', { action: 'send', recipient: '+447700900123', template_name: EXISTING_NAME }, {}, 404],
+  ['invalid recipient', { action: 'send', recipient: '+447700900123abc', template_name: EXISTING_NAME }, { META_REVIEW_SEND_ENABLED: 'true' }, 400],
+  ['invalid template', { action: 'send', recipient: '+447700900123', template_name: 'hello_world' }, { META_REVIEW_SEND_ENABLED: 'true' }, 400],
+]) {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = authorizedFetch(calls);
+  try {
+    const response = await onRequest({
+      request: request('send', { body }),
+      env: env(overrides),
+    });
+    assert.equal(response.status, status, label);
+    assert.equal(calls.some((call) => String(call.target).includes('/messages')), false, label);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  // A misconfigured live artist WABA is refused before CRM or Meta network calls.
+  let called = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => { called = true; throw Error('network must not be touched'); };
+  try {
+    const response = await onRequest({
+      request: request('send'),
+      env: env({ META_REVIEW_WABA_ID: '341184815737145', META_REVIEW_SEND_ENABLED: 'true' }),
+    });
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).error, 'live_waba_forbidden');
+    assert.equal(called, false);
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+console.log('WhatsApp Meta review template and messaging probe checks passed.');
