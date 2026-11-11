@@ -291,3 +291,12 @@ for (const invalid of [
   firstPersonOutbound.replace('20261111072000 | |', '20261111080000 | |'),
   firstPersonOutbound.replace('20261111060000 | 20261111060000', '20261111060000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// Meta-approved first-person post-session template cutover, bounded to one migration.
+const postSessionV2 = ' Local | Remote | Time\n 20261111072000 | 20261111072000 | t\n 20261111083000 | | t';
+assert.equal(verifyTodayLineage(postSessionV2), '20261111083000');
+for (const invalid of [
+  postSessionV2 + '\n 20261111083500 | | t',
+  postSessionV2.replace('20261111083000 | |','20261111090000 | |'),
+  postSessionV2.replace('20261111072000 | 20261111072000','20261111072000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));
