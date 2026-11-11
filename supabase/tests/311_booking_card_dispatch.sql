@@ -202,8 +202,8 @@ select results_eq(
      from crm_private.booking_card_whatsapp_payloads p
      join crm_private.booking_cards b on b.id = p.booking_card_id
      where b.session_id = 'fc611111-1111-4111-8111-111111111111' $$,
-  $ values (3, 'booking_card_consultation_v3'::text) $,
-  'consultation WhatsApp payload uses four reviewed body parameters'
+  $$ values (3, 'booking_card_consultation_v3'::text) $$,
+  'consultation WhatsApp payload uses three reviewed first-person body parameters'
 );
 
 select is(
