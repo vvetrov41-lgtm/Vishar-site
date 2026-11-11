@@ -33,7 +33,9 @@ export interface MetaReviewTemplateMetadata {
 
 export interface MetaReviewTemplateResult {
   ok: true;
-  action: 'create' | 'delete' | 'status';
+  action: 'create' | 'delete' | 'status' | 'send';
+  accepted?: boolean;
+  message_id?: string;
   template?: MetaReviewTemplateMetadata | null;
   deleted?: boolean;
 }
@@ -167,13 +169,20 @@ function assertMetaReviewTemplate(value: unknown): MetaReviewTemplateMetadata {
   return row as unknown as MetaReviewTemplateMetadata;
 }
 
-function assertMetaReviewResponse(value: unknown, expectedAction: 'create' | 'delete' | 'status'): MetaReviewTemplateResult {
+function assertMetaReviewResponse(value: unknown, expectedAction: 'create' | 'delete' | 'status' | 'send'): MetaReviewTemplateResult {
   if (!value || typeof value !== 'object') {
     throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
   }
   const row = value as Record<string, unknown>;
   if (row.ok !== true || row.action !== expectedAction) {
     throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+  }
+  if (expectedAction === 'send') {
+    if (row.accepted !== true || typeof row.message_id !== 'string'
+      || !/^wamid\.[A-Za-z0-9_.=-]{8,256}$/.test(row.message_id)) {
+      throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+    }
+    return { ok: true, action: 'send', accepted: true, message_id: row.message_id };
   }
   if (expectedAction === 'delete') {
     if (typeof row.deleted !== 'boolean') {
@@ -349,7 +358,11 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       );
     },
 
-    async manageMetaReviewTemplate(action: 'create' | 'delete' | 'status'): Promise<MetaReviewTemplateResult> {
+    async manageMetaReviewTemplate(
+      action: 'create' | 'delete' | 'status' | 'send',
+      recipient?: string,
+      templateName?: string,
+    ): Promise<MetaReviewTemplateResult> {
       const accessToken = await crmAccessToken();
       const response = await fetch(embeddedSignupProvisionUrl(
         '/api/whatsapp/meta-review/template', window.location.origin,
@@ -361,7 +374,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
           authorization: `Bearer ${accessToken}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify(action === 'send' ? { action, recipient, template_name: templateName } : { action }),
       });
       const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
       if (!response.ok) {

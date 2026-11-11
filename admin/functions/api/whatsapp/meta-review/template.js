@@ -11,6 +11,9 @@ const TEMPLATE_NAME_PATTERN = /^meta_review_permission_demo_[0-9]{14}$/;
 const TEMPLATE_LANGUAGE = 'en_US';
 const TEMPLATE_CATEGORY = 'MARKETING';
 const TEMPLATE_BODY = 'Meta App Review permission demonstration. No customer data is used.';
+// The messaging demo must never select a real artist WABA, even if misconfigured.
+const LIVE_WABA_IDS = new Set(['341184815737145', '462106700328578']);
+const TEST_RECIPIENT = /^[1-9][0-9]{7,14}$/;
 const MAX_BODY_BYTES = 2048;
 // Upstream (Meta/Supabase) failures must not use 502/504: Cloudflare replaces an
 // origin 502/504 with its own branded HTML page, which hides stage and graph_code.
@@ -100,6 +103,9 @@ function requireReviewConfiguration(env) {
   }
   const wabaId = binding(env, 'META_REVIEW_WABA_ID');
   const accessToken = binding(env, 'META_REVIEW_ACCESS_TOKEN');
+  if (LIVE_WABA_IDS.has(wabaId)) {
+    throw Object.assign(new Error('live_waba_forbidden'), { status: 403 });
+  }
   if (!/^[1-9][0-9]{5,30}$/.test(wabaId) || accessToken.length < 40 || accessToken.length > 4096 || /\s/.test(accessToken)) {
     throw Object.assign(new Error('server_not_configured'), { status: 500 });
   }
@@ -214,6 +220,48 @@ async function deleteReviewTemplate(config) {
   return { deleted: true };
 }
 
+async function sendReviewMessage(config, env, body) {
+  if (binding(env, 'META_REVIEW_SEND_ENABLED') !== 'true') {
+    throw Object.assign(new Error('meta_review_send_disabled'), { status: 404 });
+  }
+  // A test recipient must be entered explicitly. The Meta test number itself
+  // additionally restricts delivery to registered test recipients.
+  const to = typeof body?.recipient === 'string' ? body.recipient.replace(/^\+/, '') : '';
+  if (!TEST_RECIPIENT.test(to) || body.recipient !== to && body.recipient !== `+${to}`) {
+    throw Object.assign(new Error('invalid_test_recipient'), { status: 400 });
+  }
+  const name = body?.template_name;
+  if (typeof name !== 'string' || !TEMPLATE_NAME_PATTERN.test(name)) {
+    throw Object.assign(new Error('invalid_review_template'), { status: 400 });
+  }
+  const rows = await listReviewTemplates(config);
+  if (rows.length !== 1 || rows[0].name !== name || rows[0].status !== 'APPROVED'
+    || rows[0].language !== TEMPLATE_LANGUAGE) {
+    throw Object.assign(new Error('review_template_not_approved'), { status: 409 });
+  }
+  const phoneUrl = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${config.wabaId}/phone_numbers`);
+  phoneUrl.searchParams.set('fields', 'id,platform_type');
+  phoneUrl.searchParams.set('limit', '100');
+  const phoneData = await graph(phoneUrl.toString(), config.accessToken);
+  const numbers = Array.isArray(phoneData?.data) ? phoneData.data : [];
+  if (numbers.length !== 1 || !/^[1-9][0-9]{5,30}$/.test(String(numbers[0]?.id || ''))) {
+    throw Object.assign(new Error('review_phone_ambiguous'), { status: 409 });
+  }
+  // Never retry this POST: an ambiguous provider response may mean it was sent.
+  const payload = await graph(
+    `https://graph.facebook.com/${GRAPH_VERSION}/${numbers[0].id}/messages`,
+    config.accessToken,
+    { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'template',
+        template: { name, language: { code: TEMPLATE_LANGUAGE } } }) },
+  );
+  const messageId = payload?.messages?.[0]?.id;
+  if (typeof messageId !== 'string' || !/^wamid\.[A-Za-z0-9_.=-]{8,256}$/.test(messageId)) {
+    throw Object.assign(new Error('meta_send_acknowledgement_ambiguous'), { status: UPSTREAM_FAILURE_STATUS });
+  }
+  return { ok: true, action: 'send', accepted: true, message_id: messageId };
+}
+
 async function handlePost(context) {
   const { request, env } = context;
   const url = new URL(request.url);
@@ -233,11 +281,12 @@ async function handlePost(context) {
     stage = 'request_parse';
     const body = await boundedJson(request);
     const action = body?.action;
-    if (action !== 'create' && action !== 'delete' && action !== 'status') {
+    if (action !== 'create' && action !== 'delete' && action !== 'status' && action !== 'send') {
       return json({ ok: false, error: 'action_not_allowed' }, 400);
     }
 
     stage = `meta_${action}`;
+    if (action === 'send') return json(await sendReviewMessage(config, env, body));
     if (action === 'create') {
       const template = await createReviewTemplate(config);
       return json({ ok: true, action, template });
@@ -301,4 +350,5 @@ export const __testing = Object.freeze({
   listReviewTemplates,
   safeGraphMessage,
   safeTemplate,
+  sendReviewMessage,
 });
