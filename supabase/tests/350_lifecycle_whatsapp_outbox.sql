@@ -61,7 +61,9 @@ from wa_lifecycle_artist;
 -- a number. This synthetic approval is transaction-local and rolled back.
 update crm_private.lifecycle_whatsapp_template_registry
  set approval_status='APPROVED',provider_template_id='123456789012345',
-     verified_at=now()
+     verified_at=now(),
+     template_name=case when purpose='session_reminder_72h'
+       then 'vishar_lifecycle_reminder_72h_v3' else template_name end
  where artist_id=(select id from wa_lifecycle_artist);
 select is(crm_private.enrol_booked_session_in_lifecycle(
  'f9705555-5555-4555-8555-555555555555','wa_lifecycle_test'),
@@ -141,7 +143,7 @@ reset role;
 select is((select jsonb_array_length(body_parameters)
  from crm_private.lifecycle_whatsapp_payloads where session_id=
  'f9705555-5555-4555-8555-555555555555' and purpose='session_reminder_72h'),
- 3,'72-hour message contains name, artist and grouped dates');
+ 4,'72-hour first-person message contains name, dates and two action capabilities');
 
 update public.sessions
  set start_at=date_trunc('hour',now())+interval '96 hours',
