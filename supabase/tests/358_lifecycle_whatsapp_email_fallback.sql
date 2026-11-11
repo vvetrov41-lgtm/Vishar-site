@@ -32,7 +32,13 @@ where not exists (
 -- Meta approvals are simulated inside this rollback only.
 update crm_private.lifecycle_whatsapp_template_registry t
 set approval_status='APPROVED',provider_template_id='123456789012345',
-    verified_at=now()
+    verified_at=now(),
+    template_name=case t.purpose
+      when 'session_reminder_72h' then 'vishar_lifecycle_reminder_72h_v3'
+      when 'session_reminder_24h' then 'vishar_lifecycle_reminder_24h_v3'
+      when 'post_session_aftercare' then 'vishar_lifecycle_aftercare_v2'
+      when 'post_session_checkin' then 'vishar_lifecycle_checkin_v2'
+      else t.template_name end
 where t.artist_id=(select id from preferred_route_artist)
   and t.purpose<>'consultation_reminder';
 
@@ -290,25 +296,26 @@ set local role service_role;
 select lives_ok('select * from public.service_run_automation_tick(500)',
  '24-hour WhatsApp reminder with map link queues without provider requests');
 reset role;
-select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
- where p.session_id='f9805555-5555-4555-8555-555555555555'
-   and p.purpose='session_reminder_24h' limit 1),
- E'16 Exhibition House, Addison Bridge Place, London W14 8XP | Google Maps: https://maps.app.goo.gl/fixture123',
- '24-hour template variable four includes the current address and map link');
-select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
- where p.session_id='f9805555-5555-4555-8555-555555555555'
-   and p.purpose='session_reminder_24h' limit 1),5,
- 'approved 24-hour Meta template still receives precisely five variables');
-select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com/appointments/respond/%'
+select ok((select (p.body_parameters->>1) ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9805555-5555-4555-8555-555555555555'
- and p.purpose='session_reminder_24h' limit 1),
- '24-hour confirmation parameter is a full booking URL, not a raw token');
+   and p.purpose='session_reminder_24h' limit 1),
+ '24-hour first-person reminder carries session start time');
+select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+   and p.purpose='session_reminder_24h' limit 1),3,
+ 'reviewed 24-hour card has first name, time and one booking action');
+select ok((select (p.body_parameters->>2) ~ '^booking_action:[0-9a-f]{64}$'
+ from crm_private.lifecycle_whatsapp_payloads p
+ where p.session_id='f9805555-5555-4555-8555-555555555555'
+   and p.purpose='session_reminder_24h' limit 1),
+ '24-hour card exposes only a single-use reschedule capability');
 
 -- New linked client: in-person consultation gets Maps without changing
 -- the five-parameter Meta consultation template.
 update crm_private.lifecycle_whatsapp_template_registry t
-set approval_status='APPROVED',provider_template_id='999888777666555',verified_at=now()
+set approval_status='APPROVED',provider_template_id='999888777666555',verified_at=now(),
+    template_name='vishar_lifecycle_consultation_v4'
 where t.artist_id=(select id from preferred_route_artist)
   and t.purpose='consultation_reminder';
 insert into public.clients(id,full_name,email,phone,preferred_contact)
@@ -343,37 +350,40 @@ set local role service_role;
 select lives_ok('select * from public.service_run_automation_tick(500)',
  'in-person consultation WhatsApp reminder with Maps queued');
 reset role;
-select ok((select (p.body_parameters->>3) LIKE '%Google Maps: https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic'
+select ok((select (p.body_parameters->>2) LIKE '%Google Maps: https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
- 'in-person consultation variable four includes the configured Maps link');
+ 'first-person consultation variable three contains the configured Maps link');
 select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),5,
  'approved consultation Meta template keeps exactly five variables');
-select ok((select (p.body_parameters->>3) LIKE 'Label Tattoo Kensington, Unit B, York House, Avonmore Place%'
+select ok((select (p.body_parameters->>2) LIKE 'Label Tattoo Kensington, Unit B, York House, Avonmore Place%'
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
  'consultations use York House, not tattoo-session Exhibition House');
-select is((select p.body_parameters->>3 from crm_private.lifecycle_whatsapp_payloads p
+select is((select p.body_parameters->>2 from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),
  (select crm_private.lifecycle_whatsapp_location_with_map(
    concat_ws(', ', l.studio_name,l.studio_address),l.studio_map_url)
   from crm_private.consultation_email_location() l),
  'in-person WhatsApp and Gmail consultations resolve exactly the same current studio');
-select is((select position(chr(10) in p.body_parameters->>3)
+select is((select position(chr(10) in p.body_parameters->>2)
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
    and p.purpose='consultation_reminder' limit 1),0,
  'consultation Google Maps Meta parameter remains single line');
-select ok((select (p.body_parameters->>4) LIKE 'https://booking.vishartattoo.com/appointments/respond/%'
+select ok((select
+ (p.body_parameters->>3) ~ '^booking_action:[0-9a-f]{64}$'
+ and (p.body_parameters->>4) ~ '^booking_action:[0-9a-f]{64}$'
+ and (p.body_parameters->>3) <> (p.body_parameters->>4)
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
- 'consultation confirmation parameter is a valid full booking URL');
+ 'consultation confirmation and reschedule buttons have distinct one-use actions');
 
 
 -- The v3 reminder uses two real one-time appointment capabilities, not

@@ -41,11 +41,14 @@ SELECT is(
 SELECT ok(
  position('vishar_lifecycle_aftercare_v1' in
    pg_get_functiondef(
-     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))>0
+     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))=0
  AND position('vishar_lifecycle_checkin_v1' in
    pg_get_functiondef(
+     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))=0
+ AND position('vishar_lifecycle_aftercare_v2' in
+   pg_get_functiondef(
      'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))>0,
- 'known third-person WhatsApp v1 is suppressed before send');
+ 'first-person readiness allowlist excludes legacy third-person post-session v1');
 
 SELECT ok(
  position('vishar_lifecycle_aftercare_v2' in
@@ -57,10 +60,13 @@ SELECT ok(
  'future approved v2 uses the single-name provider arity');
 
 SELECT ok(
- position('session_reminder_72h' in
+ position('vishar_lifecycle_reminder_72h_v4' in
+   pg_get_functiondef(
+     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))>0
+ AND position('vishar_lifecycle_reminder_72h_v1' in
    pg_get_functiondef(
      'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))=0,
- 'v1 blocking predicate is limited to post-session purposes');
+ 'first-person 72h reminders remain allowed; third-person v1 is excluded');
 
 SELECT ok(
  NOT has_function_privilege('anon',

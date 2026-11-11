@@ -76,6 +76,8 @@ export function verifyTodayLineage(source) {
     ['20261110095000', '20261110200000'],
     // Promote ONLY the two verified York House Meta Utility cards.
     ['20261110200000', '20261111060000'],
+    // First-person outbound audit: one guarded DB migration; no client replays.
+    ['20261111060000', '20261111072000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

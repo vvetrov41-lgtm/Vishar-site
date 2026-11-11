@@ -98,8 +98,8 @@ insert into crm_private.booking_card_artist_settings (
   'https://maps.example.test/studio',
   51.500001,
   -0.100001,
-  'booking_card_tattoo_v1',
-  'booking_card_consultation_v1',
+  'booking_card_tattoo_v2',
+  'booking_card_consultation_v3',
   'en_GB',
   'APPROVED',
   'APPROVED',
@@ -122,6 +122,21 @@ set email_enabled = excluded.email_enabled,
     whatsapp_template_language = excluded.whatsapp_template_language,
     appointment_start_from = excluded.appointment_start_from,
     client_action_base_url = excluded.client_action_base_url;
+
+
+-- Rollback-only reviewed Meta identity, never a real provider approval.
+INSERT INTO crm_private.whatsapp_template_proposals
+ (artist_id,kind,template_name,template_language,approval_status,
+  provider_template_id,verified_at)
+VALUES
+ ('a1111111-1111-4111-8111-111111111111','booking_consultation_directions',
+  'booking_card_consultation_v3','en_GB','APPROVED','123456789012345',now())
+ON CONFLICT (artist_id,kind) DO UPDATE
+ SET template_name=EXCLUDED.template_name,
+     template_language=EXCLUDED.template_language,
+     approval_status=EXCLUDED.approval_status,
+     provider_template_id=EXCLUDED.provider_template_id,
+     verified_at=EXCLUDED.verified_at;
 
 insert into public.sessions (
   id, project_id, client_id, enquiry_id, artist_id,
@@ -187,8 +202,8 @@ select results_eq(
      from crm_private.booking_card_whatsapp_payloads p
      join crm_private.booking_cards b on b.id = p.booking_card_id
      where b.session_id = 'fc611111-1111-4111-8111-111111111111' $$,
-  $$ values (4, 'booking_card_consultation_v1'::text) $$,
-  'consultation WhatsApp payload uses four reviewed body parameters'
+  $$ values (3, 'booking_card_consultation_v3'::text) $$,
+  'consultation WhatsApp payload uses three reviewed first-person body parameters'
 );
 
 select is(
