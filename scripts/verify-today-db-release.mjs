@@ -74,6 +74,8 @@ export function verifyTodayLineage(source) {
     // Correct third-person Meta aftercare/check-in and safeguard existing
     // immediate / 24h timing. Stage v2; v1 falls back to first-person Email.
     ['20261110095000', '20261110200000'],
+    // Promote ONLY the two verified York House Meta Utility cards.
+    ['20261110200000', '20261111060000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
