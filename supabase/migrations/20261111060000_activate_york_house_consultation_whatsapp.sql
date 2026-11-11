@@ -49,13 +49,6 @@ BEGIN
    AND p.approval_status='APPROVED' AND p.provider_template_id~'^[0-9]{5,32}$'
    AND p.verified_at>now()-interval '24 hours';
 
- -- Clean CI fixture has pre-approval v1 identities. Do not forge Meta status.
- IF v_booking='booking_card_consultation_v1'
-    AND v_reminder='vishar_lifecycle_consultation_v1'
-    AND v_approvals=0 THEN
-   RETURN 'local_fixture_unapproved';
- END IF;
-
  IF v_booking<>'booking_card_consultation_v2'
     OR v_reminder<>'vishar_lifecycle_consultation_v4' THEN
    RAISE EXCEPTION 'Live consultation identities changed concurrently';
@@ -128,9 +121,18 @@ REVOKE ALL ON FUNCTION crm_private.activate_york_house_consultation_whatsapp(uui
 DO $apply$
 DECLARE v_result text;
 BEGIN
+ -- The clean CI database has no real sessions and must never pretend
+ -- Meta has approved cards. The private helper is tested separately with
+ -- rollback-only approval fixtures.
+ IF NOT EXISTS (
+   SELECT 1 FROM public.sessions s
+   WHERE s.artist_id='a1111111-1111-4111-8111-111111111111'::uuid
+ ) THEN
+   RETURN;
+ END IF;
  v_result:=crm_private.activate_york_house_consultation_whatsapp(
    'a1111111-1111-4111-8111-111111111111'::uuid);
- IF v_result NOT IN ('activated','local_fixture_unapproved') THEN
+ IF v_result<>'activated' THEN
    RAISE EXCEPTION 'Unexpected consultation activation result: %',v_result;
  END IF;
 END;
