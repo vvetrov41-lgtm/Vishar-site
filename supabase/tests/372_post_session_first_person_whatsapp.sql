@@ -41,11 +41,14 @@ SELECT is(
 SELECT ok(
  position('vishar_lifecycle_aftercare_v1' in
    pg_get_functiondef(
-     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))>0
+     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))=0
  AND position('vishar_lifecycle_checkin_v1' in
    pg_get_functiondef(
+     'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))=0
+ AND position('vishar_lifecycle_aftercare_v2' in
+   pg_get_functiondef(
      'crm_private.lifecycle_whatsapp_send_ready(uuid,uuid,text)'::regprocedure))>0,
- 'known third-person WhatsApp v1 is suppressed before send');
+ 'first-person readiness allowlist excludes legacy third-person post-session v1');
 
 SELECT ok(
  position('vishar_lifecycle_aftercare_v2' in
