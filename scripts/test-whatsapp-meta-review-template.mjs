@@ -185,8 +185,8 @@ function authorizedFetch(calls, { templates = [], createId = '987654321001234', 
     request: request('status'),
     env: env({ META_REVIEW_WABA_ID: '341184815737145', META_REVIEW_ACCESS_TOKEN: '' }),
   });
-  assert.equal(response.status, 500);
-  assert.deepEqual(await response.json(), { ok: false, error: 'server_not_configured', stage: 'review_gate' });
+  assert.equal(response.status, 403);
+  assert.deepEqual(await response.json(), { ok: false, error: 'live_waba_forbidden', stage: 'review_gate' });
 }
 
 {
