@@ -25,6 +25,7 @@ SELECT ok(NOT has_function_privilege('anon',
 -- Production before promotion is v2 booking + v4 consultation reminder.
 UPDATE crm_private.booking_card_artist_settings
  SET whatsapp_enabled=true,whatsapp_template_language='en_GB',
+     whatsapp_tattoo_template_status='APPROVED',
      whatsapp_consultation_template_name='booking_card_consultation_v2',
      whatsapp_consultation_template_status='APPROVED'
  WHERE artist_id='a1111111-1111-4111-8111-111111111111';
