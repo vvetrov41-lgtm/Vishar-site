@@ -20,6 +20,7 @@ const project = {
         CLOUDFLARE_WORKERS_EDIT_TOKEN: { type: 'secret_text' },
         META_APP_SECRET: { type: 'secret_text' },
         META_REVIEW_ACCESS_TOKEN: { type: 'secret_text' },
+        META_REVIEW_SEND_ENABLED: { type: 'plain_text' },
         META_REVIEW_TEMPLATE_ENABLED: { type: 'plain_text' },
         META_REVIEW_WABA_ID: { type: 'plain_text' },
         SUPABASE_PUBLISHABLE_KEY: { type: 'secret_text' },
@@ -35,6 +36,8 @@ for (const mutate of [
   (value) => { value.result.production_branch = 'main'; },
   (value) => { value.result.domains.push('unexpected.example'); },
   (value) => { delete value.result.deployment_configs.production.env_vars.META_APP_SECRET; },
+  (value) => { delete value.result.deployment_configs.production.env_vars.META_REVIEW_SEND_ENABLED; },
+  (value) => { value.result.deployment_configs.production.env_vars.META_REVIEW_SEND_ENABLED.type = 'secret_text'; },
   (value) => { value.result.deployment_configs.preview.env_vars.META_APP_SECRET = { type: 'secret_text' }; },
   (value) => { value.result.source = { type: 'github' }; },
 ]) {
