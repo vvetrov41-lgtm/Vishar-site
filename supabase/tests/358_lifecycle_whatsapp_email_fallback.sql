@@ -32,7 +32,13 @@ where not exists (
 -- Meta approvals are simulated inside this rollback only.
 update crm_private.lifecycle_whatsapp_template_registry t
 set approval_status='APPROVED',provider_template_id='123456789012345',
-    verified_at=now()
+    verified_at=now(),
+    template_name=case t.purpose
+      when 'session_reminder_72h' then 'vishar_lifecycle_reminder_72h_v3'
+      when 'session_reminder_24h' then 'vishar_lifecycle_reminder_24h_v3'
+      when 'post_session_aftercare' then 'vishar_lifecycle_aftercare_v2'
+      when 'post_session_checkin' then 'vishar_lifecycle_checkin_v2'
+      else t.template_name end
 where t.artist_id=(select id from preferred_route_artist)
   and t.purpose<>'consultation_reminder';
 
