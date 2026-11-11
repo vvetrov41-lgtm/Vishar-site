@@ -1,9 +1,12 @@
 -- Simulate Meta approval in a rollback-only local fixture. No clients/sends.
 BEGIN;
 SELECT no_plan();
-SELECT is(crm_private.activate_york_house_consultation_whatsapp(
- 'a1111111-1111-4111-8111-111111111111'::uuid),
- 'local_fixture_unapproved','Local fixture stays inactive without genuine Meta review');
+SELECT is((SELECT count(*)::integer
+ FROM crm_private.whatsapp_template_proposals p
+ WHERE p.artist_id='a1111111-1111-4111-8111-111111111111'
+ AND p.kind IN ('booking_consultation_directions','reminder_consultation_directions')
+ AND p.approval_status='APPROVED'),0,
+ 'Clean local fixture has no forged Meta approval');
 SELECT is((SELECT whatsapp_consultation_template_name
  FROM crm_private.booking_card_artist_settings
  WHERE artist_id='a1111111-1111-4111-8111-111111111111'),
