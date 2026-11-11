@@ -354,7 +354,7 @@ select ok((select (p.body_parameters->>2) LIKE '%Google Maps: https://maps.app.g
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
- 'in-person consultation variable four includes the configured Maps link');
+ 'first-person consultation variable three contains the configured Maps link');
 select is((select jsonb_array_length(p.body_parameters) from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),5,
@@ -377,15 +377,9 @@ select is((select position(chr(10) in p.body_parameters->>2)
    and p.purpose='consultation_reminder' limit 1),0,
  'consultation Google Maps Meta parameter remains single line');
 select ok((select
- (p.body_parameters->>2) ~ '^booking_action:[0-9a-f]{64}
-
-
-
- and (p.body_parameters->>4) ~ '^booking_action:[0-9a-f]{64}
-
-
-
- and (p.body_parameters->>2) <> (p.body_parameters->>4)
+ (p.body_parameters->>3) ~ '^booking_action:[0-9a-f]{64}$'
+ and (p.body_parameters->>4) ~ '^booking_action:[0-9a-f]{64}$'
+ and (p.body_parameters->>3) <> (p.body_parameters->>4)
  from crm_private.lifecycle_whatsapp_payloads p
  where p.session_id='f9835555-5555-4555-8555-555555555555'
  and p.purpose='consultation_reminder' limit 1),
