@@ -8,6 +8,55 @@ const ENDPOINT = 'https://crm.vishartattoo.com/api/whatsapp/meta-review/template
 const OWNER_ID = '11111111-1111-4111-8111-111111111111';
 const REVIEW_WABA = '123456789012345';
 const REVIEW_TOKEN = 'meta-review-access-token-for-unit-test-only-1234567890';
+
+// business_management proof must stay read-only and reveal only the fixed review WABA.
+{
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    calls.push({ target, method: init.method || 'GET' });
+    if (target.includes('/auth/v1/user')) return Response.json({ id: OWNER_ID });
+    if (target.includes('/rest/v1/profiles')) return Response.json([{ id: OWNER_ID, role: 'owner', is_active: true }]);
+    if (target.includes('/692776505711216/owned_whatsapp_business_accounts')) {
+      assert.equal(init.headers.authorization, `Bearer ${REVIEW_TOKEN}`);
+      assert.equal(new URL(target).searchParams.get('fields'), 'id,name');
+      return Response.json({ data: [
+        { id: '999999999999999', name: 'Other private business account' },
+        { id: REVIEW_WABA, name: 'Review business account' },
+      ] });
+    }
+    throw new Error(`Unexpected call: ${target}`);
+  };
+  try {
+    const response = await onRequest({ request: request('business'), env: env() });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, action: 'business', business: {
+      business_id: '692776505711216', waba_id: REVIEW_WABA, waba_name: 'Review business account',
+    } });
+    assert.equal(calls.filter((call) => call.target.includes('graph.facebook.com')).length, 1);
+    assert(calls.every((call) => call.method === 'GET'));
+  } finally { globalThis.fetch = originalFetch; }
+}
+
+{
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('/auth/v1/user')) return Response.json({ id: OWNER_ID });
+    if (target.includes('/rest/v1/profiles')) return Response.json([{ id: OWNER_ID, role: 'owner', is_active: true }]);
+    if (target.includes('/owned_whatsapp_business_accounts')) {
+      return Response.json({ data: [{ id: '999999999999999', name: 'Other account' }] });
+    }
+    throw new Error(`Unexpected call: ${target}`);
+  };
+  try {
+    const response = await onRequest({ request: request('business'), env: env() });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { ok: false,
+      error: 'review_waba_not_owned_by_business', stage: 'meta_business' });
+  } finally { globalThis.fetch = originalFetch; }
+}
 const EXISTING_NAME = 'meta_review_permission_demo_20261110082926';
 
 function request(action, overrides = {}) {

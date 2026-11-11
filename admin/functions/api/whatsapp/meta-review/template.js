@@ -2,6 +2,7 @@ const GRAPH_VERSION = 'v25.0';
 const PRODUCTION_CRM_ORIGIN = 'https://crm.vishartattoo.com';
 const OPERATOR_CRM_ORIGIN = 'https://app.vishartattoo.com';
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
+const REVIEW_BUSINESS_ID = '692776505711216';
 // Meta blocks new en_US content under a deleted template name for 4 weeks
 // (graph_code 100, subcodes 2388025 and 2388023). A fixed name therefore broke
 // the review flow after every Delete, so each create uses a server-generated
@@ -154,6 +155,22 @@ async function listReviewTemplates(config) {
   return rows.filter((row) => row && typeof row.name === 'string' && TEMPLATE_NAME_PATTERN.test(row.name));
 }
 
+// business_management evidence: read only the WABA fixed by server configuration.
+// Never expose other business assets returned by the Graph edge to the browser.
+async function readReviewBusiness(config) {
+  const url = new URL(`https://graph.facebook.com/${GRAPH_VERSION}/${REVIEW_BUSINESS_ID}/owned_whatsapp_business_accounts`);
+  url.searchParams.set('fields', 'id,name');
+  url.searchParams.set('limit', '100');
+  const payload = await graph(url.toString(), config.accessToken);
+  const rows = Array.isArray(payload?.data) ? payload.data : [];
+  const matches = rows.filter((row) => row && String(row.id) === config.wabaId);
+  if (matches.length !== 1) {
+    throw Object.assign(new Error('review_waba_not_owned_by_business'), { status: 409 });
+  }
+  return { business_id: REVIEW_BUSINESS_ID, waba_id: config.wabaId,
+    waba_name: typeof matches[0].name === 'string' ? matches[0].name.slice(0, 100) : null };
+}
+
 function generateTemplateName(now = new Date()) {
   const stamp = now.toISOString().replace(/[^0-9]/g, '').slice(0, 14);
   const name = `${TEMPLATE_NAME_PREFIX}${stamp}`;
@@ -281,11 +298,12 @@ async function handlePost(context) {
     stage = 'request_parse';
     const body = await boundedJson(request);
     const action = body?.action;
-    if (action !== 'create' && action !== 'delete' && action !== 'status' && action !== 'send') {
+    if (action !== 'create' && action !== 'delete' && action !== 'status' && action !== 'send' && action !== 'business') {
       return json({ ok: false, error: 'action_not_allowed' }, 400);
     }
 
     stage = `meta_${action}`;
+    if (action === 'business') return json({ ok: true, action, business: await readReviewBusiness(config) });
     if (action === 'send') return json(await sendReviewMessage(config, env, body));
     if (action === 'create') {
       const template = await createReviewTemplate(config);

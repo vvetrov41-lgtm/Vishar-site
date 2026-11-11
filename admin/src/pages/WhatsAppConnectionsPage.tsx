@@ -69,6 +69,7 @@ export function WhatsAppConnectionsPage() {
   const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
   const [reviewTemplate, setReviewTemplate] = useState<MetaReviewTemplateMetadata | null>(null);
+  const [reviewBusiness, setReviewBusiness] = useState<{ business_id: string; waba_id: string; waba_name: string | null } | null>(null);
   const [reviewRecipient, setReviewRecipient] = useState('');
   const [reviewMessage, setReviewMessage] = useState<string | null>(null);
   const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL ?? '').trim();
@@ -108,7 +109,7 @@ export function WhatsAppConnectionsPage() {
     }
   }
 
-  async function runMetaReview(action: 'create' | 'delete' | 'status' | 'send') {
+  async function runMetaReview(action: 'create' | 'delete' | 'status' | 'send' | 'business') {
     if (action === 'send') {
       if (reviewTemplate?.status !== 'APPROVED' || !/^[+]?[1-9][0-9]{7,14}$/.test(reviewRecipient)) {
         setActionError(language === 'ru'
@@ -152,6 +153,13 @@ export function WhatsAppConnectionsPage() {
         action === 'send' ? reviewRecipient : undefined,
         action === 'send' ? reviewTemplate?.name : undefined,
       );
+      if (action === 'business') {
+        setReviewBusiness(result.business ?? null);
+        setReviewMessage(language === 'ru'
+          ? 'Meta подтвердила принадлежность тестовой WABA бизнесу. Запрос только для чтения.'
+          : 'Meta confirmed the review WABA belongs to the business. Read-only request.');
+        return;
+      }
       if (action === 'send') {
         setReviewMessage(language === 'ru'
           ? `Meta приняла тестовое сообщение: ${result.message_id}. Доставку проверь в WhatsApp получателя.`
@@ -349,6 +357,23 @@ export function WhatsAppConnectionsPage() {
 
       {profile?.role === 'owner' && data.environment === 'production' ? (
         <Section title={language === 'ru' ? 'Meta App Review' : 'Meta App Review'}>
+          <p className="notice">
+            {language === 'ru'
+              ? 'Видео business_management: проверь принадлежность тестовой WABA бизнес-портфелю через Meta API. Запрос только для чтения; номер, аккаунт и маршруты CRM не изменяются.'
+              : 'business_management demo: verify the review WABA belongs to the business portfolio through a read-only Meta API call. No phone, account or CRM route is changed.'}
+          </p>
+          <div className="actions">
+            <button type="button" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('business'); }}>
+              {language === 'ru' ? 'Проверить тестовый бизнес' : 'Check review business'}
+            </button>
+          </div>
+          {reviewBusiness ? (
+            <dl className="definition" aria-live="polite">
+              <dt>{language === 'ru' ? 'Бизнес ID' : 'Business ID'}</dt><dd><code>{reviewBusiness.business_id}</code></dd>
+              <dt>{language === 'ru' ? 'Тестовая WABA ID' : 'Review WABA ID'}</dt><dd><code>{reviewBusiness.waba_id}</code></dd>
+              <dt>{language === 'ru' ? 'Название' : 'Name'}</dt><dd>{reviewBusiness.waba_name ?? '—'}</dd>
+            </dl>
+          ) : null}
           <p className="notice">
             {language === 'ru'
               ? 'Изолированный сценарий для видео whatsapp_business_management. CRM может работать только с тестовыми шаблонами meta_review_permission_demo_<время> и только с review WABA, заданным на сервере. Клиентские данные и production WABA через этот экран выбрать нельзя.'
