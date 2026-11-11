@@ -291,3 +291,12 @@ for (const invalid of [
   firstPersonOutbound.replace('20261111072000 | |', '20261111080000 | |'),
   firstPersonOutbound.replace('20261111060000 | 20261111060000', '20261111060000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+// Genuine Meta approvals gate the only aftercare/check-in v2 production migration.
+const postSessionV2Activation = ' Local | Remote | Time\n 20261111072000 | 20261111072000 | t\n 20261111083000 | | t';
+assert.equal(verifyTodayLineage(postSessionV2Activation),'20261111083000');
+for (const invalid of [
+  postSessionV2Activation + '\n 20261111083100 | | t',
+  postSessionV2Activation.replace('20261111083000 | |','20261111084000 | |'),
+  postSessionV2Activation.replace('20261111072000 | 20261111072000','20261111072000 | '),
+]) assert.throws(() => verifyTodayLineage(invalid));
