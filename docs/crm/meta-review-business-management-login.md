@@ -77,6 +77,24 @@ A failed or ambiguous OAuth exchange must be restarted by the owner rather
 than retried automatically. This flow does not prove Meta's actual test
 configuration exists or that Meta will approve the permission.
 
+## Fallback for Meta's generic configuration-dialog error
+
+When Meta displays `Sorry, something went wrong` before showing a consent
+dialog, the operator-only page offers **Alternative login: business_management
+only**. This retry omits the Meta `config_id` and instead sends exactly
+`scope=business_management` to the same OAuth authorization endpoint. It
+retains the registered redirect URI, user-token code exchange, 256-bit CSRF
+state, 10-minute expiration, and the owner-only server verification of the
+single allowlisted non-production business. It never requests WhatsApp scopes
+or sends any WABA/phone selection extras.
+
+This alternative is a separate login method, not a relaxation of the
+server's security checks. If Meta rejects both methods, verify the app's
+permission access and the exact Valid OAuth Redirect URI under Facebook
+Login for Business settings in Meta for Developers; do not alter WhatsApp or
+Coexistence configurations. The presence of the button alone does not
+prove that Meta granted any permission.
+
 ## Review-video acceptance criteria
 
 The recording must show: the real CRM, a real Login for Business permission
