@@ -12,6 +12,11 @@ const IOS_WEB_LOGIN_URL = 'https://m.facebook.com/v25.0/dialog/oauth';
 const STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CODE_PATTERN = /^[\x21-\x7e]{10,2048}$/;
 const CONFIG_PATTERN = /^[1-9][0-9]{8,24}$/;
+// Some Meta Login for Business configuration dialogs return a generic HTTP 500.
+// The optional fallback requests exactly the same single permission by scope.
+// The code-exchange backend still requires granted business_management and
+// refuses any business other than the isolated allowlisted test business.
+export type BusinessReviewLoginMethod = 'configuration' | 'permission';
 
 interface StorageLike {
   getItem(key: string): string | null;
@@ -35,16 +40,22 @@ function newState(random: (bytes: Uint8Array) => Uint8Array): string {
 export function businessReviewDialogUrl(
   configId: string,
   state: string,
-  { ios = false }: { ios?: boolean } = {},
+  { ios = false, method = 'configuration' }: { ios?: boolean; method?: BusinessReviewLoginMethod } = {},
 ): string {
   if (!CONFIG_PATTERN.test(configId) || !STATE_PATTERN.test(state)) throw new Error('Meta review configuration invalid.');
   const url = new URL(ios ? IOS_WEB_LOGIN_URL : DESKTOP_LOGIN_URL);
   if (ios) url.searchParams.set('display', 'touch');
   url.searchParams.set('client_id', APP_ID);
-  url.searchParams.set('config_id', configId);
+  if (method === 'configuration') {
+    url.searchParams.set('config_id', configId);
+    url.searchParams.set('override_default_response_type', 'true');
+  } else if (method === 'permission') {
+    url.searchParams.set('scope', 'business_management');
+  } else {
+    throw new Error('Meta review login method invalid.');
+  }
   url.searchParams.set('redirect_uri', BUSINESS_REVIEW_REDIRECT_URI);
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('override_default_response_type', 'true');
   url.searchParams.set('state', state);
   // No WhatsApp extras, coexistence selector, number, or WABA.
   return url.toString();
@@ -59,6 +70,7 @@ export function beginBusinessReviewLogin(
     now = Date.now,
     random = (bytes: Uint8Array) => crypto.getRandomValues(bytes),
     ios = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent),
+    method = 'configuration',
   }: {
     origin?: string;
     storage?: StorageLike;
@@ -66,13 +78,14 @@ export function beginBusinessReviewLogin(
     now?: () => number;
     random?: (bytes: Uint8Array) => Uint8Array;
     ios?: boolean;
+    method?: BusinessReviewLoginMethod;
   } = {},
 ): void {
   if (origin !== 'https://app.vishartattoo.com') throw new Error('Meta review login requires the operator CRM.');
   if (!CONFIG_PATTERN.test(configId)) throw new Error('Meta review configuration invalid.');
   const state = newState(random);
   storage.setItem(BUSINESS_REVIEW_PENDING_KEY, JSON.stringify({ state, createdAt: now() }));
-  navigate(businessReviewDialogUrl(configId, state, { ios }));
+  navigate(businessReviewDialogUrl(configId, state, { ios, method }));
 }
 
 /**
