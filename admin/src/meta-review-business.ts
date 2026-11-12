@@ -1,6 +1,6 @@
-const OPERATOR = 'https://app.vishartattoo.com';
+const CRM = 'https://crm.vishartattoo.com';
 const API = 'https://crm.vishartattoo.com/api/whatsapp/meta-review/reviewer-business';
-const REDIRECT = `${OPERATOR}/meta-review-business.html`;
+const REDIRECT = `${CRM}/meta-review-business.html`;
 const SUPABASE = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const STORE = 'vishar.meta-review.reviewer';
@@ -40,7 +40,7 @@ async function complete() {
 signIn.addEventListener('submit', async event => {
   event.preventDefault();
   try {
-    if (location.origin !== OPERATOR || !KEY) throw new Error('Review page unavailable.');
+    if (location.origin !== CRM || !KEY) throw new Error('Review page unavailable.');
     const form = new FormData(signIn);
     const r = await fetch(`${SUPABASE}/auth/v1/token?grant_type=password`, { method: 'POST',
       headers: { apikey: KEY, 'content-type': 'application/json' },
