@@ -7,7 +7,7 @@
     "directHandlerWithoutAdapter": 0,
     "requiringActionAdapter": 206,
     "requiringSchemaChange": 0,
-    "uiOnly": 16,
+    "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
     "excludedStage2Candidates": 9,
     "unresolved": 0
@@ -9052,6 +9052,12 @@
       "operationId": null,
       "status": "ui_only",
       "reason": "Meta App Review demonstration flow that a reviewer drives from the CRM screen during Meta's review."
+    },
+    {
+      "key": "whatsapp.meta_review.business_login",
+      "operationId": null,
+      "status": "ui_only",
+      "reason": "Separate Meta Login for Business consent is human-controlled; the CRM checks a single allowlisted test business but cannot grant its own business_management access."
     },
     {
       "key": "monzo.oauth_consent",
