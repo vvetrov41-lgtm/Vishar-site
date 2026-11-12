@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   beginBusinessReviewLogin,
   businessReviewDialogUrl,
+  businessReviewWasInterrupted,
   captureBusinessReviewCallback,
   BUSINESS_REVIEW_REDIRECT_URI,
   BUSINESS_REVIEW_PENDING_KEY,
@@ -43,6 +44,41 @@ describe('isolated business_management login', () => {
     expect(dialog.searchParams.has('fallback_redirect_uri')).toBe(false);
     expect(store.entries.has(BUSINESS_REVIEW_PENDING_KEY)).toBe(true);
     expect(() => businessReviewDialogUrl('../unsafe', 'invalid')).toThrow();
+  });
+  it('routes iOS web login to mobile Facebook without changing the scope or redirect URI', () => {
+    const store = storage();
+    const navigate = vi.fn();
+    beginBusinessReviewLogin(CONFIG_ID, {
+      origin: 'https://app.vishartattoo.com',
+      storage: store,
+      navigate,
+      ios: true,
+      now: () => NOW,
+      random: (bytes) => bytes.fill(11),
+    });
+    const dialog = new URL(navigate.mock.calls[0][0] as string);
+    expect(dialog.origin).toBe('https://m.facebook.com');
+    expect(dialog.pathname).toBe('/v25.0/dialog/oauth');
+    expect(dialog.searchParams.get('display')).toBe('touch');
+    expect(dialog.searchParams.get('config_id')).toBe(CONFIG_ID);
+    expect(dialog.searchParams.get('redirect_uri')).toBe(BUSINESS_REVIEW_REDIRECT_URI);
+    expect(dialog.searchParams.get('response_type')).toBe('code');
+    expect(dialog.searchParams.has('scope')).toBe(false);
+    expect(dialog.searchParams.has('extras')).toBe(false);
+  });
+  it('detects Safari returning unchanged after Facebook app steals the navigation', () => {
+    const { store, state } = begin();
+    expect(businessReviewWasInterrupted('https://app.vishartattoo.com/#/integrations/whatsapp', store))
+      .toBe(true);
+    expect(businessReviewWasInterrupted('https://app.vishartattoo.com/?meta_business_review=1&code=abc&state=' + state, store))
+      .toBe(false);
+    expect(businessReviewWasInterrupted('https://crm.vishartattoo.com/#/integrations/whatsapp', store))
+      .toBe(false);
+    expect(businessReviewWasInterrupted('https://facebook.com/v25.0/dialog/oauth', store))
+      .toBe(false);
+    store.removeItem(BUSINESS_REVIEW_PENDING_KEY);
+    expect(businessReviewWasInterrupted('https://app.vishartattoo.com/#/integrations/whatsapp', store))
+      .toBe(false);
   });
   it('refuses to start on public CRM and cannot touch WhatsApp setup', () => {
     const navigate = vi.fn();
