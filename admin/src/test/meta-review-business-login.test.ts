@@ -45,6 +45,43 @@ describe('isolated business_management login', () => {
     expect(store.entries.has(BUSINESS_REVIEW_PENDING_KEY)).toBe(true);
     expect(() => businessReviewDialogUrl('../unsafe', 'invalid')).toThrow();
   });
+  it('supports a separate fallback that requests only business_management without config_id', () => {
+    const store = storage();
+    const navigate = vi.fn();
+    beginBusinessReviewLogin(CONFIG_ID, {
+      origin: 'https://app.vishartattoo.com',
+      storage: store,
+      navigate,
+      ios: true,
+      method: 'permission',
+      now: () => NOW,
+      random: (bytes) => bytes.fill(9),
+    });
+    const dialog = new URL(navigate.mock.calls[0][0] as string);
+    expect(dialog.origin).toBe('https://m.facebook.com');
+    expect(dialog.searchParams.get('scope')).toBe('business_management');
+    expect(dialog.searchParams.has('config_id')).toBe(false);
+    expect(dialog.searchParams.has('override_default_response_type')).toBe(false);
+    expect(dialog.searchParams.has('extras')).toBe(false);
+    expect(dialog.searchParams.get('client_id')).toBe('1481226093843982');
+    expect(dialog.searchParams.get('redirect_uri')).toBe(BUSINESS_REVIEW_REDIRECT_URI);
+    const state = dialog.searchParams.get('state');
+    expect(state).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    const callback = `https://app.vishartattoo.com/?meta_business_review=1&state=${state}&code=${CODE}`;
+    expect(captureBusinessReviewCallback(callback, {
+      storage: store, replaceUrl: vi.fn(), now: () => NOW + 100,
+    })).toEqual({ status: 'code', code: CODE });
+    expect(store.entries.has(BUSINESS_REVIEW_PENDING_KEY)).toBe(false);
+  });
+  it('rejects unknown login methods before navigating', () => {
+    const navigate = vi.fn();
+    expect(() => beginBusinessReviewLogin(CONFIG_ID, {
+      origin: 'https://app.vishartattoo.com',
+      storage: storage(), navigate, method: 'invalid' as never,
+      random: (bytes) => bytes.fill(2),
+    })).toThrow('Meta review login method invalid');
+    expect(navigate).not.toHaveBeenCalled();
+  });
   it('routes iOS web login to mobile Facebook without changing the scope or redirect URI', () => {
     const store = storage();
     const navigate = vi.fn();
