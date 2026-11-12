@@ -80,6 +80,9 @@ export function verifyTodayLineage(source) {
     ['20261111060000', '20261111072000'],
     // Switch only genuinely Meta-approved first-person post-session identities.
     ['20261111072000', '20261111083000'],
+    // Add Vladimir-only cash preference to tattoo booking email and stage
+    // an unapproved Meta v3 candidate. The live WhatsApp v2 remains active.
+    ['20261112133000', '20261112164000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
