@@ -570,9 +570,10 @@ await test('consultation v3 malformed or duplicate action token fails without Me
   assert.equal(graphCalls.length, 0);
 });
 
-await test('reviewed booking v2 templates have body only; static approved URL buttons require no runtime components', async () => {
+await test('reviewed booking v2 and cash v3 are body-only with immutable Meta URL buttons', async () => {
   for (const [templateName, bodyParameters] of [
     ['booking_card_tattoo_v2', ['Alex', 'Monday 16 November', '12:00', '£250', 'Remaining balance on the day', '£730']],
+    ['booking_card_tattoo_cash_v3', ['Alex', 'Monday 16 November', '12:00', '£250', 'Remaining balance on the day', '£730']],
     ['booking_card_consultation_v2', ['Alex', 'Monday 16 November', '12:00']],
     ['booking_card_video_consultation_v2', ['Alex', 'Monday 16 November', '12:00']],
   ]) {
@@ -599,6 +600,19 @@ await test('reviewed booking v2 rejects incorrect parameter arity before Meta re
   assert.equal(result.delivered, false);
   assert.equal(result.errorCode, 'whatsapp_template_invalid');
   assert.equal(graphCalls.length, 0);
+});
+
+
+await test('approved cash v3 rejects invalid arity without contacting Meta',async()=>{
+  const {fetchImpl,graphCalls}=makeFetch();
+  const result=await sendWhatsappTemplate(env,route(),{
+    to:'447700900001',templateName:'booking_card_tattoo_cash_v3',
+    language:'en_GB',bodyParameters:['Alex','tomorrow'],
+    location:null,quickReplies:[],
+  },fetchImpl);
+  assert.equal(result.delivered,false);
+  assert.equal(result.errorCode,'whatsapp_template_invalid');
+  assert.equal(graphCalls.length,0);
 });
 
 await test('reviewed lifecycle v3/v4 templates separate visible body from action tokens', async () => {
