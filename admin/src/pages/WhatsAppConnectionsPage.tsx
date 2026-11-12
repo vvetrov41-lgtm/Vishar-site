@@ -352,9 +352,16 @@ export function WhatsAppConnectionsPage() {
     };
     document.addEventListener('visibilitychange', handleReturnToCrm);
     window.addEventListener('pageshow', handleReturnToCrm);
+    window.addEventListener('focus', handleReturnToCrm);
+    // Some iOS in-app browsers don't dispatch an observable restore event.
+    // If navigation was intercepted without a callback, never leave the UI
+    // disabled forever. A real same-tab redirect unmounts this effect.
+    const fallback = window.setTimeout(handleReturnToCrm, 12_000);
     return () => {
       document.removeEventListener('visibilitychange', handleReturnToCrm);
       window.removeEventListener('pageshow', handleReturnToCrm);
+      window.removeEventListener('focus', handleReturnToCrm);
+      window.clearTimeout(fallback);
     };
   }, [language, reviewLoginBusy]);
 
