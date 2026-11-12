@@ -69,10 +69,11 @@ export function selectWhatsappBinding(env, route) {
 }
 
 /**
- * Maps a Meta HTTP status to a safe code. Meta returns 4xx for both permanent
- * rejections and an expired token, so the distinction that matters to the
- * drain is only whether another attempt could plausibly succeed; the database
- * decides retry-versus-dead-letter by attempt count either way.
+ * Maps a Meta HTTP status to a safe code. The code is also the retry contract:
+ * `record_communication_outbox_result` dead-letters `whatsapp_rejected` on its
+ * first report, because Meta refused this exact request and replaying it
+ * cannot succeed. Every other code here keeps the bounded retry, so a status
+ * that another attempt can cure must never be mapped to `whatsapp_rejected`.
  */
 function deliveryError(status) {
   const statusGroup = statusClass(status);
@@ -82,7 +83,8 @@ function deliveryError(status) {
   if (status === 429) {
     return { delivered: false, errorCode: 'whatsapp_rate_limited', statusClass: statusGroup };
   }
-  if (status >= 500) {
+  // 408 is a timeout reported as a client error; it is transient.
+  if (status >= 500 || status === 408) {
     return { delivered: false, errorCode: 'whatsapp_provider_unavailable', statusClass: statusGroup };
   }
   return { delivered: false, errorCode: 'whatsapp_rejected', statusClass: statusGroup };
