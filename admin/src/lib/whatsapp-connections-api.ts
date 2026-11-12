@@ -390,7 +390,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
     },
 
     async completeBusinessReviewLogin(code: string): Promise<{ business_id: string; business_name: string | null }> {
-      if (!/^[\x21-\x7e]{10,2048}$/.test(code)) throw new ApiError('invalid_oauth_code');
+      if (!/^[\x21-\x7e]{10,2048}$/.test(code)) throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
       const accessToken = await crmAccessToken();
       const response = await fetch(embeddedSignupProvisionUrl(
         '/api/whatsapp/meta-review/business-login', window.location.origin,
@@ -407,7 +407,7 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       if (typeof payload.business_id !== 'string' || !/^[1-9][0-9]{5,30}$/.test(payload.business_id)
         || (payload.business_name !== null && typeof payload.business_name !== 'string')
         || payload.permission !== 'business_management') {
-        throw new ApiError('meta_review_business_login_invalid_response');
+        throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
       }
       return { business_id: payload.business_id, business_name: payload.business_name };
     },
