@@ -88,6 +88,8 @@ export function verifyTodayLineage(source) {
     // PR #1246: retry of still-current lifecycle messages after an integration
     // outage, only after the refusal migration is live.
     ['20261112200000', '20261112210000'],
+    // Meta-approved Vladimir tattoo cash Utility v3; only after PR #1246.
+    ['20261112210000', '20261112220000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

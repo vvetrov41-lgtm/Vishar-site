@@ -345,3 +345,18 @@ for (const invalid of [
   lifecycleRetryTransition.replace('20261112200000 | 20261112200000', '20261112200000 | '),
   lifecycleRetryTransition + '\n | 20261112205000 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Cash v3 cannot skip the separate lifecycle-retry production migration.
+const cashV3Transition=[
+  ' Local | Remote | Time',
+  ' 20261112210000 | 20261112210000 | t',
+  ' 20261112220000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(cashV3Transition),'20261112220000');
+for(const invalid of [
+  cashV3Transition+'\n 20261112230000 | | t',
+  cashV3Transition.replace('20261112220000 | |','20261112225000 | |'),
+  cashV3Transition.replace('20261112210000 | 20261112210000','20261112210000 | '),
+  cashV3Transition+'\n | 20261112215000 | t',
+]) assert.throws(()=>verifyTodayLineage(invalid));
