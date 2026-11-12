@@ -143,3 +143,31 @@ for (const [kind,template_name] of [
 }
 console.log('Reviewed Meta template identities and York House-only consultation buttons passed.');
 console.log('12 reviewed WhatsApp templates plus one Vladimir-only 72h three-button candidate passed.');
+
+
+// An optional cash preference belongs ONLY to Vladimir's new tattoo card.
+// The approved v2 copy and both URL buttons stay byte-identical.
+const cashTarget={
+  artist_id:artists[0][0],
+  arrival_guide_url:artists[0][1],
+  preparation_guide_url:artists[0][2],
+  kind:'booking_tattoo_cash',
+  template_name:'booking_card_tattoo_cash_v3',
+  template_language:'en_GB',
+};
+const cashCard=__testing.definition(cashTarget);
+const cashText=cashCard.components.find(x=>x.type==='BODY').text;
+const cashButtons=cashCard.components.find(x=>x.type==='BUTTONS').buttons;
+assert.ok(cashText.includes("A little note: cash payment is preferred, if that's convenient for you. Thank you!"));
+assert.ok(cashText.indexOf('Deposit received: {{4}}')<cashText.indexOf('A little note:'));
+assert.deepEqual(cashButtons.map(x=>[x.type,x.text]),[
+  ['URL','Get directions'],['URL','How to prepare'],
+]);
+assert.ok(__testing.matches({...cashCard,id:'1234567890123',status:'PENDING'},cashCard));
+const oldTattoo=__testing.definition({...cashTarget,kind:'booking_tattoo',template_name:'booking_card_tattoo_v2'});
+assert.ok(!oldTattoo.components[0].text.includes('cash payment is preferred'));
+assert.throws(()=>__testing.definition({...cashTarget,artist_id:artists[1][0]}));
+assert.throws(()=>__testing.definition({...cashTarget,kind:'booking_consultation'}));
+const fakeCash=structuredClone(cashCard);
+fakeCash.components[0].text=fakeCash.components[0].text.replace('cash payment is preferred','cash payment is required');
+assert.equal(__testing.matches(fakeCash,cashCard),false);
