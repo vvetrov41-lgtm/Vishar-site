@@ -152,12 +152,12 @@ SELECT ok((SELECT m.body LIKE '%https://www.kristinavishar.com/aftercare/%'
  WHERE j.session_id='f3760000-0000-4000-8000-222222222222'),
  'Kristina follow-up includes only her guide');
 
-SET LOCAL ROLE service_role;
+-- Backend JWT is simulated above; the private helper itself is not
+-- grantable to service_role and is invoked under its SECURITY DEFINER owner.
 SELECT is((SELECT crm_private.queue_lifecycle_whatsapp_job(id)
  FROM public.automation_jobs WHERE session_id='f3760000-0000-4000-8000-111111111112'
  AND message_purpose='post_session_aftercare'),
  'unavailable','Meta-approved first-day WhatsApp template is never reused for the follow-up');
-RESET ROLE;
 
 -- Historical blocked pending jobs must not back-send after this migration.
 UPDATE public.automation_jobs SET scheduled_at=now()-interval '8 hours'
