@@ -48,6 +48,24 @@ const CHANNEL_ROUTES: Partial<Record<IntegrationChannel, string>> = {
   payments: '/payments',
 };
 
+// The production Gmail Worker pins each OAuth flow to one exact artist and
+// verifies the Google mailbox on callback. Never derive an OAuth target from a
+// provider label or display name: both are editable UI metadata.
+const GMAIL_ARTIST_SLUG_BY_ID: Readonly<Record<string, 'vladimir' | 'kristina'>> = {
+  'a1111111-1111-4111-8111-111111111111': 'vladimir',
+  'a2222222-2222-4222-8222-222222222222': 'kristina',
+};
+
+export function gmailOAuthStartUrl(
+  status: Pick<IntegrationStatus, 'owner_kind' | 'owner_id' | 'integration_type' | 'provider'>,
+): string | null {
+  if (status.integration_type !== 'email' || status.owner_kind !== 'artist' || status.provider !== 'google') {
+    return null;
+  }
+  const slug = GMAIL_ARTIST_SLUG_BY_ID[status.owner_id];
+  return slug ? `https://gmail.vishartattoo.com/oauth/google/start/${slug}` : null;
+}
+
 const HEALTH_LABELS: Record<IntegrationHealth, { en: string; ru: string }> = {
   connected: { en: 'Connected', ru: 'Подключено' },
   not_connected: { en: 'Not connected', ru: 'Не подключено' },
@@ -250,6 +268,7 @@ function IntegrationCard({
   const { language } = useLanguage();
   const health = integrationHealth(status);
   const route = CHANNEL_ROUTES[channel];
+  const gmailUrl = gmailOAuthStartUrl(status);
 
   const ownerLine = status.owner_kind === 'workspace'
     ? `${language === 'ru' ? 'Студия' : 'Studio'} · ${status.owner_label ?? ''}`
@@ -295,7 +314,13 @@ function IntegrationCard({
       ) : null}
 
       <div className="actions">
-        {route ? (
+        {gmailUrl ? (
+          <a href={gmailUrl} rel="noreferrer" aria-label={`${health === 'not_connected' ? (language === 'ru' ? 'Подключить Gmail' : 'Connect Gmail') : (language === 'ru' ? 'Переподключить Gmail' : 'Reconnect Gmail')}: ${status.owner_label ?? ''}`}>
+            {health === 'not_connected'
+              ? (language === 'ru' ? 'Подключить Gmail' : 'Connect Gmail')
+              : (language === 'ru' ? 'Переподключить Gmail' : 'Reconnect Gmail')}
+          </a>
+        ) : route ? (
           <Link to={route}>
             {health === 'not_connected'
               ? (language === 'ru' ? 'Подключить' : 'Connect')
