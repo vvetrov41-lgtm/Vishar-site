@@ -92,7 +92,7 @@ $disposition$;
 -- BEFORE INSERT trigger order. Modify only new second-or-later-day
 -- system aftercare emails, retaining the approved per-artist guide URL.
 CREATE OR REPLACE FUNCTION crm_private.decorate_aftercare_followup_email()
-RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
 SET search_path TO pg_catalog,public,crm_private
 AS $copy$
 DECLARE
