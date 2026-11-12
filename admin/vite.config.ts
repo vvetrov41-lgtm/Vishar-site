@@ -7,7 +7,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173 },
-  build: { outDir: 'dist', sourcemap: false },
+  build: { outDir: 'dist', sourcemap: false, rollupOptions: {
+    input: { main: 'index.html', metaReview: 'meta-review-business.html' },
+  } },
   test: {
     globals: true,
     environment: 'jsdom',
