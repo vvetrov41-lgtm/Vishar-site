@@ -123,6 +123,7 @@ const workerEndpoints = [
   ['admin/functions/api/whatsapp/embedded-signup/provision.js', '', 'whatsapp.embedded_signup'],
   ['admin/functions/api/whatsapp/existing-account/provision.js', '', 'whatsapp.existing_account.system_user_token'],
   ['admin/functions/api/whatsapp/meta-review/template.js', '', 'whatsapp.meta_review.template'],
+  ['admin/functions/api/whatsapp/meta-review/business-login.js', '', 'whatsapp.meta_review.business_login'],
   // Operator reads that go to PostgREST views/tables rather than an RPC.
   ['admin/src/lib/statistics-api.ts', "'get_statistics'", 'statistics.summary'],
   ['admin/src/lib/api.ts', ".from('integration_outbox')", 'deliveries.failed.list'],
@@ -139,7 +140,7 @@ for (const [path, marker, key] of workerEndpoints) {
   assert.ok(OPERATOR_PARITY.some((row) => row.key === key), `${key} must stay classified`);
 }
 const pagesFunctions = walk('admin/functions', (path) => path.endsWith('.js'));
-assert.equal(pagesFunctions.length, 3, 'a new CRM Pages function appeared: classify it in the parity inventory');
+assert.equal(pagesFunctions.length, workerEndpoints.filter(([path]) => path.startsWith('admin/functions/')).length, 'a new CRM Pages function appeared: classify it in the parity inventory');
 
 // ------ available rows equal legacy imports plus the unified domain registry
 const legacySchemas = ['core', 'operations', 'communications', 'cloudflare']
