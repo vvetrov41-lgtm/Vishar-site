@@ -418,7 +418,16 @@ export function WhatsAppConnectionsPage() {
                   : (language === 'ru' ? 'Войти через Meta (тестовый бизнес)' : 'Log in with Meta (test business)')}
               </button>
             </div>
-          ) : null}
+          ) : (
+            <div className="actions">
+              <a href="https://app.vishartattoo.com/#/integrations/whatsapp"
+                target="_blank" rel="noopener noreferrer">
+                {language === 'ru'
+                  ? 'Открыть вход через Meta в защищённой CRM'
+                  : 'Open Meta login on the secure CRM'}
+              </a>
+            </div>
+          )}
           {reviewLoginBusiness ? (
             <dl className="definition" aria-live="polite">
               <dt>{language === 'ru' ? 'Выбранный бизнес' : 'Selected business'}</dt>
@@ -434,7 +443,7 @@ export function WhatsAppConnectionsPage() {
           </p>
           <div className="actions">
             <button type="button" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('business'); }}>
-              {language === 'ru' ? 'Проверить тестовый бизнес' : 'Check review business'}
+              {language === 'ru' ? 'Проверить тестовую WABA (сервер)' : 'Check review WABA (server token)'}
             </button>
           </div>
           {reviewBusiness ? (
