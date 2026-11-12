@@ -15,6 +15,7 @@ import {
 } from '../lib/meta-whatsapp-signup-redirect';
 import {
   beginBusinessReviewLogin,
+  type BusinessReviewLoginMethod,
   businessReviewWasInterrupted,
   takeBusinessReviewCallback,
 } from '../lib/meta-review-business-login';
@@ -320,7 +321,7 @@ export function WhatsAppConnectionsPage() {
       .finally(() => setMetaBusyArtistId(null));
   }, [api, data, language, memberships, profile?.role, reload, supabaseUrl]);
 
-  async function startBusinessReviewLogin() {
+  async function startBusinessReviewLogin(method: BusinessReviewLoginMethod = 'configuration') {
     setActionError(null);
     setReviewMessage(null);
     setReviewLoginBusy(true);
@@ -329,7 +330,7 @@ export function WhatsAppConnectionsPage() {
         throw new Error('Meta App Review requires the production CRM owner.');
       }
       const config = await api.getBusinessReviewLoginConfig();
-      beginBusinessReviewLogin(config.config_id);
+      beginBusinessReviewLogin(config.config_id, { method });
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : 'Meta business login unavailable.');
       setReviewLoginBusy(false);
@@ -447,6 +448,12 @@ export function WhatsAppConnectionsPage() {
                   ? (language === 'ru' ? 'Проверяю вход…' : 'Checking Meta login…')
                   : (language === 'ru' ? 'Войти через Meta (тестовый бизнес)' : 'Log in with Meta (test business)')}
               </button>
+              <button type="button" disabled={reviewLoginBusy || !api}
+                onClick={() => { void startBusinessReviewLogin('permission'); }}>
+                {language === 'ru'
+                  ? 'Резервный вход: только business_management'
+                  : 'Alternative login: business_management only'}
+              </button>
             </div>
           ) : (
             <div className="actions">
@@ -458,6 +465,11 @@ export function WhatsAppConnectionsPage() {
               </a>
             </div>
           )}
+          <p className="notice">
+            {language === 'ru'
+              ? 'Если Meta показывает «Sorry, something went wrong» при стандартном входе, используй резервную кнопку: она запрашивает только business_management, без ID конфигурации. Проверка тестового бизнеса на сервере остаётся прежней.'
+              : 'If Meta shows “Sorry, something went wrong” during the normal login, use the alternative: it requests only business_management without a configuration ID. The server still checks the same test business.'}
+          </p>
           {reviewLoginBusiness ? (
             <dl className="definition" aria-live="polite">
               <dt>{language === 'ru' ? 'Выбранный бизнес' : 'Selected business'}</dt>
