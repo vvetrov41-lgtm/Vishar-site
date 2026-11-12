@@ -269,6 +269,9 @@ function IntegrationCard({
   const health = integrationHealth(status);
   const route = CHANNEL_ROUTES[channel];
   const gmailUrl = gmailOAuthStartUrl(status);
+  const gmailRequiresReconnect = Boolean(
+    gmailUrl && !status.is_enabled && status.last_error_category === 'permission_revoked',
+  );
 
   const ownerLine = status.owner_kind === 'workspace'
     ? `${language === 'ru' ? 'Студия' : 'Studio'} · ${status.owner_label ?? ''}`
@@ -282,6 +285,14 @@ function IntegrationCard({
       </div>
 
       {status.display_label ? <p className="muted">{status.display_label}</p> : null}
+
+      {gmailRequiresReconnect ? (
+        <p className="notice warn" role="alert" data-testid="gmail-reconnect-required">
+          {language === 'ru'
+            ? 'Google отозвал доступ к Gmail. Письма не будут синхронизироваться, пока ты не переподключишь аккаунт.'
+            : 'Google revoked Gmail access. Email sync is paused until you reconnect this account.'}
+        </p>
+      ) : null}
 
       <dl className="meta">
         {status.connected_at ? (
