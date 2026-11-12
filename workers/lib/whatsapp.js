@@ -175,6 +175,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
   const location = message?.location;
   const reviewedBookingArity = ({
     booking_card_tattoo_v2: 6,
+    booking_card_tattoo_cash_v3: 6,
     booking_card_consultation_v2: 3,
     booking_card_consultation_v3: 3,
     booking_card_video_consultation_v2: 3,
