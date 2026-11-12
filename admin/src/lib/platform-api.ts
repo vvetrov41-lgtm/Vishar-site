@@ -54,6 +54,11 @@ export type IntegrationHealth =
   | 'error';
 
 export function integrationHealth(status: IntegrationStatus): IntegrationHealth {
+  // Revoked OAuth requires an explicit user action; do not treat it as
+  // an ordinary, never-connected integration.
+  if (!status.is_enabled && status.last_error_category === 'permission_revoked') {
+    return 'needs_attention';
+  }
   if (!status.is_enabled) return 'not_connected';
 
   switch (status.last_error_category) {

@@ -29,7 +29,11 @@ select is((select crm_private.lifecycle_block_disposition(id) from public.automa
 update public.sessions set status='completed' where id='f9500000-0000-4000-8000-000000000003';
 select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000003' and message_purpose='post_session_checkin'),'eligible','checkin follows the last of three days');
 update public.automation_jobs set status='completed',completed_at=now() where session_id='f9500000-0000-4000-8000-000000000001' and message_purpose='post_session_aftercare';
-select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='post_session_aftercare'),'already_queued','queued aftercare prevents duplicate');
+select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='post_session_aftercare'),'eligible','a later session day is eligible for a friendly aftercare reminder');
+select is((select crm_private.lifecycle_block_disposition(id) from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000003' and message_purpose='post_session_aftercare'),'eligible','a third consecutive day also receives a friendly reminder');
+select is(crm_private.lifecycle_aftercare_followup('f9500000-0000-4000-8000-000000000001'), false, 'first day keeps full aftercare');
+select is(crm_private.lifecycle_aftercare_followup('f9500000-0000-4000-8000-000000000002'), true, 'second day uses reminder copy');
+select is(crm_private.lifecycle_aftercare_followup('f9500000-0000-4000-8000-000000000003'), true, 'third day uses reminder copy');
 select ok(not has_function_privilege('authenticated','crm_private.lifecycle_block_disposition(uuid)','execute') and not has_function_privilege('service_role','crm_private.lifecycle_block_disposition(uuid)','execute'),'private helper cannot be invoked directly by API roles');
 select * from finish();
 rollback;
