@@ -21,6 +21,10 @@ assert.match(config, /zone_name = "vishartattoo\.com"/);
 assert.match(config, /custom_domain = true/);
 assert.match(config, /enabled = true/);
 assert.match(config, /previews_enabled = false/);
+// Console-only Workers Logs: a failure must leave a trace, and invocation
+// logs (request URL and headers) must stay off.
+assert.match(config, /\[observability\]\nenabled = true\nhead_sampling_rate = 1\n\n\[observability\.logs\]\nenabled = true\ninvocation_logs = false\n/);
+assert.ok(!/invocation_logs = true/.test(config));
 
 for (const forbidden of [
   '[triggers]',

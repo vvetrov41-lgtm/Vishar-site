@@ -83,6 +83,12 @@ if (/^\s*\[triggers\]\s*$/m.test(tattooConfig) || /^\s*crons\s*=/m.test(tattooCo
 if (!privateProductionWorkflow.includes("- '!release/private-crm-rc*-tattooai-worker'")) {
   throw new Error('private production release must exclude the bounded TattooAI release namespace');
 }
+// Console-only Workers Logs: the public intake Worker must leave a trace when
+// it fails, without recording request URLs or headers.
+if (!/\[observability\]\nenabled = true\nhead_sampling_rate = 1\n\n\[observability\.logs\]\nenabled = true\ninvocation_logs = false\n/.test(tattooConfig)) {
+  throw new Error('wrangler.toml must enable console-only Workers Logs');
+}
+if (/invocation_logs = true/.test(tattooConfig)) throw new Error('invocation logs must stay off');
 const privateTattooAiGuards = privateProductionWorkflow.match(/TattooAI release refs are handled by the bounded TattooAI Worker rollout only\./g) || [];
 if (privateTattooAiGuards.length !== 4) {
   throw new Error(`private production release must fail closed for TattooAI refs in all four gates; found ${privateTattooAiGuards.length}`);

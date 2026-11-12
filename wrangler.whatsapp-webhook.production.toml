@@ -18,6 +18,18 @@ routes = [
 # WABA + phone-number route mapping in the Worker. The Worker itself accepts
 # only the exact /webhook path.
 
+# Console-only Workers Logs, the same shape the Gmail and scheduler Workers
+# already use. Without it a failure in this Worker leaves no trace: handlers
+# log bounded codes and counts only, never message bodies or contact details,
+# and invocation logs (request URL and headers) stay off.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+invocation_logs = false
+
 [vars]
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"

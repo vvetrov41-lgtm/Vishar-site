@@ -109,6 +109,9 @@ test('the release generator never adds a cron trigger, even with every capabilit
     assert.match(generated, /^INSTAGRAM_ENRICHMENT_ENABLED = "true"$/m);
     assert.ok(!/^\s*\[triggers\]/m.test(generated), 'no [triggers] table');
     assert.ok(!/^\s*crons\s*=/m.test(generated), 'no crons');
+    // Console-only Workers Logs survive generation; invocation logs stay off.
+    assert.match(generated, /\[observability\]\nenabled = true\nhead_sampling_rate = 1\n\n\[observability\.logs\]\nenabled = true\ninvocation_logs = false\n/);
+    assert.ok(!/invocation_logs = true/.test(generated));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

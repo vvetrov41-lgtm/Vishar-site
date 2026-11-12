@@ -73,6 +73,9 @@ try {
   expectIncludes(generated, 'WHATSAPP_BOOKING_TEMPLATE_MAINTENANCE_ENABLED = "true"', 'generated config');
   expectIncludes(generated, 'WHATSAPP_LIFECYCLE_TEMPLATE_MAINTENANCE_ENABLED = "true"', 'generated config');
   expectIncludes(generated, '[triggers]', 'generated config');
+  // Console-only Workers Logs survive generation; invocation logs stay off.
+  if (!/\[observability\]\nenabled = true\nhead_sampling_rate = 1\n\n\[observability\.logs\]\nenabled = true\ninvocation_logs = false\n/.test(generatedRaw)) throw new Error('generated config must enable console-only Workers Logs');
+  expectExcludes(generated, 'invocation_logs = true', 'generated config');
   // No cron of its own: the shared production scheduler drives it over a
   // Service Binding because the account's cron triggers are exhausted.
   expectIncludes(generated, 'crons = []', 'generated config');
