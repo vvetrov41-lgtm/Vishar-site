@@ -300,3 +300,19 @@ for (const invalid of [
   postSessionV2.replace('20261111083000 | |','20261111090000 | |'),
   postSessionV2.replace('20261111072000 | 20261111072000','20261111072000 | '),
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Vladimir cash-note release: authorize precisely one additive proposal/email
+// migration after the confirmed production head, never an arbitrary new DDL.
+const cashBookingTransition=[
+  ' Local | Remote | Time',
+  ' 20261112133000 | 20261112133000 | t',
+  ' 20261112164000 | | t',
+].join('\\n');
+assert.equal(verifyTodayLineage(cashBookingTransition),'20261112164000');
+for(const invalid of [
+  cashBookingTransition+'\\n 20261112165000 | | t',
+  cashBookingTransition.replace('20261112164000 | |','20261112165000 | |'),
+  cashBookingTransition.replace('20261112133000 | 20261112133000','20261112133000 | '),
+  cashBookingTransition+'\\n | 20261112163500 | t',
+]) assert.throws(()=>verifyTodayLineage(invalid));
