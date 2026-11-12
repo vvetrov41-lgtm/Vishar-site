@@ -316,3 +316,32 @@ for(const invalid of [
   cashBookingTransition.replace('20261112133000 | 20261112133000','20261112133000 | '),
   cashBookingTransition+'\n | 20261112163500 | t',
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+// Audit fixes: the refusal migration (#1235) may follow the cash-booking head,
+// and the lifecycle retry migration (#1246) may follow only the refusal one.
+const refusalTransition = [
+  ' Local | Remote | Time',
+  ' 20261112164000 | 20261112164000 | t',
+  ' 20261112200000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(refusalTransition), '20261112200000');
+for (const invalid of [
+  refusalTransition + '\n 20261112210000 | | t',
+  refusalTransition.replace('20261112200000 | |', '20261112210000 | |'),
+  refusalTransition.replace('20261112164000 | 20261112164000', '20261112164000 | '),
+  refusalTransition + '\n | 20261112190000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
+
+const lifecycleRetryTransition = [
+  ' Local | Remote | Time',
+  ' 20261112164000 | 20261112164000 | t',
+  ' 20261112200000 | 20261112200000 | t',
+  ' 20261112210000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(lifecycleRetryTransition), '20261112210000');
+for (const invalid of [
+  lifecycleRetryTransition + '\n 20261112220000 | | t',
+  lifecycleRetryTransition.replace('20261112210000 | |', '20261112220000 | |'),
+  lifecycleRetryTransition.replace('20261112200000 | 20261112200000', '20261112200000 | '),
+  lifecycleRetryTransition + '\n | 20261112205000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
