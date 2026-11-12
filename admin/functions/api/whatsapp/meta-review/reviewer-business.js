@@ -6,7 +6,7 @@ const CRM = 'https://crm.vishartattoo.com';
 const REDIRECT = `${OPERATOR}/meta-review-business.html`;
 const APP = '1481226093843982';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BLOCKED = new Set(['692776505711216']);
+const BLOCKED = new Set(['692776505711216', '462106700328578']);
 function response(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json', 'cache-control': 'no-store',
