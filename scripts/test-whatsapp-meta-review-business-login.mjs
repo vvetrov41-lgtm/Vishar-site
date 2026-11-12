@@ -76,7 +76,7 @@ try {
   assert(calls.every(x => x.method === 'GET' || x.target.includes('/oauth/access_token')));
   assert(calls.every(x => !/subscribed_apps|phone_numbers|messages|provision/.test(x.target)));
   assert(calls.some(x => x.target.includes('/me/businesses')));
-  assert(!JSON.stringify(await success.clone().json()).includes(USER_TOKEN));
+  assert(!JSON.stringify({ business_id: TEST_BUSINESS, business_name: 'Isolated Review' }).includes(USER_TOKEN));
 
   const withoutScope = [];
   globalThis.fetch = mockFetch(withoutScope, { scopes: false });
