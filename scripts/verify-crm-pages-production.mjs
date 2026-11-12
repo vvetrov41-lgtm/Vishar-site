@@ -27,6 +27,11 @@ const PRODUCTION_BINDINGS = Object.freeze([
   'META_REVIEW_WABA_ID:plain_text',
   'SUPABASE_PUBLISHABLE_KEY:secret_text',
 ]);
+const OPTIONAL_REVIEWER_BINDINGS = Object.freeze([
+  'META_REVIEWER_ACCESS_ENABLED:plain_text',
+  'META_REVIEW_CRM_USER_ID:plain_text',
+  'META_REVIEW_ACCESS_EXPIRES_AT:plain_text',
+]);
 
 function sameStrings(actual, expected) {
   return JSON.stringify([...actual].sort()) === JSON.stringify([...expected].sort());
@@ -45,7 +50,8 @@ export function assertProject(body) {
   }
   const productionBindings = Object.entries(project.deployment_configs?.production?.env_vars ?? {})
     .map(([name, value]) => `${name}:${value?.type ?? 'unknown'}`);
-  if (!sameStrings(productionBindings, PRODUCTION_BINDINGS)) {
+  if (!sameStrings(productionBindings, PRODUCTION_BINDINGS)
+    && !sameStrings(productionBindings, [...PRODUCTION_BINDINGS, ...OPTIONAL_REVIEWER_BINDINGS])) {
     throw new Error('Production Cloudflare Pages binding-name set mismatch');
   }
   const previewBindings = Object.keys(project.deployment_configs?.preview?.env_vars ?? {});

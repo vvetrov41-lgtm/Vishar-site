@@ -19,6 +19,11 @@ on:
       - admin/functions/api/whatsapp/existing-account/provision.js
       - admin/functions/api/whatsapp/meta-review/template.js
       - admin/functions/api/whatsapp/meta-review/business-login.js
+      - admin/functions/api/whatsapp/meta-review/reviewer-business.js
+      - admin/meta-review-business.html
+      - admin/src/meta-review-business.ts
+      - admin/vite.config.ts
+      - scripts/test-meta-reviewer-business.mjs
       - admin/src/lib/meta-review-business-login.ts
       - admin/src/test/meta-review-business-login.test.ts
       - admin/src/main.tsx
@@ -90,6 +95,9 @@ jobs:
 
       - name: Test isolated Meta business login boundaries
         run: node scripts/test-whatsapp-meta-review-business-login.mjs
+
+      - name: Test restricted Meta reviewer access
+        run: node scripts/test-meta-reviewer-business.mjs
 
       - name: Test dynamic production deployment gates
         run: |
