@@ -1,16 +1,14 @@
 // Separate, read-only App Review endpoint. Disabled until a single review Auth
 // identity, expiry and Meta redirect URI are provisioned. No CRM profile needed.
 const SUPABASE = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
-const OPERATOR = 'https://app.vishartattoo.com';
 const CRM = 'https://crm.vishartattoo.com';
-const REDIRECT = `${OPERATOR}/meta-review-business.html`;
+const REDIRECT = `${CRM}/meta-review-business.html`;
 const APP = '1481226093843982';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const BLOCKED = new Set(['692776505711216', '462106700328578']);
 function response(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json', 'cache-control': 'no-store',
-    'access-control-allow-origin': OPERATOR, 'vary': 'Origin',
     'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
   } });
 }
@@ -48,13 +46,9 @@ async function graph(path, token) {
   return r.json();
 }
 export async function onRequest({ request, env }) {
-  if (new URL(request.url).origin !== CRM || request.headers.get('origin') !== OPERATOR)
+  const origin = request.headers.get('origin');
+  if (new URL(request.url).origin !== CRM || (origin !== CRM && !(request.method === 'GET' && origin === null)))
     return response({ ok: false, error: 'origin_not_allowed' }, 403);
-  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: {
-    'access-control-allow-origin': OPERATOR,
-    'access-control-allow-methods': 'GET, POST, OPTIONS',
-    'access-control-allow-headers': 'authorization, content-type', 'vary': 'Origin',
-  } });
   const cfg = config(env);
   if (!cfg) return response({ ok: false, error: 'review_disabled' }, 404);
   if (request.method !== 'GET' && request.method !== 'POST') return response({ ok: false }, 405);
