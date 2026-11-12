@@ -5,8 +5,8 @@ const URL = 'https://crm.vishartattoo.com/api/whatsapp/meta-review/reviewer-busi
 const env = { META_REVIEWER_ACCESS_ENABLED: 'true', META_REVIEW_CRM_USER_ID: ID,
   META_REVIEW_ACCESS_EXPIRES_AT: '2099-01-01T00:00:00Z', SUPABASE_PUBLISHABLE_KEY: 'public-key',
   META_APP_SECRET: 'test-only-secret' };
-const request = (method, origin = 'https://app.vishartattoo.com', body) => new Request(URL, {
-  method, headers: { origin, authorization: `Bearer ${'a'.repeat(32)}`,
+const request = (method, origin = 'https://crm.vishartattoo.com', body) => new Request(URL, {
+  method, headers: { ...(origin ? { origin } : {}), authorization: `Bearer ${'a'.repeat(32)}`,
     ...(body ? { 'content-type': 'application/json' } : {}) },
   ...(body ? { body: JSON.stringify(body) } : {}),
 });
@@ -15,6 +15,7 @@ try {
   assert.equal((await onRequest({ request: request('GET'), env: { ...env, META_REVIEWER_ACCESS_ENABLED: 'false' } })).status, 404);
   assert.equal((await onRequest({ request: request('GET'), env: { ...env, META_REVIEW_ACCESS_EXPIRES_AT: '2000-01-01' } })).status, 404);
   assert.equal((await onRequest({ request: request('GET', 'https://evil.example'), env })).status, 403);
+  assert.equal((await onRequest({ request: request('POST', 'https://evil.example', { code: 'c'.repeat(32) }), env })).status, 403);
   globalThis.fetch = async url => {
     const u = String(url);
     if (u.includes('/auth/v1/user')) return Response.json({ id: ID });
@@ -22,6 +23,7 @@ try {
     throw new Error(`Unexpected fetch ${u}`);
   };
   assert.equal((await onRequest({ request: request('GET'), env })).status, 200);
+  assert.equal((await onRequest({ request: request('GET', null), env })).status, 200);
   globalThis.fetch = async url => {
     const u = String(url);
     if (u.includes('/auth/v1/user')) return Response.json({ id: '223e4567-e89b-42d3-a456-426614174000' });
