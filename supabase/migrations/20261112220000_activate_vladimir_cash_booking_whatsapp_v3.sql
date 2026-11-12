@@ -1,6 +1,6 @@
--- Promote Vladimir's provider-approved cash-preferring tattoo WhatsApp Utility v3.
--- Leave consultations, Kristina, existing immutable messages and reminder buttons untouched.
--- Before this database migration the guarded WhatsApp Worker must already support v3.
+-- Activate a genuinely Meta-approved Vladimir tattoo cash v3 WhatsApp card.
+-- The reviewed Meta URL buttons, consultations, Kristina and existing messages are unchanged.
+-- Guarded Worker deployment must precede this SQL activation.
 
 CREATE OR REPLACE FUNCTION crm_private.create_booking_card_whatsapp(p_booking_card_id uuid, p_confirm_token text, p_reschedule_token text)
  RETURNS uuid
@@ -300,8 +300,7 @@ begin
 
   return v_message_id;
 end;
-$function$
-
+$function$;
 
 CREATE OR REPLACE FUNCTION public.service_resolve_whatsapp_booking_card_payload(p_outbox_id uuid, p_worker_id text)
  RETURNS TABLE(is_booking_card boolean, booking_card_id uuid, communication_message_id uuid, artist_id uuid, template_name text, template_language text, body_parameters jsonb, location_name text, location_address text, location_latitude numeric, location_longitude numeric, confirm_payload text, reschedule_payload text, delivery_allowed boolean)
@@ -362,44 +361,7 @@ begin
                and proposal.template_name=p.template_name
                and proposal.template_language=p.template_language
                and proposal.approval_status='APPROVED'
-               and proposal.provider_template_id ~ '^[0-9]{5,32}
-        and settings.whatsapp_template_language = p.template_language
-        and (
-          (b.card_kind = 'tattoo_deposit_paid'
-            and settings.whatsapp_tattoo_template_name = p.template_name)
-          or
-          (b.card_kind = 'consultation_booked'
-            and b.appointment_type = 'in_person_consultation'::public.appointment_type
-            and settings.whatsapp_consultation_template_name = p.template_name)
-          or
-          (b.card_kind = 'consultation_booked'
-            and b.appointment_type = 'video_consultation'::public.appointment_type
-            and settings.whatsapp_video_template_name = p.template_name
-            and settings.whatsapp_video_template_status = 'APPROVED')
-        )
-      )
-    end as delivery_allowed
-  from public.integration_outbox o
-  join public.communication_messages m
-    on m.id = o.communication_message_id
-  left join crm_private.booking_card_whatsapp_payloads p
-    on p.communication_message_id = m.id
-  left join crm_private.booking_cards b
-    on b.id = p.booking_card_id
-  left join public.sessions s
-    on s.id = b.session_id
-  left join crm_private.booking_card_artist_settings settings
-    on settings.artist_id = b.artist_id
-  where o.id = p_outbox_id
-    and o.kind = 'whatsapp_message'::public.outbox_kind
-    and o.status = 'leased'::public.outbox_status
-    and o.leased_by = p_worker_id
-    and o.lease_expires_at > now()
-    and m.artist_id = o.artist_id
-    and m.channel = 'whatsapp'::public.communication_channel;
-end;
-$function$
-
+               and proposal.provider_template_id ~ '^[0-9]{5,32}$'
                and proposal.verified_at>now()-interval '24 hours'))
         and settings.whatsapp_enabled
         and settings.whatsapp_template_language = p.template_language
@@ -437,9 +399,7 @@ $function$
     and m.artist_id = o.artist_id
     and m.channel = 'whatsapp'::public.communication_channel;
 end;
-$function$
-
-
+$function$;
 
 -- The new Meta template is immutable, and its approval was recorded by
 -- a readback that verified the body and both original URL buttons.
