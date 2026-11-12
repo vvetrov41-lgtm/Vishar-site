@@ -140,7 +140,15 @@ for (const [path, marker, key] of workerEndpoints) {
   assert.ok(OPERATOR_PARITY.some((row) => row.key === key), `${key} must stay classified`);
 }
 const pagesFunctions = walk('admin/functions', (path) => path.endsWith('.js'));
-assert.equal(pagesFunctions.length, workerEndpoints.filter(([path]) => path.startsWith('admin/functions/')).length, 'a new CRM Pages function appeared: classify it in the parity inventory');
+const reviewOnlyPagesFunctions = [
+  // A separate, time-limited App Review identity. This endpoint does not
+  // belong to the CRM operator Actions parity inventory.
+  'admin/functions/api/whatsapp/meta-review/reviewer-business.js',
+];
+assert.deepEqual(pagesFunctions.sort(), [
+  ...workerEndpoints.filter(([path]) => path.startsWith('admin/functions/')).map(([path]) => path),
+  ...reviewOnlyPagesFunctions,
+].sort(), 'a CRM Pages function appeared: classify it as an operator or review-only endpoint');
 
 // ------ available rows equal legacy imports plus the unified domain registry
 const legacySchemas = ['core', 'operations', 'communications', 'cloudflare']
