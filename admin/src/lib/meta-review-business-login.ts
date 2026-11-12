@@ -4,7 +4,11 @@ export const BUSINESS_REVIEW_REDIRECT_URI = 'https://app.vishartattoo.com/?meta_
 export const BUSINESS_REVIEW_PENDING_KEY = 'vishar.meta-review.business-login.pending';
 export const BUSINESS_REVIEW_MAX_AGE_MS = 10 * 60 * 1000;
 const APP_ID = '1481226093843982';
-const LOGIN_URL = 'https://www.facebook.com/v25.0/dialog/oauth';
+const DESKTOP_LOGIN_URL = 'https://www.facebook.com/v25.0/dialog/oauth';
+// On iOS a www.facebook.com OAuth navigation can be claimed by the native
+// Facebook app, leaving the CRM tab stranded without an OAuth callback.
+// Use the mobile web host in that browser rather than opening the app.
+const IOS_WEB_LOGIN_URL = 'https://m.facebook.com/v25.0/dialog/oauth';
 const STATE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CODE_PATTERN = /^[\x21-\x7e]{10,2048}$/;
 const CONFIG_PATTERN = /^[1-9][0-9]{8,24}$/;
@@ -28,9 +32,14 @@ function newState(random: (bytes: Uint8Array) => Uint8Array): string {
   return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-export function businessReviewDialogUrl(configId: string, state: string): string {
+export function businessReviewDialogUrl(
+  configId: string,
+  state: string,
+  { ios = false }: { ios?: boolean } = {},
+): string {
   if (!CONFIG_PATTERN.test(configId) || !STATE_PATTERN.test(state)) throw new Error('Meta review configuration invalid.');
-  const url = new URL(LOGIN_URL);
+  const url = new URL(ios ? IOS_WEB_LOGIN_URL : DESKTOP_LOGIN_URL);
+  if (ios) url.searchParams.set('display', 'touch');
   url.searchParams.set('client_id', APP_ID);
   url.searchParams.set('config_id', configId);
   url.searchParams.set('redirect_uri', BUSINESS_REVIEW_REDIRECT_URI);
@@ -49,19 +58,42 @@ export function beginBusinessReviewLogin(
     navigate = (url: string) => window.location.assign(url),
     now = Date.now,
     random = (bytes: Uint8Array) => crypto.getRandomValues(bytes),
+    ios = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent),
   }: {
     origin?: string;
     storage?: StorageLike;
     navigate?: (url: string) => void;
     now?: () => number;
     random?: (bytes: Uint8Array) => Uint8Array;
+    ios?: boolean;
   } = {},
 ): void {
   if (origin !== 'https://app.vishartattoo.com') throw new Error('Meta review login requires the operator CRM.');
   if (!CONFIG_PATTERN.test(configId)) throw new Error('Meta review configuration invalid.');
   const state = newState(random);
   storage.setItem(BUSINESS_REVIEW_PENDING_KEY, JSON.stringify({ state, createdAt: now() }));
-  navigate(businessReviewDialogUrl(configId, state));
+  navigate(businessReviewDialogUrl(configId, state, { ios }));
+}
+
+/**
+ * The native Facebook app may capture a mobile OAuth navigation. The Safari
+ * tab then stays on the CRM with the pending CSRF state and no callback.
+ * Detect that interrupted attempt only on the unchanged operator page; never
+ * confuse a genuine callback with a failed navigation.
+ */
+export function businessReviewWasInterrupted(
+  href: string,
+  storage: StorageLike = window.sessionStorage,
+): boolean {
+  try {
+    const url = new URL(href);
+    if (url.origin !== 'https://app.vishartattoo.com' || url.pathname !== '/'
+      || url.searchParams.has('meta_business_review') || url.searchParams.has('code')
+      || url.searchParams.has('error')) return false;
+    return storage.getItem(BUSINESS_REVIEW_PENDING_KEY) !== null;
+  } catch {
+    return false;
+  }
 }
 
 function isSameState(left: string, right: string): boolean {
