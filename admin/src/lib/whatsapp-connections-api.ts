@@ -372,6 +372,46 @@ export function createWhatsAppConnectionsApi(client: CrmClient) {
       );
     },
 
+    async getBusinessReviewLoginConfig(): Promise<{ config_id: string }> {
+      const accessToken = await crmAccessToken();
+      const response = await fetch(embeddedSignupProvisionUrl(
+        '/api/whatsapp/meta-review/business-login', window.location.origin,
+      ), {
+        method: 'GET',
+        cache: 'no-store',
+        headers: { authorization: `Bearer ${accessToken}` },
+      });
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok || payload?.ok !== true || typeof payload.config_id !== 'string'
+        || !/^[1-9][0-9]{8,24}$/.test(payload.config_id)) {
+        throw new ApiError(typeof payload?.error === 'string' ? payload.error : 'meta_review_business_login_unavailable');
+      }
+      return { config_id: payload.config_id };
+    },
+
+    async completeBusinessReviewLogin(code: string): Promise<{ business_id: string; business_name: string | null }> {
+      if (!/^[\x21-\x7e]{10,2048}$/.test(code)) throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+      const accessToken = await crmAccessToken();
+      const response = await fetch(embeddedSignupProvisionUrl(
+        '/api/whatsapp/meta-review/business-login', window.location.origin,
+      ), {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { authorization: `Bearer ${accessToken}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      const payload = await response.json().catch(() => null) as Record<string, unknown> | null;
+      if (!response.ok || payload?.ok !== true) {
+        throw new ApiError(typeof payload?.error === 'string' ? payload.error : 'meta_review_business_login_failed');
+      }
+      if (typeof payload.business_id !== 'string' || !/^[1-9][0-9]{5,30}$/.test(payload.business_id)
+        || (payload.business_name !== null && typeof payload.business_name !== 'string')
+        || payload.permission !== 'business_management') {
+        throw new ApiError(apiMessage('WhatsApp provisioning returned an invalid response.'));
+      }
+      return { business_id: payload.business_id, business_name: payload.business_name };
+    },
+
     async manageMetaReviewTemplate(
       action: 'create' | 'delete' | 'status' | 'send' | 'business',
       recipient?: string,

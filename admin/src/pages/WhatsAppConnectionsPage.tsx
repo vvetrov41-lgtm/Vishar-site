@@ -13,6 +13,10 @@ import {
   beginEmbeddedSignupRedirect,
   takeEmbeddedSignupCallback,
 } from '../lib/meta-whatsapp-signup-redirect';
+import {
+  beginBusinessReviewLogin,
+  takeBusinessReviewCallback,
+} from '../lib/meta-review-business-login';
 import { Link } from '../lib/router';
 import { useSession } from '../lib/session';
 import type { Artist } from '../lib/types';
@@ -68,6 +72,8 @@ export function WhatsAppConnectionsPage() {
   const [metaMessage, setMetaMessage] = useState<string | null>(null);
   const [existingMetaTokens, setExistingMetaTokens] = useState<Record<string, string>>({});
   const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewLoginBusy, setReviewLoginBusy] = useState(false);
+  const [reviewLoginBusiness, setReviewLoginBusiness] = useState<{ business_id: string; business_name: string | null } | null>(null);
   const [reviewTemplate, setReviewTemplate] = useState<MetaReviewTemplateMetadata | null>(null);
   const [reviewBusiness, setReviewBusiness] = useState<{ business_id: string; waba_id: string; waba_name: string | null } | null>(null);
   const [reviewRecipient, setReviewRecipient] = useState('');
@@ -313,6 +319,47 @@ export function WhatsAppConnectionsPage() {
       .finally(() => setMetaBusyArtistId(null));
   }, [api, data, language, memberships, profile?.role, reload, supabaseUrl]);
 
+  async function startBusinessReviewLogin() {
+    setActionError(null);
+    setReviewMessage(null);
+    setReviewLoginBusy(true);
+    try {
+      if (!api || !data || data.environment !== 'production' || profile?.role !== 'owner') {
+        throw new Error('Meta App Review requires the production CRM owner.');
+      }
+      const config = await api.getBusinessReviewLoginConfig();
+      beginBusinessReviewLogin(config.config_id);
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : 'Meta business login unavailable.');
+      setReviewLoginBusy(false);
+    }
+  }
+
+  // The Meta callback is captured at root before the WhatsApp signup handler.
+  // This path never calls the production provisioning methods.
+  useEffect(() => {
+    if (!api || !data || data.environment !== 'production' || profile?.role !== 'owner') return;
+    const callback = takeBusinessReviewCallback();
+    if (!callback) return;
+    if (callback.status !== 'code') {
+      setActionError(callback.status === 'cancelled'
+        ? (language === 'ru' ? 'Вход Meta отменён.' : 'Meta login cancelled.')
+        : `Meta business login rejected (${callback.reason}).`);
+      return;
+    }
+    setReviewLoginBusy(true);
+    setActionError(null);
+    void api.completeBusinessReviewLogin(callback.code)
+      .then((business) => {
+        setReviewLoginBusiness(business);
+        setReviewMessage(language === 'ru'
+          ? 'Meta подтвердила разрешение business_management и вернула тестовый бизнес. Данные не сохранены.'
+          : 'Meta confirmed business_management and returned the test business. No data was saved.');
+      })
+      .catch((cause) => setActionError(cause instanceof Error ? cause.message : 'Meta business login failed.'))
+      .finally(() => setReviewLoginBusy(false));
+  }, [api, data, language, profile?.role]);
+
   if (loading) {
     return <LoadingState label={language === 'ru' ? 'Загрузка WhatsApp…' : 'Loading WhatsApp…'} />;
   }
@@ -359,8 +406,31 @@ export function WhatsAppConnectionsPage() {
         <Section title={language === 'ru' ? 'Meta App Review' : 'Meta App Review'}>
           <p className="notice">
             {language === 'ru'
-              ? 'Видео business_management: проверь принадлежность тестовой WABA бизнес-портфелю через Meta API. Запрос только для чтения; номер, аккаунт и маршруты CRM не изменяются.'
-              : 'business_management demo: verify the review WABA belongs to the business portfolio through a read-only Meta API call. No phone, account or CRM route is changed.'}
+              ? 'business_management: отдельный вход через Meta с выбором тестового бизнес-портфеля. CRM проверяет выданное разрешение и читает только заранее разрешённый тестовый бизнес. WhatsApp, WABA, номера и рабочие интеграции не меняются.'
+              : 'business_management: separate Meta login for the isolated review business portfolio. The CRM verifies the permission and reads only the allowlisted test business. WhatsApp and live integrations are untouched.'}
+          </p>
+          {window.location.origin === 'https://app.vishartattoo.com' ? (
+            <div className="actions">
+              <button type="button" className="primary" disabled={reviewLoginBusy || !api}
+                onClick={() => { void startBusinessReviewLogin(); }}>
+                {reviewLoginBusy
+                  ? (language === 'ru' ? 'Проверяю вход…' : 'Checking Meta login…')
+                  : (language === 'ru' ? 'Войти через Meta (тестовый бизнес)' : 'Log in with Meta (test business)')}
+              </button>
+            </div>
+          ) : null}
+          {reviewLoginBusiness ? (
+            <dl className="definition" aria-live="polite">
+              <dt>{language === 'ru' ? 'Выбранный бизнес' : 'Selected business'}</dt>
+              <dd>{reviewLoginBusiness.business_name ?? '—'}</dd>
+              <dt>{language === 'ru' ? 'ID бизнеса' : 'Business ID'}</dt><dd><code>{reviewLoginBusiness.business_id}</code></dd>
+              <dt>{language === 'ru' ? 'Разрешение' : 'Permission'}</dt><dd><code>{language === 'ru' ? 'business_management: предоставлено' : 'business_management: granted'}</code></dd>
+            </dl>
+          ) : null}
+          <p className="notice">
+            {language === 'ru'
+              ? 'Отдельно: прежняя кнопка ниже использует серверный токен для проверки WABA, но не заменяет видео входа пользователя.'
+              : 'Separately: the existing check below uses a server-side token to inspect the review WABA; it does not demonstrate user login.'}
           </p>
           <div className="actions">
             <button type="button" disabled={reviewBusy || !api} onClick={() => { void runMetaReview('business'); }}>
