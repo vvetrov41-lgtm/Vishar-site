@@ -15,6 +15,7 @@ import {
 } from '../lib/meta-whatsapp-signup-redirect';
 import {
   beginBusinessReviewLogin,
+  businessReviewWasInterrupted,
   takeBusinessReviewCallback,
 } from '../lib/meta-review-business-login';
 import { Link } from '../lib/router';
@@ -334,6 +335,28 @@ export function WhatsAppConnectionsPage() {
       setReviewLoginBusy(false);
     }
   }
+
+  // iPhone can open the native Facebook app instead of the OAuth dialog.
+  // The CRM tab remains mounted with a pending state and no redirect. On
+  // returning to the tab, unlock the button and show a retry instruction.
+  // Keep the state itself: a late legitimate callback must still be checked.
+  useEffect(() => {
+    if (!reviewLoginBusy) return;
+    const handleReturnToCrm = () => {
+      if (document.visibilityState !== 'visible'
+        || !businessReviewWasInterrupted(window.location.href)) return;
+      setReviewLoginBusy(false);
+      setActionError(language === 'ru'
+        ? 'Facebook открыл приложение без возврата разрешения в CRM. Открой CRM напрямую в Safari и повтори вход; не выбирай рабочий WhatsApp.'
+        : 'Facebook opened its app without returning the permission to CRM. Open CRM directly in Safari and retry; do not select a live WhatsApp account.');
+    };
+    document.addEventListener('visibilitychange', handleReturnToCrm);
+    window.addEventListener('pageshow', handleReturnToCrm);
+    return () => {
+      document.removeEventListener('visibilitychange', handleReturnToCrm);
+      window.removeEventListener('pageshow', handleReturnToCrm);
+    };
+  }, [language, reviewLoginBusy]);
 
   // The Meta callback is captured at root before the WhatsApp signup handler.
   // This path never calls the production provisioning methods.
