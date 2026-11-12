@@ -8,6 +8,7 @@ const ID = /^[0-9]{5,32}$/;
 const NAME = /^[a-z0-9_]{1,512}$/;
 const KINDS = Object.freeze({
   booking_tattoo: 'booking_card_tattoo_v2',
+  booking_tattoo_cash: 'booking_card_tattoo_cash_v3',
   booking_consultation: 'booking_card_consultation_v2',
   booking_consultation_directions: 'booking_card_consultation_v3',
   booking_video: 'booking_card_video_consultation_v2',
@@ -45,12 +46,15 @@ function definition(target) {
       || faq !== 'https://' + domain + '/faq/') {
     throw new Error('Invalid reviewed WhatsApp identity or link');
   }
+  if (target.kind === 'booking_tattoo_cash' && target.artist_id !== VLADIMIR_ID) {
+    throw new Error('Cash-preference tattoo card is only configured for Vladimir');
+  }
   if (NEW_CONSULTATION_KINDS.has(target.kind)
       && target.artist_id !== VLADIMIR_ID) {
     throw new Error('Consultation-map template is not approved for this artist');
   }
   let text, example, buttons=[];
-  if (target.kind === 'booking_tattoo') {
+  if (target.kind === 'booking_tattoo' || target.kind === 'booking_tattoo_cash') {
     text=[
       'Hi {{1}},',
       '',
@@ -58,6 +62,9 @@ function definition(target) {
       '',
       'Deposit received: {{4}}',
       '{{5}}: {{6}}',
+      ...(target.kind === 'booking_tattoo_cash'
+        ? ['', "A little note: cash payment is preferred, if that's convenient for you. Thank you!"]
+        : []),
       '',
       'Everything is confirmed. See you then!',
       'If you have any questions, just message me here.',
