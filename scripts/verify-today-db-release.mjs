@@ -83,6 +83,11 @@ export function verifyTodayLineage(source) {
     // Add Vladimir-only cash preference to tattoo booking email and stage
     // an unapproved Meta v3 candidate. The live WhatsApp v2 remains active.
     ['20261112133000', '20261112164000'],
+    // PR #1235: a definitive WhatsApp refusal is terminal at once; one function.
+    ['20261112164000', '20261112200000'],
+    // PR #1246: retry of still-current lifecycle messages after an integration
+    // outage, only after the refusal migration is live.
+    ['20261112200000', '20261112210000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
