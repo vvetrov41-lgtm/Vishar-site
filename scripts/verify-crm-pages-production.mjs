@@ -15,6 +15,11 @@ const PRODUCTION_BINDINGS = Object.freeze([
   // Kristina's production account, and the gate stays off unless
   // META_REVIEW_TEMPLATE_ENABLED is explicitly 'true'.
   'META_REVIEW_ACCESS_TOKEN:secret_text',
+  // Separately gated business_management consent review. The target is the
+  // empty Vladimir Vishar portfolio; the handler only reads its id/name.
+  'META_REVIEW_BUSINESS_CONFIG_ID:plain_text',
+  'META_REVIEW_BUSINESS_ID:plain_text',
+  'META_REVIEW_BUSINESS_LOGIN_ENABLED:plain_text',
   // Separate fail-closed gate for the isolated messaging review demo.
   // No production artist WABA or customer messaging is exposed by this binding.
   'META_REVIEW_SEND_ENABLED:plain_text',

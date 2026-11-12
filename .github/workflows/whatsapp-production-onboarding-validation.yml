@@ -18,6 +18,11 @@ on:
       - admin/functions/api/whatsapp/embedded-signup/provision.js
       - admin/functions/api/whatsapp/existing-account/provision.js
       - admin/functions/api/whatsapp/meta-review/template.js
+      - admin/functions/api/whatsapp/meta-review/business-login.js
+      - admin/src/lib/meta-review-business-login.ts
+      - admin/src/test/meta-review-business-login.test.ts
+      - admin/src/main.tsx
+      - scripts/test-whatsapp-meta-review-business-login.mjs
       - admin/src/lib/meta-whatsapp-embedded-signup.ts
       - admin/src/lib/whatsapp-connections-api.ts
       - admin/src/pages/WhatsAppConnectionsPage.tsx
@@ -83,6 +88,9 @@ jobs:
       - name: Test Meta review template probe boundary
         run: node scripts/test-whatsapp-meta-review-template.mjs
 
+      - name: Test isolated Meta business login boundaries
+        run: node scripts/test-whatsapp-meta-review-business-login.mjs
+
       - name: Test dynamic production deployment gates
         run: |
           node scripts/test-whatsapp-production-secret-names.mjs
@@ -122,6 +130,7 @@ jobs:
           grep -Fq 'ARTIST_WHATSAPP_' /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'complete_artist_whatsapp_connection' /tmp/whatsapp-production-onboarding-worker.js
           grep -Fq 'meta_review_permission_demo' /tmp/whatsapp-production-onboarding-worker.js
+          grep -Fq 'meta_business_management_not_granted' /tmp/whatsapp-production-onboarding-worker.js
 
       - name: Test private CRM
         working-directory: admin

@@ -414,6 +414,8 @@ describe('WhatsApp Connections safety', () => {
     const api = createWhatsAppConnectionsApi(mocks.client);
     expect(Object.keys(api).sort()).toEqual([
       'checkCoexistenceWebhookReadiness',
+      'completeBusinessReviewLogin',
+      'getBusinessReviewLoginConfig',
       'listWhatsAppIntegrations',
       'manageMetaReviewTemplate',
       'prepareWhatsAppIntegration',

@@ -13,6 +13,7 @@ import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
 import { SurfaceProvider, type CrmSurface } from '../lib/surface';
 import type { ArtistMembership, CrmRole, EnquiryStatus } from '../lib/types';
+import type { IntegrationStatus } from '../lib/platform-api';
 
 export const VLADIMIR_ARTIST_ID = 'a1111111-1111-4111-8111-111111111111';
 export const KRISTINA_ARTIST_ID = 'a2222222-2222-4222-8222-222222222222';
@@ -471,6 +472,8 @@ export interface FakeClientOptions {
   enquiryStatus?: EnquiryStatus;
   /** Artist identities returned by list_accessible_artists(). */
   accessibleArtistIds?: string[];
+  /** Status metadata returned by the integrations RPC, for channel-specific UI tests. */
+  integrationStatuses?: IntegrationStatus[];
   /**
    * Extra `sessions` rows appended to the shared SESSION fixture. Grouped
    * deposit selection only renders with two or more eligible appointments.
@@ -1258,7 +1261,7 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (name === 'list_accessible_artists') {
         return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
       }
-      if (name === 'list_integration_status') return { data: INTEGRATION_STATUS, error: null };
+      if (name === 'list_integration_status') return { data: options.integrationStatuses ?? INTEGRATION_STATUS, error: null };
       if (name === 'list_notifications') {
         const status = (args as any)?.p_status ?? null;
         return {
