@@ -6,7 +6,7 @@ const CRM = 'https://crm.vishartattoo.com';
 const REDIRECT = `${OPERATOR}/meta-review-business.html`;
 const APP = '1481226093843982';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const BLOCKED = new Set(['692776505711216', '462106700328578']);
+const BLOCKED = new Set(['692776505711216']);
 function response(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: {
     'content-type': 'application/json', 'cache-control': 'no-store',
@@ -80,6 +80,7 @@ export async function onRequest({ request, env }) {
       return response({ ok: false, error: 'permission_not_granted' }, 409);
     const businesses = await graph('me/businesses?fields=id,name&limit=100', token);
     const safe = businesses.data?.filter(b => /^\d{6,30}$/.test(String(b.id)) && !BLOCKED.has(String(b.id))) || [];
+    if (safe.length === 0) return response({ ok: false, error: 'no_review_business_accessible' }, 409);
     return response({ ok: true, permission: 'business_management',
       businesses: safe.map(b => ({ id: String(b.id), name: String(b.name || '').slice(0, 100) })) });
   } catch {
