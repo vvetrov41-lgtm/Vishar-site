@@ -57,8 +57,12 @@ with the actual bindings, not earlier or by bypassing the gate.
 3. The browser creates a 256-bit single-use CSRF state with a 10-minute
    expiry in operator-origin sessionStorage. It navigates to Meta's
    `/dialog/oauth` with the separate config ID and the exact operator
-   redirect URI. No WhatsApp `extras`, embedded-signup feature,
-   phone-number ID or WABA ID is sent.
+   redirect URI. On iPhone/iPad it uses `m.facebook.com` with `display=touch`
+   to reduce native Facebook app interception; desktop keeps `www.facebook.com`.
+   No WhatsApp `extras`, embedded-signup feature, phone-number ID or WABA ID
+   is sent. If iOS still switches to the Facebook app, returning to the CRM
+   tab restores the login button and displays a browser-retry instruction,
+   without claiming consent was granted.
 4. After Meta consent, the operator origin consumes the matching callback,
    erases the OAuth code and state from the address bar, and exchanges the
    code **once** through the owner-guarded Pages Function.
