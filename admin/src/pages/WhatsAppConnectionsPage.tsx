@@ -409,20 +409,22 @@ export function WhatsAppConnectionsPage() {
               ? 'business_management: отдельный вход через Meta с выбором тестового бизнес-портфеля. CRM проверяет выданное разрешение и читает только заранее разрешённый тестовый бизнес. WhatsApp, WABA, номера и рабочие интеграции не меняются.'
               : 'business_management: separate Meta login for the isolated review business portfolio. The CRM verifies the permission and reads only the allowlisted test business. WhatsApp and live integrations are untouched.'}
           </p>
-          <div className="actions">
-            <button type="button" className="primary" disabled={reviewLoginBusy || !api}
-              onClick={() => { void startBusinessReviewLogin(); }}>
-              {reviewLoginBusy
-                ? (language === 'ru' ? 'Проверяю вход…' : 'Checking Meta login…')
-                : (language === 'ru' ? 'Войти через Meta (тестовый бизнес)' : 'Log in with Meta (test business)')}
-            </button>
-          </div>
+          {window.location.origin === 'https://app.vishartattoo.com' ? (
+            <div className="actions">
+              <button type="button" className="primary" disabled={reviewLoginBusy || !api}
+                onClick={() => { void startBusinessReviewLogin(); }}>
+                {reviewLoginBusy
+                  ? (language === 'ru' ? 'Проверяю вход…' : 'Checking Meta login…')
+                  : (language === 'ru' ? 'Войти через Meta (тестовый бизнес)' : 'Log in with Meta (test business)')}
+              </button>
+            </div>
+          ) : null}
           {reviewLoginBusiness ? (
             <dl className="definition" aria-live="polite">
               <dt>{language === 'ru' ? 'Выбранный бизнес' : 'Selected business'}</dt>
               <dd>{reviewLoginBusiness.business_name ?? '—'}</dd>
-              <dt>Business ID</dt><dd><code>{reviewLoginBusiness.business_id}</code></dd>
-              <dt>Permission</dt><dd><code>business_management: granted</code></dd>
+              <dt>{language === 'ru' ? 'ID бизнеса' : 'Business ID'}</dt><dd><code>{reviewLoginBusiness.business_id}</code></dd>
+              <dt>{language === 'ru' ? 'Разрешение' : 'Permission'}</dt><dd><code>{language === 'ru' ? 'business_management: предоставлено' : 'business_management: granted'}</code></dd>
             </dl>
           ) : null}
           <p className="notice">
