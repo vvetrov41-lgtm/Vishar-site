@@ -15,13 +15,13 @@ review panel. The reviewer cannot repeat this flow without broad CRM access.
 
 ## Patch plan
 
-1. Add a standalone review page at an explicit path on the operator origin.
+1. Add a standalone review page at an explicit path on the public CRM origin.
    Load no CRM data client, artist memberships, inbox or WhatsApp management
    modules. Its only actions are CRM review sign-in, Meta OAuth and a readback.
 2. Authenticate a separate Supabase Auth user whose UUID is bound as a
    production-only `META_REVIEW_CRM_USER_ID`. Do not create a `profiles` row or
    artist membership. The Pages Function validates the Auth user server-side,
-   compares its UUID in constant time, and checks a review expiry/kill switch.
+   compares its UUID, and checks a review expiry/kill switch.
    Existing owner flow remains unchanged.
 3. Introduce a distinct OAuth redirect URI for the review page, with 256-bit
    single-use state, ten-minute expiry, exact origin and URI matching, and
