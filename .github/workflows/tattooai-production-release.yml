@@ -48,6 +48,7 @@ jobs:
           node scripts/audit-root-dependencies.mjs --audit-level=moderate
           npm run test:worker
           node scripts/test-tattooai-production-release.mjs
+          node scripts/verify-tattooai-variable-reconciliation.mjs --self-test
           npm run test:enquiry-ai
           node scripts/test-public-booking-slugs.mjs
           npm run check:worker-bundle
@@ -105,13 +106,19 @@ jobs:
           api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/tattooai"
           curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-before.json"
           jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai")' "$RUNNER_TEMP/tattooai-settings-before.json" >/dev/null
+          # The sole permitted remote-only plaintext binding is retired DeepSeek.
+          # Abort before deploying if any tracked setting changed in Cloudflare.
+          node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-before.json" --allow-legacy-deepseek
       - name: Deploy exact code snapshot
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
           apiToken: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
           wranglerVersion: "4.129.1"
-          command: deploy --config wrangler.toml --env="" --strict --keep-vars --tag ${{ github.sha }}
+          # All 39 plaintext vars are pinned in wrangler.toml and verified above.
+          # Avoid --keep-vars so the one retired DeepSeek var is removed. Secrets
+          # are preserved by Wrangler; the after-deploy inventory guard checks.
+          command: deploy --config wrangler.toml --env="" --strict --tag ${{ github.sha }}
       - name: Remove legacy standalone TattooAI schedules
         shell: bash
         run: |
@@ -129,6 +136,7 @@ jobs:
           version="$(jq -r 'if (.result|type)=="array" then .result[0].versions[0].version_id else .result.deployments[0].versions[0].version_id end' "$RUNNER_TEMP/tattooai-after.json")"
           curl -fsS "${auth[@]}" "$api/versions/$version" | jq -e --arg sha "$GITHUB_SHA" '.success == true and .result.annotations["workers/tag"] == $sha' >/dev/null
           curl -fsS "${auth[@]}" "$api/settings" > "$RUNNER_TEMP/tattooai-settings-after.json"
+          node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-after.json" --compare-before "$RUNNER_TEMP/tattooai-settings-before.json"
           curl -fsS "${auth[@]}" "$api/schedules" > "$RUNNER_TEMP/tattooai-schedules-after.json"
           jq -e '.success == true
             and any(.result.bindings[]?; .name == "AI" and .type == "ai")
@@ -138,7 +146,7 @@ jobs:
             and any(.result.bindings[]?; .name == "AI_ROUTE_HIGH_QUALITY_REASONING" and .text == "qwen,workers_ai")
             and ([.result.bindings[]? | select((.name // "") | startswith("AI_ROUTE_")) | (.text // "") | contains("deepseek")] | any | not)' "$RUNNER_TEMP/tattooai-settings-after.json" >/dev/null
           jq -e '.success == true and ((if (.result|type)=="array" then .result else .result.schedules end) | length == 0)' "$RUNNER_TEMP/tattooai-schedules-after.json" >/dev/null
-          echo "TattooAI exact source $GITHUB_SHA is active with CRM Five Pillars enabled, no DeepSeek routes and zero standalone schedules."
+          echo "TattooAI exact source $GITHUB_SHA is active with CRM AI enabled, no DeepSeek binding/routes and zero standalone schedules."
       - name: Read back live HTTP boundary without persistence
         shell: bash
         run: |
