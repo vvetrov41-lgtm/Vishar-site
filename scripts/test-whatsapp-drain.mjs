@@ -382,7 +382,13 @@ await test('provider failures are classified into safe codes', async () => {
     [403, 'whatsapp_credentials_rejected'],
     [429, 'whatsapp_rate_limited'],
     [500, 'whatsapp_provider_unavailable'],
+    [503, 'whatsapp_provider_unavailable'],
+    // A timeout is transient even though it is reported as a 4xx. The
+    // database dead-letters `whatsapp_rejected` on its first report, so a
+    // status another attempt can cure must never be mapped to it.
+    [408, 'whatsapp_provider_unavailable'],
     [400, 'whatsapp_rejected'],
+    [404, 'whatsapp_rejected'],
   ]) {
     const { fetchImpl, rpcCalls } = makeFetch({ graphStatus: status });
     const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
