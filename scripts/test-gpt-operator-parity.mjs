@@ -210,6 +210,7 @@ assert.deepEqual(uiOnly, [
   'telegram.account_confirm',
   'whatsapp.embedded_signup',
   'whatsapp.existing_account.system_user_token',
+  'whatsapp.meta_review.business_login',
   'whatsapp.meta_review.template',
   'workspace.control_plane_access',
   'workspace.ownership.transfer',
