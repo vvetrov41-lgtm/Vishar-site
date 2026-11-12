@@ -56,15 +56,15 @@ BEGIN
  IF v_source IS NULL THEN
    RAISE EXCEPTION 'Booking email renderer missing' USING errcode='23514';
  END IF;
- v_before := $before$    v_msg := E'Everything is confirmed. See you then!\\n\\nIf you have any questions, just message me here.';$before$;
+ v_before := $before$    v_msg := E'Everything is confirmed. See you then!\n\nIf you have any questions, just message me here.';$before$;
  v_after := $after$    IF v_card.artist_id='a1111111-1111-4111-8111-111111111111'::uuid THEN
-      v_money_text := v_money_text || E'\\nA little note: cash payment is preferred, if that''s convenient for you. Thank you!';
+      v_money_text := v_money_text || E'\nA little note: cash payment is preferred, if that''s convenient for you. Thank you!';
       v_money_html := v_money_html
         || '<p style="font-size:14px;line-height:22px;color:#ddd;">'
         || 'A little note: cash payment is preferred, if that''s convenient for you. Thank you!'
         || '</p>';
     END IF;
-    v_msg := E'Everything is confirmed. See you then!\\n\\nIf you have any questions, just message me here.';$after$;
+    v_msg := E'Everything is confirmed. See you then!\n\nIf you have any questions, just message me here.';$after$;
  IF length(v_source)-length(replace(v_source,v_before,''))<>length(v_before) THEN
    RAISE EXCEPTION 'Booking email renderer drift; no cash copy patch applied'
      USING errcode='23514';
