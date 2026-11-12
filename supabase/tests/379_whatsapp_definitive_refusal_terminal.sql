@@ -1,6 +1,6 @@
 -- 376_whatsapp_definitive_refusal_terminal.sql
 --
--- 20261112090000: a request Meta refuses, or one the Worker refuses to build,
+-- 20261112200000: a request Meta refuses, or one the Worker refuses to build,
 -- is dead-lettered on its first report instead of being replayed until
 -- max_attempts. Transient failures keep the bounded retry. Everything is
 -- rolled back.
