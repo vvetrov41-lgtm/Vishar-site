@@ -75,19 +75,66 @@ export function selectWhatsappBinding(env, route) {
  * cannot succeed. Every other code here keeps the bounded retry, so a status
  * that another attempt can cure must never be mapped to `whatsapp_rejected`.
  */
-function deliveryError(status) {
+// Only one validated numerical Graph API code is retained. Meta's message,
+// error_data, details, fbtrace_id, recipient, headers and raw JSON are never
+// copied into application logs or persisted in the outbox.
+const MAX_META_ERROR_BYTES = 2048;
+export async function readSafeMetaErrorCode(response) {
+  const contentType = response?.headers?.get('content-type') || '';
+  const length = Number(response?.headers?.get('content-length') || 0);
+  if (!/^application\/(?:json|[a-z0-9.+-]+\+json)(?:;|$)/i.test(contentType)
+      || length > MAX_META_ERROR_BYTES) return null;
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  let timer;
+  try {
+    const decode = async () => {
+      const chunks = [];
+      let size = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_META_ERROR_BYTES) return null;
+        chunks.push(value);
+      }
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+      const error = JSON.parse(new TextDecoder().decode(bytes))?.error;
+      return Number.isInteger(error?.code) && error.code > 0 && error.code <= 999999
+        ? error.code : null;
+    };
+    return await Promise.race([
+      decode(),
+      new Promise(resolve => { timer = setTimeout(() => resolve(null), 500); }),
+    ]);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+    try { reader.cancel()?.catch(() => {}); } catch { /* best-effort only */ }
+  }
+}
+
+function deliveryError(status, metaErrorCode = null) {
   const statusGroup = statusClass(status);
+  // Graph sometimes reports rate limits as HTTP 400. These documented
+  // numeric codes are transient; a definitive 4xx is not retried.
+  if ([130429, 131056, 80007].includes(metaErrorCode)) {
+    return { delivered: false, errorCode: 'whatsapp_rate_limited', statusClass: statusGroup, metaErrorCode };
+  }
   if (status === 401 || status === 403) {
-    return { delivered: false, errorCode: 'whatsapp_credentials_rejected', statusClass: statusGroup };
+    return { delivered: false, errorCode: 'whatsapp_credentials_rejected', statusClass: statusGroup, metaErrorCode };
   }
   if (status === 429) {
-    return { delivered: false, errorCode: 'whatsapp_rate_limited', statusClass: statusGroup };
+    return { delivered: false, errorCode: 'whatsapp_rate_limited', statusClass: statusGroup, metaErrorCode };
   }
   // 408 is a timeout reported as a client error; it is transient.
   if (status >= 500 || status === 408) {
-    return { delivered: false, errorCode: 'whatsapp_provider_unavailable', statusClass: statusGroup };
+    return { delivered: false, errorCode: 'whatsapp_provider_unavailable', statusClass: statusGroup, metaErrorCode };
   }
-  return { delivered: false, errorCode: 'whatsapp_rejected', statusClass: statusGroup };
+  return { delivered: false, errorCode: 'whatsapp_rejected', statusClass: statusGroup, metaErrorCode };
 }
 
 /**
@@ -139,7 +186,7 @@ export async function sendWhatsappMessage(env, route, message, fetchImpl = fetch
     return { delivered: false, errorCode: 'whatsapp_unreachable' };
   }
 
-  if (!response.ok) return deliveryError(response.status);
+  if (!response.ok) return deliveryError(response.status, await readSafeMetaErrorCode(response));
 
   let parsed;
   try {
@@ -286,7 +333,7 @@ export async function sendWhatsappTemplate(env, route, message, fetchImpl = fetc
     return { delivered: false, errorCode: 'whatsapp_unreachable' };
   }
 
-  if (!response.ok) return deliveryError(response.status);
+  if (!response.ok) return deliveryError(response.status, await readSafeMetaErrorCode(response));
 
   let parsed;
   try {
@@ -381,7 +428,7 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
   } catch {
     return { delivered: false, errorCode: 'whatsapp_unreachable' };
   }
-  if (!response.ok) return deliveryError(response.status);
+  if (!response.ok) return deliveryError(response.status, await readSafeMetaErrorCode(response));
 
   let parsed;
   try { parsed = await response.json(); }

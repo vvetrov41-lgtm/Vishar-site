@@ -368,6 +368,13 @@ async function ingestStatuses(value, route, supabase) {
     if (!MESSAGE_ID.test(providerMessageId) || !providerTimestamp) continue;
     if (!['sent', 'delivered', 'read', 'failed'].includes(providerStatus)) continue;
 
+    // Signed Meta failures can contain phone numbers in message/details.
+    // Retain only the allow-shaped numeric provider code, never the payload.
+    const metaCode = status?.errors?.[0]?.code;
+    if (providerStatus === 'failed'
+        && Number.isInteger(metaCode) && metaCode > 0 && metaCode <= 999999) {
+      console.warn('whatsapp delivery status failed', JSON.stringify({ meta_code: metaCode }));
+    }
     await supabase.rpc('record_whatsapp_message_status', {
       p_artist_id: route.artistId,
       p_integration_key: route.integrationKey,

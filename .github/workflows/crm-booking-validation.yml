@@ -77,6 +77,9 @@ jobs:
       - name: Validate WhatsApp production configuration
         run: npm run test:whatsapp-production
 
+      - name: Validate bounded WhatsApp Meta failure diagnostics
+        run: node scripts/test-whatsapp-meta-errors.mjs
+
       - name: Validate Instagram production configuration
         run: npm run test:instagram-production
 

@@ -334,6 +334,14 @@ export async function processClaimedWhatsappJob(env, {
   }
 
   if (!delivery.delivered) {
+    if (Number.isInteger(delivery.metaErrorCode)
+        && delivery.metaErrorCode > 0 && delivery.metaErrorCode <= 999999) {
+      console.warn('whatsapp provider refusal', JSON.stringify({
+        code: delivery.errorCode,
+        meta_code: delivery.metaErrorCode,
+        http_class: delivery.statusClass,
+      }));
+    }
     return recordFailure(
       supabase,
       job.outbox_id,
