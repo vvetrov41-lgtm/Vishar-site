@@ -113,6 +113,8 @@ export function verifyTodayLineage(source) {
     ['20261113180000', '20261113210000'],
     // Phase 3 Today: non-mutating expression indexes for incoming/studio message scans.
     ['20261113210000', '20261113220000'],
+    // Small deterministic reply evidence + archived Gmail inbox RLS; no client data writes.
+    ['20261113220000', '20261113230000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
