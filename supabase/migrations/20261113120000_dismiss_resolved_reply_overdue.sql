@@ -30,6 +30,13 @@ begin
     return new;
   end if;
 
+  -- Reuse the CRM's authoritative outstanding-reply rule, not an approximation
+  -- based on conversation.last_outbound_at (which automated cards can update).
+  if crm_private.unanswered_waiting_since('conversation', new.artist_id, new.conversation_id)
+     is not null then
+    return new;
+  end if;
+
   update public.notifications n
   set status = 'dismissed'::public.notification_status
   where n.notification_type = 'client.reply_overdue'
@@ -62,6 +69,7 @@ where n.notification_type = 'client.reply_overdue'
   and n.status = 'delivered'::public.notification_status
   and n.read_at is null
   and n.created_at >= now() - interval '14 days'
+  and crm_private.unanswered_waiting_since('conversation', n.artist_id, n.entity_id) is null
   and exists (
     select 1 from public.communication_messages m
     where m.conversation_id = n.entity_id
