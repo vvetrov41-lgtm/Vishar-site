@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { verifyTodayLineage } from './verify-today-db-release.mjs';
+import { verifyTodayLineage, deferredTodayMigration } from './verify-today-db-release.mjs';
 const valid = ' Local | Remote | Time\n 20261010080000 | 20261010080000 | t\n 20261010170000 | | t';
 assert.equal(verifyTodayLineage(valid), '20261010170000');
 // Captured format from the pinned CLI 2.110.0 in the production runner.
@@ -388,13 +388,49 @@ assert.throws(() => verifyTodayLineage(metaPreackLineage+'\n 20261113100100 | | 
 // A missing production predecessor, extra migration, or unrecognized name fails.
 const clean24hV5=[
   ' Local | Remote | Time (UTC)',
-  ' 20261113100000 | 20261113100000 | t',
+  ' 20261113110000 | 20261113110000 | t',
   ' 20261113120000 | | t',
 ].join('\n');
 assert.equal(verifyTodayLineage(clean24hV5),'20261113120000');
 for (const invalid of [
   clean24hV5+'\n 20261113130000 | | t',
   clean24hV5.replace('20261113120000 | |', '20261113120001 | |'),
-  clean24hV5.replace('20261113100000 | 20261113100000', '20261113100000 | '),
+  clean24hV5.replace('20261113110000 | 20261113110000', '20261113110000 | '),
   clean24hV5+'\n | 20261113130000 | t',
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+
+// PR #1259 must be applied by itself before the future v5 staging migration.
+const oauthOnly = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261113100000 | 20261113100000 | t',
+  ' 20261113110000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(oauthOnly), '20261113110000');
+assert.equal(deferredTodayMigration(oauthOnly), null);
+const stagedPair = oauthOnly + '\n 20261113120000 | | t';
+assert.equal(deferredTodayMigration(stagedPair),
+  '20261113120000_whatsapp_reminder_24h_clean_v5.sql');
+assert.throws(() => verifyTodayLineage(stagedPair),
+  'two pending migrations still fail the ordinary one-migration release gate');
+for (const bad of [
+  stagedPair + '\n 20261113130000 | | t',
+  stagedPair.replace('20261113120000 | |', '20261113120001 | |'),
+  stagedPair.replace('20261113110000 | |', '20261113110001 | |'),
+  stagedPair.replace('20261113100000 | 20261113100000', '20261113100000 | '),
+  stagedPair.replace('20261113100000 | 20261113100000', '20261113100000 | 20261113090000'),
+]) assert.throws(() => deferredTodayMigration(bad));
+assert.equal(deferredTodayMigration(clean24hV5), null);
+assert.throws(() => verifyTodayLineage(oauthOnly.replace(
+  '20261113110000 | |', '20261113120000 | |')),
+  'v5 cannot skip the prior OAuth migration');
+
+// Both gate helpers and immutable migration files must remain inside release.
+const dbReleaseWorkflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
+for (const guard of [
+  'stage-today-db-release.mjs --stage',
+  'stage-today-db-release.mjs --restore',
+  'check-production-migration-ledger.mjs',
+  'verify-today-db-release.mjs',
+  'supabase db push --dry-run',
+]) assert.ok(dbReleaseWorkflow.includes(guard), guard);

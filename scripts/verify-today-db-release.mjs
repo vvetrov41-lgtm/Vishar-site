@@ -95,8 +95,10 @@ export function verifyTodayLineage(source) {
     ['20261112220000', '20261113010000'],
     // Audit: buffer signed WhatsApp failed statuses before send acknowledgement.
     ['20261113010000', '20261113100000'],
-    // PR #1264: only the staged clean WhatsApp 24h v5 Meta candidate.
-    ['20261113100000', '20261113120000'],
+    // PR #1259: profile-scoped ChatGPT Plugin OAuth status, no client sends.
+    ['20261113100000', '20261113110000'],
+    // PR #1264: stage clean 24h Meta candidate, keep approved v4 active.
+    ['20261113110000', '20261113120000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
@@ -106,6 +108,36 @@ export function verifyTodayLineage(source) {
   if (pending[0] <= remote.at(-1)) throw new Error('Out-of-order production migration');
   return pending[0];
 }
+
+/**
+ * Exact two-file staging exception for the already merged 13 Nov SQL.
+ * The ordinary one-pending verification below is NOT weakened.
+ */
+export function deferredTodayMigration(source) {
+  const rows = source.replaceAll(String.fromCharCode(96), '').split('\n')
+    .map((line) => line.match(/^\s*(\d*)\s*\|\s*(\d*)\s*\|/)).filter(Boolean);
+  if (!rows.length) throw new Error('No migration rows to stage');
+  const local = rows.map((r) => r[1]).filter(Boolean);
+  const remote = rows.map((r) => r[2]).filter(Boolean);
+  if (!remote.length || new Set(local).size !== local.length
+      || new Set(remote).size !== remote.length
+      || remote.some((v) => !local.includes(v))
+      || remote.some((v,i) => i && v <= remote[i-1])) {
+    throw new Error('Unknown, duplicate or unordered migration history');
+  }
+  const pending = local.filter((v) => !remote.includes(v));
+  if (remote.at(-1) === '20261113100000'
+      && pending.length === 2
+      && pending[0] === '20261113110000'
+      && pending[1] === '20261113120000'
+      && local.slice(0,remote.length).every((v,i) => v === remote[i])) {
+    return '20261113120000_whatsapp_reminder_24h_clean_v5.sql';
+  }
+  // All other states must pass the existing strict one-pending release gate.
+  verifyTodayLineage(source);
+  return null;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   console.log(`Validated production head and sole pending migration: ${verifyTodayLineage(readFileSync(process.argv[2], 'utf8'))}`);
 }
