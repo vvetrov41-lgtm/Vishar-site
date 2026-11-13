@@ -57,5 +57,14 @@ select is(
   'Disabling the independent gate returns no candidates');
 reset role;
 
+-- The last-five retention deletes provider IDs. A recent-message watermark must
+-- still stop old IDs being reprocessed if they return in the 20-message scan.
+select ok(position('recent.occurred_at >= x.occurred_at' in
+  pg_get_functiondef('public.service_select_background_gmail_ai_candidates(uuid,text,jsonb)'::regprocedure)) > 0,
+  'Selector ignores dates already superseded after oldest ID is pruned');
+select ok(position('recent.occurred_at >= p_occurred_at' in
+  pg_get_functiondef('public.service_record_background_gmail_ai_message(uuid,uuid,text,text,text,text,text,text,timestamptz)'::regprocedure)) > 0,
+  'Writer rechecks chronology immediately before saving client AI excerpt');
+
 select * from finish();
 rollback;
