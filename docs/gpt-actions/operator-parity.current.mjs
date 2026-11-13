@@ -57,6 +57,7 @@ export const PARITY_METADATA = Object.freeze({
     list_assignable_profiles: 'Assignee picker feeding enquiries.assign; covered by enquiries.artist_staff.list.',
     get_gpt_action_consent_summary: 'Renders the GPT OAuth consent screen itself (gpt.oauth.consent).',
     get_gpt_consent_details: 'Renders the GPT OAuth consent screen itself (gpt.oauth.consent).',
+    refresh_my_chatgpt_plugin_auth_status: 'Own-profile in-app OAuth diagnostic and reconnection warning. The ChatGPT connector cannot independently validate its own inaccessible session; never expose an operator action or broad credential lookup.',
     prepare_enquiry_reference_upload: 'Step of files.device_upload: signs a Storage upload for local bytes.',
     finalize_enquiry_reference_upload: 'Step of files.device_upload: seals bytes the browser just uploaded.',
     cancel_enquiry_reference_upload: 'Step of files.device_upload: abandons an unfinished browser upload.',
