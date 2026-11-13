@@ -59,6 +59,7 @@ begin
       from public.integration_outbox o
       where o.artist_id = p_artist_id
         and o.kind = 'whatsapp_message'::public.outbox_kind
+        and o.status = 'leased'::public.outbox_status
         and o.provider_send_started_at >= now() - interval '15 minutes'
     ) then
       insert into crm_private.whatsapp_preack_failed_status(
