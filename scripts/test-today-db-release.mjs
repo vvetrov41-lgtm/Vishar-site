@@ -425,6 +425,21 @@ assert.throws(() => verifyTodayLineage(oauthOnly.replace(
   '20261113110000 | |', '20261113120000 | |')),
   'v5 cannot skip the prior OAuth migration');
 
+// A personal-conversation notice clean-up is permitted only after production
+// confirms every previously applied (including remote-reconciled) migration.
+const personalNoticeLineage = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261113155317 | 20261113155317 | t',
+  ' 20261113170000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(personalNoticeLineage), '20261113170000');
+assert.equal(deferredTodayMigration(personalNoticeLineage), null);
+for (const invalid of [
+  personalNoticeLineage.replace('20261113170000 | |', '20261113170001 | |'),
+  personalNoticeLineage.replace('20261113155317 | 20261113155317', '20261113155317 | '),
+  personalNoticeLineage + '\n 20261113170100 | | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
+
 // Both gate helpers and immutable migration files must remain inside release.
 const dbReleaseWorkflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of [
@@ -458,11 +473,12 @@ const visitOutcomes = [
   ' 20261113153028 | 20261113153028 | t',
   ' 20261113155152 | 20261113155152 | t',
   ' 20261113155317 | 20261113155317 | t',
+  ' 20261113170000 | 20261113170000 | t',
   ' 20261113180000 | | t',
 ].join('\n');
 assert.equal(verifyTodayLineage(visitOutcomes), '20261113180000');
 assert.equal(deferredTodayMigration(visitOutcomes), null);
 for (const bad of [
-  visitOutcomes.replace('20261113155317 | 20261113155317', '20261113155317 | '),
+  visitOutcomes.replace('20261113170000 | 20261113170000', '20261113170000 | '),
   visitOutcomes + '\n 20261113190000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));

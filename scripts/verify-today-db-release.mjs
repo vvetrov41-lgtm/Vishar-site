@@ -103,9 +103,11 @@ export function verifyTodayLineage(source) {
     ['20261113120000', '20261113130000'],
     // Audit: notify the artist about newly missed aftercare; no client send.
     ['20261113130000', '20261113143000'],
-    // Visit outcomes in Today, after the three applied 13 Nov lifecycle/alert
-    // migrations were recovered byte-for-byte into the repository.
-    ['20261113155317', '20261113180000'],
+    // Only close unread reply-overdue notices for conversations explicitly marked personal.
+    ['20261113155317', '20261113170000'],
+    // Visit outcomes in Today: one additive migration after the personal-chat
+    // reply-alert cleanup (#1275) is live.
+    ['20261113170000', '20261113180000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
