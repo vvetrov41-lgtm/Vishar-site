@@ -108,6 +108,9 @@ export function verifyTodayLineage(source) {
     // Visit outcomes in Today: one additive migration after the personal-chat
     // reply-alert cleanup (#1275) is live.
     ['20261113170000', '20261113180000'],
+    // Phase 3: make the outcome card available from a session's actual start.
+    // One RPC helper only; keep the existing ledger and scheduler untouched.
+    ['20261113180000', '20261113210000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
