@@ -8,6 +8,7 @@
 // bounded codes. Model quality is measured separately by the guarded live eval
 // (scripts/ai-evals/run-live-eval.mjs), which reuses these fixtures and checks.
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
 import { checkClientState, checkEnquiry, checkVision } from './ai-evals/assertions.mjs';
 import { projectClientStateInput } from '../workers/lib/crm-agent.js';
@@ -42,6 +43,27 @@ const answer = ({ stage = 'gathering_information', waiting = 'artist', action = 
     promises_to_client: [], waiting_on: waiting, last_interaction: null, discussed: discussed(disc),
   },
   next_action: { action_type: action, reason: 'Next step.', priority: 'normal', draft_reply: draft, missing_information: missing },
+});
+
+const liveEvalPlan = JSON.parse(readFileSync(new URL('./ai-evals/live-variants.json', import.meta.url), 'utf8'));
+
+await test('live routing evaluation covers the production v2 contract and fallback candidates', () => {
+  const variants = liveEvalPlan.variants.filter((row) => row.task === 'crm_client_state');
+  assert.ok(variants.length >= 4, 'at least four state candidates are measured');
+  assert.ok(variants.every((row) => row.variant.contract === 'v2'),
+    'v1 results must not be mistaken for production v2 results');
+  assert.ok(variants.some((row) => row.variant.provider === 'workers_ai' && !row.variant.model),
+    'the current Llama model remains the baseline');
+  assert.ok(variants.some((row) => row.variant.model === '@cf/google/gemma-4-26b-a4b-it'),
+    'Gemma is explicitly measured on the same CRM contract');
+  assert.ok(variants.some((row) => row.variant.provider === 'qwen' && row.variant.thinking === 'off'),
+    'Qwen without thinking is evaluated before replacing its fallback');
+  assert.ok(variants.every((row) => Number.isInteger(row.variant.timeoutMs)
+    && row.variant.timeoutMs <= 60_000), 'live evaluation timeouts remain bounded');
+  const vision = liveEvalPlan.variants.filter((row) => row.task === 'vision_reference_extraction');
+  assert.deepEqual(new Set(vision.map((row) => row.variant.provider)),
+    new Set(['qwen', 'workers_ai']), 'vision extraction compares both deployed tiers');
+  assert.ok(liveEvalPlan.maxCalls <= 220, 'the guarded probe retains its call budget');
 });
 
 // ---------------------------------------------------------------------------
