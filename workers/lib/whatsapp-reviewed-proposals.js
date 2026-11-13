@@ -17,7 +17,6 @@ const KINDS = Object.freeze({
   reminder_24h: 'vishar_lifecycle_reminder_24h_v3',
   reminder_consultation: 'vishar_lifecycle_consultation_v4',
   reminder_24h_button: 'vishar_lifecycle_reminder_24h_v4',
-  reminder_24h_clean: 'vishar_lifecycle_reminder_24h_v5',
   reminder_consultation_button: 'vishar_lifecycle_consultation_v5',
   reminder_consultation_directions: 'vishar_lifecycle_consultation_v6',
   reminder_consultation_video: 'vishar_lifecycle_consultation_video_v1',
@@ -46,9 +45,6 @@ function definition(target) {
       || !new RegExp('^https://' + domain.replace(/\./g, '\\.') + '/arrival/[0-9a-f]{32}/$').test(url)
       || faq !== 'https://' + domain + '/faq/') {
     throw new Error('Invalid reviewed WhatsApp identity or link');
-  }
-  if (target.kind === 'reminder_24h_clean' && target.artist_id !== VLADIMIR_ID) {
-    throw new Error('Reviewed clean 24h reminder is only configured for Vladimir');
   }
   if (target.kind === 'booking_tattoo_cash' && target.artist_id !== VLADIMIR_ID) {
     throw new Error('Cash-preference tattoo card is only configured for Vladimir');
@@ -175,23 +171,6 @@ function definition(target) {
       'Please open the arrival instructions using the button below before coming.',
       'Your booking is already confirmed, so there is no need to confirm again.',
       'If you need to change the time, use the other button.',
-      '',
-      'See you tomorrow!',
-    ].join('\n');
-    example=['Alex','12:00'];
-    buttons=[
-      {type:'URL',text:'Arrival instructions',url},
-      {type:'QUICK_REPLY',text:'Need another time'},
-    ];
-  } else if (target.kind === 'reminder_24h_clean') {
-    // Meta reviews a new identity. Keep the approved v4 contract byte-identical.
-    // Booking confirmation state is internal and must not appear in client copy.
-    text=[
-      'Hi {{1}},',
-      '',
-      'Just a reminder that your tattoo session starts tomorrow at {{2}}.',
-      '',
-      'Please check the arrival instructions before coming.',
       '',
       'See you tomorrow!',
     ].join('\n');

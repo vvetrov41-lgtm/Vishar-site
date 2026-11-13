@@ -372,6 +372,21 @@ for (const invalid of [
 ]) assert.throws(() => verifyTodayLineage(invalid));
 
 
+// Phase 2: only the profile-scoped ChatGPT Plugin OAuth notice migration
+// may follow the live 20261113100000 WhatsApp race correction. The
+// independent reply-overdue and WhatsApp-v5 migrations must not be included.
+const chatgptOAuthLineage = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261113100000 | 20261113100000 | t',
+  ' 20261113110000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(chatgptOAuthLineage), '20261113110000');
+for (const bad of [
+  chatgptOAuthLineage.replace('20261113110000 | |', '20261113120000 | |'),
+  chatgptOAuthLineage + '\n 20261113120000 | | t',
+  chatgptOAuthLineage.replace('20261113100000 | 20261113100000', '20261113100000 | '),
+]) assert.throws(() => verifyTodayLineage(bad));
+
 // Audit 2026-11-13: exactly one bounded Meta status-race correction may
 // follow the latest verified production head. Never include historical SQL.
 const metaPreackLineage=[
@@ -383,18 +398,3 @@ assert.equal(verifyTodayLineage(metaPreackLineage), '20261113100000');
 assert.throws(() => verifyTodayLineage(metaPreackLineage.replace(
   '20261113100000 | |', '20261113100001 | |')));
 assert.throws(() => verifyTodayLineage(metaPreackLineage+'\n 20261113100100 | | t'));
-
-// PR #1264 stages only the client-facing 24h v5 candidate; v4 stays live.
-// A missing production predecessor, extra migration, or unrecognized name fails.
-const clean24hV5=[
-  ' Local | Remote | Time (UTC)',
-  ' 20261113100000 | 20261113100000 | t',
-  ' 20261113120000 | | t',
-].join('\n');
-assert.equal(verifyTodayLineage(clean24hV5),'20261113120000');
-for (const invalid of [
-  clean24hV5+'\n 20261113130000 | | t',
-  clean24hV5.replace('20261113120000 | |', '20261113120001 | |'),
-  clean24hV5.replace('20261113100000 | 20261113100000', '20261113100000 | '),
-  clean24hV5+'\n | 20261113130000 | t',
-]) assert.throws(()=>verifyTodayLineage(invalid));
