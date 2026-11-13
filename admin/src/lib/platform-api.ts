@@ -86,6 +86,12 @@ function hasRecoveredSinceError(status: IntegrationStatus): boolean {
   return Date.parse(status.last_success_at) >= Date.parse(status.last_error_at);
 }
 
+/** Profile-scoped Supabase OAuth evidence. This is not a live ChatGPT tool probe. */
+export interface ChatgptPluginAuthStatus {
+  connection_state: 'not_configured' | 'authorization_present' | 'reconnect_required' | 'unknown';
+  last_oauth_refresh_at: string | null;
+}
+
 export type NotificationStatus = 'pending' | 'delivered' | 'read' | 'dismissed';
 export type NotificationPriority = 'low' | 'normal' | 'high';
 
@@ -201,6 +207,19 @@ export function createPlatformApi(client: CrmClient) {
         await client.rpc('list_integration_status'),
         'load integrations',
       );
+    },
+
+    async refreshMyChatgptPluginAuthStatus(): Promise<ChatgptPluginAuthStatus> {
+      const result = await client.rpc('refresh_my_chatgpt_plugin_auth_status');
+      if (result.error || !Array.isArray(result.data) || result.data.length !== 1) {
+        throw new ApiError(apiMessage('Could not verify ChatGPT Plugin OAuth authorization.'), result.error);
+      }
+      const row = result.data[0] as Partial<ChatgptPluginAuthStatus>;
+      if (!row || !['not_configured', 'authorization_present', 'reconnect_required', 'unknown'].includes(row.connection_state ?? '')
+        || (row.last_oauth_refresh_at !== null && typeof row.last_oauth_refresh_at !== 'string')) {
+        throw new ApiError(apiMessage('ChatGPT Plugin OAuth status had an invalid response.'));
+      }
+      return row as ChatgptPluginAuthStatus;
     },
 
     async listNotifications(
