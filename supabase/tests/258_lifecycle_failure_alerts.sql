@@ -88,6 +88,12 @@ begin
   -- Lifecycle jobs are unique per rule/session. Each distinct failure needs
   -- its own appointment, rather than bypassing the production dedupe index.
   v_session.id := gen_random_uuid();
+  -- Each synthetic failure belongs to a distinct appointment block, so a
+  -- required reminder is not mistaken for a suppressed repeat.
+  v_session.start_at := date_trunc('day',now())
+    + interval '3 days' * (select count(*)::int from public.sessions where artist_id=p_artist)
+    + interval '10 hours';
+  v_session.end_at := v_session.start_at + interval '7 hours';
   insert into public.sessions (
     id,artist_id,client_id,project_id,appointment_type,start_at,end_at,status
   ) values (
