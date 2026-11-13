@@ -12,20 +12,27 @@ import { readFileSync, appendFileSync } from 'node:fs';
 import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, TRANSLATION_FIXTURES, VISION_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
 import { checkAnswer } from './assertions.mjs';
 import { toStoredClientState } from '../../workers/lib/ai/client-state-schema.js';
+import { validateProductionEvalPlan, classifyProductionEvalStop } from './production-budget.mjs';
 
+const plan = JSON.parse(readFileSync(new URL('./live-variants.json', import.meta.url), 'utf8'));
+const requested = process.env.EVAL_VARIANTS
+  ? process.env.EVAL_VARIANTS.split(',').map((id) => id.trim()).filter(Boolean)
+  : plan.only;
+// Check the complete production budget before opening the probe endpoint.
+const budget = validateProductionEvalPlan(plan, EVAL_FIXTURE_IDS, requested);
+if (process.argv.includes('--preflight')) {
+  console.log(`AI eval preflight: ${budget.calls} synthetic calls for ${budget.variants.length} variants`);
+  process.exit(0);
+}
 const endpoint = process.env.ENDPOINT;
 const token = process.env.PROBE_TOKEN;
 if (!endpoint || !token) throw new Error('ENDPOINT and PROBE_TOKEN are required');
-const plan = JSON.parse(readFileSync(new URL('./live-variants.json', import.meta.url), 'utf8'));
-// A probe branch may narrow the run with `only` in live-variants.json.
-const only = (process.env.EVAL_VARIANTS || (plan.only ?? []).join(','))
-  .split(',').map((v) => v.trim()).filter(Boolean);
+const only = budget.variants.map((variant) => variant.id);
 
 // The TattooAI Worker applies its public per-IP write limit (20 POSTs a
 // minute) to the probe path too. Unpaced, fast-failing variants used that
 // budget up and every later call measured our own limiter, not a model.
 const MIN_CALL_INTERVAL_MS = Number(plan.minCallIntervalMs ?? 3500);
-const RATE_LIMIT_WAIT_MS = 61_000;
 const sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); });
 let lastCallAt = 0;
 
@@ -43,7 +50,7 @@ const mean = (values) => (values.length ? Math.round(values.reduce((a, b) => a +
 const PROPAGATION_WAIT_MS = 10_000;
 const MAX_PROPAGATION_RETRIES = 3;
 
-async function call(task, fixture, variant, retried = false, propagationRetries = 0) {
+async function call(task, fixture, variant, propagationRetries = 0) {
   const wait = lastCallAt + MIN_CALL_INTERVAL_MS - Date.now();
   if (wait > 0) await sleep(wait);
   lastCallAt = Date.now();
@@ -55,19 +62,15 @@ async function call(task, fixture, variant, retried = false, propagationRetries 
   });
   if (response.status === 404 && propagationRetries < MAX_PROPAGATION_RETRIES) {
     await sleep(PROPAGATION_WAIT_MS);
-    return call(task, fixture, variant, retried, propagationRetries + 1);
+    return call(task, fixture, variant, propagationRetries + 1);
   }
-  if (response.status === 429 && !retried) {
-    // One bounded wait for the limiter window, then the call is measured.
-    await sleep(RATE_LIMIT_WAIT_MS);
-    return call(task, fixture, variant, true, propagationRetries);
-  }
+  // Never retry HTTP 429 against a production account: it may mean a
+  // permanently exhausted daily Neuron allocation rather than an IP limiter.
   if (!response.ok) return { httpStatus: response.status };
   return response.json();
 }
 
 let calls = 0;
-let quotaStreak = 0;
 let stopped = null;
 const report = [];
 for (const entry of plan.variants) {
@@ -86,14 +89,13 @@ for (const entry of plan.variants) {
   for (let repeat = 0; repeat < plan.repeats; repeat += 1) {
     for (const fixture of fixtures) {
       if (calls >= plan.maxCalls || stopped) break;
-      if (quotaStreak >= 3) { stopped = 'quota_exhausted'; break; }
       calls += 1;
       let result;
       try { result = await call(entry.task, fixture, entry.variant); } catch { result = { httpStatus: 0 }; }
       const first = Array.isArray(result.attempts) ? result.attempts[0] : null;
-      // Stop condition: a spent allocation fails every call the same way.
-      // Three in a row end the whole run instead of burning the plan.
-      quotaStreak = /quota|4006|3036/.test(String(first?.errorDetail ?? '')) ? quotaStreak + 1 : 0;
+      // Stop after the first provider quota signal. The reserved budget
+      // belongs to normal CRM traffic, not synthetic comparisons.
+      stopped = classifyProductionEvalStop(first, result.httpStatus) ?? stopped;
       // A v2 answer is checked in the stored shape: stage and waiting side
       // are deterministic there, the semantic checks still apply.
       const scored = result.ok && result.answer && entry.variant?.contract === 'v2'
@@ -149,3 +151,6 @@ const table = ['| variant | model | runs | valid | checks pass | p50 ms | p95 ms
   ...report.map((r) => `| ${r.id} | ${r.model} | ${r.runs} | ${r.validRate} | ${r.checkPassRate} | ${r.p50Ms} | ${r.p95Ms} | ${r.meanPromptTokens} | ${r.meanCompletionTokens} | ${r.meanReasoningTokens} | ${Object.entries(r.codes).map(([k, v]) => `${k}=${v}`).join(', ')} |`)];
 console.log(table.join('\n'));
 if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## CRM AI live eval\n\n${table.join('\n')}\n`);
+
+// A rate/quota-limited evaluation is not a passing model comparison.
+if (stopped) process.exitCode = 2;

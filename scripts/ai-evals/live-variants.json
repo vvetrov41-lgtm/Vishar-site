@@ -1,6 +1,6 @@
 {
-  "repeats": 2,
-  "maxCalls": 220,
+  "repeats": 1,
+  "maxCalls": 5,
   "variants": [
     {
       "id": "intake-qwen-full",
@@ -141,5 +141,20 @@
         "timeoutMs": 60000
       }
     }
-  ]
+  ],
+  "only": [
+    "state-llama-v2",
+    "state-gemma-v2",
+    "state-qwen-v2-nothink",
+    "vision-qwen",
+    "vision-gemma"
+  ],
+  "fixtures": {
+    "crm_client_state": [
+      "vague_enquiry"
+    ],
+    "vision_reference_extraction": [
+      "synthetic_star"
+    ]
+  }
 }

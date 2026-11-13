@@ -56,6 +56,10 @@ jobs:
       - name: Install locked tooling
         run: npm ci
 
+      - name: Validate synthetic production AI budget before opening probe
+        shell: bash
+        run: node scripts/ai-evals/run-live-eval.mjs --preflight
+
       - name: Confirm the endpoint is closed before the probe window opens
         shell: bash
         run: |
