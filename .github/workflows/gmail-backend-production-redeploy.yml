@@ -151,10 +151,19 @@ jobs:
           pre_source="$(jq -r '.result.annotations["workers/tag"] // ""' <<<"$pre_version_state")"
           if [[ "$pre_source" =~ ^[0-9a-f]{40}$ ]]; then
             git merge-base --is-ancestor "$pre_source" "$GITHUB_SHA"
+          elif [ "$pre_version" = 'e3ab9d82-7d65-4c27-ad34-bc98003dac68' ]; then
+            # Verified from the completed 2026-11-09 08:51 UTC Gmail production
+            # rollout, run 42588957009, job 129065546457, exact version ID
+            # emitted at 08:51:51. That release used canonical SHA below
+            # before tagged version annotations were standard for Gmail.
+            git merge-base --is-ancestor '52dbfce5c4500a1b37a769fec1f90d11e8095da5' "$GITHUB_SHA"
+          elif [ "$pre_version" = '139682f0-c10b-4637-be2f-b17941ad0cba' ]; then
+            # Previously inventoried legacy untagged version.
+            :
           else
-            # The single pre-tag deployment verified in the production inventory.
-            # Any other untraceable live version must be reviewed before overwrite.
-            [ "$pre_version" = '139682f0-c10b-4637-be2f-b17941ad0cba' ]
+            # Unknown untagged source must never be overwritten.
+            echo 'Unrecognized untagged Gmail production version' >&2
+            exit 1
           fi
           echo "Gmail preflight version=$pre_version source=${pre_source:-approved-pre-tag-version}"
           echo "state_id=$state_id" >> "$GITHUB_OUTPUT"
