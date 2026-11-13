@@ -114,7 +114,11 @@ export async function captureKnownGmailReplies({
   }
   const requested = new Set();
 
-  for (const row of selected) {
+  // Capture oldest -> newest. If a mailbox received two replies between
+  // scans, write both in chronology so the database's monotonic watermark
+  // can reject old replays without discarding the second new reply.
+  for (const row of [...selected].sort((a, b) =>
+    Date.parse(a?.occurred_at || '') - Date.parse(b?.occurred_at || ''))) {
     const candidate = checkedSelectedRow(row, candidates);
     if (!candidate || requested.has(candidate.provider_message_id)) {
       result.failed += 1;
@@ -158,7 +162,7 @@ export async function captureKnownGmailReplies({
       }, fetchImpl);
       if (saved?.status === 'recorded') result.recorded += 1;
       else if (saved?.status === 'existing') result.existing += 1;
-      else if (['disabled','outside_capture_window','scope_unavailable','empty'].includes(saved?.status)) result.skipped += 1;
+      else if (['disabled','outside_capture_window','scope_unavailable','empty','older_than_recorded'].includes(saved?.status)) result.skipped += 1;
       else result.failed += 1;
     } catch {
       // A failed individual message must not break the metadata snapshot.
