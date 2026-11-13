@@ -723,6 +723,8 @@ insert into expected_function_acl values
   ('public.assign_workspace_integration(uuid,uuid,text,boolean)', false, true, false),
   ('public.select_artist_integration_route(uuid,public.artist_integration_type,public.integration_route_kind,uuid,uuid)', false, true, false),
   ('public.list_integration_status()', false, true, false),
+  -- Personal ChatGPT Plugin OAuth diagnostic: profile identity and session-only, no credential exposure.
+  ('public.refresh_my_chatgpt_plugin_auth_status()', false, true, false),
   ('public.service_sweep_due_follow_ups(integer)', false, false, true),
   ('public.list_notifications(public.notification_status,integer)', false, true, false),
   ('public.mark_notification_read(uuid)', false, true, false),

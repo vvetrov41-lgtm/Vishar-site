@@ -31,6 +31,9 @@ export function NotificationsPage() {
   // The list is the newest page; whether anything is unread is asked
   // separately, so an unread row older than the page still offers mark-all.
   const state = useAsync(async () => {
+    // Materialise/dismiss only a verified profile OAuth notice before reading
+    // notifications. Failure to inspect OAuth must never hide existing alerts.
+    await Promise.resolve().then(() => api.refreshMyChatgptPluginAuthStatus()).catch(() => null);
     const [items, delivered, pending] = await Promise.all([
       api.listNotifications(),
       api.listNotifications('delivered', 1),
@@ -186,6 +189,7 @@ function NotificationCard({
 }
 
 export function entityLink(notification: CrmNotification): string | null {
+  if (notification.notification_type === 'system.chatgpt_reconnect_required') return '/integrations';
   if (!notification.entity_type || !notification.entity_id) return null;
   switch (notification.entity_type) {
     case 'enquiry': return `/enquiries/${notification.entity_id}`;
