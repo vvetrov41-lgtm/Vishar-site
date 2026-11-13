@@ -90,6 +90,9 @@ export function verifyTodayLineage(source) {
     ['20261112200000', '20261112210000'],
     // Meta-approved Vladimir tattoo cash Utility v3; only after PR #1246.
     ['20261112210000', '20261112220000'],
+    // Post-activation Gmail client excerpts, scoped to known artist/client
+    // and no old enquiry AI. Exactly one additive migration after cash v3.
+    ['20261112220000', '20261113010000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
