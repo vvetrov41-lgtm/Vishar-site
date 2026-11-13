@@ -49,7 +49,7 @@ begin
 
   -- The dedicated, manual, public OAuth client is not the older artist-bound GPT.
   -- Ambiguous/removed client metadata cannot justify a reconnect warning.
-  select count(*)::integer, min(c.id)
+  select count(*)::integer, min(c.id::text)::uuid
     into v_client_count, v_client_id
     from auth.oauth_clients c
    where c.client_name = 'Vishar CRM ChatGPT Plugin'
