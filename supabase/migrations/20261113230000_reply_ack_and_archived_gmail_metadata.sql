@@ -69,6 +69,20 @@ as $fn$
       or (
         r.origin = 'provider_app'
         and i.message_type = 'text'
+        -- A reaction is a local acknowledgement only in an ongoing exchange.
+        -- First-contact reactions and long-running booking choices still wait.
+        and exists (
+          select 1 from public.communication_messages prev
+          where prev.conversation_id = i.conversation_id
+            and prev.artist_id = i.artist_id
+            and prev.direction = 'outbound'
+            and prev.origin in ('crm', 'provider_app')
+            and prev.status in ('sent', 'delivered', 'read')
+            and prev.message_type = 'text'
+            and coalesce(prev.sent_at, prev.provider_timestamp, prev.created_at)
+                  between coalesce(i.provider_timestamp, i.created_at) - interval '24 hours'
+                      and coalesce(i.provider_timestamp, i.created_at)
+        )
         and length(btrim(coalesce(i.body, ''))) between 1 and 160
         and i.body !~ '[?¿؟]'
         and lower(i.body) !~ '\m(can|could|would|will|do|does|did|is|are|when|where|why|how|what|who|which|please|help|need|let|confirm|cancel|change|move|reschedule|book|booking|appointment|session|deposit|pay|paid|payment|refund|price|cost|quote|address|location|date|time|instead|urgent)\M'
