@@ -111,6 +111,8 @@ export function verifyTodayLineage(source) {
     // Phase 3: make the outcome card available from a session's actual start.
     // One RPC helper only; keep the existing ledger and scheduler untouched.
     ['20261113180000', '20261113210000'],
+    // Phase 3 Today: non-mutating expression indexes for incoming/studio message scans.
+    ['20261113210000', '20261113220000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
