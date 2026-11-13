@@ -101,6 +101,8 @@ export function verifyTodayLineage(source) {
     ['20261113110000', '20261113120000'],
     // Phase 2: dismiss only proven answered reply-overdue notices after v5 stage.
     ['20261113120000', '20261113130000'],
+    // Audit: notify the artist about newly missed aftercare; no client send.
+    ['20261113130000', '20261113143000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
