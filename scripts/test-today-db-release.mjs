@@ -372,6 +372,21 @@ for (const invalid of [
 ]) assert.throws(() => verifyTodayLineage(invalid));
 
 
+// Phase 2: only the profile-scoped ChatGPT Plugin OAuth notice migration
+// may follow the live 20261113100000 WhatsApp race correction. The
+// independent reply-overdue and WhatsApp-v5 migrations must not be included.
+const chatgptOAuthLineage = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261113100000 | 20261113100000 | t',
+  ' 20261113110000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(chatgptOAuthLineage), '20261113110000');
+for (const bad of [
+  chatgptOAuthLineage.replace('20261113110000 | |', '20261113120000 | |'),
+  chatgptOAuthLineage + '\\n 20261113120000 | | t',
+  chatgptOAuthLineage.replace('20261113100000 | 20261113100000', '20261113100000 | '),
+]) assert.throws(() => verifyTodayLineage(bad));
+
 // Audit 2026-11-13: exactly one bounded Meta status-race correction may
 // follow the latest verified production head. Never include historical SQL.
 const metaPreackLineage=[

@@ -95,6 +95,9 @@ export function verifyTodayLineage(source) {
     ['20261112220000', '20261113010000'],
     // Audit: buffer signed WhatsApp failed statuses before send acknowledgement.
     ['20261113010000', '20261113100000'],
+    // Profile-only ChatGPT Plugin OAuth status and in-app reconnect warning;
+    // one additive migration following the confirmed WhatsApp status-race fix.
+    ['20261113100000', '20261113110000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
