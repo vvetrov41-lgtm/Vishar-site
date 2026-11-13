@@ -60,8 +60,8 @@ insert into public.sessions(
 ('f3821000-0000-4000-8000-0000000000'||lpad(n::text,2,'0'))::uuid,
 ('f3822000-0000-4000-8000-0000000000'||lpad(n::text,2,'0'))::uuid,
 'tattoo_session','completed',
-now()-(case when n=4 then interval '6 days 4 hours' else interval '4 hours' end),
-now()-(case when n=4 then interval '6 days 2 hours' else interval '2 hours' end)
+date_trunc('hour',now())-(case when n=4 then interval '6 days 4 hours' else interval '4 hours' end),
+date_trunc('hour',now())-(case when n=4 then interval '6 days 2 hours' else interval '2 hours' end)
 from generate_series(1,6) n;
 
 insert into public.automation_rules(
