@@ -292,6 +292,8 @@ export const API_MESSAGES = {
   'Could not snooze that reminder.': 'Не удалось отложить напоминание. Изменения не сохранены — попробуйте ещё раз.',
   'Could not transfer ownership.': 'Не удалось передать владение. Изменения не сохранены — попробуйте ещё раз.',
   'Could not update Telegram notifications.': 'Не удалось изменить уведомления Telegram. Изменения не сохранены — попробуйте ещё раз.',
+  'Could not verify ChatGPT Plugin OAuth authorization.': 'Не удалось проверить авторизацию плагина ChatGPT. Попробуйте обновить страницу.',
+  'ChatGPT Plugin OAuth status had an invalid response.': 'CRM получил некорректный ответ о состоянии авторизации плагина ChatGPT.',
   'Could not update notifications.': 'Не удалось обновить уведомления. Изменения не сохранены — попробуйте ещё раз.',
   'Could not update that conversation.': 'Не удалось обновить переписку. Изменения не сохранены — попробуйте ещё раз.',
   'Could not update that form or website source.': 'Не удалось сохранить эту форму или сайт. Изменения не сохранены — попробуйте ещё раз.',
