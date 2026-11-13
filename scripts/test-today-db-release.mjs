@@ -370,3 +370,16 @@ for (const invalid of [
   gmailAiCapture.replace('20261112220000 | 20261112220000', '20261112220000 | '),
   gmailAiCapture + '\n | 20261113010900 | t',
 ]) assert.throws(() => verifyTodayLineage(invalid));
+
+
+// Audit 2026-11-13: exactly one bounded Meta status-race correction may
+// follow the latest verified production head. Never include historical SQL.
+const metaPreackLineage=[
+  ' Local | Remote | Time (UTC)',
+  ' 20261113010000 | 20261113010000 | t',
+  ' 20261113100000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(metaPreackLineage), '20261113100000');
+assert.throws(() => verifyTodayLineage(metaPreackLineage.replace(
+  '20261113100000 | |', '20261113100001 | |')));
+assert.throws(() => verifyTodayLineage(metaPreackLineage+'\n 20261113100100 | | t'));

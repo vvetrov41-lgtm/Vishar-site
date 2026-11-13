@@ -93,6 +93,8 @@ export function verifyTodayLineage(source) {
     // Post-activation Gmail client excerpts, scoped to known artist/client
     // and no old enquiry AI. Exactly one additive migration after cash v3.
     ['20261112220000', '20261113010000'],
+    // Audit: buffer signed WhatsApp failed statuses before send acknowledgement.
+    ['20261113010000', '20261113100000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
