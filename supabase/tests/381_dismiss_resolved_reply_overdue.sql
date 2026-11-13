@@ -64,6 +64,10 @@ values
 select is((select status::text from public.notifications
   where entity_id='ee310000-0000-4000-8000-000000000011'),
   'dismissed','accepted artist reply dismisses the old warning');
+select ok(crm_private.unanswered_waiting_since('conversation',
+  'a1111111-1111-4111-8111-111111111111',
+  'ee310000-0000-4000-8000-000000000011') is null,
+  'the authoritative outstanding-reply rule agrees that the client was answered');
 select ok((select read_at is null from public.notifications
   where entity_id='ee310000-0000-4000-8000-000000000011'),
   'automatic dismissal never pretends the artist read the warning');
