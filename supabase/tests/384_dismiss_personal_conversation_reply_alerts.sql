@@ -25,10 +25,10 @@ insert into public.communication_conversations
 values
  ('c8410000-0000-4000-8000-000000000011',
   'a1111111-1111-4111-8111-111111111111','instagram',
-  'vladimir-production','synthetic-personal-notice-384-1'),
+  'vladimir-production','38400000011'),
  ('c8410000-0000-4000-8000-000000000012',
   'a1111111-1111-4111-8111-111111111111','instagram',
-  'vladimir-production','synthetic-personal-notice-384-2');
+  'vladimir-production','38400000012');
 
 insert into public.notifications
  (id,recipient_profile_id,artist_id,notification_type,title,
