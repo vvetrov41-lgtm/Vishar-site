@@ -95,6 +95,8 @@ export function verifyTodayLineage(source) {
     ['20261112220000', '20261113010000'],
     // Audit: buffer signed WhatsApp failed statuses before send acknowledgement.
     ['20261113010000', '20261113100000'],
+    // PR #1264: only the staged clean WhatsApp 24h v5 Meta candidate.
+    ['20261113100000', '20261113120000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
