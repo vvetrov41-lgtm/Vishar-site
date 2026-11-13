@@ -108,6 +108,44 @@ const changedFaq=structuredClone(reminder72hCandidate);
 changedFaq.components.at(-1).buttons[2].url='https://different.example/faq/';
 assert.equal(__testing.matches(changedFaq,reminder72hCandidate),false);
 
+// Vladimir's new v5 reminder is client-facing only. Confirmation and button
+// selection remain internal logic; Meta v4 remains unchanged until promotion.
+const clean24Target={
+  artist_id:artists[0][0],
+  arrival_guide_url:artists[0][1],
+  preparation_guide_url:artists[0][2],
+  kind:'reminder_24h_clean',
+  template_name:'vishar_lifecycle_reminder_24h_v5',
+  template_language:'en_GB',
+};
+const clean24=__testing.definition(clean24Target);
+const cleanBody=clean24.components.find(c=>c.type==='BODY').text;
+const cleanButtons=clean24.components.find(c=>c.type==='BUTTONS').buttons;
+assert.equal(cleanBody,[
+  'Hi {{1}},',
+  '',
+  'Just a reminder that your tattoo session starts tomorrow at {{2}}.',
+  '',
+  'Please check the arrival instructions before coming.',
+  '',
+  'See you tomorrow!',
+].join('\n'));
+assert.deepEqual(cleanButtons.map(b=>[b.type,b.text]),[
+  ['URL','Arrival instructions'],['QUICK_REPLY','Need another time'],
+]);
+assert.equal(cleanButtons[0].url,artists[0][1]);
+assert.ok(!/already confirmed|confirm again|other button|no need to reply/i.test(cleanBody));
+assert.ok(__testing.matches({...clean24,id:'1234567890123',status:'PENDING'},clean24));
+assert.throws(()=>__testing.definition({
+  ...clean24Target,artist_id:artists[1][0],
+  arrival_guide_url:artists[1][1],preparation_guide_url:artists[1][2],
+}));
+const old24=__testing.definition({
+  ...clean24Target,
+  kind:'reminder_24h_button',template_name:'vishar_lifecycle_reminder_24h_v4',
+});
+assert.ok(old24.components[0].text.includes('Your booking is already confirmed'));
+
 // Replacement Meta templates have new identities: no editing previously approved URL buttons.
 for (const [kind,template_name] of [
   ['booking_consultation_directions','booking_card_consultation_v3'],

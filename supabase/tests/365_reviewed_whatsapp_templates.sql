@@ -19,15 +19,26 @@ SELECT is(
   WHERE artist_id IN (
     'a1111111-1111-4111-8111-111111111111',
     'a2222222-2222-4222-8222-222222222222'
-  ) AND kind<>'booking_tattoo_cash'),18,
+  ) AND kind NOT IN ('booking_tattoo_cash','reminder_24h_clean')),18,
  'Twelve original proposals, four reviewed buttons, and two York House proposals'
 );
 
 SELECT is(
  (SELECT count(*)::integer FROM crm_private.whatsapp_template_proposals
   WHERE approval_status='UNKNOWN' AND provider_template_id IS NULL
-    AND kind<>'booking_tattoo_cash'),18,
+    AND kind NOT IN ('booking_tattoo_cash','reminder_24h_clean')),18,
  'All original eighteen proposals begin without invented Meta approval'
+);
+
+SELECT is(
+ (SELECT count(*)::integer FROM crm_private.whatsapp_template_proposals
+   WHERE artist_id='a1111111-1111-4111-8111-111111111111'
+     AND kind='reminder_24h_clean'
+     AND template_name='vishar_lifecycle_reminder_24h_v5'
+     AND template_language='en_GB'
+     AND approval_status='UNKNOWN'
+     AND provider_template_id IS NULL),1,
+ 'New Vladimir 24h copy remains an unapproved Meta candidate, not an active send'
 );
 
 SELECT is(
