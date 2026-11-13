@@ -44,6 +44,12 @@ export const PROVIDERS = Object.freeze({
 export const PROVIDER_IDS = Object.freeze(new Set(Object.keys(PROVIDERS)));
 
 /** Failures the next provider in the chain might survive. */
+// Workers AI and Qwen share the same Cloudflare account's Neuron allocation.
+// The exact Cloudflare account-wide quota error is not a per-model transient 429.
+// Preserve ordinary fallback for model-specific rate limits and provider errors.
+const SHARED_CLOUDFLARE_PROVIDERS = new Set(['qwen', 'workers_ai']);
+const DAILY_NEURON_QUOTA = /^cf_(?:3036|4006)(?:_quota)?$/;
+
 const FALLBACK_CODES = new Set([
   'provider_timeout',
   'provider_input_rejected',
@@ -363,6 +369,13 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
         });
       }
 
+      if (record.errorCode === 'provider_rate_limited'
+          && DAILY_NEURON_QUOTA.test(record.errorDetail ?? '')
+          && candidates.every((entry) => SHARED_CLOUDFLARE_PROVIDERS.has(entry.provider.id))) {
+        // Switching models on the same Cloudflare allocation cannot recover
+        // a spent daily quota. Keep the existing caller-facing error contract.
+        return fail('all_providers_failed', plan.task);
+      }
       if (!FALLBACK_CODES.has(record.errorCode)) {
         return fail(record.errorCode, plan.task);
       }
