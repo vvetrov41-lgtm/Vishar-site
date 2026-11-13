@@ -23,7 +23,7 @@ begin
     'Ack case '||p_n,'ack-386-'||p_n||'@example.test');
   insert into public.communication_conversations
     (id, artist_id, channel, integration_key, external_contact_id, client_id, link_state, state)
-  values (v_conv,v_artist,'whatsapp','ack-test-386','synthetic-386-'||p_n,v_client,'linked','open');
+  values (v_conv,v_artist,'whatsapp','ack-test-386','447700386'||lpad(p_n::text,3,'0'),v_client,'linked','open');
   if p_has_studio then
     insert into public.communication_messages
       (conversation_id,artist_id,channel,direction,origin,status,message_type,body,provider_timestamp,sent_at,created_at)
