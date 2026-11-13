@@ -1,5 +1,5 @@
 import { refreshAccessToken, getProfile } from './lib/google-gmail.js';
-import { captureKnownGmailReplies, MAX_CAPTURE_PER_RUN } from './gmail-client-ai-background.js';
+import { captureKnownGmailReplies } from './gmail-client-ai-background.js';
 
 const GMAIL_API_ORIGIN = 'https://gmail.googleapis.com';
 const CRM_ORIGIN = 'https://crm.vishartattoo.com';
