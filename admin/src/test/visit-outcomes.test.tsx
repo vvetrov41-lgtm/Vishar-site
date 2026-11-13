@@ -109,6 +109,7 @@ describe('visit outcome arithmetic', () => {
     expect(parseMoneyInput('0', { allowZero: true })).toBe(0);
     expect(parseMoneyInput('-5')).toBeNull();
     expect(parseHoursInput('4.5')).toBe(270);
+    expect(parseHoursInput('0.33')).toBe(20); // 20-minute early finish
     expect(parseHoursInput('25')).toBeNull();
     let n = 0;
     const keys = new OperationKeys(() => `op-${++n}`);
@@ -157,12 +158,14 @@ describe('Today visit outcomes', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'Session happened' }));
 
     const hours = within(card).getByLabelText(/Actual working time/);
-    expect(hours).toHaveValue('7');
+    expect(hours).toHaveValue('');
     expect(within(card).getByText(/Not confirmed/)).toBeVisible();
     fireEvent.change(hours, { target: { value: '6.5' } });
     fireEvent.change(within(card).getByLabelText(/Final price, GBP/), { target: { value: '980' } });
     const receivedInput = await within(card).findByLabelText(/Received now, GBP/);
-    await waitFor(() => expect(receivedInput).toHaveValue('730'));
+    // A missing receipt must stay empty; never assume the entire balance was paid.
+    expect(receivedInput).toHaveValue('');
+    fireEvent.change(receivedInput, { target: { value: '730' } });
     fireEvent.click(within(card).getByRole('button', { name: 'Cash' }));
     expect(within(card).getByText(/Paid in total £980.*new money now £730.*balance £0/)).toBeVisible();
 

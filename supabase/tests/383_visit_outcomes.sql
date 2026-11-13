@@ -104,6 +104,40 @@ from (values
   ('e7500000-0000-4000-8000-0000000000f3'::uuid, 'e7c00000-0000-4000-8000-00000000000f'::uuid, null, 'in_person_consultation', 'confirmed', interval '45 minutes', interval '30 minutes', null, 'unpaid')
 ) v(id, client_id, project_id, kind, status, start_offset, duration, price, pay);
 
+-- Availability is governed by the scheduled start, not an arbitrary grace
+-- period. These simulated clock instants use synthetic fixtures and make no
+-- changes to the calendar or the production clock.
+select ok(not exists (
+  select 1 from crm_private.visit_outcome_due(
+    (select id from t_vo_artist),
+    (select start_at - interval '1 millisecond' from public.sessions where id = 'e7500000-0000-4000-8000-0000000000c1')) d
+  where d.session_id = 'e7500000-0000-4000-8000-0000000000c1'),
+  'session outcome is not offered before the scheduled start');
+select ok(exists (
+  select 1 from crm_private.visit_outcome_due(
+    (select id from t_vo_artist),
+    (select start_at from public.sessions where id = 'e7500000-0000-4000-8000-0000000000c1')) d
+  where d.session_id = 'e7500000-0000-4000-8000-0000000000c1'),
+  'session outcome is offered at the exact scheduled start');
+select ok(exists (
+  select 1 from crm_private.visit_outcome_due(
+    (select id from t_vo_artist),
+    (select start_at + interval '20 minutes' from public.sessions where id = 'e7500000-0000-4000-8000-0000000000c1')) d
+  where d.session_id = 'e7500000-0000-4000-8000-0000000000c1'),
+  'a 20-minute session can be confirmed without a 30-minute wait');
+select ok(not exists (
+  select 1 from crm_private.visit_outcome_due(
+    (select id from t_vo_artist),
+    (select end_at - interval '1 millisecond' from public.sessions where id = 'e7500000-0000-4000-8000-0000000000e1')) d
+  where d.session_id = 'e7500000-0000-4000-8000-0000000000e1'),
+  'free consultation outcome remains hidden before its scheduled end');
+select ok(exists (
+  select 1 from crm_private.visit_outcome_due(
+    (select id from t_vo_artist),
+    (select end_at from public.sessions where id = 'e7500000-0000-4000-8000-0000000000e1')) d
+  where d.session_id = 'e7500000-0000-4000-8000-0000000000e1'),
+  'free consultation outcome appears after its scheduled end');
+
 -- D8: a £250 deposit already paid for this session.
 insert into public.payment_requests (id, idempotency_key, artist_id, client_id, project_id,
   session_id, purpose, amount, currency, status)
