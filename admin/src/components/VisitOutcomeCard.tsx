@@ -29,6 +29,7 @@ import {
 import type { Appointment, AppointmentType } from '../lib/appointment-api';
 
 type Step = 'ask' | 'attended' | 'consultation' | 'saved';
+type OutcomeField = 'hours' | 'price' | 'received' | 'method' | 'booking' | 'followDate';
 
 const TATTOO_TYPES: AppointmentType[] = ['tattoo_session', 'touch_up'];
 const METHODS: PaymentMethod[] = ['cash', 'bank_transfer', 'card', 'other'];
@@ -56,6 +57,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
   const [step, setStep] = useState<Step>('ask');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldError, setFieldError] = useState<{ field: OutcomeField; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [refresh, setRefresh] = useState(0);
   const keys = useRef(new OperationKeys());
@@ -131,6 +133,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
     setOutside(Boolean(saved?.paid_outside_crm) || (paidBadge && (context.finance?.deposit_paid ?? 0) + (context.finance?.invoiced_paid ?? 0) === 0));
     setReceived('');
     setError(null);
+    setFieldError(null);
     setNotice(null);
     setStep('attended');
   }, [context]);
@@ -143,6 +146,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
     if (!context) return;
     setBusy(true);
     setError(null);
+    setFieldError(null);
     setNotice(null);
     const request = { sessionId, outcome, details, expectedVersion: context.version };
     try {
@@ -198,18 +202,24 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
     }
   }
 
+  function invalid(field: OutcomeField, message: string) {
+    setFieldError({ field, text: message });
+    setError(null);
+  }
+
   async function saveAttended() {
-    if (workedMinutes == null) { setError(copy.invalidHours); return; }
+    if (busy) return;
+    if (workedMinutes == null) { invalid('hours', copy.invalidHours); return; }
     const details: RecordVisitOutcomeInput['details'] = { worked_minutes: workedMinutes, work_result: work };
     if (notes.trim()) details.notes = notes.trim();
     if (canMoney) {
-      if (priceValue == null) { setError(copy.invalidPrice); return; }
+      if (priceValue == null) { invalid('price', copy.invalidPrice); return; }
       details.final_price = priceValue;
       const amount = outside ? 0 : receivedValue;
-      if (amount == null) { setError(copy.invalidReceived); return; }
-      if (preview.overBalance && !outside) { setError(copy.refusal.over_balance ?? copy.saveFailed); return; }
+      if (amount == null) { invalid('received', copy.invalidReceived); return; }
+      if (preview.overBalance && !outside) { invalid('received', copy.refusal.over_balance ?? copy.saveFailed); return; }
       if (amount > 0) {
-        if (!method) { setError(copy.chooseMethod); return; }
+        if (!method) { invalid('method', copy.chooseMethod); return; }
         if (!await confirmDialog({
           title: copy.receiveConfirmTitle,
           message: `${copy.receiveConfirmMessage} ${formatMoney(amount, currency, language)}`,
@@ -226,16 +236,16 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
   }
 
   async function saveConsultation() {
-    if (!consultChoice) return;
+    if (!consultChoice || busy) return;
     const details: RecordVisitOutcomeInput['details'] = {};
     if (notes.trim()) details.notes = notes.trim();
     if (consultChoice === 'booked') {
-      if (!linked) { setError(copy.chooseBooking); return; }
+      if (!linked) { invalid('booking', copy.chooseBooking); return; }
       details.linked_session_id = linked;
     }
     if ((consultChoice === 'ready_to_book' || consultChoice === 'thinking') && followDate) {
       const when = followUpAt(followDate);
-      if (!when) { setError(copy.invalidDate); return; }
+      if (!when) { invalid('followDate', copy.invalidDate); return; }
       details.follow_up_at = when;
     }
     if (consultChoice === 'declined' && closeEnquiry) details.close_enquiry = true;
@@ -327,6 +337,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
                     setCloseEnquiry(false);
                     setNotes(saved?.notes ?? '');
                     setError(null);
+                    setFieldError(null);
                     setStep('consultation');
                   }}>
                   {copy.consult[choice]}
@@ -349,19 +360,25 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
         <form className="visit-outcome-form" onSubmit={(event) => { event.preventDefault(); void saveAttended(); }}>
           <label className="visit-field">
             {copy.hours}
-            <input inputMode="decimal" value={hours} onChange={(event) => setHours(event.target.value)} aria-describedby={`vo-hours-${sessionId}`} />
+            <input inputMode="decimal" value={hours} aria-invalid={fieldError?.field === 'hours'}
+              aria-describedby={`vo-hours-${sessionId}${fieldError?.field === 'hours' ? ` vo-hours-error-${sessionId}` : ''}`}
+              onChange={(event) => { setHours(event.target.value); if (fieldError?.field === 'hours') setFieldError(null); }} />
             <span className="meta" id={`vo-hours-${sessionId}`}>{copy.hoursHint(minutesToHoursInput(context.session.scheduled_minutes))}</span>
+            {fieldError?.field === 'hours' ? <span id={`vo-hours-error-${sessionId}`} className="visit-field-error" role="alert">{fieldError.text}</span> : null}
           </label>
 
           {canMoney ? (
             <>
               <label className="visit-field">
                 {copy.price(currency)}
-                <input inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} />
+                <input inputMode="decimal" value={price} aria-invalid={fieldError?.field === 'price'}
+                  aria-describedby={fieldError?.field === 'price' ? `vo-price-error-${sessionId}` : undefined}
+                  onChange={(event) => { setPrice(event.target.value); if (fieldError?.field === 'price') setFieldError(null); }} />
+                {fieldError?.field === 'price' ? <span id={`vo-price-error-${sessionId}`} className="visit-field-error" role="alert">{fieldError.text}</span> : null}
                 {suggestion != null ? (
                   <span className="meta">
                     {copy.suggested}: {formatMoney(suggestion, currency, language)}{' '}
-                    {priceValue !== suggestion ? <button type="button" className="badge" onClick={() => setPrice(String(suggestion))}>{copy.useSuggestion}</button> : null}
+                    {priceValue !== suggestion ? <button type="button" className="badge" onClick={() => { setPrice(String(suggestion)); if (fieldError?.field === 'price') setFieldError(null); }}>{copy.useSuggestion}</button> : null}
                   </span>
                 ) : null}
               </label>
@@ -379,7 +396,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
                   </div>
                   {preview.dueBefore !== 0 ? (
                     <label className="visit-check">
-                      <input type="checkbox" checked={outside} onChange={(event) => { setOutside(event.target.checked); if (event.target.checked) setReceived(''); }} />
+                      <input type="checkbox" checked={outside} onChange={(event) => { setOutside(event.target.checked); if (event.target.checked) setReceived(''); setFieldError(null); }} />
                       {copy.paidOutside}
                     </label>
                   ) : null}
@@ -387,18 +404,24 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
                     <>
                       <label className="visit-field">
                         {copy.receivedNow(currency)}
-                        <input inputMode="decimal" value={received} onChange={(event) => setReceived(event.target.value)} />
+                        <input inputMode="decimal" value={received} aria-invalid={fieldError?.field === 'received'}
+                          aria-describedby={fieldError?.field === 'received' ? `vo-received-error-${sessionId}` : undefined}
+                          onChange={(event) => { setReceived(event.target.value); if (fieldError?.field === 'received') setFieldError(null); }} />
+                        {fieldError?.field === 'received' ? <span id={`vo-received-error-${sessionId}`} className="visit-field-error" role="alert">{fieldError.text}</span> : null}
                       </label>
                       {(receivedValue ?? 0) > 0 ? (
-                        <div className="visit-segment" role="group" aria-label={copy.method}>
+                        <div className="visit-segment" role="group" aria-label={copy.method}
+                          aria-describedby={fieldError?.field === 'method' ? `vo-method-error-${sessionId}` : undefined}>
                           {METHODS.map((value) => (
                             <button key={value} type="button" aria-pressed={method === value}
-                              className={method === value ? 'primary' : undefined} onClick={() => setMethod(value)}>
+                              className={method === value ? 'primary' : undefined}
+                              onClick={() => { setMethod(value); if (fieldError?.field === 'method') setFieldError(null); }}>
                               {copy.methods[value]}
                             </button>
                           ))}
                         </div>
                       ) : null}
+                      {fieldError?.field === 'method' ? <span id={`vo-method-error-${sessionId}`} className="visit-field-error" role="alert">{fieldError.text}</span> : null}
                     </>
                   ) : null}
                   {preview.totalPaid != null ? (
@@ -445,7 +468,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
               <div className="visit-segment visit-bookings" role="radiogroup" aria-label={copy.chooseBooking}>
                 {context.bookings.map((booking) => (
                   <button key={booking.id} type="button" role="radio" aria-checked={linked === booking.id}
-                    className={linked === booking.id ? 'primary' : undefined} onClick={() => setLinked(booking.id)}>
+                    className={linked === booking.id ? 'primary' : undefined} onClick={() => { setLinked(booking.id); if (fieldError?.field === 'booking') setFieldError(null); }}>
                     {copy.type[booking.appointment_type]} · {formatDateTime(booking.start_at, language)}
                   </button>
                 ))}
@@ -456,10 +479,13 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
               </p>
             )
           ) : null}
+          {fieldError?.field === 'booking' ? <span className="visit-field-error" role="alert">{fieldError.text}</span> : null}
           {consultChoice === 'ready_to_book' || consultChoice === 'thinking' ? (
             <label className="visit-field">
               {copy.followUp}
-              <input type="date" value={followDate} onChange={(event) => setFollowDate(event.target.value)} />
+              <input type="date" value={followDate} aria-invalid={fieldError?.field === 'followDate'}
+                onChange={(event) => { setFollowDate(event.target.value); if (fieldError?.field === 'followDate') setFieldError(null); }} />
+              {fieldError?.field === 'followDate' ? <span className="visit-field-error" role="alert">{fieldError.text}</span> : null}
               <span className="meta">{copy.followUpHint}</span>
             </label>
           ) : null}
@@ -476,7 +502,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
           </label>
           <div className="visit-outcome-actions">
             <button type="submit" className="primary"
-              disabled={busy || (consultChoice === 'booked' && !linked)}>{busy ? copy.saving : copy.save}</button>
+              disabled={busy}>{busy ? copy.saving : copy.save}</button>
             <button type="button" disabled={busy} onClick={() => { setStep(saved ? 'saved' : 'ask'); setError(null); }}>{copy.back}</button>
           </div>
         </form>

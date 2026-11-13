@@ -188,6 +188,54 @@ describe('Today visit outcomes', () => {
     expect((await screen.findAllByText(/Outcome saved/)).length).toBeGreaterThan(0);
   });
 
+  it('shows errors by the edited field and never sends invalid payment data', async () => {
+    const recorded: Array<Record<string, unknown> | undefined> = [];
+    renderWithSession(<App />, {
+      role: 'owner', path: '/', todayPulse: pulseWith([{ id: SESSION_ID, type: 'tattoo_session' }]),
+      rpcHandlers: {
+        get_visit_outcome_context: () => ({ data: tattooContext(), error: null }),
+        record_visit_outcome: (args) => {
+          recorded.push(args);
+          return { data: null, error: { code: '22023', message: 'Unexpected save' } };
+        },
+      },
+    });
+    const card = (await screen.findByText('How did the session go?')).closest('.visit-outcome') as HTMLElement;
+    fireEvent.click(within(card).getByRole('button', { name: 'Session happened' }));
+    const save = within(card).getByRole('button', { name: 'Save outcome' });
+    const hours = within(card).getByLabelText(/Actual working time/);
+
+    fireEvent.click(save);
+    expect(hours).toHaveAttribute('aria-invalid', 'true');
+    expect(within(hours.closest('label') as HTMLElement).getByRole('alert')).toHaveTextContent(/Enter the working time/);
+
+    fireEvent.change(hours, { target: { value: '0.33' } });
+    expect(hours).toHaveAttribute('aria-invalid', 'false');
+    fireEvent.click(save);
+    const price = within(card).getByLabelText(/Final price, GBP/);
+    expect(price).toHaveAttribute('aria-invalid', 'true');
+    expect(within(price.closest('label') as HTMLElement).getByRole('alert')).toHaveTextContent(/Enter a final price/);
+
+    fireEvent.change(price, { target: { value: '980' } });
+    const received = within(card).getByLabelText(/Received now, GBP/);
+    fireEvent.change(received, { target: { value: '-5' } });
+    fireEvent.click(save);
+    expect(received).toHaveAttribute('aria-invalid', 'true');
+    expect(within(received.closest('label') as HTMLElement).getByRole('alert')).toHaveTextContent(/Enter the amount/);
+
+    fireEvent.change(received, { target: { value: '900' } });
+    fireEvent.click(save);
+    expect(within(received.closest('label') as HTMLElement).getByRole('alert')).toHaveTextContent(/more than the remaining balance/i);
+
+    fireEvent.change(received, { target: { value: '100' } });
+    fireEvent.click(save);
+    expect(within(card).getByRole('group', { name: 'Payment method' })).toHaveAttribute('aria-describedby');
+    expect(within(card).getByText('Choose how the money was received.')).toHaveAttribute('role', 'alert');
+    fireEvent.click(within(card).getByRole('button', { name: 'Cash' }));
+    expect(within(card).queryByText('Choose how the money was received.')).not.toBeInTheDocument();
+    expect(recorded).toHaveLength(0);
+  });
+
   it('retries a failed save with the same operation id', async () => {
     const recorded: Array<Record<string, unknown> | undefined> = [];
     renderWithSession(<App />, {
