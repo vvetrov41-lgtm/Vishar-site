@@ -78,10 +78,12 @@ export function IntegrationsPage() {
   const { profile, memberships } = useSession();
   const { language, t } = useLanguage();
   const state = useAsync(async () => {
-    const [statuses, artists, failedJobs] = await Promise.all([
+    const [statuses, artists, failedJobs, pluginAuth] = await Promise.all([
       api.listIntegrationStatus(),
       api.listAccessibleArtists(),
       api.listFailedJobs().catch(() => null),
+      // A missing RPC during a DB-first rollout must not break other integrations.
+      Promise.resolve().then(() => api.refreshMyChatgptPluginAuthStatus()).catch(() => null),
     ]);
     const visibleArtistIds = visibleIntegrationArtistIds(profile, artists, memberships);
     return {
@@ -90,6 +92,7 @@ export function IntegrationsPage() {
       ),
       hasVisibleArtist: visibleArtistIds.size > 0,
       failedJobs: failedJobs?.filter((job) => visibleArtistIds.has(job.artist_id)) ?? null,
+      pluginAuth,
     };
   }, [api, memberships, profile]);
 
@@ -115,6 +118,39 @@ export function IntegrationsPage() {
   return (
     <div className="stack">
       <DeliveryIssuesSection jobs={state.data?.failedJobs ?? null} />
+      {state.data?.pluginAuth && state.data.pluginAuth.connection_state !== 'not_configured' ? (
+        <Section title="ChatGPT Plugin">
+          <div className="card" data-testid="chatgpt-plugin-auth-card" data-chatgpt-oauth-state={state.data.pluginAuth.connection_state}>
+            <div className="card-header">
+              <strong>Vishar CRM</strong>
+              <span className={`badge badge-${state.data.pluginAuth.connection_state === 'reconnect_required' ? 'needs_attention' : 'not_connected'}`}>
+                {state.data.pluginAuth.connection_state === 'reconnect_required'
+                  ? (language === 'ru' ? 'Требует внимания' : 'Needs attention')
+                  : (language === 'ru' ? 'OAuth-статус' : 'OAuth status')}
+              </span>
+            </div>
+            {state.data.pluginAuth.connection_state === 'reconnect_required' ? (
+              <p className="notice warn" role="alert">
+                {language === 'ru'
+                  ? 'Авторизация плагина больше не подтверждается. В ChatGPT открой Настройки → Плагины → Vishar CRM и переподключи аккаунт.'
+                  : 'Plugin authorization is no longer confirmed. In ChatGPT, open Settings → Plugins → Vishar CRM and reconnect.'}
+              </p>
+            ) : (
+              <p className="muted">
+                {language === 'ru'
+                  ? 'Авторизация сохранена в Supabase. Это не проверка работы ChatGPT: отсутствие активности не считается ошибкой.'
+                  : 'Supabase stores a Plugin authorization. This is not a live ChatGPT tool test; inactivity is not an error.'}
+              </p>
+            )}
+            {state.data.pluginAuth.last_oauth_refresh_at ? (
+              <p className="muted">
+                {language === 'ru' ? 'Последнее обновление OAuth: ' : 'Last OAuth refresh: '}
+                {formatDate(state.data.pluginAuth.last_oauth_refresh_at, language)}
+              </p>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
       <Section title={language === 'ru' ? 'Формы и сайты' : 'Forms and websites'}>
         <div className="card">
           <div className="card-header">
