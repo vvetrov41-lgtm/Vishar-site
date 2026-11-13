@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { __testing } from './gmail-metadata-snapshot.js';
+import { MAX_CAPTURE_PER_RUN } from './gmail-client-ai-background.js';
 
 test('Gmail metadata refresh stays bounded and times provider calls out', () => {
   assert.equal(__testing.METADATA_CONCURRENCY, 5);
@@ -158,7 +159,8 @@ test('a run stays inside the Worker subrequest limit even in the worst case', ()
     + 1 // match known clients
     + 2 // snapshot upsert and prune
     + 1 // history candidates
-    + __testing.HISTORY_CLIENTS_PER_RUN * (1 + __testing.HISTORY_MESSAGES_PER_CLIENT + 1);
+    + __testing.HISTORY_CLIENTS_PER_RUN * (1 + __testing.HISTORY_MESSAGES_PER_CLIENT + 1)
+    + 1 + 2 * MAX_CAPTURE_PER_RUN; // selector + two full reads and writes
   assert.ok(worstCase <= __testing.SUBREQUEST_BUDGET, `worst case ${worstCase}`);
   assert.ok(__testing.SUBREQUEST_BUDGET < 50, 'below the free-plan cap of 50 subrequests');
 });
@@ -168,7 +170,8 @@ test('a reply run stays inside the same subrequest limit', () => {
     + 1 // outbound evidence
     + 1 // reply candidates
     + __testing.REPLY_ENQUIRIES_PER_RUN * (1 + 1 + 1) // list, oldest message, record
-    + __testing.REPLY_EXTRA_CALLS_PER_RUN; // extra pages or message reads, shared by the run
+    + __testing.REPLY_EXTRA_CALLS_PER_RUN // extra pages or message reads, shared by the run
+    + 1 + 2 * MAX_CAPTURE_PER_RUN; // bounded background capture
   assert.ok(worstCase <= __testing.SUBREQUEST_BUDGET, `worst case ${worstCase}`);
 });
 
@@ -397,4 +400,31 @@ test('a failed mailbox list is one failed run, never a thrown Service Binding ca
   } finally {
     console.error = originalError;
   }
+});
+
+
+test('background capture keeps provider ids private while exposing only safe metadata', async () => {
+  const captures = [];
+  const publiclyVisible = await __testing.listRecentMetadata('token-value', 'studio@example.com',
+    async (url, init) => {
+      const href = String(url);
+      if (href.includes('/messages?')) return jsonResponse({ messages: [{ id: 'gmailmsg001' }] });
+      assert.match(href, /format=metadata/);
+      assert.equal(init.method, 'GET');
+      return jsonResponse({
+        id: 'gmailmsg001', threadId: 'threadmsg001',
+        internalDate: String(Date.parse('2026-11-13T01:00:00.000Z')),
+        labelIds: ['INBOX'],
+        payload: { headers: [
+          { name: 'From', value: 'client@example.com' },
+          { name: 'To', value: 'studio@example.com' },
+          { name: 'Subject', value: 'Re: Design' },
+        ] },
+      });
+    }, 1, captures);
+  assert.equal(publiclyVisible.length, 1);
+  assert.equal('provider_message_id' in publiclyVisible[0], false);
+  assert.equal('provider_thread_id' in publiclyVisible[0], false);
+  assert.deepEqual(captures.map(x => [x.provider_message_id, x.provider_thread_id]),
+    [['gmailmsg001','threadmsg001']]);
 });

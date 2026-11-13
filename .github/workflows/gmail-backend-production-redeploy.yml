@@ -80,6 +80,8 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts
           node scripts/test-gmail-production.mjs
+          node --test workers/gmail-metadata-snapshot.test.js
+          node --test workers/gmail-client-ai-background.test.js
           node scripts/test-gmail-operator-api.mjs
           node scripts/test-gmail-rollout-phases.mjs
           node scripts/test-supabase-secret-401-retry.mjs

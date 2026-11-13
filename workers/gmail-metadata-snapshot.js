@@ -1,4 +1,5 @@
 import { refreshAccessToken, getProfile } from './lib/google-gmail.js';
+import { captureKnownGmailReplies } from './gmail-client-ai-background.js';
 
 const GMAIL_API_ORIGIN = 'https://gmail.googleapis.com';
 const CRM_ORIGIN = 'https://crm.vishartattoo.com';
@@ -17,7 +18,7 @@ const OUTBOUND_EVIDENCE_PER_RUN = 50;
 // was ever written. Each run now handles one mailbox (round robin) within a
 // fixed budget: the newest messages, then either a few client history
 // lookups or a few enquiry first-reply lookups, alternating run by run.
-const SUBREQUEST_BUDGET = 40;
+const SUBREQUEST_BUDGET = 45;
 const METADATA_MESSAGES_PER_RUN = 20;
 const RUN_INTERVAL_MS = 5 * 60 * 1000;
 
@@ -174,7 +175,7 @@ function metadataCorrespondent(message, mailboxEmail) {
   return row;
 }
 
-async function listRecentMetadata(accessToken, mailboxEmail, fetchImpl = fetch, maxMessages = METADATA_MESSAGES_PER_RUN) {
+async function listRecentMetadata(accessToken, mailboxEmail, fetchImpl = fetch, maxMessages = METADATA_MESSAGES_PER_RUN, captureCandidates = null) {
   const query = `newer_than:${SNAPSHOT_WINDOW_DAYS}d -in:drafts -in:chats -in:spam -in:trash`;
   const params = new URLSearchParams({ maxResults: String(maxMessages), q: query });
   const listing = await gmailJson(`/gmail/v1/users/me/messages?${params}`, accessToken, fetchImpl);
@@ -192,7 +193,17 @@ async function listRecentMetadata(accessToken, mailboxEmail, fetchImpl = fetch, 
           accessToken,
           fetchImpl,
         );
-        return metadataCorrespondent(message, mailboxEmail);
+        const row = metadataCorrespondent(message, mailboxEmail);
+        // Provider IDs remain internal to this Worker. The public metadata
+        // parser and persisted snapshot still contain no IDs or email bodies.
+        if (row?.direction === 'inbound' && Array.isArray(captureCandidates)
+            && safeProviderId(message?.id) && safeProviderId(message?.threadId)
+            && row.timestamp && !['DRAFT', 'SENT', 'SPAM', 'TRASH'].some(
+              label => Array.isArray(message.labelIds) && message.labelIds.includes(label))) {
+          captureCandidates.push({ ...row,
+            provider_message_id: message.id, provider_thread_id: message.threadId });
+        }
+        return row;
       } catch { return null; }
     }));
     rows.push(...values.filter(Boolean));
@@ -535,12 +546,34 @@ export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch, now 
     if (safeEmail(profile.emailAddress) !== safeEmail(mailbox.external_account_label)) {
       throw new Error('gmail_profile_binding_mismatch');
     }
-    const metadata = await listRecentMetadata(accessToken, mailbox.external_account_label, budgeted);
+    const captureCandidates = [];
+    const metadata = await listRecentMetadata(
+      accessToken, mailbox.external_account_label, budgeted,
+      METADATA_MESSAGES_PER_RUN, captureCandidates,
+    );
     const matched = metadata.length
       ? await matchKnownClients(env, mailbox.artist_id, metadata, budgeted) : [];
     const refreshedAt = new Date(now).toISOString();
     const rows = latestKnownRows(mailbox.artist_id, metadata, matched, refreshedAt);
     await persistSnapshot(env, mailbox.artist_id, rows, refreshedAt, budgeted);
+    // Independent backend gate selects only newly arrived known-client mail.
+    // This path never invokes the legacy enquiry AI, sends a message, or changes
+    // the metadata-only snapshot shown to the operator.
+    try {
+      const captured = await captureKnownGmailReplies({
+        env, artistId: mailbox.artist_id,
+        mailboxEmail: mailbox.external_account_label, accessToken,
+        metadata: captureCandidates, matched, fetchImpl: budgeted,
+        rpc: serviceRpc, gmailGet: gmailJson,
+      });
+      if (captured.recorded || captured.failed) console.log('gmail client ai capture', JSON.stringify({
+        recorded: captured.recorded, failed: captured.failed, skipped: captured.skipped,
+      }));
+    } catch {
+      // A failure in optional enrichment must never prevent Gmail metadata,
+      // reply evidence or another scheduled CRM task from finishing.
+      console.error('gmail client ai capture failed', JSON.stringify({ code: 'capture_unavailable' }));
+    }
     if (replyRun) {
       await recordOutboundEvidence(env, mailbox.artist_id, outboundEvidenceRows(metadata, matched), budgeted);
       await backfillEnquiryReplies(

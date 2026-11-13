@@ -9,6 +9,8 @@ on:
       - 'workers/gmail-operator-api.js'
       - 'workers/gmail-metadata-snapshot.js'
       - 'workers/gmail-metadata-snapshot.test.js'
+      - 'workers/gmail-client-ai-background.js'
+      - 'workers/gmail-client-ai-background.test.js'
       - 'workers/telegram-drain-worker.js'
       - 'workers/lib/google-gmail.js'
       - 'workers/lib/gmail-supabase.js'
@@ -19,6 +21,10 @@ on:
       - 'supabase/migrations/0059_gmail_production_integration.sql'
       - 'supabase/migrations/0122_gmail_client_scoped_read.sql'
       - 'supabase/migrations/0123_gmail_known_client_discovery.sql'
+      - 'supabase/migrations/20261113010000_gmail_background_client_ai.sql'
+      - 'supabase/tests/281_gmail_background_client_ai.sql'
+      - 'scripts/verify-today-db-release.mjs'
+      - 'scripts/test-today-db-release.mjs'
       - 'supabase/tests/209_gmail_production_integration.sql'
       - 'supabase/tests/210_gmail_acl_inventory.sql'
       - 'docs/gpt-actions/openapi.production*.yaml'
@@ -68,7 +74,9 @@ jobs:
         run: node scripts/test-gmail-complete-discovery.mjs
 
       - name: Test Gmail metadata snapshot and history lookup
-        run: node --test workers/gmail-metadata-snapshot.test.js
+        run: |
+          node --test workers/gmail-metadata-snapshot.test.js
+          node --test workers/gmail-client-ai-background.test.js
 
       - name: Gmail GPT host boundary regression
         run: node scripts/test-gmail-gpt-host-boundary.mjs
@@ -97,6 +105,8 @@ jobs:
           node --check workers/gmail-production-entrypoint.js
           node --check workers/gmail-complete-discovery-api.js
           node --check workers/gmail-operator-api.js
+          node --check workers/gmail-client-ai-background.js
+          node --check workers/gmail-client-ai-background.test.js
           node --check workers/lib/google-gmail.js
           node --check workers/lib/gmail-supabase.js
           node --check workers/lib/gmail-tool-contract.js
@@ -105,6 +115,9 @@ jobs:
           node --check scripts/test-gmail-complete-discovery.mjs
           node --check scripts/test-gmail-gpt-host-boundary.mjs
           node --check scripts/test-gmail-rollout-phases.mjs
+
+      - name: Verify exact Gmail database-only release lineage
+        run: node scripts/test-today-db-release.mjs
 
       - name: Gmail production bundle dry-run
         env:
