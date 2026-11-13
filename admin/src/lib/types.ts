@@ -231,6 +231,7 @@ export interface CrmSession {
   artist_id: string;
   client_id: string;
   project_id: string;
+  appointment_type: 'tattoo_session' | 'touch_up' | 'in_person_consultation' | 'video_consultation';
   status: SessionStatus;
   start_at: string;
   end_at: string;

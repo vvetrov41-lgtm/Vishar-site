@@ -462,6 +462,7 @@ const EN = {
   'sessions.nothingUpcoming': 'Nothing scheduled ahead',
   'sessions.past': 'Past',
   'sessions.noPast': 'No past sessions',
+  'sessions.paymentNotRecorded': 'Payment not recorded',
   'sessions.calendarNotice': 'Calendar status is a placeholder. Google Calendar is not connected, so no session here has been written to a calendar.',
 
   'users.loading': 'Loading staff…',
@@ -1156,6 +1157,7 @@ const RU: Record<TranslationKey, string> = {
   'sessions.nothingUpcoming': 'Впереди ничего не запланировано',
   'sessions.past': 'Прошедшие',
   'sessions.noPast': 'Прошедших сеансов нет',
+  'sessions.paymentNotRecorded': 'Оплата не отмечена',
   'sessions.calendarNotice': 'Статус календаря пока условный. Google Calendar не подключён, поэтому ни один сеанс ещё не записан в календарь.',
 
   'users.loading': 'Загружаем сотрудников…',

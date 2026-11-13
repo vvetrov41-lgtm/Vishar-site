@@ -626,7 +626,7 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     async listSessions(projectId?: string, artistId?: string): Promise<CrmSession[]> {
       let query = client
         .from('sessions')
-        .select('id, artist_id, client_id, project_id, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, notes, cancelled_at')
+        .select('id, artist_id, client_id, project_id, appointment_type, status, start_at, end_at, duration_hours, currency, payment_status, calendar_provider, calendar_event_id, calendar_version, notes, cancelled_at')
         .order('start_at', { ascending: true })
         .limit(200);
       if (projectId) query = query.eq('project_id', projectId);
