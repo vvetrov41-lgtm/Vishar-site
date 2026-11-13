@@ -284,15 +284,31 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
     let diagnostics;
     const request = async (attempt) => {
       const startedAt = Date.now();
-      const response = await fetchImpl(`${url}/rest/v1/rpc/${name}`, {
-        method: 'POST',
-        headers: {
-          ...authHeaders,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(args ?? {}),
-      });
+      // A service RPC can mutate data even if its acknowledgement never
+      // reaches this Worker. Abort a hung request but NEVER automatically
+      // retry an ambiguous outcome: the durable send-intent / database
+      // idempotency contract, not a second POST, must resolve it.
+      //
+      // Bound the body read as well as the initial headers. An HTTP 5xx is
+      // also not evidence that a side-effecting RPC was rolled back.
+      const signal = AbortSignal.timeout(15000);
+      let response;
+      try {
+        response = await fetchImpl(`${url}/rest/v1/rpc/${name}`, {
+          method: 'POST',
+          headers: {
+            ...authHeaders,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: JSON.stringify(args ?? {}),
+          signal,
+        });
+      } catch {
+        // Intentionally suppress provider/network exception strings because
+        // they may contain request fields or client data.
+        throw new SupabaseError('database_result_unknown', 504);
+      }
       diagnostics = await observe(name, response, startedAt, attempt);
       return response;
     };
@@ -317,7 +333,13 @@ export function createSupabaseClient(env, fetchImpl = fetch) {
       throw error;
     }
 
-    return response.json();
+    try {
+      return await response.json();
+    } catch {
+      // Successful response headers do not prove the Worker received the
+      // result. Preserve uncertainty rather than silently replaying POST.
+      throw new SupabaseError('database_result_unknown', 504);
+    }
   }
 
   return { url, rpc, authHeaders, keyKind };
