@@ -98,15 +98,15 @@ where session_id='f9500000-0000-4000-8000-000000000002'
   and message_purpose='post_session_aftercare' and status='pending';
 select is((select count(*)::int from public.notifications n where n.dedupe_key like
  'lifecycle_destination:' || (select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='post_session_aftercare')::text || ':%'),
- (select count(*)::int from crm_private.automation_notification_recipients((select id from block_artist))),
- 'one unavailable destination alerts each authorized artist recipient');
+ 0,
+ 'a suppressed later-day job does not raise a false destination alert');
 update public.automation_jobs set last_error_category='destination_unavailable'
 where session_id='f9500000-0000-4000-8000-000000000002'
   and message_purpose='post_session_aftercare' and status='failed';
 select is((select count(*)::int from public.notifications n where n.dedupe_key like
  'lifecycle_destination:' || (select id from public.automation_jobs where session_id='f9500000-0000-4000-8000-000000000002' and message_purpose='post_session_aftercare')::text || ':%'),
- (select count(*)::int from crm_private.automation_notification_recipients((select id from block_artist))),
- 'retrying a failed job does not duplicate the alert');
+ 0,
+ 'a repeated failure remains non-actionable for a suppressed job');
 
 -- The latest conversation can be WhatsApp even when the client has an email.
 -- An email-only lifecycle rule must fail with an artist alert, not silently
