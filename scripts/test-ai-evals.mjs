@@ -9,7 +9,7 @@
 // (scripts/ai-evals/run-live-eval.mjs), which reuses these fixtures and checks.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateProductionEvalPlan, MAX_PRODUCTION_AI_EVAL_CALLS } from './ai-evals/production-budget.mjs';
+import { validateProductionEvalPlan, classifyProductionEvalStop, MAX_PRODUCTION_AI_EVAL_CALLS } from './ai-evals/production-budget.mjs';
 import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
 import { checkClientState, checkEnquiry, checkVision } from './ai-evals/assertions.mjs';
 import { projectClientStateInput } from '../workers/lib/crm-agent.js';
@@ -82,6 +82,15 @@ await test('production AI probes have a five-call hard cap, unique fixtures and 
     crm_client_state: ['not_a_fixture'] } }, EVAL_FIXTURE_IDS));
   assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, fixtures: { ...liveEvalPlan.fixtures,
     crm_client_state: ['vague_enquiry', 'deposit_paid'] } }, EVAL_FIXTURE_IDS));
+});
+
+await test('first provider quota or HTTP 429 immediately stops production AI eval', () => {
+  assert.equal(classifyProductionEvalStop({ errorDetail: 'cf_4006_quota' }), 'quota_exhausted');
+  assert.equal(classifyProductionEvalStop({ errorDetail: '3036 daily allocation' }), 'quota_exhausted');
+  assert.equal(classifyProductionEvalStop({ errorCode: 'provider_rate_limited' }), 'provider_rate_limited');
+  assert.equal(classifyProductionEvalStop(null, 429), 'provider_rate_limited');
+  assert.equal(classifyProductionEvalStop({ errorCode: 'provider_timeout' }, 504), null);
+  assert.equal(classifyProductionEvalStop({ outcome: 'succeeded' }, 200), null);
 });
 
 // ---------------------------------------------------------------------------

@@ -12,7 +12,7 @@ import { readFileSync, appendFileSync } from 'node:fs';
 import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, TRANSLATION_FIXTURES, VISION_FIXTURES } from '../../workers/lib/ai/eval-fixtures.js';
 import { checkAnswer } from './assertions.mjs';
 import { toStoredClientState } from '../../workers/lib/ai/client-state-schema.js';
-import { validateProductionEvalPlan } from './production-budget.mjs';
+import { validateProductionEvalPlan, classifyProductionEvalStop } from './production-budget.mjs';
 
 const plan = JSON.parse(readFileSync(new URL('./live-variants.json', import.meta.url), 'utf8'));
 const requested = process.env.EVAL_VARIANTS
@@ -95,11 +95,7 @@ for (const entry of plan.variants) {
       const first = Array.isArray(result.attempts) ? result.attempts[0] : null;
       // Stop after the first provider quota signal. The reserved budget
       // belongs to normal CRM traffic, not synthetic comparisons.
-      if (/quota|4006|3036/i.test(String(first?.errorDetail ?? ''))) {
-        stopped = 'quota_exhausted';
-      } else if (first?.errorCode === 'provider_rate_limited' || result.httpStatus === 429) {
-        stopped = 'provider_rate_limited';
-      }
+      stopped = classifyProductionEvalStop(first, result.httpStatus) ?? stopped;
       // A v2 answer is checked in the stored shape: stage and waiting side
       // are deterministic there, the semantic checks still apply.
       const scored = result.ok && result.answer && entry.variant?.contract === 'v2'

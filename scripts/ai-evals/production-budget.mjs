@@ -30,3 +30,11 @@ export function validateProductionEvalPlan(plan, fixtureIds, explicitOnly = plan
     throw new Error('Eval selection does not fit the exact call budget');
   return Object.freeze({ calls, variants: Object.freeze(variants) });
 }
+
+/** A quota rejection is a hard stop, not a retryable test failure. */
+export function classifyProductionEvalStop(firstAttempt, httpStatus) {
+  if (/quota|4006|3036/i.test(String(firstAttempt?.errorDetail ?? ''))) return 'quota_exhausted';
+  if (firstAttempt?.errorCode === 'provider_rate_limited' || httpStatus === 429)
+    return 'provider_rate_limited';
+  return null;
+}
