@@ -7,6 +7,7 @@ vi.mock('../lib/confirm-dialog', () => ({
 }));
 
 import { App } from '../App';
+import { VisitOutcomeCard } from '../components/VisitOutcomeCard';
 import { CLIENT_ID, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
 import { clearTodayCache } from '../lib/today-resource';
 import { OperationKeys, deferUntil, parseHoursInput, parseMoneyInput, previewPayment } from '../lib/visit-outcome';
@@ -256,5 +257,25 @@ describe('Today visit outcomes', () => {
     });
     await screen.findByText('How did the session go?');
     expect(screen.queryByText('Visit outcome to confirm')).not.toBeInTheDocument();
+  });
+
+  it('lets a saved "happened" be corrected to a no-show from the appointment page', async () => {
+    const recorded: Array<Record<string, unknown> | undefined> = [];
+    const saved = { ...tattooContext(1), outcome: { state: 'confirmed', outcome: 'attended', work_result: 'work_complete',
+      worked_minutes: 420, linked_session_id: null, follow_up_id: null, notes: null, aftercare_sent_before_outcome: true,
+      deferred_until: null, version: 1, confirmed_at: '2026-09-01T17:00:00Z', updated_at: '2026-09-01T17:00:00Z',
+      final_price: 980, payment_state: 'unpaid', outstanding: 730, received_via_outcome: 0 } };
+    renderWithSession(<VisitOutcomeCard sessionId={SESSION_ID} mode="panel" />, {
+      role: 'owner',
+      rpcHandlers: {
+        get_visit_outcome_context: () => ({ data: saved, error: null }),
+        record_visit_outcome: (args) => { recorded.push(args); return { data: { session_id: SESSION_ID, outcome: 'no_show', state: 'confirmed', version: 2, correction: true, session_status: 'no_show', payment_state: null, aftercare_already_sent: true, replayed: false }, error: null }; },
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Correct the outcome' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Client did not come' }));
+    await waitFor(() => expect(recorded).toHaveLength(1));
+    expect(recorded[0]).toMatchObject({ p_outcome: 'no_show', p_expected_version: 1 });
+    expect(await screen.findByText(/cannot be recalled/)).toBeVisible();
   });
 });

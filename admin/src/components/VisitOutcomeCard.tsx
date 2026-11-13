@@ -301,8 +301,12 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
       {step === 'saved' && saved && mayRecord && mode === 'panel' ? (
         <div className="actions">
           <button type="button" disabled={busy} onClick={() => {
-            if (isTattoo) { if (saved.outcome === 'attended') openAttended(); else setStep('ask'); }
-            else { setConsultChoice(null); setStep('ask'); }
+            // Back to the outcome choices: a mistaken "happened" can become a
+            // no-show or cancellation, and "happened" reopens the prefilled form.
+            setConsultChoice(null);
+            setError(null);
+            setNotice(null);
+            setStep('ask');
           }}>{copy.correct}</button>
         </div>
       ) : null}
@@ -311,6 +315,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
 
       {step === 'ask' && mayRecord ? (
         <>
+          {saved ? <SavedSummary context={context} language={language} /> : null}
           <p className="visit-outcome-question">{isTattoo ? copy.askTattoo : copy.askConsultation}</p>
           {isTattoo ? (
             <div className="visit-outcome-actions">
@@ -340,6 +345,12 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
             </div>
           )}
         </>
+      ) : null}
+
+      {step === 'ask' && mayRecord && saved ? (
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => setStep('saved')}>{copy.back}</button>
+        </div>
       ) : null}
 
       {step === 'attended' ? (
@@ -429,7 +440,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
           </label>
           <div className="visit-outcome-actions">
             <button type="submit" className="primary" disabled={busy}>{busy ? copy.saving : copy.save}</button>
-            <button type="button" disabled={busy} onClick={() => { setStep(saved ? 'saved' : 'ask'); setError(null); }}>{copy.back}</button>
+            <button type="button" disabled={busy} onClick={() => { setStep('ask'); setError(null); }}>{copy.back}</button>
           </div>
         </form>
       ) : null}

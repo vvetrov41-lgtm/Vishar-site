@@ -562,6 +562,8 @@ declare
   v_linked uuid;
   v_follow_at timestamptz;
   v_follow_up uuid;
+  v_existing_follow_up uuid;
+  v_keep_finance boolean := false;
   v_close_enquiry boolean := false;
   v_enquiry_after public.enquiry_status;
   v_finance jsonb;
@@ -615,6 +617,8 @@ begin
       using errcode = '40001';
   end if;
   v_correction := v_has_outcome and v_outcome.state = 'confirmed';
+  v_keep_finance := v_correction and not v_manage_finance
+    and v_outcome.outcome = 'attended' and p_outcome = 'attended';
 
   -- Outcome vocabulary and the session status it implies.
   if v_is_tattoo then
@@ -849,13 +853,46 @@ begin
   end if;
 
   -- ---------------------------------------------- consultation follow-ups
-  if not v_is_tattoo and v_follow_at is not null then
-    v_follow_up := public.create_follow_up(
-      case p_outcome when 'ready_to_book' then 'Agree a tattoo date after the consultation'
-                     else 'Check in after the consultation' end,
-      v_follow_at, v_session.client_id, v_session.enquiry_id, null, null,
-      'Created from the visit outcome; no message is sent automatically.');
-    v_effects := v_effects || jsonb_build_object('follow_up_id', v_follow_up);
+  -- One reminder per consultation outcome. A correction moves the existing
+  -- open reminder, or cancels it when the new answer needs none; it never
+  -- leaves a second or obsolete task behind. The reminder is created on the
+  -- appointment's own (already authorised) artist, never re-derived from a
+  -- client that may be shared by several artists.
+  if not v_is_tattoo then
+    if v_correction and v_outcome.follow_up_id is not null then
+      select f.id into v_existing_follow_up from public.follow_ups f
+      where f.id = v_outcome.follow_up_id and f.artist_id = v_session.artist_id and f.status = 'open'
+      for update;
+    end if;
+    if v_follow_at is not null then
+      if v_existing_follow_up is not null then
+        update public.follow_ups set due_at = v_follow_at,
+          subject = case p_outcome when 'ready_to_book' then 'Agree a tattoo date after the consultation'
+                                   else 'Check in after the consultation' end
+        where id = v_existing_follow_up;
+        v_follow_up := v_existing_follow_up;
+        v_effects := v_effects || jsonb_build_object('follow_up_moved', v_follow_up);
+      else
+        perform crm_private.require_role('owner', 'booking_manager');
+        perform crm_private.require_artist_access(v_session.artist_id, 'manage');
+        insert into public.follow_ups (artist_id, subject, due_at, client_id, enquiry_id, created_by, details)
+        values (v_session.artist_id,
+          case p_outcome when 'ready_to_book' then 'Agree a tattoo date after the consultation'
+                         else 'Check in after the consultation' end,
+          v_follow_at, v_session.client_id, v_session.enquiry_id, auth.uid(),
+          'Created from the visit outcome; no message is sent automatically.')
+        returning id into v_follow_up;
+        perform crm_private.log_artist_activity(
+          v_session.artist_id, 'follow_up.created', v_actor_kind, auth.uid(),
+          v_session.client_id, v_session.enquiry_id, null, null, null,
+          jsonb_build_object('follow_up_id', v_follow_up, 'source', 'visit_outcome'));
+        v_effects := v_effects || jsonb_build_object('follow_up_id', v_follow_up);
+      end if;
+    elsif v_existing_follow_up is not null then
+      update public.follow_ups set status = 'cancelled', cancelled_at = now()
+      where id = v_existing_follow_up;
+      v_effects := v_effects || jsonb_build_object('follow_up_cancelled', v_existing_follow_up);
+    end if;
   end if;
   if v_close_enquiry and v_session.enquiry_id is not null then
     select e.status into v_enquiry_status from public.enquiries e where e.id = v_session.enquiry_id;
@@ -875,18 +912,24 @@ begin
       state = 'confirmed', outcome = p_outcome,
       work_result = case when v_is_tattoo and p_outcome = 'attended' then v_work end,
       worked_minutes = case when v_is_tattoo and p_outcome = 'attended' then v_minutes end,
-      final_price = case when v_is_tattoo and p_outcome = 'attended' then v_price end,
+      -- Someone without finance access may correct time, result or notes,
+      -- but never erases money facts an authorised person confirmed.
+      final_price = case when v_keep_finance then o.final_price
+                         when v_is_tattoo and p_outcome = 'attended' then v_price end,
       currency = case when v_is_tattoo then v_session.currency end,
-      deposit_applied = case when v_after is not null then (v_after ->> 'deposit_paid')::numeric end,
-      previously_received = case when v_finance is not null then (v_finance ->> 'invoiced_paid')::numeric end,
+      deposit_applied = case when v_keep_finance then o.deposit_applied
+                             when v_after is not null then (v_after ->> 'deposit_paid')::numeric end,
+      previously_received = case when v_keep_finance then o.previously_received
+                                 when v_finance is not null then (v_finance ->> 'invoiced_paid')::numeric end,
       received_via_outcome = o.received_via_outcome + v_received,
-      outstanding = v_outstanding,
-      payment_state = v_payment_state,
-      payment_method = case when v_received > 0 then v_method
+      outstanding = case when v_keep_finance then o.outstanding else v_outstanding end,
+      payment_state = case when v_keep_finance then o.payment_state else v_payment_state end,
+      payment_method = case when v_keep_finance then o.payment_method
+                            when v_received > 0 then v_method
                             when v_is_tattoo and p_outcome = 'attended' then coalesce(v_method, o.payment_method) end,
-      paid_outside_crm = v_outside,
+      paid_outside_crm = case when v_keep_finance then o.paid_outside_crm else v_outside end,
       linked_session_id = v_linked,
-      follow_up_id = coalesce(v_follow_up, case when p_outcome in ('ready_to_book', 'thinking') then o.follow_up_id end),
+      follow_up_id = v_follow_up,
       enquiry_status_after = coalesce(v_enquiry_after, case when p_outcome = 'declined' then o.enquiry_status_after end),
       notes = v_notes,
       aftercare_sent_before_outcome = v_aftercare_sent,
@@ -924,7 +967,7 @@ begin
   v_result := jsonb_build_object(
     'session_id', v_session.id, 'outcome', p_outcome, 'state', 'confirmed',
     'version', v_new_version, 'correction', v_correction,
-    'session_status', v_target, 'payment_state', v_payment_state,
+    'session_status', v_target, 'payment_state', v_outcome.payment_state,
     'aftercare_already_sent', v_aftercare_sent,
     'effects', v_effects, 'replayed', false);
 

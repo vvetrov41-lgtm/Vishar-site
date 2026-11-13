@@ -513,6 +513,43 @@ select is((select status::text from public.sessions where id = 'e7500000-0000-40
 select is((select count(*)::int from public.enquiries where client_id = 'e7c00000-0000-4000-8000-00000000000f'),
   0, 'scenario 12: a consultation outcome does not invent an enquiry');
 
+-- Correcting the consultation moves its one reminder; a later "declined" cancels it.
+select pg_temp.as_profile('e7000000-0000-4000-8000-0000000000a1');
+set local role authenticated;
+select lives_ok($$select public.record_visit_outcome('e7500000-0000-4000-8000-0000000000f1',
+  'e7900000-0000-4000-8000-000000000f11', 1, 'thinking',
+  jsonb_build_object('follow_up_at', (now() + interval '14 days')::text, 'notes', 'Wants a smaller size'))$$,
+  'a consultation outcome can be corrected');
+reset role;
+select is((select count(*)::int from public.follow_ups
+           where client_id = 'e7c00000-0000-4000-8000-00000000000f' and status = 'open'),
+  1, 'a corrected reminder date moves the existing reminder, no duplicate');
+select is((select artist_id from public.follow_ups where client_id = 'e7c00000-0000-4000-8000-00000000000f' limit 1),
+  (select id from t_vo_artist), 'the reminder is created on the appointment artist, not re-derived from the client');
+select pg_temp.as_profile('e7000000-0000-4000-8000-0000000000a1');
+set local role authenticated;
+select lives_ok($$select public.record_visit_outcome('e7500000-0000-4000-8000-0000000000f1',
+  'e7900000-0000-4000-8000-000000000f12', 2, 'declined', '{}'::jsonb)$$,
+  'the outcome can change to declined');
+reset role;
+select is((select count(*)::int from public.follow_ups
+           where client_id = 'e7c00000-0000-4000-8000-00000000000f' and status = 'open'),
+  0, 'an obsolete reminder is cancelled when the new outcome needs none');
+
+-- A manager without finance access corrects time and notes; money facts stay.
+select pg_temp.as_profile('e7000000-0000-4000-8000-0000000000a3');
+set local role authenticated;
+select lives_ok($$select public.record_visit_outcome('e7500000-0000-4000-8000-0000000000d7',
+  'e7900000-0000-4000-8000-000000000d73', 2, 'attended',
+  jsonb_build_object('worked_minutes', 410, 'work_result', 'next_session_needed', 'notes', 'Time corrected'))$$,
+  'a session manager without finance access can correct the working time');
+reset role;
+select is((select final_price || ' ' || payment_state || ' ' || outstanding
+           from public.visit_outcomes where session_id = 'e7500000-0000-4000-8000-0000000000d7'),
+  '980.00 paid 0.00', 'confirmed price, payment state and balance are preserved');
+select is((select worked_minutes from public.visit_outcomes where session_id = 'e7500000-0000-4000-8000-0000000000d7'),
+  410, 'the corrected time is saved');
+
 -- Consultation no-show.
 select pg_temp.as_profile('e7000000-0000-4000-8000-0000000000a1');
 set local role authenticated;
