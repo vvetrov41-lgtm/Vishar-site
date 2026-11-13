@@ -840,6 +840,9 @@ insert into expected_function_acl values
   ('public.refresh_client_ai_state(uuid,uuid)', false, true, false),
   ('public.service_telegram_client_ai_digest(text,integer)', false, false, true),
   ('public.service_record_gmail_client_message(uuid,uuid,uuid,text,text,text,text,text)', false, false, true),
+  -- 20261113010000: independent backend-only Gmail client AI capture.
+  ('public.service_select_background_gmail_ai_candidates(uuid,text,jsonb)', false, false, true),
+  ('public.service_record_background_gmail_ai_message(uuid,uuid,text,text,text,text,text,text,timestamptz)', false, false, true),
   -- AI run telemetry (20260924010000). Service-only write and aggregate read.
   ('public.service_record_ai_run(jsonb)', false, false, true),
   ('public.service_ai_run_summary(integer)', false, false, true),
