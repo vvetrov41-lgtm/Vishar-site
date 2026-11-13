@@ -165,3 +165,52 @@ test('no real mailbox, client, message or legacy extractor is contacted when dis
     assert.equal(result.considered, 0);
   }
 });
+
+
+test('two new messages from one client are recorded oldest-first even when selector returns newest-first', async () => {
+  const chronological = [
+    { ...metadata[0], provider_message_id: 'gmailmsg001', timestamp: '2026-11-13T01:00:00.000Z' },
+    { ...metadata[0], provider_message_id: 'gmailmsg002', timestamp: '2026-11-13T01:01:00.000Z' },
+  ];
+  const records = [];
+  const result = await captureKnownGmailReplies({
+    env: ENV, artistId: ARTIST, mailboxEmail: MAILBOX, metadata: chronological, matched,
+    accessToken: 'synthetic-token',
+    rpc: async (_env, name, args) => {
+      if (name === 'service_select_background_gmail_ai_candidates') {
+        return matchCaptureCandidates(chronological, matched); // newest first
+      }
+      assert.equal(name, 'service_record_background_gmail_ai_message');
+      records.push(args);
+      return { status: 'recorded' };
+    },
+    gmailGet: async (url) => {
+      const id = /messages\/(gmailmsg00[12])\?/.exec(url)?.[1];
+      assert.ok(id);
+      return message({
+        id, date: id === 'gmailmsg001' ? '2026-11-13T01:00:00.000Z' : '2026-11-13T01:01:00.000Z',
+      });
+    },
+  });
+  assert.equal(result.recorded, 2);
+  assert.deepEqual(records.map(x => x.p_provider_message_id), ['gmailmsg001','gmailmsg002']);
+  assert.ok(Date.parse(records[0].p_occurred_at) < Date.parse(records[1].p_occurred_at));
+});
+
+test('writer rejects already-superseded events without re-enqueuing client AI', async () => {
+  let writerCalls = 0;
+  const result = await captureKnownGmailReplies({
+    env: ENV, artistId: ARTIST, mailboxEmail: MAILBOX, metadata, matched,
+    accessToken: 'synthetic-token',
+    rpc: async (_env, name) => {
+      if (name === 'service_select_background_gmail_ai_candidates') return matchCaptureCandidates(metadata, matched);
+      writerCalls++;
+      return { status: 'older_than_recorded' };
+    },
+    gmailGet: async () => message(),
+  });
+  assert.equal(writerCalls, 1);
+  assert.equal(result.recorded, 0);
+  assert.equal(result.skipped, 1);
+  assert.equal(result.failed, 0);
+});

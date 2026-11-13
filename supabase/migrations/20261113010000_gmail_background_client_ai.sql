@@ -89,6 +89,14 @@ begin
           where e.artist_id=p_artist_id and e.client_id=x.client_id
             and e.provider_message_id=x.provider_message_id
         )
+        -- The excerpt store retains only five messages. Without a monotonic
+        -- timestamp, a pruned sixth-oldest message would be seen as new again.
+        -- Do not fetch any already-superseded message, even if its ID was pruned.
+        and not exists (
+          select 1 from crm_private.gmail_client_ai_excerpts recent
+          where recent.artist_id=p_artist_id and recent.client_id=x.client_id
+            and recent.occurred_at >= x.occurred_at
+        )
       order by x.occurred_at desc, x.provider_message_id
       limit 2
     ) newest
@@ -168,6 +176,16 @@ begin
 
   v_body := left(btrim(p_body),3500);
   if v_body = '' then return jsonb_build_object('status','empty'); end if;
+
+  -- Recheck chronology at write-time. Selection and fetching happen in a
+  -- separate Worker step; another newer reply may have arrived meanwhile.
+  -- This also makes replay impossible when old IDs have left the last-five
+  -- retention window.
+  if exists (
+    select 1 from crm_private.gmail_client_ai_excerpts recent
+    where recent.artist_id=p_artist_id and recent.client_id=p_client_id
+      and recent.occurred_at >= p_occurred_at
+  ) then return jsonb_build_object('status','older_than_recorded'); end if;
 
   insert into crm_private.gmail_client_ai_excerpts (
     artist_id,workspace_id,client_id,enquiry_id,
