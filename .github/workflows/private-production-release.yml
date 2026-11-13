@@ -466,6 +466,13 @@ jobs:
       - name: Show production migration state before deploy
         run: supabase migration list
 
+      - name: Fail closed on production migration ledger drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list > "$RUNNER_TEMP/production-migrations.txt"
+          node scripts/check-production-migration-ledger.mjs "$RUNNER_TEMP/production-migrations.txt"
+
       - name: Dry-run production migrations
         run: supabase db push --dry-run
 
