@@ -358,6 +358,38 @@ await test('a text task refuses images rather than silently dropping them', asyn
 
 // --- fallback ---------------------------------------------------------------
 
+await test('shared Cloudflare daily Neuron quota is fail-closed without a futile second model call', async () => {
+  for (const [task,firstModel] of [
+    ['text_summarization', QWEN_MODEL],
+    ['concept_consult', GEMMA_MODEL],
+  ]) {
+    for (const code of [3036, 4006]) {
+      const stub = aiBinding(() => new Error(`AiError: ${code}: Daily Neuron quota exceeded`));
+      const result = await router.runModelTask(
+        { AI: stub.AI }, task, textInput, { fetchImpl: forbiddenFetch() });
+      assert.equal(result.ok, false);
+      assert.equal(result.errorCode, 'all_providers_failed', 'existing CRM failure contract is preserved');
+      assert.equal(result.fallbackUsed, undefined);
+      assert.equal(stub.calls.length, 1, 'daily quota must not trigger another model call');
+      assert.equal(stub.calls[0].model, firstModel);
+      assert.equal(result.attempts[0].errorCode, 'provider_rate_limited');
+      assert.equal(result.attempts[0].errorDetail, `cf_${code}_quota`);
+    }
+  }
+});
+
+await test('ordinary model-specific rate limiting still reaches the healthy fallback', async () => {
+  const stub = aiBinding((model) => model === QWEN_MODEL
+    ? new Error('429 Too many requests, retry later')
+    : { response: 'Recovered through independent model capacity.' });
+  const result = await router.runModelTask(
+    { AI: stub.AI }, 'text_summarization', textInput, { fetchImpl: forbiddenFetch() });
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'workers_ai');
+  assert.equal(result.fallbackUsed, true);
+  assert.deepEqual(stub.calls.map((call) => call.model), [QWEN_MODEL, LLAMA_MODEL]);
+});
+
 await test('a failing Qwen call falls through to Llama on the same binding', async () => {
   const stub = aiBinding((model) => (model === QWEN_MODEL
     ? new Error('model not available on this plan')
