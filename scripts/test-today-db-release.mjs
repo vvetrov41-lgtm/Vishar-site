@@ -383,7 +383,7 @@ const chatgptOAuthLineage = [
 assert.equal(verifyTodayLineage(chatgptOAuthLineage), '20261113110000');
 for (const bad of [
   chatgptOAuthLineage.replace('20261113110000 | |', '20261113120000 | |'),
-  chatgptOAuthLineage + '\\n 20261113120000 | | t',
+  chatgptOAuthLineage + '\n 20261113120000 | | t',
   chatgptOAuthLineage.replace('20261113100000 | 20261113100000', '20261113100000 | '),
 ]) assert.throws(() => verifyTodayLineage(bad));
 
