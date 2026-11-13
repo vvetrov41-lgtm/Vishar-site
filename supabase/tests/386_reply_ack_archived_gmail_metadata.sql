@@ -57,7 +57,7 @@ insert into ack_cases select 9,pg_temp.seed_reply_case(9,'Cool 👌🏼',true,nu
 
 -- An explicit human/AI "reply_required" mark overrides an otherwise short ack.
 insert into crm_private.client_reply_marks (artist_id,client_id,message_at,reply_state,source)
-select c.artist_id,c.client_id,m.provider_timestamp,'reply_required','rule_test'
+select c.artist_id,c.client_id,m.provider_timestamp,'reply_required','operator'
 from public.communication_conversations c
 join public.communication_messages m on m.conversation_id=c.id and m.direction='inbound'
 where c.id=(select id from ack_cases where n=9);
