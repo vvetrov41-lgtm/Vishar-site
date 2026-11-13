@@ -119,3 +119,14 @@ assert.deepEqual(requests.map(x => x.options.method), ['GET', 'POST']);
 assert.deepEqual(JSON.parse(requests[1].options.body), { query: STATE_SQL, read_only: true });
 assert(requests.every(x => x.url.startsWith(`https://api.supabase.com/v1/projects/${project.id}`)));
 console.log('Gmail migration ledger, quiet queue, fixed target, function and ACL readback guards passed.');
+
+// GitHub run 42588957009 completed successfully at 2026-11-09 08:51 UTC:
+// its deployment job emitted version e3ab9d82-7d65-4c27-ad34-bc98003dac68.
+// This is a one-version exception, not blanket permission for untagged Workers.
+const gmailRedeploy = readFileSync('.github/workflows/gmail-backend-production-redeploy.yml','utf8');
+assert.match(gmailRedeploy, /\[ "\$pre_version" = 'e3ab9d82-7d65-4c27-ad34-bc98003dac68' \]/);
+assert.match(gmailRedeploy, /git merge-base --is-ancestor '52dbfce5c4500a1b37a769fec1f90d11e8095da5' "\$GITHUB_SHA"/);
+assert.match(gmailRedeploy, /Unknown untagged source must never be overwritten/);
+assert.match(gmailRedeploy, /exit 1\n\s+fi\n\s+echo "Gmail preflight version/);
+assert.match(gmailRedeploy, /"pre_version" = '139682f0-c10b-4637-be2f-b17941ad0cba'/);
+console.log('Gmail untagged production version allowance remains exact, proof-bound and fail-closed.');
