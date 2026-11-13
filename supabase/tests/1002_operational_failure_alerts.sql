@@ -195,9 +195,9 @@ select ok(
     where n.dedupe_key like 'delivery_failed:%'
       and n.title = 'Email to client not sent: Synthetic Alerts Client'
       and n.body like '%Attempts: 1, last at %'
-      and n.body like '%The client received nothing.%'
+      and n.body like '%Delivery is not confirmed.%'
       and n.body like '%Code: gmail_email_job_invalid%'),
-  'the email alert says the client received nothing and what to do');
+  'the alert says delivery is unconfirmed until provider history is checked');
 
 -- A delivery that was sent or withdrawn before the sweep does not alert.
 create temporary table t_email2 as
@@ -228,7 +228,7 @@ select ok(
   exists (select 1 from public.notifications n where n.dedupe_key like 'delivery_failed:%'
     and n.title = 'Письмо клиенту не отправлено: Synthetic Alerts Client'
     and n.body like '%CRM больше не будет повторять попытки.%'
-    and n.body like '%Клиент ничего не получил.%'),
+    and n.body like '%Доставка не подтверждена.%'),
   'the alert follows the recipient''s CRM language');
 
 select * from finish(true);
