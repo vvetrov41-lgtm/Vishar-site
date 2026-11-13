@@ -166,7 +166,7 @@ begin
   v_workspace := crm_private.client_ai_scope(p_artist_id,p_client_id);
   if v_workspace is null then return jsonb_build_object('status','scope_unavailable'); end if;
 
-  v_body := left(btrim(replace(p_body,chr(0),'')),3500);
+  v_body := left(btrim(p_body),3500);
   if v_body = '' then return jsonb_build_object('status','empty'); end if;
 
   insert into crm_private.gmail_client_ai_excerpts (
