@@ -216,6 +216,7 @@ jobs:
         run: |
           set -euo pipefail
           node scripts/check-migration-order.mjs --self-test
+          node scripts/test-production-migration-ledger.mjs
           node scripts/check-production-db-release-paths.mjs
           node scripts/check-release-ref-routing.mjs --self-test
           node scripts/check-release-ref-routing.mjs
