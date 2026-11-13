@@ -4,6 +4,7 @@ import { EmptyState, ErrorState, LoadingState, Section } from '../components/Sta
 import { formatDateTime } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import type { CrmSession } from '../lib/types';
+import { paymentBadgeKind } from '../lib/session-payment-badge';
 import { useArtistScope } from '../lib/artist-scope';
 
 export function SessionsPage() {
@@ -75,6 +76,7 @@ function SessionRow({
   t: (key: string, params?: Record<string, string | number>) => string;
   label: (group: string, value: string | null | undefined) => string;
 }) {
+  const paymentBadge = paymentBadgeKind(session);
   return (
     <div className="row">
       <div className="title">{formatDateTime(session.start_at, language)}</div>
@@ -83,7 +85,9 @@ function SessionRow({
           {label('sessionStatus', session.status)}
         </span>{' '}
         <span className="badge">{session.duration_hours ?? '—'} {t('common.hoursShort')}</span>{' '}
-        <span className="badge">{label('paymentStatus', session.payment_status)}</span>{' '}
+        {paymentBadge === null ? null : (
+          <span className="badge">{paymentBadge === 'not_recorded' ? t('sessions.paymentNotRecorded') : label('paymentStatus', paymentBadge)}</span>
+        )}{' '}
         <span className="badge">
           {t('common.calendar')}: {session.calendar_event_id ? t('common.linked') : t('common.notConnected')}
         </span>
