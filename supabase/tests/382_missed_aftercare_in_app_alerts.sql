@@ -30,7 +30,10 @@ insert into crm_private.artist_access (
  'f3820000-0000-4000-8000-000000000001',
  'a1111111-1111-4111-8111-111111111111',
  'artist',false,false,true,false,true
-);
+)
+on conflict (profile_id,artist_id) do update set
+ access_level='artist', is_active=true,
+ can_manage_sessions=true;
 
 select ok(
  exists (select 1 from crm_private.automation_notification_recipients(
