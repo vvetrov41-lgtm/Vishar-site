@@ -266,7 +266,11 @@ export function DashboardPage() {
     setActionError(null);
     try {
       await api.acknowledgeAttentionItem(item);
-      reload();
+      // Acknowledgement changes only the pulse and its fallback acknowledgement
+      // state. Re-reading the schedule, email, conversations and projects is
+      // redundant and can block a fast return to Today on mobile.
+      pulseState.reload();
+      supplementalState.reload();
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : t('today.dismissFailed'));
     } finally {
@@ -298,6 +302,11 @@ export function DashboardPage() {
                   setSavedVisits((names) => [...names.slice(-2), item.subject ?? t('today.noSubject')]);
                   pulseState.reload();
                   scheduleState.reload();
+                  // A visit outcome can also change an enquiry, follow-up or
+                  // project finance. Refresh those lanes to avoid stale totals
+                  // while preserving the original calendar event.
+                  coreState.reload();
+                  supplementalState.reload();
                 }}
               />
             ))}
