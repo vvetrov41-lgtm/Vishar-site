@@ -104,8 +104,8 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
   const receivedValue = parseMoneyInput(received, { allowZero: true });
   const suggestion = useMemo(() => {
     if (!context || !isTattoo) return null;
-    const minutes = workedMinutes ?? context.session.scheduled_minutes;
-    const result = suggestSessionPrice(minutes, {
+    if (workedMinutes == null) return null;
+    const result = suggestSessionPrice(workedMinutes, {
       projectHourlyRate: finance?.hourly_rate ?? null,
       projectCurrency: finance?.project_currency ?? currency,
       artistPricing: pricing,
@@ -117,11 +117,11 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
   const openAttended = useCallback(() => {
     if (!context) return;
     const saved = context.outcome?.state === 'confirmed' ? context.outcome : null;
-    const minutes = saved?.worked_minutes ?? context.session.scheduled_minutes;
-    setHours(minutesToHoursInput(minutes));
+    // Planned hours are a hint, never a pre-confirmed actual duration.
+    setHours(minutesToHoursInput(saved?.worked_minutes));
     const knownPrice = saved?.final_price ?? context.finance?.stored_price ?? null;
-    const startPrice = knownPrice ?? suggestion;
-    setPrice(startPrice != null ? String(startPrice) : '');
+    // Do not treat a time-based suggestion as an accepted final price.
+    setPrice(knownPrice != null ? String(knownPrice) : '');
     setWork(saved?.work_result ?? 'work_complete');
     setNotes(saved?.notes ?? '');
     setMethod(null);
@@ -133,15 +133,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
     setError(null);
     setNotice(null);
     setStep('attended');
-  }, [context, suggestion]);
-
-  // Pre-fill "received now" with the balance once the price is known.
-  useEffect(() => {
-    if (step !== 'attended') return;
-    if (received !== '' || outside) return;
-    if (preview.dueBefore != null && preview.dueBefore > 0 && canMoney) setReceived(String(preview.dueBefore));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, preview.dueBefore]);
+  }, [context]);
 
   function refusalText(refusal: VisitOutcomeRefusal, fallback: string): string {
     return copy.refusal[refusal] ?? fallback;
