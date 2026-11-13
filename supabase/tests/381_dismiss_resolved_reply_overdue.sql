@@ -17,7 +17,7 @@ insert into auth.users (id,email) values
   ('ee310000-0000-4000-8000-000000000001','reply-alert-test@example.test');
 insert into public.profiles (id,email,display_name,role,is_active) values
   ('ee310000-0000-4000-8000-000000000001','reply-alert-test@example.test',
-   'Synthetic reply test','manager',true);
+   'Synthetic reply test','owner',true);
 
 insert into public.communication_conversations
   (id,artist_id,channel,integration_key,external_contact_id) values
