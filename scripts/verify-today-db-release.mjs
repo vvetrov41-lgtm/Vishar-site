@@ -103,6 +103,8 @@ export function verifyTodayLineage(source) {
     ['20261113120000', '20261113130000'],
     // Audit: notify the artist about newly missed aftercare; no client send.
     ['20261113130000', '20261113143000'],
+    // Only close unread reply-overdue notices for conversations explicitly marked personal.
+    ['20261113155317', '20261113170000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
