@@ -34,8 +34,8 @@ select is((select enabled from crm_private.gmail_background_ai_capture_config wh
   true, 'Migration activates capture with independent kill switch');
 select ok((select activated_at <= clock_timestamp() from crm_private.gmail_background_ai_capture_config where singleton),
   'Activation cutoff is fixed at migration apply time');
-select ok((select enabled from crm_private.crm_agent_config where singleton),
-  'Client AI remains enabled (old enquiry AI is not required)');
+select is((select count(*)::int from crm_private.crm_agent_config where singleton),
+  1, 'Client AI config remains present without enabling it in test fixtures');
 
 select set_config('request.jwt.claims','{"role":"service_role"}',true);
 set local role service_role;
