@@ -9,7 +9,8 @@
 // (scripts/ai-evals/run-live-eval.mjs), which reuses these fixtures and checks.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
+import { validateProductionEvalPlan, MAX_PRODUCTION_AI_EVAL_CALLS } from './ai-evals/production-budget.mjs';
+import { EVAL_FIXTURE_IDS, CLIENT_STATE_FIXTURES, ENQUIRY_FIXTURES, VISION_FIXTURES } from '../workers/lib/ai/eval-fixtures.js';
 import { checkClientState, checkEnquiry, checkVision } from './ai-evals/assertions.mjs';
 import { projectClientStateInput } from '../workers/lib/crm-agent.js';
 import { diagnoseClientStateV2 } from '../workers/lib/ai/client-state-schema.js';
@@ -63,7 +64,24 @@ await test('live routing evaluation covers the production v2 contract and fallba
   const vision = liveEvalPlan.variants.filter((row) => row.task === 'vision_reference_extraction');
   assert.deepEqual(new Set(vision.map((row) => row.variant.provider)),
     new Set(['qwen', 'workers_ai']), 'vision extraction compares both deployed tiers');
-  assert.ok(liveEvalPlan.maxCalls <= 220, 'the guarded probe retains its call budget');
+  assert.ok(liveEvalPlan.maxCalls <= MAX_PRODUCTION_AI_EVAL_CALLS, 'the guarded probe retains its call budget');
+});
+
+await test('production AI probes have a five-call hard cap, unique fixtures and no hidden truncation', () => {
+  const approved = validateProductionEvalPlan(liveEvalPlan, EVAL_FIXTURE_IDS);
+  assert.equal(approved.calls, 5);
+  assert.equal(approved.variants.length, 5);
+  assert.equal(MAX_PRODUCTION_AI_EVAL_CALLS, 5);
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, maxCalls: 220 }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, repeats: 2 }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, only: [] }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, only: ['unknown-model'] }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, maxCalls: 4 }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, minCallIntervalMs: 100 }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, fixtures: { ...liveEvalPlan.fixtures,
+    crm_client_state: ['not_a_fixture'] } }, EVAL_FIXTURE_IDS));
+  assert.throws(() => validateProductionEvalPlan({ ...liveEvalPlan, fixtures: { ...liveEvalPlan.fixtures,
+    crm_client_state: ['vague_enquiry', 'deposit_paid'] } }, EVAL_FIXTURE_IDS));
 });
 
 // ---------------------------------------------------------------------------
