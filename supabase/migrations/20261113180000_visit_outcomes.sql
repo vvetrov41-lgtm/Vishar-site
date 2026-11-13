@@ -462,7 +462,7 @@ begin
 end;
 $fn$;
 
-revoke all on function public.get_visit_outcome_context(uuid) from public, anon;
+revoke all on function public.get_visit_outcome_context(uuid) from public, anon, service_role;
 grant execute on function public.get_visit_outcome_context(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -990,7 +990,7 @@ begin
 end;
 $fn$;
 
-revoke all on function public.record_visit_outcome(uuid, uuid, integer, text, jsonb) from public, anon;
+revoke all on function public.record_visit_outcome(uuid, uuid, integer, text, jsonb) from public, anon, service_role;
 grant execute on function public.record_visit_outcome(uuid, uuid, integer, text, jsonb) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1076,7 +1076,7 @@ begin
 end;
 $fn$;
 
-revoke all on function public.defer_visit_outcome(uuid, uuid, integer, timestamptz) from public, anon;
+revoke all on function public.defer_visit_outcome(uuid, uuid, integer, timestamptz) from public, anon, service_role;
 grant execute on function public.defer_visit_outcome(uuid, uuid, integer, timestamptz) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1117,7 +1117,7 @@ begin
 end;
 $fn$;
 
-revoke all on function public.list_visit_outcome_history(uuid) from public, anon;
+revoke all on function public.list_visit_outcome_history(uuid) from public, anon, service_role;
 grant execute on function public.list_visit_outcome_history(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1140,7 +1140,7 @@ as $fn$
     and crm_private.has_artist_capability(o.artist_id, 'view_sessions');
 $fn$;
 
-revoke all on function public.list_client_visit_outcomes(uuid) from public, anon;
+revoke all on function public.list_client_visit_outcomes(uuid) from public, anon, service_role;
 grant execute on function public.list_client_visit_outcomes(uuid) to authenticated;
 
 -- ---------------------------------------------------------------------------

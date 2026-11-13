@@ -911,6 +911,14 @@ insert into expected_function_acl values
   ('public.record_invoice_payment(uuid,uuid,numeric,timestamptz,text,text)', false, true, false),
   ('public.create_credit_note(uuid,uuid,numeric,text)', false, true, false),
 
+  -- Visit outcomes: signed-in CRM users only; every call re-checks the
+  -- appointment artist's session/finance capabilities.
+  ('public.get_visit_outcome_context(uuid)', false, true, false),
+  ('public.record_visit_outcome(uuid,uuid,integer,text,jsonb)', false, true, false),
+  ('public.defer_visit_outcome(uuid,uuid,integer,timestamptz)', false, true, false),
+  ('public.list_visit_outcome_history(uuid)', false, true, false),
+  ('public.list_client_visit_outcomes(uuid)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
@@ -974,7 +982,7 @@ select ok(
        'message_templates', 'client_marketing_consent',
        'communication_suppressions',
        'invoices', 'invoice_line_items', 'credit_notes',
-      'monzo_recorded_receipt_links')),
+      'monzo_recorded_receipt_links', 'visit_outcomes', 'visit_outcome_revisions')),
   'every CRM table has row level security enabled and forced'
 );
 
