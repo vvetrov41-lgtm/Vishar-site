@@ -92,7 +92,7 @@ jobs:
         run: node scripts/ai-evals/run-live-eval.mjs
 
       - name: Close the probe window
-        if: always()
+        if: ${{ always() && env.PROBE_TOKEN != '' }}
         shell: bash
         run: |
           set -uo pipefail
