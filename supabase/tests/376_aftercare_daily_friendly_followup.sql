@@ -1,4 +1,4 @@
--- Friendly post-session aftercare for two consecutive days and two artists.
+-- Once-per-block post-session guide for two consecutive days and two artists.
 -- Synthetic entities, email messages and any outbox records are rolled back.
 BEGIN;
 SELECT no_plan();
@@ -72,7 +72,7 @@ SELECT is((SELECT count(*)::int FROM public.automation_jobs
                       'f3760000-0000-4000-8000-222222222222')
    AND message_purpose='post_session_aftercare'
    AND crm_private.lifecycle_block_disposition(id)='eligible'),
- 2,'both second-day aftercare reminders are eligible');
+ 0,'both second-day aftercare repeats are suppressed');
 
 SELECT is((SELECT count(*)::int FROM public.automation_jobs
  WHERE session_id IN ('f3760000-0000-4000-8000-111111111111',
@@ -110,16 +110,15 @@ JOIN LATERAL (
 ) t ON true
 WHERE j.session_id IN (
  'f3760000-0000-4000-8000-111111111111',
- 'f3760000-0000-4000-8000-111111111112',
- 'f3760000-0000-4000-8000-222222222221',
- 'f3760000-0000-4000-8000-222222222222')
-AND j.message_purpose='post_session_aftercare';
+ 'f3760000-0000-4000-8000-222222222221')
+AND j.message_purpose='post_session_aftercare'
+AND crm_private.lifecycle_notification_required(j.id);
 
 SELECT is((SELECT count(*)::int FROM public.email_messages
  WHERE client_id IN ('f3761111-1111-4111-8111-111111111111',
                      'f3761111-1111-4111-8111-222222222222')
-   AND template_key='post_session_aftercare'),4,
- 'four synthetic email snapshots were produced, no provider send');
+   AND template_key='post_session_aftercare'),2,
+ 'only first-day guides are materialised, no provider send');
 
 SELECT is((SELECT count(*)::int FROM public.email_messages m
  JOIN public.automation_jobs j ON j.id=m.automation_job_id
@@ -132,32 +131,29 @@ SELECT is((SELECT count(*)::int FROM public.email_messages m
  JOIN public.automation_jobs j ON j.id=m.automation_job_id
  WHERE j.session_id IN ('f3760000-0000-4000-8000-111111111112',
                         'f3760000-0000-4000-8000-222222222222')
-   AND m.subject='A quick reminder about your tattoo aftercare'
-   AND m.body LIKE '%friendly reminder%'
-   AND m.html_body LIKE '%A quick aftercare reminder.%'
-   AND m.html_body NOT LIKE '%Thank you for today.%'),2,
- 'subsequent-day email uses distinct friendly plaintext and HTML copy');
+   AND j.message_purpose='post_session_aftercare'),0,
+ 'no second-day guide or follow-up email is materialised');
 
 SELECT ok((SELECT m.body LIKE '%https://vishartattoo.com/aftercare/%'
    AND m.body NOT LIKE '%kristinavishar.com%'
  FROM public.email_messages m JOIN public.automation_jobs j
  ON j.id=m.automation_job_id
- WHERE j.session_id='f3760000-0000-4000-8000-111111111112'),
- 'Vladimir follow-up includes only his guide');
+ WHERE j.session_id='f3760000-0000-4000-8000-111111111111'),
+ 'Vladimir first-day guide includes only his link');
 
 SELECT ok((SELECT m.body LIKE '%https://www.kristinavishar.com/aftercare/%'
    AND m.body NOT LIKE '%vishartattoo.com/aftercare/%'
  FROM public.email_messages m JOIN public.automation_jobs j
  ON j.id=m.automation_job_id
- WHERE j.session_id='f3760000-0000-4000-8000-222222222222'),
- 'Kristina follow-up includes only her guide');
+ WHERE j.session_id='f3760000-0000-4000-8000-222222222221'),
+ 'Kristina first-day guide includes only her link');
 
 -- Backend JWT is simulated above; the private helper itself is not
 -- grantable to service_role and is invoked under its SECURITY DEFINER owner.
 SELECT is((SELECT crm_private.queue_lifecycle_whatsapp_job(id)
  FROM public.automation_jobs WHERE session_id='f3760000-0000-4000-8000-111111111112'
  AND message_purpose='post_session_aftercare'),
- 'unavailable','Meta-approved first-day WhatsApp template is never reused for the follow-up');
+ 'unavailable','Meta-approved first-day WhatsApp template is never reused on a suppressed day');
 
 -- Historical blocked pending jobs must not back-send after this migration.
 UPDATE public.automation_jobs SET scheduled_at=now()-interval '8 hours'
