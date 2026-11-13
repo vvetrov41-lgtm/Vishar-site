@@ -34,27 +34,57 @@
       }
     },
     {
-      "id": "state-qwen-current",
+      "id": "state-qwen-v2-default",
       "task": "crm_client_state",
       "variant": {
         "provider": "qwen",
-        "timeoutMs": 60000
+        "timeoutMs": 60000,
+        "contract": "v2"
       }
     },
     {
-      "id": "state-qwen-nothink",
+      "id": "state-qwen-v2-nothink",
       "task": "crm_client_state",
       "variant": {
         "provider": "qwen",
         "thinking": "off",
+        "timeoutMs": 60000,
+        "contract": "v2"
+      }
+    },
+    {
+      "id": "state-llama-v2",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "workers_ai",
+        "timeoutMs": 60000,
+        "contract": "v2"
+      }
+    },
+    {
+      "id": "state-gemma-v2",
+      "task": "crm_client_state",
+      "variant": {
+        "provider": "workers_ai",
+        "model": "@cf/google/gemma-4-26b-a4b-it",
+        "contract": "v2",
         "timeoutMs": 60000
       }
     },
     {
-      "id": "state-llama",
-      "task": "crm_client_state",
+      "id": "vision-qwen",
+      "task": "vision_reference_extraction",
+      "variant": {
+        "provider": "qwen",
+        "timeoutMs": 60000
+      }
+    },
+    {
+      "id": "vision-gemma",
+      "task": "vision_reference_extraction",
       "variant": {
         "provider": "workers_ai",
+        "model": "@cf/google/gemma-4-26b-a4b-it",
         "timeoutMs": 60000
       }
     },
