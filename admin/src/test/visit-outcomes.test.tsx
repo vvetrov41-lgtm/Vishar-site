@@ -157,12 +157,14 @@ describe('Today visit outcomes', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'Session happened' }));
 
     const hours = within(card).getByLabelText(/Actual working time/);
-    expect(hours).toHaveValue('7');
+    expect(hours).toHaveValue('');
     expect(within(card).getByText(/Not confirmed/)).toBeVisible();
     fireEvent.change(hours, { target: { value: '6.5' } });
     fireEvent.change(within(card).getByLabelText(/Final price, GBP/), { target: { value: '980' } });
     const receivedInput = await within(card).findByLabelText(/Received now, GBP/);
-    await waitFor(() => expect(receivedInput).toHaveValue('730'));
+    // A missing receipt must stay empty; never assume the entire balance was paid.
+    expect(receivedInput).toHaveValue('');
+    fireEvent.change(receivedInput, { target: { value: '730' } });
     fireEvent.click(within(card).getByRole('button', { name: 'Cash' }));
     expect(within(card).getByText(/Paid in total £980.*new money now £730.*balance £0/)).toBeVisible();
 
