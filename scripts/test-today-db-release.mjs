@@ -434,3 +434,20 @@ for (const guard of [
   'verify-today-db-release.mjs',
   'supabase db push --dry-run',
 ]) assert.ok(dbReleaseWorkflow.includes(guard), guard);
+
+
+// The reply-overdue cleanup cannot run before the separately reviewed OAuth
+// and WhatsApp v5 staging migrations have actually reached production.
+const dismissReplyTransition = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261113120000 | 20261113120000 | t',
+  ' 20261113130000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(dismissReplyTransition), '20261113130000');
+assert.equal(deferredTodayMigration(dismissReplyTransition), null);
+for (const bad of [
+  dismissReplyTransition.replace('20261113130000 | |', '20261113130001 | |'),
+  dismissReplyTransition.replace('20261113120000 | 20261113120000', '20261113120000 | '),
+  dismissReplyTransition + '\n 20261113140000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
+assert.throws(() => deferredTodayMigration(dismissReplyTransition + '\n 20261113140000 | | t'));
