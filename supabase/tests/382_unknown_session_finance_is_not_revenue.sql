@@ -93,8 +93,8 @@ select is((select count(*)::int from public.client_artist_links
            where client_id='f8200000-0000-4000-8000-000000000001'), 0,
           'an explicit client_artist_links row is not required for a project-backed card');
 select ok(exists(
-  select 1 from crm_private.client_artist_ids('f8200000-0000-4000-8000-000000000001')
-  where artist_id='a1111111-1111-4111-8111-111111111111'
+  select 1 from crm_private.client_artist_ids('f8200000-0000-4000-8000-000000000001') as authorized(artist_id)
+  where authorized.artist_id='a1111111-1111-4111-8111-111111111111'
 ), 'the actual project/session relationship still grants proper artist access');
 
 select * from finish(true);
