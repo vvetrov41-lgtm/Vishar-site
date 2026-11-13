@@ -37,7 +37,9 @@ export type TodayItemKind =
   | 'conflict'
   | 'unmatched_inbound'
   | 'client_follow_up_due'
-  | 'client_cold';
+  | 'client_cold'
+  // A visit whose actual result the artist has not confirmed yet.
+  | 'visit_outcome';
 
 /**
  * Client-originated work first: those are the items where the delay is visible

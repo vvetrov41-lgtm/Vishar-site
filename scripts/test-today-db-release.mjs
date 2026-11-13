@@ -451,3 +451,18 @@ for (const bad of [
   dismissReplyTransition + '\n 20261113140000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 assert.throws(() => deferredTodayMigration(dismissReplyTransition + '\n 20261113140000 | | t'));
+
+// Visit outcomes: one additive migration after the recovered 13 Nov head.
+const visitOutcomes = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261113153028 | 20261113153028 | t',
+  ' 20261113155152 | 20261113155152 | t',
+  ' 20261113155317 | 20261113155317 | t',
+  ' 20261113180000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(visitOutcomes), '20261113180000');
+assert.equal(deferredTodayMigration(visitOutcomes), null);
+for (const bad of [
+  visitOutcomes.replace('20261113155317 | 20261113155317', '20261113155317 | '),
+  visitOutcomes + '\n 20261113190000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));

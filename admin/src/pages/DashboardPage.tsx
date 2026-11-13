@@ -22,6 +22,7 @@ import { useArtistScope } from '../lib/artist-scope';
 import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
 import { summariseToday, WAITING_ON_CLIENT_KINDS, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
 import { WaitingOnClients } from '../components/WaitingOnClients';
+import { VisitOutcomeCard } from '../components/VisitOutcomeCard';
 import { pulseToTodayItems, type TodayPulse } from '../lib/today-pulse';
 import { typeLabel } from './AppointmentsPage';
 import { daysAgoIso } from '../lib/appointment-api';
@@ -87,6 +88,7 @@ export function DashboardPage() {
   const mayViewEnquiries = can(role, 'viewEnquiries');
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [savedVisits, setSavedVisits] = useState<string[]>([]);
 
   // Every cache key includes the authenticated profile, capabilities, artist
   // and calendar day. Customer data stays in memory, never browser storage.
@@ -253,7 +255,10 @@ export function DashboardPage() {
   );
   // Clients the studio waits on are not waiting on anyone here: they get their
   // own folded block below the schedule, so they never push urgent work down.
-  const needsYou = triage.filter((item) => !WAITING_ON_CLIENT_KINDS.includes(item.kind));
+  // Visit outcomes are their own block of interactive cards, never mixed into
+  // the urgent list: a missing outcome is ordinary work, not a CRM fault.
+  const visitOutcomes = triage.filter((item) => item.kind === 'visit_outcome');
+  const needsYou = triage.filter((item) => !WAITING_ON_CLIENT_KINDS.includes(item.kind) && item.kind !== 'visit_outcome');
   const waitingOnClients = triage.filter((item) => WAITING_ON_CLIENT_KINDS.includes(item.kind));
 
   async function dismissAttention(item: AttentionItemRef, key: string) {
@@ -274,6 +279,31 @@ export function DashboardPage() {
       <p className="today-context">
         {formatDate(now.toISOString(), language)} · {sessionCountLabel(language, snapshot.today.length)}
       </p>
+
+      {visitOutcomes.length > 0 || savedVisits.length > 0 ? (
+        <Section title={`${t('today.visitOutcomes')}${visitOutcomes.length ? ` · ${visitOutcomes.length}` : ''}`}>
+          {savedVisits.map((name, index) => (
+            <p key={`${name}-${index}`} className="notice ok" role="status">{t('today.visitOutcomeSaved', { name })}</p>
+          ))}
+          {visitOutcomes.length > 0 ? <p className="meta today-visit-hint">{t('today.visitOutcomesHint')}</p> : null}
+          <div className="list visit-outcome-list">
+            {visitOutcomes.map((item) => (
+              <VisitOutcomeCard
+                key={item.key}
+                sessionId={item.key.replace(/^visit-outcome-/, '')}
+                subject={item.subject}
+                at={item.at}
+                appointmentType={(item.detail as Appointment['appointment_type'] | null) ?? null}
+                onSaved={() => {
+                  setSavedVisits((names) => [...names.slice(-2), item.subject ?? t('today.noSubject')]);
+                  pulseState.reload();
+                  scheduleState.reload();
+                }}
+              />
+            ))}
+          </div>
+        </Section>
+      ) : null}
 
       <Section title={t('today.needsYou')}>
         {actionError ? <p className="notice warn" role="alert">{actionError}</p> : null}
