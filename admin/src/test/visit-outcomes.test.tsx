@@ -109,6 +109,7 @@ describe('visit outcome arithmetic', () => {
     expect(parseMoneyInput('0', { allowZero: true })).toBe(0);
     expect(parseMoneyInput('-5')).toBeNull();
     expect(parseHoursInput('4.5')).toBe(270);
+    expect(parseHoursInput('0.33')).toBe(20); // 20-minute early finish
     expect(parseHoursInput('25')).toBeNull();
     let n = 0;
     const keys = new OperationKeys(() => `op-${++n}`);
