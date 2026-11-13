@@ -212,12 +212,12 @@ begin
       and (r.session_id = v_session.id or r.session_id is null)
       and r.currency <> v_session.currency
       and crm_private.visit_request_net_paid(r.id) > 0
-  ) then v_warnings := v_warnings || 'currency_mismatch'; end if;
+  ) then v_warnings := array_append(v_warnings, 'currency_mismatch'); end if;
   if exists (
     select 1 from public.payment_requests r
     where r.project_id = v_session.project_id and r.purpose = 'deposit'
       and r.session_id is null and crm_private.visit_request_net_paid(r.id) > 0
-  ) then v_warnings := v_warnings || 'unallocated_deposit'; end if;
+  ) then v_warnings := array_append(v_warnings, 'unallocated_deposit'); end if;
   -- A legacy paid project deposit without a ledger request cannot be allocated.
   if v_project.id is not null and v_project.deposit_status = 'paid'
      and coalesce(v_project.deposit_amount, 0) > 0
@@ -225,7 +225,7 @@ begin
        select 1 from public.payment_requests r
        where r.project_id = v_project.id and r.purpose = 'deposit'
          and crm_private.visit_request_net_paid(r.id) > 0)
-  then v_warnings := v_warnings || 'unallocated_deposit'; end if;
+  then v_warnings := array_append(v_warnings, 'unallocated_deposit'); end if;
 
   -- Invoices of this project.
   if exists (
@@ -234,7 +234,7 @@ begin
       and (not exists (select 1 from public.invoice_line_items li where li.invoice_id = i.id)
            or exists (select 1 from public.invoice_line_items li
                       where li.invoice_id = i.id and li.session_id is null))
-  ) then v_warnings := v_warnings || 'unlinked_invoice'; end if;
+  ) then v_warnings := array_append(v_warnings, 'unlinked_invoice'); end if;
 
   select coalesce(array_agg(i.id order by i.created_at, i.id), '{}') into v_session_invoices
   from public.invoices i
@@ -244,16 +244,16 @@ begin
 
   if exists (select 1 from public.invoices i where i.id = any(v_session_invoices)
              and i.currency <> v_session.currency)
-  then v_warnings := v_warnings || 'currency_mismatch'; end if;
+  then v_warnings := array_append(v_warnings, 'currency_mismatch'); end if;
   if exists (select 1 from public.invoices i
              cross join lateral crm_private.invoice_totals(i.id) t
              where i.id = any(v_session_invoices)
                and (coalesce(t.amount_credited, 0) > 0 or coalesce(i.discount_amount, 0) > 0))
-  then v_warnings := v_warnings || 'credited_invoice'; end if;
+  then v_warnings := array_append(v_warnings, 'credited_invoice'); end if;
   if exists (select 1 from public.invoice_line_items li
              where li.invoice_id = any(v_session_invoices)
                and li.session_id is distinct from v_session.id)
-  then v_warnings := v_warnings || 'mixed_invoice'; end if;
+  then v_warnings := array_append(v_warnings, 'mixed_invoice'); end if;
 
   select coalesce(sum(crm_private.visit_request_net_paid(r.id)), 0) into v_deposit
   from public.payment_requests r
@@ -271,7 +271,7 @@ begin
   v_deposit := round(v_deposit, 2);
   v_invoiced := round(v_invoiced, 2);
   if v_price is not null and v_price + 0.005 < v_deposit + v_invoiced then
-    v_warnings := v_warnings || 'overpaid';
+    v_warnings := array_append(v_warnings, 'overpaid');
   end if;
 
   select coalesce(array_agg(distinct w order by w), '{}') into v_warnings from unnest(v_warnings) w;

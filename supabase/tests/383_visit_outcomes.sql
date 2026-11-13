@@ -338,6 +338,47 @@ select is((select count(*)::int from public.payment_requests where session_id = 
 select is((select payment_status::text from public.sessions where id = 'e7500000-0000-4000-8000-0000000000da'),
   'paid', 'scenario 10: badge stays paid');
 
+-- ------------------------------ ambiguous ledger: deposit not allocated
+select pg_temp.as_backend();
+insert into public.clients (id, full_name, email) values
+  ('e7c00000-0000-4000-8000-000000000011', 'VO Unallocated Deposit', 'vo-g@example.test');
+insert into public.projects (id, client_id, artist_id, status, title, hourly_rate, currency)
+values ('e7d00000-0000-4000-8000-000000000011', 'e7c00000-0000-4000-8000-000000000011',
+  (select id from t_vo_artist), 'active', 'VO unallocated', 140, 'GBP');
+insert into public.sessions (id, artist_id, client_id, project_id, appointment_type, status,
+  start_at, end_at, duration_hours, payment_status, currency, created_at)
+values ('e7500000-0000-4000-8000-000000000011', (select id from t_vo_artist),
+  'e7c00000-0000-4000-8000-000000000011', 'e7d00000-0000-4000-8000-000000000011',
+  'tattoo_session', 'completed', date_trunc('hour', now()) - interval '22 days',
+  date_trunc('hour', now()) - interval '22 days' + interval '4 hours', 4, 'deposit_paid', 'GBP',
+  now() - interval '40 days');
+insert into public.payment_requests (id, idempotency_key, artist_id, client_id, project_id,
+  purpose, amount, currency, status)
+values ('e7600000-0000-4000-8000-000000000011', 'e7610000-0000-4000-8000-000000000011',
+  (select id from t_vo_artist), 'e7c00000-0000-4000-8000-000000000011',
+  'e7d00000-0000-4000-8000-000000000011', 'deposit', 200, 'GBP', 'pending');
+insert into public.payment_transactions (idempotency_key, payment_request_id, artist_id,
+  transaction_type, direction, amount, currency, status, occurred_at, recorded_by, recorded_by_kind)
+values ('e7620000-0000-4000-8000-000000000011', 'e7600000-0000-4000-8000-000000000011',
+  (select id from t_vo_artist), 'manual_payment', 'credit', 200, 'GBP', 'succeeded',
+  now() - interval '30 days', 'e7000000-0000-4000-8000-0000000000a1', 'human');
+select pg_temp.as_profile('e7000000-0000-4000-8000-0000000000a1');
+set local role authenticated;
+select ok((public.get_visit_outcome_context('e7500000-0000-4000-8000-000000000011') -> 'finance' -> 'warnings')
+          ? 'unallocated_deposit',
+  'a project deposit without a session allocation is reported for review');
+select is(public.get_visit_outcome_context('e7500000-0000-4000-8000-000000000011') -> 'finance' ->> 'due',
+  null, 'no balance is invented while the ledger needs review');
+select throws_ok($$select public.record_visit_outcome('e7500000-0000-4000-8000-000000000011',
+  'e7900000-0000-4000-8000-000000000110', 0, 'attended',
+  jsonb_build_object('worked_minutes', 240, 'final_price', 560, 'received_now', 360, 'payment_method', 'cash'))$$,
+  '23514', null, 'new money is refused until the deposit is reconciled');
+select is((public.record_visit_outcome('e7500000-0000-4000-8000-000000000011',
+  'e7900000-0000-4000-8000-000000000111', 0, 'attended',
+  jsonb_build_object('worked_minutes', 240, 'final_price', 560)) ->> 'payment_state'),
+  'needs_review', 'the outcome can still be saved, marked for review');
+reset role;
+
 -- ------------------------- finance capability is enforced on the server
 select pg_temp.as_profile('e7000000-0000-4000-8000-0000000000a3');
 set local role authenticated;
