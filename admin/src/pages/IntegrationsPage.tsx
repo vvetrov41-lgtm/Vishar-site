@@ -119,7 +119,7 @@ export function IntegrationsPage() {
     <div className="stack">
       <DeliveryIssuesSection jobs={state.data?.failedJobs ?? null} />
       {state.data?.pluginAuth && state.data.pluginAuth.connection_state !== 'not_configured' ? (
-        <Section title="ChatGPT Plugin">
+        <Section title={language === 'ru' ? 'Плагин ChatGPT' : 'ChatGPT Plugin'}>
           <div className="card" data-testid="chatgpt-plugin-auth-card" data-chatgpt-oauth-state={state.data.pluginAuth.connection_state}>
             <div className="card-header">
               <strong>Vishar CRM</strong>
