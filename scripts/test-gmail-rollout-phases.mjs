@@ -128,5 +128,5 @@ assert.match(gmailRedeploy, /\[ "\$pre_version" = 'e3ab9d82-7d65-4c27-ad34-bc980
 assert.match(gmailRedeploy, /git merge-base --is-ancestor '52dbfce5c4500a1b37a769fec1f90d11e8095da5' "\$GITHUB_SHA"/);
 assert.match(gmailRedeploy, /Unknown untagged source must never be overwritten/);
 assert.match(gmailRedeploy, /exit 1\n\s+fi\n\s+echo "Gmail preflight version/);
-assert.match(gmailRedeploy, /"pre_version" = '139682f0-c10b-4637-be2f-b17941ad0cba'/);
+assert.match(gmailRedeploy, /"\$pre_version" = '139682f0-c10b-4637-be2f-b17941ad0cba'/);
 console.log('Gmail untagged production version allowance remains exact, proof-bound and fail-closed.');
