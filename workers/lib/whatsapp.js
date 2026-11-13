@@ -119,6 +119,11 @@ export async function readSafeMetaErrorCode(response) {
 
 function deliveryError(status, metaErrorCode = null) {
   const statusGroup = statusClass(status);
+  // Graph sometimes reports rate limits as HTTP 400. These documented
+  // numeric codes are transient; a definitive 4xx is not retried.
+  if ([130429, 131056, 80007].includes(metaErrorCode)) {
+    return { delivered: false, errorCode: 'whatsapp_rate_limited', statusClass: statusGroup, metaErrorCode };
+  }
   if (status === 401 || status === 403) {
     return { delivered: false, errorCode: 'whatsapp_credentials_rejected', statusClass: statusGroup, metaErrorCode };
   }
