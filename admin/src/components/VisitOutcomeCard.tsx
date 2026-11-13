@@ -378,7 +378,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
                 {suggestion != null ? (
                   <span className="meta">
                     {copy.suggested}: {formatMoney(suggestion, currency, language)}{' '}
-                    {priceValue !== suggestion ? <button type="button" className="badge" onClick={() => setPrice(String(suggestion))}>{copy.useSuggestion}</button> : null}
+                    {priceValue !== suggestion ? <button type="button" className="badge" onClick={() => { setPrice(String(suggestion)); if (fieldError?.field === 'price') setFieldError(null); }}>{copy.useSuggestion}</button> : null}
                   </span>
                 ) : null}
               </label>
