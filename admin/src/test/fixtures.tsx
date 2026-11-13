@@ -13,7 +13,7 @@ import { RouterProvider } from '../lib/router';
 import { SessionProvider } from '../lib/session';
 import { SurfaceProvider, type CrmSurface } from '../lib/surface';
 import type { ArtistMembership, CrmRole, EnquiryStatus } from '../lib/types';
-import type { IntegrationStatus } from '../lib/platform-api';
+import type { ChatgptPluginAuthStatus, IntegrationStatus } from '../lib/platform-api';
 
 export const VLADIMIR_ARTIST_ID = 'a1111111-1111-4111-8111-111111111111';
 export const KRISTINA_ARTIST_ID = 'a2222222-2222-4222-8222-222222222222';
@@ -474,6 +474,8 @@ export interface FakeClientOptions {
   accessibleArtistIds?: string[];
   /** Status metadata returned by the integrations RPC, for channel-specific UI tests. */
   integrationStatuses?: IntegrationStatus[];
+  /** A profile-only OAuth status row; never includes tokens or provider secrets. */
+  chatgptPluginStatus?: ChatgptPluginAuthStatus;
   /**
    * Extra `sessions` rows appended to the shared SESSION fixture. Grouped
    * deposit selection only renders with two or more eligible appointments.
@@ -1260,6 +1262,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
 
       if (name === 'list_accessible_artists') {
         return { data: ARTISTS.filter((artist) => accessibleArtistIds.includes(artist.id)), error: null };
+      }
+      if (name === 'refresh_my_chatgpt_plugin_auth_status') {
+        return { data: [options.chatgptPluginStatus ?? { connection_state: 'not_configured', last_oauth_refresh_at: null }], error: null };
       }
       if (name === 'list_integration_status') return { data: options.integrationStatuses ?? INTEGRATION_STATUS, error: null };
       if (name === 'list_notifications') {
