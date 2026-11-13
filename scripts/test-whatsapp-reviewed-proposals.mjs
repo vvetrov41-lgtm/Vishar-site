@@ -129,7 +129,7 @@ assert.equal(cleanBody,[
   'Please check the arrival instructions before coming.',
   '',
   'See you tomorrow!',
-].join('\\n'));
+].join('\n'));
 assert.deepEqual(cleanButtons.map(b=>[b.type,b.text]),[
   ['URL','Arrival instructions'],['QUICK_REPLY','Need another time'],
 ]);
