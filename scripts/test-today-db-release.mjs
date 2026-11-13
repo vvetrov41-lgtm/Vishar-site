@@ -360,3 +360,13 @@ for(const invalid of [
   cashV3Transition.replace('20261112210000 | 20261112210000','20261112210000 | '),
   cashV3Transition+'\n | 20261112215000 | t',
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+// The background Gmail memory migration is the sole approved next step.
+const gmailAiCapture = ' Local | Remote | Time\n 20261112220000 | 20261112220000 | t\n 20261113010000 | | t';
+assert.equal(verifyTodayLineage(gmailAiCapture), '20261113010000');
+for (const invalid of [
+  gmailAiCapture + '\n 20261113011000 | | t',
+  gmailAiCapture.replace('20261113010000 | |', '20261113011000 | |'),
+  gmailAiCapture.replace('20261112220000 | 20261112220000', '20261112220000 | '),
+  gmailAiCapture + '\n | 20261113010900 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
