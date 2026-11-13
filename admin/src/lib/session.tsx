@@ -42,6 +42,7 @@ import { createGmailMetadataApi, type GmailMetadataApi } from './gmail-metadata-
 import { createAiIntakeApi, type AiIntakeApi } from './ai-intake-api';
 import { createAttentionApi, type AttentionApi } from './attention-api';
 import { createTodayPulseApi, type TodayPulseApi } from './today-pulse';
+import { createVisitOutcomeApi, type VisitOutcomeApi } from './visit-outcome-api';
 import { createSchedulingApi, type SchedulingApi } from './scheduling-api';
 import { createInstagramConnectionsApi, type InstagramConnectionsApi } from './instagram-connections-api';
 import { createInvoiceApi, type InvoiceApi } from './invoice-api';
@@ -82,7 +83,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & OutgoingReviewApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & OutgoingReviewApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi & VisitOutcomeApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -169,6 +170,7 @@ export function SessionProvider({
       createAiIntakeApi(client),
       createAttentionApi(client),
       createTodayPulseApi(client),
+      createVisitOutcomeApi(client),
       createSchedulingApi(client),
       createInstagramConnectionsApi(client),
       createPlatformApi(client),

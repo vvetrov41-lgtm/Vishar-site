@@ -450,6 +450,8 @@ export interface FakeClientOptions {
   /** Controlled pending reads for critical-path regression tests. */
   tableBarrier?: Record<string, Promise<void>>;
   rpcBarrier?: Record<string, Promise<void>>;
+  /** Answers for an RPC the default fixtures do not model. */
+  rpcHandlers?: Record<string, (args: Record<string, unknown> | undefined) => { data: unknown; error: unknown } | Promise<{ data: unknown; error: unknown }>>;
   /** Rows for a table the default fixtures leave empty, keyed by table name. */
   tableRows?: Record<string, Record<string, unknown>[]>;
   privacyNoticeVersion?: string;
@@ -1084,6 +1086,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
     rpc: async (name, args) => {
       rpcCalls.push({ name, args });
       await options.rpcBarrier?.[name];
+
+      const handler = options.rpcHandlers?.[name];
+      if (handler) return await handler(args) as any;
 
       if (options.failRpc === name) {
         return {

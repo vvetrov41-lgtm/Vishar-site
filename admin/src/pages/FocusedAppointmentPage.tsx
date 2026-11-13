@@ -113,6 +113,8 @@ export function FocusedAppointmentPage({ appointmentId }: { appointmentId: strin
             changing={changing}
             onStatus={(status) => { void changeStatus(status); }}
             onReschedule={reschedule}
+            outcomeOpen
+            onOutcomeSaved={state.reload}
           />
         </div>
       )}

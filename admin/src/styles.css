@@ -1372,3 +1372,29 @@ button.booking-slot .title { font-variant-numeric: tabular-nums; }
   font-size: 0.9rem;
 }
 section.card[id] { scroll-margin-top: 56px; }
+
+/* Visit outcomes (Today + appointment page). Phone first: one column, large
+   tap targets, no tables. */
+.visit-outcome { display: block; }
+.visit-outcome-head .title { font-weight: 600; }
+.visit-outcome-facts { margin-top: 6px; }
+.visit-outcome-question { margin: 12px 0 8px; font-weight: 600; }
+.visit-outcome-actions { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+.visit-outcome-actions button { width: 100%; min-height: 48px; }
+.visit-outcome-form { display: grid; gap: 12px; margin-top: 10px; }
+.visit-field { display: grid; gap: 6px; margin: 0; }
+.visit-field input, .visit-field textarea { width: 100%; font-size: 16px; }
+.visit-field .meta { font-size: 0.78rem; }
+.visit-check { display: flex; gap: 10px; align-items: flex-start; font-size: 0.85rem; color: var(--text); margin: 0; }
+.visit-check input { width: 22px; height: 22px; flex: none; margin-top: 1px; }
+.visit-segment { display: flex; flex-wrap: wrap; gap: 8px; }
+.visit-segment button { flex: 1 1 calc(50% - 8px); min-height: 44px; padding: 8px 12px; }
+.visit-bookings button { flex-basis: 100%; text-align: left; }
+.visit-outcome-money { display: grid; gap: 2px; }
+.visit-outcome-total.warn { color: var(--warn); }
+.visit-outcome-saved { margin-top: 8px; }
+.visit-outcome-list { gap: 12px; }
+@media (min-width: 640px) {
+  .visit-outcome-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .visit-segment button { flex: 0 1 auto; }
+}

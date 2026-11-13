@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { calendarSyncLabel } from '../lib/calendar-sync';
 import { SessionCheckout } from './SessionCheckout';
+import { VisitOutcomePanel } from './VisitOutcomeCard';
 import { appointmentDisplayStatus } from '../lib/appointment-display-status';
 import { formatDateTime } from '../lib/format';
 import type { Language } from '../lib/i18n';
@@ -20,6 +21,8 @@ export function AppointmentRow({
   changing,
   onStatus,
   onReschedule,
+  outcomeOpen = false,
+  onOutcomeSaved,
 }: {
   appointment: Appointment;
   client: Client | null;
@@ -32,6 +35,9 @@ export function AppointmentRow({
   changing: boolean;
   onStatus: (status: SessionStatus) => void;
   onReschedule: (startAt: string, endAt: string) => Promise<void>;
+  /** The focused appointment page opens the visit outcome directly. */
+  outcomeOpen?: boolean;
+  onOutcomeSaved?: () => void;
 }) {
   const copy = COPY[language];
   const appointmentName = `${typeLabel(appointment.appointment_type, language)} · ${formatDateTime(appointment.start_at, language)}`;
@@ -73,6 +79,7 @@ export function AppointmentRow({
           <span className="badge">{copy.noProject}</span>
         )}
       </div>
+      <VisitOutcomePanel appointment={appointment} initiallyOpen={outcomeOpen} onSaved={onOutcomeSaved} />
       <SessionCheckout appointment={appointment} />
       {mayManage && isActive ? (
         <>

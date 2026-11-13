@@ -23,6 +23,8 @@ import {
   type ClientMobileTab,
 } from '../components/ClientMobileTabs';
 import { useAsync } from '../components/AsyncData';
+import { visitOutcomeLabel } from '../components/VisitOutcomeCard';
+import type { ClientVisitOutcome } from '../lib/visit-outcome-api';
 import { DetailBackLink } from '../components/DetailContext';
 import { BookingDisclosure } from '../components/BookingDisclosure';
 import { BookingPanel } from '../components/BookingPanel';
@@ -667,7 +669,18 @@ function pastClientAppointments(appointments: Appointment[]): Appointment[] {
     .slice(0, 5);
 }
 
-function ClientAppointmentRow({ appointment }: { appointment: Appointment }) {
+/** Confirmed visit outcomes of this client, for a small badge per past appointment. */
+function useClientVisitOutcomes(appointments: Appointment[]): Map<string, ClientVisitOutcome> {
+  const api = useApi();
+  const clientId = appointments[0]?.client_id ?? null;
+  const state = useAsync<ClientVisitOutcome[]>(
+    async () => (clientId ? api.listClientVisitOutcomes(clientId).catch(() => []) : []),
+    [api, clientId],
+  );
+  return new Map((state.data ?? []).filter((row) => row.state === 'confirmed').map((row) => [row.session_id, row]));
+}
+
+function ClientAppointmentRow({ appointment, outcome }: { appointment: Appointment; outcome?: ClientVisitOutcome }) {
   const { t, label, language } = useLanguage();
   const cancelled = appointment.cancelled_at !== null;
   return (
@@ -681,6 +694,7 @@ function ClientAppointmentRow({ appointment }: { appointment: Appointment }) {
         {appointment.duration_hours !== null ? (
           <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>
         ) : null}
+        {outcome?.outcome ? <>{' '}<span className="badge ok">{visitOutcomeLabel(outcome.outcome, language)}</span></> : null}
       </div>
     </Link>
   );
@@ -690,6 +704,7 @@ function BookingsSection({ appointments }: { appointments: Appointment[] }) {
   const { t } = useLanguage();
   const upcoming = upcomingClientAppointments(appointments);
   const past = pastClientAppointments(appointments);
+  const outcomes = useClientVisitOutcomes(appointments);
 
   return (
     <Section
@@ -727,7 +742,7 @@ function BookingsSection({ appointments }: { appointments: Appointment[] }) {
               <h3 style={{ marginTop: 14 }}>{t('clientWorkspace.past')}</h3>
               <div className="list">
                 {past.map((appointment) => (
-                  <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+                  <ClientAppointmentRow key={appointment.id} appointment={appointment} outcome={outcomes.get(appointment.id)} />
                 ))}
               </div>
             </div>
@@ -741,6 +756,7 @@ function BookingsSection({ appointments }: { appointments: Appointment[] }) {
 function PastBookingsMobileSection({ appointments }: { appointments: Appointment[] }) {
   const { t } = useLanguage();
   const past = pastClientAppointments(appointments);
+  const outcomes = useClientVisitOutcomes(appointments);
   return (
     <div className="client-mobile-history-only">
       <Section title={t('clientWorkspace.previousBookings')}>
@@ -749,7 +765,7 @@ function PastBookingsMobileSection({ appointments }: { appointments: Appointment
         ) : (
           <div className="list">
             {past.map((appointment) => (
-              <ClientAppointmentRow key={appointment.id} appointment={appointment} />
+              <ClientAppointmentRow key={appointment.id} appointment={appointment} outcome={outcomes.get(appointment.id)} />
             ))}
           </div>
         )}
