@@ -559,6 +559,8 @@ export {
   searchThreads,
   listRecentCorrespondents,
   getThread,
+  normalizeMessage,
+  extractEmails,
   sendMessage,
 };
 
