@@ -209,8 +209,20 @@ jobs:
           supabase migration list > "$RUNNER_TEMP/production-migrations.txt"
           node scripts/check-production-migration-ledger.mjs "$RUNNER_TEMP/production-migrations.txt"
 
+      # Both approved SQL files are committed, but production accepts one
+      # migration per release. Preserve source SHA and move ONLY the known
+      # later v5 migration to a runner-local temporary folder.
+      - name: Isolate exactly one future reviewed migration
+        if: github.event_name == 'push' || inputs.deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list > "$RUNNER_TEMP/today-full-migrations.txt"
+          node scripts/stage-today-db-release.mjs --stage "$RUNNER_TEMP/today-full-migrations.txt" "$RUNNER_TEMP/today-deferred"
+
+
       - name: Verify Today production lineage and sole pending migration
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.deploy
         shell: bash
         run: |
           set -euo pipefail
@@ -241,6 +253,22 @@ jobs:
           set -euo pipefail
           supabase db push --dry-run | tee "$RUNNER_TEMP/database-after.txt"
           grep -Fq 'Remote database is up to date.' "$RUNNER_TEMP/database-after.txt"
+
+      - name: Restore deferred migration source, even if release failed
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/stage-today-db-release.mjs --restore "$RUNNER_TEMP/today-deferred"
+
+      - name: Verify complete migration ledger after restoring the source
+        if: success() && (github.event_name == 'push' || inputs.deploy)
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration list > "$RUNNER_TEMP/full-migration-readback.txt"
+          node scripts/check-production-migration-ledger.mjs "$RUNNER_TEMP/full-migration-readback.txt"
+
 
       - name: Production database boundary summary
         if: always()
