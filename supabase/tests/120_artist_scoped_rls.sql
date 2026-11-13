@@ -130,6 +130,29 @@ insert into public.integration_outbox (
    'e2222222-2222-4222-8222-222222222222',
    'a2222222-2222-4222-8222-222222222222');
 
+-- Two rollback-only synthetic conversation histories; no provider send.
+insert into public.communication_conversations
+  (id,artist_id,channel,integration_key,external_contact_id)
+values
+  ('c8111111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111',
+   'whatsapp','rls-vladimir-synthetic','447700991111'),
+  ('c8222222-2222-4222-8222-222222222222',
+   'a2222222-2222-4222-8222-222222222222',
+   'whatsapp','rls-kristina-synthetic','447700992222');
+
+insert into public.communication_messages
+  (id,conversation_id,artist_id,channel,direction,origin,status,body)
+values
+  ('c9111111-1111-4111-8111-111111111111',
+   'c8111111-1111-4111-8111-111111111111',
+   'a1111111-1111-4111-8111-111111111111',
+   'whatsapp','outbound','crm','queued','Synthetic Vladimir message'),
+  ('c9222222-2222-4222-8222-222222222222',
+   'c8222222-2222-4222-8222-222222222222',
+   'a2222222-2222-4222-8222-222222222222',
+   'whatsapp','outbound','crm','queued','Synthetic Kristina message');
+
 -- Operational, finance and integration events are separated by event prefix.
 insert into public.activity_log (
   event_type, actor_kind, client_id, enquiry_id, artist_id, metadata
@@ -187,6 +210,10 @@ select is((select count(*)::int from public.follow_ups), 2,
           'the shared manager sees follow-ups for both artists');
 select is((select count(*)::int from public.email_messages), 2,
           'the shared manager sees managed email drafts for both artists');
+select is((select count(*)::int from public.communication_conversations), 2,
+          'shared manager can view conversations for both authorized artists');
+select is((select count(*)::int from public.communication_messages), 2,
+          'shared manager can view messages for both authorized artists');
 
 select ok(public.can_view_artist_finance('a1111111-1111-4111-8111-111111111111'),
           'Vladimir finance can be enabled for the shared manager');
@@ -248,6 +275,12 @@ select is((select count(*)::int from public.follow_ups), 1,
           'the reader sees only Kristina follow-ups');
 select is((select count(*)::int from public.email_messages), 0,
           'read-only membership sees no email contents');
+select is((select count(*)::int from public.communication_conversations), 1,
+          'Kristina-only reader sees only her conversation');
+select is((select count(*)::int from public.communication_messages), 1,
+          'Kristina-only reader sees only her communication message');
+select is((select count(*)::int from public.communication_messages where artist_id='a1111111-1111-4111-8111-111111111111'), 0,
+          'Kristina-only reader cannot directly query Vladimir messages');
 select is((select count(*)::int from public.integration_outbox), 0,
           'read-only membership sees no integration jobs');
 select is((select count(*)::int from public.projects_finance), 0,
@@ -270,6 +303,10 @@ select is((select count(*)::int from public.clients), 0,
           'an auth user without a profile sees no clients');
 select is((select count(*)::int from public.enquiries), 0,
           'an auth user without a profile sees no enquiries');
+select is((select count(*)::int from public.communication_conversations), 0,
+          'unauthorized signed-in user sees no conversations');
+select is((select count(*)::int from public.communication_messages), 0,
+          'unauthorized signed-in user sees no communication messages');
 select is((select count(*)::int from public.projects_finance), 0,
           'an auth user without a profile sees no finance');
 reset role;
@@ -286,6 +323,10 @@ select is((select count(*)::int from public.clients), 2,
           'the owner sees both client histories');
 select is((select count(*)::int from public.enquiries), 2,
           'the owner sees both enquiries');
+select is((select count(*)::int from public.communication_conversations), 2,
+          'CRM owner retains visibility of both artist conversation histories');
+select is((select count(*)::int from public.communication_messages), 2,
+          'CRM owner retains visibility of both artist message histories');
 select is((select count(*)::int from public.projects), 2,
           'the owner sees both projects');
 select is((select count(*)::int from public.sessions), 2,
