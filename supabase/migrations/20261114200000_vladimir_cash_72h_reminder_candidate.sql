@@ -47,21 +47,13 @@ BEGIN
     WHERE artist_id='a2222222-2222-4222-8222-222222222222'::uuid
       AND kind='reminder_72h_cash'
   )
-  OR NOT EXISTS (
+  OR EXISTS (
     SELECT 1 FROM crm_private.lifecycle_whatsapp_template_registry
-    WHERE artist_id='a1111111-1111-4111-8111-111111111111'::uuid
-      AND purpose='session_reminder_72h'
-      AND template_name='vishar_lifecycle_reminder_72h_v4'
+    WHERE purpose='session_reminder_72h'
+      AND template_name='vishar_lifecycle_reminder_72h_v5'
   ) THEN
-    -- In clean CI databases the active template may be v3 or absent;
-    -- this check must not assume a live Meta approval exists.
-    IF EXISTS (SELECT 1 FROM crm_private.lifecycle_whatsapp_template_registry
-      WHERE artist_id='a1111111-1111-4111-8111-111111111111'::uuid
-        AND purpose='session_reminder_72h'
-        AND template_name='vishar_lifecycle_reminder_72h_v5') THEN
-      RAISE EXCEPTION '72h v5 must not be activated at staging'
-        USING errcode='23514';
-    END IF;
+    RAISE EXCEPTION '72h cash candidate staging contract violated'
+      USING errcode='23514';
   END IF;
 END;
 $postcheck$;
