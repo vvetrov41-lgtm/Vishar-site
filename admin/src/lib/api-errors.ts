@@ -252,6 +252,7 @@ function readString(error: unknown, key: 'code' | 'message'): string {
  * modules without a translation appearing here first.
  */
 export const API_MESSAGES = {
+  'The project changed while it was open. Reload it before saving again.': 'Проект изменился, пока ты его редактировал. Перезагрузи карточку, прежде чем сохранять снова.',
   'A personal Telegram connection cannot name an artist.': 'Личное подключение Telegram не может быть привязано к мастеру.',
   'Choose an artist before connecting a shared Telegram group.': 'Выберите мастера, прежде чем подключать общую группу Telegram.',
   'Could not add that artist.': 'Не удалось добавить мастера. Изменения не сохранены — попробуйте ещё раз.',
