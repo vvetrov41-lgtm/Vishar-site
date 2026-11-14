@@ -48,6 +48,8 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [projectStatus, setProjectStatus] = useState<ProjectStatus>('draft');
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [draftDescription, setDraftDescription] = useState('');
 
   const { data, loading, error, reload } = useAsync<ProjectData>(async () => {
     const project = await api.getProject(projectId);
@@ -87,6 +89,11 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
     if (data?.project) setProjectStatus(data.project.status);
   }, [data?.project?.status]);
 
+  useEffect(() => {
+    setDraftDescription(data?.project?.description ?? '');
+    setEditingDescription(false);
+  }, [projectId, data?.project?.description]);
+
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
     setActionError(null);
@@ -107,16 +114,22 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const { project, clientName, finance, appointments, sessionFinance, notes } = data;
   const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
   const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
-  const mayManageFinance = canAccess(role, 'manageFinance', scopedMemberships);
-  const mayManageAppointments = role === 'owner' || (
+  const isArchived = Boolean(project.archived_at);
+  const mayManageFinance = !isArchived && canAccess(role, 'manageFinance', scopedMemberships);
+  const mayManageAppointments = !isArchived && (role === 'owner' || (
     role === 'booking_manager'
     && scopedMemberships.some((membership) => membership.is_active && membership.can_manage_sessions)
-  );
-  const mayManageProject = role === 'owner' || (
+  ));
+  const mayManageProject = !isArchived && (role === 'owner' || (
     role === 'booking_manager'
     && scopedMemberships.some((membership) => membership.is_active && membership.access_level !== 'read_only')
+  ));
+  const mayEditEstimate = role === 'owner' && !isArchived;
+  const unfinishedAppointments = appointments.some((appointment) =>
+    appointment.cancelled_at === null
+    && ['draft', 'proposed', 'confirmed'].includes(appointment.status)
   );
-  const mayEditEstimate = role === 'owner';
+  const canArchive = ['completed', 'cancelled'].includes(project.status) && !unfinishedAppointments;
   const priceFor = (appointmentId: string) =>
     sessionFinance.find((entry) => entry.session_id === appointmentId)?.price ?? null;
   const hasConfirmedWork = appointments.some((appointment) => ['confirmed', 'completed'].includes(appointment.status));
@@ -131,6 +144,42 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       return Number.isFinite(startAt) && startAt >= now;
     })
     .sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime())[0] ?? null;
+
+  async function saveDescription() {
+    if (busy || isArchived) return;
+    setBusy(true);
+    setActionError(null);
+    try {
+      await api.updateProjectDescription(project.id, draftDescription, project.description);
+      setEditingDescription(false);
+      reload();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : t('project.actionFailed'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeArchiveState(archived: boolean) {
+    if (busy) return;
+    const confirmed = await confirmDialog({
+      title: archived
+        ? (language === 'ru' ? 'Архивировать проект?' : 'Archive this project?')
+        : (language === 'ru' ? 'Восстановить проект?' : 'Restore this project?'),
+      message: archived
+        ? (language === 'ru'
+          ? 'Проект исчезнет из активного списка, но записи, платежи и история сохранятся.'
+          : 'The project will leave active lists. Bookings, payments and history will remain.')
+        : (language === 'ru'
+          ? 'Проект снова появится в активном списке без изменения его статуса.'
+          : 'The project will reappear in active lists without changing its status.'),
+      confirmLabel: archived
+        ? (language === 'ru' ? 'Архивировать' : 'Archive project')
+        : (language === 'ru' ? 'Восстановить' : 'Restore project'),
+      cancelLabel: cancelLabelFor(language),
+    });
+    if (confirmed) await run(() => api.setProjectArchiveState(project.id, archived));
+  }
 
   async function changeProjectStatus(nextStatus: ProjectStatus) {
     if (nextStatus === project.status) return;
@@ -173,7 +222,10 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
               <p style={{ color: 'var(--muted)', fontSize: '0.9rem', margin: '0 0 8px' }}>{project.title}</p>
             ) : null}
           </div>
-          <span className={project.status === 'active' ? 'badge ok' : 'badge'}>{projectStatusLabel(project.status, language)}</span>
+          <span className={project.status === 'active' && !isArchived ? 'badge ok' : 'badge'}>
+            {projectStatusLabel(project.status, language)}
+            {isArchived ? ` · ${language === 'ru' ? 'в архиве' : 'archived'}` : ''}
+          </span>
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -192,6 +244,37 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
         {project.description ? (
           <p style={{ whiteSpace: 'pre-wrap', color: 'var(--muted)', marginBlock: 10 }}>{project.description}</p>
+        ) : null}
+        {mayManageProject ? (
+          <div style={{ marginTop: 10 }}>
+            {!editingDescription ? (
+              <button type="button" onClick={() => setEditingDescription(true)}>
+                {language === 'ru' ? 'Редактировать описание' : 'Edit description'}
+              </button>
+            ) : (
+              <div>
+                <label htmlFor="project-description">
+                  {language === 'ru' ? 'Описание проекта' : 'Project description'}
+                </label>
+                <textarea
+                  id="project-description"
+                  value={draftDescription}
+                  onChange={(event) => setDraftDescription(event.target.value)}
+                  maxLength={4000}
+                  rows={4}
+                  disabled={busy}
+                />
+                <div className="actions">
+                  <button type="button" className="primary" disabled={busy} onClick={() => { void saveDescription(); }}>
+                    {language === 'ru' ? 'Сохранить' : 'Save'}
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => { setDraftDescription(project.description ?? ''); setEditingDescription(false); }}>
+                    {language === 'ru' ? 'Отмена' : 'Cancel'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         ) : null}
         <div className="actions" style={{ marginTop: 10 }}>
           <Link to={`/clients/${project.client_id}`} className="badge">{t('project.openClient')}</Link>
@@ -213,7 +296,28 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             </select>
           </div>
         ) : null}
+        {role === 'owner' ? (
+          <div className="actions" style={{ marginTop: 12 }}>
+            {isArchived ? (
+              <button type="button" disabled={busy} onClick={() => { void changeArchiveState(false); }}>
+                {language === 'ru' ? 'Восстановить из архива' : 'Restore from archive'}
+              </button>
+            ) : canArchive ? (
+              <button type="button" className="danger" disabled={busy} onClick={() => { void changeArchiveState(true); }}>
+                {language === 'ru' ? 'Архивировать проект' : 'Archive project'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
+
+      {isArchived ? (
+        <p className="notice" role="status">
+          {language === 'ru'
+            ? 'Проект в архиве. История доступна для просмотра, новые записи и изменения отключены.'
+            : 'This project is archived. History remains available; new bookings and edits are disabled.'}
+        </p>
+      ) : null}
 
       {lifecycleMismatch ? <div className="notice warn" role="status">{copy.draftMismatch}</div> : null}
       {actionError ? <div className="notice warn" role="alert">{actionError}</div> : null}
@@ -258,7 +362,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
                     {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
-                  <SessionCheckout appointment={appointment} />
+                  {!isArchived ? <SessionCheckout appointment={appointment} /> : null}
 
                   {active ? (
                     <BookingCardStatusLine
