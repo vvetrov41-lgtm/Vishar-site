@@ -20,20 +20,22 @@ export function ClientsPage() {
     [api, debouncedSearch]
   );
   const shownClientIds = useMemo(() => (data ?? []).map((client) => client.id), [data]);
+  // The search may return the same people for different terms. Keep the
+  // relationship read stable unless the actual set of displayed IDs changes.
+  const shownClientKey = shownClientIds.join(',');
   const {
     data: clientArtistIds,
     error: relationshipError,
     reload: reloadRelationships,
   } = useAsync<Map<string, string[]>>(async () => {
-    const [enquiries, projects, links] = await Promise.all([
-      api.listEnquiries(),
-      api.listProjects(),
-      // Links only for the cards on screen, so a large workspace cannot
-      // truncate the one relationship a standalone card has.
+    const [workLinks, directLinks] = await Promise.all([
+      // Legacy links still exist only through enquiries/projects for some clients.
+      // Restrict both reads to these visible cards; keep RLS as authority.
+      api.listClientWorkArtistLinks(shownClientIds),
       api.listClientArtistLinks(shownClientIds),
     ]);
-    return collectClientArtistIds(enquiries, projects, links);
-  }, [api, shownClientIds]);
+    return collectClientArtistIds(workLinks, directLinks);
+  }, [api, shownClientKey]);
 
   return (
     <>

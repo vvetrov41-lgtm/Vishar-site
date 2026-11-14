@@ -543,6 +543,36 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       );
     },
 
+    /**
+     * Artist relationships for the visible client cards, including legacy
+     * clients without a direct client_artist_links row. Select only two IDs
+     * instead of transferring every enquiry and project in the workspace.
+     */
+    async listClientWorkArtistLinks(clientIds: string[]): Promise<ClientArtistLink[]> {
+      const ids = [...new Set(clientIds.filter(Boolean))];
+      if (ids.length === 0) return [];
+
+      const [enquiryResult, projectResult] = await Promise.all([
+        client
+          .from('enquiries')
+          .select('client_id, artist_id')
+          .in('client_id', ids)
+          .is('archived_at', null)
+          .eq('intake_state', 'complete')
+          .limit(1000),
+        client
+          .from('projects')
+          .select('client_id, artist_id')
+          .in('client_id', ids)
+          .is('archived_at', null)
+          .limit(1000),
+      ]);
+      return [
+        ...unwrap<ClientArtistLink[]>(enquiryResult, 'load clients'),
+        ...unwrap<ClientArtistLink[]>(projectResult, 'load clients'),
+      ];
+    },
+
     /** Direct client/artist links for cards that have no enquiry or project yet. */
     async listClientArtistLinks(clientIds: string | string[]): Promise<ClientArtistLink[]> {
       const ids = [...new Set(Array.isArray(clientIds) ? clientIds : [clientIds])].filter(Boolean);
