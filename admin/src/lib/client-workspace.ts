@@ -91,7 +91,7 @@ function isLive(appointment: Appointment): boolean {
  * a question about the sleeve being booked now.
  */
 function pickDepositProject(projects: Project[]): Project | null {
-  const ranked = [...projects].sort((left, right) => {
+  const ranked = projects.filter((project) => !project.archived_at).sort((left, right) => {
     const leftActive = left.status === 'active' ? 0 : 1;
     const rightActive = right.status === 'active' ? 0 : 1;
     if (leftActive !== rightActive) return leftActive - rightActive;
@@ -139,8 +139,12 @@ export function summariseClientWorkspace(input: ClientWorkspaceInput): ClientWor
     .filter((followUp) => time(followUp.due_at) < nowMs)
     .sort((left, right) => time(left.due_at) - time(right.due_at));
 
-  const openEnquiries = input.enquiries.filter((enquiry) => OPEN_ENQUIRY_STATUSES.has(enquiry.status));
-  const activeProjects = input.projects.filter((project) => project.status === 'active');
+  const openEnquiries = input.enquiries.filter((enquiry) =>
+    !enquiry.archived_at && OPEN_ENQUIRY_STATUSES.has(enquiry.status)
+  );
+  const activeProjects = input.projects.filter((project) =>
+    !project.archived_at && project.status === 'active'
+  );
   const depositProject = pickDepositProject(input.projects);
 
   return {
