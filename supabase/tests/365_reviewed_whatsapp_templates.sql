@@ -19,14 +19,14 @@ SELECT is(
   WHERE artist_id IN (
     'a1111111-1111-4111-8111-111111111111',
     'a2222222-2222-4222-8222-222222222222'
-  ) AND kind NOT IN ('booking_tattoo_cash','reminder_24h_clean')),18,
+  ) AND kind NOT IN ('booking_tattoo_cash','reminder_24h_clean','reminder_72h_cash')),18,
  'Twelve original proposals, four reviewed buttons, and two York House proposals'
 );
 
 SELECT is(
  (SELECT count(*)::integer FROM crm_private.whatsapp_template_proposals
   WHERE approval_status='UNKNOWN' AND provider_template_id IS NULL
-    AND kind NOT IN ('booking_tattoo_cash','reminder_24h_clean')),18,
+    AND kind NOT IN ('booking_tattoo_cash','reminder_24h_clean','reminder_72h_cash')),18,
  'All original eighteen proposals begin without invented Meta approval'
 );
 
