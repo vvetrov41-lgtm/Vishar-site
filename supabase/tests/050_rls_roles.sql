@@ -609,6 +609,10 @@ insert into expected_function_acl values
   ('public.update_project_deposit(uuid,numeric,public.deposit_status,text)', false, true, false),
   ('public.update_project_estimate(uuid,numeric,numeric,integer,numeric,text)', false, true, false),
   ('public.set_project_status(uuid,public.project_status)', false, true, false),
+  -- Phase 4: artist-scoped project operations with owner-only archive in RPC.
+  ('public.create_client_project(uuid,uuid,uuid,text,text)', false, true, false),
+  ('public.update_project_description(uuid,text,text)', false, true, false),
+  ('public.set_project_archive_state(uuid,boolean)', false, true, false),
   ('public.create_internal_note(text,uuid,uuid,uuid,uuid)', false, true, false),
   ('public.create_follow_up(text,timestamptz,uuid,uuid,uuid,uuid,text)', false, true, false),
   ('public.complete_follow_up(uuid)', false, true, false),

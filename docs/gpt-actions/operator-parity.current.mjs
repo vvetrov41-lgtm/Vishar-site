@@ -175,6 +175,16 @@ export const OPERATOR_PARITY = Object.freeze([
   row('projects.get', 'Projects', 'view_projects', 'read', A, 'getProject', ['public.gpt_get_project']),
   row('projects.update', 'Projects', 'manage_projects', 'write', A, 'updateProject', ['public.gpt_update_project_details']),
   row('projects.set_status', 'Projects', 'manage_projects', 'write', A, 'setProjectStatus', ['public.gpt_set_project_status', 'public.set_project_status']),
+  // Phase 4 human CRM RPCs are classified but not routed to GPT without review.
+  row('projects.standalone.create', 'Projects', 'manage_projects', 'write', N, 'createStandaloneClientProject', ['public.create_client_project'], {
+    note: 'Create a standalone tattoo project from an existing scoped client with a stable retry UUID. GPT access is not enabled or routed.',
+  }),
+  row('projects.description.edit', 'Projects', 'manage_projects', 'write', N, 'editProjectDescription', ['public.update_project_description'], {
+    note: 'Compare-and-set project description edit in the CRM. GPT access is not enabled or routed.',
+  }),
+  row('projects.archive.restore', 'Projects', 'manage_projects', 'write', N, 'setProjectArchiveState', ['public.set_project_archive_state'], {
+    note: 'Owner-only project soft archive and restore with an appointment guard. GPT access is not enabled or routed.',
+  }),
   row('notes.list', 'Projects', 'view_crm', 'read', A, 'listInternalNotes', ['public.gpt_list_internal_notes']),
   row('notes.create', 'Projects', 'manage_crm', 'write', A, 'createInternalNote', ['public.gpt_create_internal_note', 'public.create_internal_note']),
   row('files.enquiry.list', 'Projects', 'view_enquiries', 'read', A, 'listEnquiryFiles', ['public.gpt_list_enquiry_files']),

@@ -117,6 +117,8 @@ export function verifyTodayLineage(source) {
     ['20261113220000', '20261113230000'],
     // Phase 3: security-definer Today must hide archived Gmail clients.
     ['20261113230000', '20261113233000'],
+    // Phase 4: exactly one isolated project lifecycle migration. No other writes.
+    ['20261113233000', '20261114090000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
