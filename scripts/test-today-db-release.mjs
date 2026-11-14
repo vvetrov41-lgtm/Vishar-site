@@ -493,3 +493,16 @@ for (const bad of [
   visitOutcomes.replace('20261113170000 | 20261113170000', '20261113170000 | '),
   visitOutcomes + '\n 20261113190000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+
+// Visit outcomes, grouped deposits: one read-only function after the live head.
+const groupedDeposit = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261114090000 | 20261114090000 | t',
+  ' 20261114100000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(groupedDeposit), '20261114100000');
+assert.equal(deferredTodayMigration(groupedDeposit), null);
+for (const bad of [
+  groupedDeposit.replace('20261114100000 | |', '20261114100001 | |'),
+  groupedDeposit + '\n 20261114110000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
