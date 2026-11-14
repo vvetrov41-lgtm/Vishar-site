@@ -179,8 +179,9 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       <ClientMobileTabPanel tab="work" active={mobileTab}>
         <NextActionCard snapshot={snapshot} />
 
-        {can(role, 'manageProjects') ? (
+        {!client.archived_at && can(role, 'manageProjects') ? (
           <ClientProjectCreatePanel
+            key={`${clientId}:${bookingArtistId ?? ''}`}
             clientId={clientId}
             artistId={bookingArtistId}
             language={language}
@@ -198,7 +199,7 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
             comes from the client's own work when it is unambiguous, and from the
             scope selector otherwise - never from a free-text field, because the
             artist decides the whole schedule. */}
-        {can(role, 'manageSessions') ? (
+        {!client.archived_at && can(role, 'manageSessions') ? (
           <BookingDisclosure>
             <BookingPanel
               artistId={bookingArtistId}
