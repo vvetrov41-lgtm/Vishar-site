@@ -17,6 +17,7 @@ import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-r
 import { useEffect, useState } from 'react';
 import { ArtistRelationship } from '../components/ArtistRelationship';
 import { ClientEditPanel } from '../components/ClientEditPanel';
+import { ClientProjectCreatePanel } from '../components/ClientProjectCreatePanel';
 import {
   ClientMobileTabPanel,
   ClientMobileTabs,
@@ -178,6 +179,15 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       <ClientMobileTabPanel tab="work" active={mobileTab}>
         <NextActionCard snapshot={snapshot} />
 
+        {can(role, 'manageProjects') ? (
+          <ClientProjectCreatePanel
+            clientId={clientId}
+            artistId={bookingArtistId}
+            language={language}
+            api={api}
+          />
+        ) : null}
+
         <WorkSection enquiries={enquiries} projects={projects} snapshot={snapshot} />
 
         {can(role, 'viewSessions') ? (
@@ -198,12 +208,12 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
                  without. This screen already holds the client's projects and
                  enquiries, so it offers them rather than sending an operator to
                  another page to find out which. */
-              projectOptions={projects.map((project) => ({
+              projectOptions={projects.filter((project) => !project.archived_at).map((project) => ({
                 id: project.id,
                 label: project.title,
                 enquiryId: project.enquiry_id,
               }))}
-              enquiryOptions={enquiries.map((enquiry) => ({
+              enquiryOptions={enquiries.filter((enquiry) => !enquiry.archived_at).map((enquiry) => ({
                 id: enquiry.id,
                 label: enquiry.reference_number,
               }))}
