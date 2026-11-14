@@ -1,4 +1,4 @@
-import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
+import { apiMessage, ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 import type { Project, ProjectStatus } from './types';
 
 function unwrap<T>(result: { data: T | null; error: any }, what: ApiOperation): T {
@@ -36,7 +36,7 @@ export function createProjectOperationsApi(client: CrmClient) {
         p_expected_description: expectedDescription,
       });
       if (result.error?.hint === 'PROJECT_EDIT_CONFLICT') {
-        throw new ApiError('The project changed while it was open. Reload it before saving again.', result.error);
+        throw new ApiError(apiMessage('The project changed while it was open. Reload it before saving again.'), result.error);
       }
       return unwrap<{ project_id: string; changed: boolean }>(result, 'edit that project description');
     },
