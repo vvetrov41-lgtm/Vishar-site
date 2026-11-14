@@ -209,3 +209,43 @@ assert.throws(()=>__testing.definition({...cashTarget,kind:'booking_consultation
 const fakeCash=structuredClone(cashCard);
 fakeCash.components[0].text=fakeCash.components[0].text.replace('cash payment is preferred','cash payment is required');
 assert.equal(__testing.matches(fakeCash,cashCard),false);
+
+// Vladimir's first (72h) reminder requests cash only when convenient.
+// Keep the already approved v4 byte-identical with the same action buttons.
+const reminder72CashTarget={
+  artist_id:artists[0][0],
+  arrival_guide_url:artists[0][1],
+  preparation_guide_url:artists[0][2],
+  kind:'reminder_72h_cash',
+  template_name:'vishar_lifecycle_reminder_72h_v5',
+  template_language:'en_GB',
+};
+const reminder72Cash=__testing.definition(reminder72CashTarget);
+const reminder72CashText=reminder72Cash.components[0].text;
+const reminder72CashButtons=reminder72Cash.components.at(-1).buttons;
+const reminder72V4=__testing.definition({
+  ...reminder72CashTarget,
+  kind:'reminder_72h_button',
+  template_name:'vishar_lifecycle_reminder_72h_v4',
+});
+const cashSentence="A little note: cash payment is preferred, if that's convenient for you. Thank you!";
+assert.ok(reminder72CashText.includes(cashSentence));
+assert.ok(!reminder72V4.components[0].text.includes(cashSentence));
+assert.ok(reminder72CashText.indexOf(cashSentence)>reminder72CashText.indexOf('non-refundable'));
+assert.deepEqual(reminder72CashButtons,reminder72V4.components.at(-1).buttons);
+assert.deepEqual(reminder72CashButtons.map(x=>[x.type,x.text]),[
+  ['QUICK_REPLY','Confirm attendance'],
+  ['QUICK_REPLY','Need another time'],
+  ['URL','How to prepare'],
+]);
+assert.equal(reminder72Cash.components[0].example.body_text[0].length,2);
+assert.ok(__testing.matches({...reminder72Cash,id:'1234567890123',status:'PENDING'},reminder72Cash));
+const alteredCash=structuredClone(reminder72Cash);
+alteredCash.components[0].text=alteredCash.components[0].text.replace('preferred','required');
+assert.equal(__testing.matches(alteredCash,reminder72Cash),false);
+assert.throws(()=>__testing.definition({
+  ...reminder72CashTarget,
+  artist_id:artists[1][0],
+  arrival_guide_url:artists[1][1],
+  preparation_guide_url:artists[1][2],
+}));

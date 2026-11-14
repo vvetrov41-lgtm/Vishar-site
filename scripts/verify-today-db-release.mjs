@@ -120,8 +120,10 @@ export function verifyTodayLineage(source) {
     // Phase 4: exactly one isolated project lifecycle migration. No other writes.
     ['20261113233000', '20261114090000'],
     // Visit outcomes: read a grouped deposit through its session share. One
-    // read-only function replacement after the Phase 4 lifecycle migration.
-    ['20261114090000', '20261114100000'],
+    // read-only function replacement after the inert 72h cash candidate is live.
+    ['20261114200000', '20261114210000'],
+    // Vladimir-only WhatsApp 72h cash note: inert Meta candidate, no live send switch.
+    ['20261114090000', '20261114200000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

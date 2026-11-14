@@ -497,12 +497,27 @@ for (const bad of [
 // Visit outcomes, grouped deposits: one read-only function after the live head.
 const groupedDeposit = [
   ' Local | Remote | Time (UTC)',
-  ' 20261114090000 | 20261114090000 | t',
-  ' 20261114100000 | | t',
+  ' 20261114200000 | 20261114200000 | t',
+  ' 20261114210000 | | t',
 ].join('\n');
-assert.equal(verifyTodayLineage(groupedDeposit), '20261114100000');
+assert.equal(verifyTodayLineage(groupedDeposit), '20261114210000');
 assert.equal(deferredTodayMigration(groupedDeposit), null);
 for (const bad of [
-  groupedDeposit.replace('20261114100000 | |', '20261114100001 | |'),
-  groupedDeposit + '\n 20261114110000 | | t',
+  groupedDeposit.replace('20261114210000 | |', '20261114210001 | |'),
+  groupedDeposit + '\n 20261114220000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Candidate-only cash note may follow the verified Phase 4 migration head.
+// The release gate still rejects an extra migration or an unexpected predecessor.
+const reminder72CashCandidate=[
+  ' Local | Remote | Time (UTC)',
+  ' 20261114090000 | 20261114090000 | t',
+  ' 20261114200000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(reminder72CashCandidate),'20261114200000');
+assert.equal(deferredTodayMigration(reminder72CashCandidate),null);
+for (const invalid of [
+  reminder72CashCandidate+'\n 20261114210000 | | t',
+  reminder72CashCandidate.replace('20261114200000 | |','20261114210000 | |'),
+  reminder72CashCandidate.replace('20261114090000 | 20261114090000','20261114090000 | '),
+  reminder72CashCandidate+'\n | 20261114190000 | t',
+]) assert.throws(()=>verifyTodayLineage(invalid));
