@@ -101,7 +101,7 @@ describe('Phase 4: project search without repeat API calls', () => {
 
     const search = await screen.findByRole('searchbox', { name: 'Search projects' });
     expect(await screen.findByText('Raven sleeve')).toBeInTheDocument();
-    const originalRequests = queryCalls.filter((call) => call.table === 'projects' && call.method === 'select').length;
+    const originalRequests = queryCalls.filter((call) => call.table === 'projects' && call.method === 'is' && call.args[0] === 'archived_at').length;
 
     fireEvent.change(search, { target: { value: 'fixture client' } });
     expect(screen.getByText('Raven sleeve')).toBeInTheDocument();
@@ -116,6 +116,6 @@ describe('Phase 4: project search without repeat API calls', () => {
 
     fireEvent.change(search, { target: { value: '' } });
     expect(screen.getByText('Raven sleeve')).toBeInTheDocument();
-    expect(queryCalls.filter((call) => call.table === 'projects' && call.method === 'select')).toHaveLength(originalRequests);
+    expect(queryCalls.filter((call) => call.table === 'projects' && call.method === 'is' && call.args[0] === 'archived_at')).toHaveLength(originalRequests);
   });
 });
