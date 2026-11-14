@@ -494,17 +494,18 @@ for (const bad of [
   visitOutcomes + '\n 20261113190000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 
-// Visit outcomes, grouped deposits: one read-only function after the live head.
+// Visit outcomes, grouped deposits: one read-only function after the live head
+// (the gated 72h activation guard, 20261114210000).
 const groupedDeposit = [
   ' Local | Remote | Time (UTC)',
-  ' 20261114200000 | 20261114200000 | t',
-  ' 20261114210000 | | t',
+  ' 20261114210000 | 20261114210000 | t',
+  ' 20261114220000 | | t',
 ].join('\n');
-assert.equal(verifyTodayLineage(groupedDeposit), '20261114210000');
+assert.equal(verifyTodayLineage(groupedDeposit), '20261114220000');
 assert.equal(deferredTodayMigration(groupedDeposit), null);
 for (const bad of [
-  groupedDeposit.replace('20261114210000 | |', '20261114210001 | |'),
-  groupedDeposit + '\n 20261114220000 | | t',
+  groupedDeposit.replace('20261114220000 | |', '20261114220001 | |'),
+  groupedDeposit + '\n 20261114230000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 // Candidate-only cash note may follow the verified Phase 4 migration head.
 // The release gate still rejects an extra migration or an unexpected predecessor.

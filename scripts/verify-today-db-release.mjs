@@ -121,7 +121,7 @@ export function verifyTodayLineage(source) {
     ['20261113233000', '20261114090000'],
     // Visit outcomes: read a grouped deposit through its session share. One
     // read-only function replacement after the inert 72h cash candidate is live.
-    ['20261114200000', '20261114210000'],
+    ['20261114210000', '20261114220000'],
     // Vladimir-only WhatsApp 72h cash note: inert Meta candidate, no live send switch.
     ['20261114090000', '20261114200000'],
     // Extend sender identity allowlists and add operator-only promotion; no active switch.
