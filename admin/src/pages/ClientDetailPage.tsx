@@ -108,8 +108,8 @@ export function ClientDetailPage({ clientId }: { clientId: string }) {
       enquiries, projects, notes, appointments, followUps, conversations,
       artistLinks, privacyAcknowledgements,
     ] = await Promise.all([
-      api.listEnquiries({ clientId }),
-      api.listProjects(clientId),
+      api.listEnquiries({ clientId, includeArchived: true }),
+      api.listProjects(clientId, undefined, true),
       can(role, 'viewNotes') ? api.listNotes({ clientId }) : Promise.resolve([]),
       can(role, 'viewSessions') ? api.listAppointments({ clientId }) : Promise.resolve([]),
       can(role, 'viewFollowUps') ? api.listFollowUps({ clientId }) : Promise.resolve([]),
@@ -596,8 +596,10 @@ function WorkSection({
     title: project.title,
     kind: t('clientWorkspace.project'),
     artistId: project.artist_id,
-    status: label('projectStatus', project.status),
-    tone: project.status === 'active' ? 'badge ok' : 'badge',
+    status: project.archived_at
+      ? `${label('projectStatus', project.status)} · ${language === 'ru' ? 'В архиве' : 'Archived'}`
+      : label('projectStatus', project.status),
+    tone: project.status === 'active' && !project.archived_at ? 'badge ok' : 'badge',
     when: project.updated_at,
     extra: `${t('common.deposit')}: ${label('depositStatus', project.deposit_status)}`,
   }));
@@ -615,7 +617,9 @@ function WorkSection({
       title: enquiryHeadline(enquiry) || enquiry.reference_number,
       kind: t('clientWorkspace.enquiry'),
       artistId: enquiry.artist_id,
-      status: label('enquiryStatus', enquiry.status),
+      status: enquiry.archived_at
+        ? `${label('enquiryStatus', enquiry.status)} · ${language === 'ru' ? 'В архиве' : 'Archived'}`
+        : label('enquiryStatus', enquiry.status),
       tone: 'badge',
       when: enquiry.created_at,
       extra: enquiryHeadline(enquiry) ? enquiry.reference_number : null,
