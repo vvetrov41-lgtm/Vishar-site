@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
 import { ClientProjectCreatePanel } from '../components/ClientProjectCreatePanel';
 import {
-  CLIENT_ID, PROJECT, PROJECT_ID, renderWithSession,
+  CLIENT, CLIENT_ID, PROJECT, PROJECT_ID, renderWithSession,
 } from './fixtures';
 
 describe('Phase 4: project creation and archive UX', () => {
@@ -67,6 +67,17 @@ describe('Phase 4: project creation and archive UX', () => {
     renderWithSession(<App />, { role: 'read_only', path: `/clients/${CLIENT_ID}` });
     expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
+  });
+
+  it('does not offer a project or booking for an archived client card', async () => {
+    renderWithSession(<App />, {
+      role: 'owner',
+      path: `/clients/${CLIENT_ID}`,
+      tableRows: { clients: [{ ...CLIENT, archived_at: '2026-09-01T12:00:00Z' }] },
+    });
+    expect(await screen.findByText('Fixture Client')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New project' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Book a session' })).not.toBeInTheDocument();
   });
 
   it('shows archived projects as read-only history with a restore action only for the owner', async () => {
