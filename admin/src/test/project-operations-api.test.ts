@@ -9,6 +9,45 @@ function clientWithRpc() {
 }
 
 describe('project operations API boundary', () => {
+  it('creates a client project with a caller-stable request UUID', async () => {
+    const { client, rpc } = clientWithRpc();
+    const api = createProjectOperationsApi(client);
+    await api.createClientProject({
+      requestId: 'project-request-id',
+      clientId: 'known-client',
+      artistId: 'artist-1',
+      title: '  Raven sleeve  ',
+      description: '  Black and grey  ',
+    });
+    expect(rpc).toHaveBeenCalledWith('create_client_project', {
+      p_project_id: 'project-request-id',
+      p_client_id: 'known-client',
+      p_artist_id: 'artist-1',
+      p_title: 'Raven sleeve',
+      p_description: 'Black and grey',
+    });
+  });
+
+  it('updates a project description with optimistic concurrency and routes archive through its own RPC', async () => {
+    const { client, rpc } = clientWithRpc();
+    const api = createProjectOperationsApi(client);
+    await api.updateProjectDescription('project-1', 'New design', 'Old design');
+    await api.setProjectArchiveState('project-1', true);
+    await api.setProjectArchiveState('project-1', false);
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'update_project_description', {
+      p_project_id: 'project-1',
+      p_description: 'New design',
+      p_expected_description: 'Old design',
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'set_project_archive_state', {
+      p_project_id: 'project-1', p_archived: true,
+    });
+    expect(rpc).toHaveBeenNthCalledWith(3, 'set_project_archive_state', {
+      p_project_id: 'project-1', p_archived: false,
+    });
+  });
+
   it('updates the estimate only through the canonical estimate RPC', async () => {
     const { client, rpc } = clientWithRpc();
     const api = createProjectOperationsApi(client);
