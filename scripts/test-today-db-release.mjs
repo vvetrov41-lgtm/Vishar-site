@@ -70,6 +70,17 @@ assert.equal(verifyTodayLineage(yorkHouseActivation),'20261111060000');
 assert.throws(()=>verifyTodayLineage(yorkHouseActivation.replace('20261111060000 | |','20261111060001 | |')));
 assert.throws(()=>verifyTodayLineage(yorkHouseActivation+'\n 20261111061000 | | t'));
 
+// The Phase 4 workflow admits exactly one reviewed project RPC migration.
+const phase4Project = [
+  ' Local | Remote | Time',
+  ' 20261113233000 | 20261113233000 | t',
+  ' 20261114090000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(phase4Project), '20261114090000');
+assert.throws(() => verifyTodayLineage(phase4Project + '\n 20261114090100 | | t'));
+assert.throws(() => verifyTodayLineage(phase4Project.replace('20261114090000 | |', '20261114090100 | |')));
+assert.throws(() => verifyTodayLineage(phase4Project.replace('20261113233000 | 20261113233000', '20261113233000 | ')));
+
 const workflow = readFileSync('.github/workflows/deploy-private-production-database.yml','utf8');
 for (const guard of ['backend-auth-today-database-only', 'GITHUB_REPOSITORY_OWNER', 'canonical_sha', 'Required exact-head workflow', 'Verify Today production lineage', 'verify-today-db-release.mjs', 'supabase db push --dry-run', 'Remote database is up to date.', 'DB_DEPLOY_ENABLED', 'DEPLOY_PRIVATE_CRM_DATABASE']) {
   assert.ok(workflow.includes(guard === 'DB_DEPLOY_ENABLED' ? 'CRM_PRODUCTION_DB_DEPLOY_ENABLED' : guard), guard);
