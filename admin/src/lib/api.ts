@@ -383,11 +383,12 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
       clientId?: string;
       search?: string;
       artistId?: string;
+      /** Only a single client's history may include archived enquiries. */
+      includeArchived?: boolean;
     } = {}): Promise<Enquiry[]> {
       let query = client
         .from('enquiries')
         .select('id, artist_id, client_id, reference_number, status, intake_state, intake_error_code, client_identifier_conflict, assigned_to, project_type, project_summary, placement, approximate_size, cover_up, preferred_timing, idea, source, utm_source, created_at, last_action_at, archived_at')
-        .is('archived_at', null)
         // Only completed intakes belong in the working queue. The database
         // keeps incomplete rows for reconciliation, but staff must not start
         // working them as if every promised file had arrived.
@@ -395,6 +396,9 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
         .order('last_action_at', { ascending: false })
         .limit(200);
 
+      // Archive history stays reachable on the client card, never in active queues.
+      // A caller cannot widen the global list just by setting includeArchived.
+      if (!filters.includeArchived || !filters.clientId) query = query.is('archived_at', null);
       if (filters.status) query = query.eq('status', filters.status);
       else if (filters.statuses?.length) query = query.in('status', [...filters.statuses]);
       if (filters.assignedTo) query = query.eq('assigned_to', filters.assignedTo);
@@ -588,13 +592,14 @@ export function createApi(client: CrmClient, options: ApiOptions = {}) {
     },
 
     // ---- projects and sessions -------------------------------------------
-    async listProjects(clientId?: string, artistId?: string): Promise<Project[]> {
+    async listProjects(clientId?: string, artistId?: string, includeArchived = false): Promise<Project[]> {
       let query = client
         .from('projects')
         .select('id, artist_id, client_id, enquiry_id, status, title, description, estimated_sessions, estimated_hours, deposit_status, currency, created_at, updated_at, archived_at')
-        .is('archived_at', null)
         .order('updated_at', { ascending: false })
         .limit(200);
+      // Only a known client's card may see archived projects; the board never does.
+      if (!includeArchived || !clientId) query = query.is('archived_at', null);
       if (clientId) query = query.eq('client_id', clientId);
       if (artistId) query = query.eq('artist_id', artistId);
       return unwrap<Project[]>(await query, 'load projects');
