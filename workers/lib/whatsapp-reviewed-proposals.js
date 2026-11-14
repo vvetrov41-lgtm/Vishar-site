@@ -14,6 +14,7 @@ const KINDS = Object.freeze({
   booking_video: 'booking_card_video_consultation_v2',
   reminder_72h: 'vishar_lifecycle_reminder_72h_v3',
   reminder_72h_button: 'vishar_lifecycle_reminder_72h_v4',
+  reminder_72h_cash: 'vishar_lifecycle_reminder_72h_v5',
   reminder_24h: 'vishar_lifecycle_reminder_24h_v3',
   reminder_consultation: 'vishar_lifecycle_consultation_v4',
   reminder_24h_button: 'vishar_lifecycle_reminder_24h_v4',
@@ -46,6 +47,9 @@ function definition(target) {
       || !new RegExp('^https://' + domain.replace(/\./g, '\\.') + '/arrival/[0-9a-f]{32}/$').test(url)
       || faq !== 'https://' + domain + '/faq/') {
     throw new Error('Invalid reviewed WhatsApp identity or link');
+  }
+  if (target.kind === 'reminder_72h_cash' && target.artist_id !== VLADIMIR_ID) {
+    throw new Error('Cash-preference 72h reminder is only configured for Vladimir');
   }
   if (target.kind === 'reminder_24h_clean' && target.artist_id !== VLADIMIR_ID) {
     throw new Error('Reviewed clean 24h reminder is only configured for Vladimir');
@@ -143,6 +147,28 @@ function definition(target) {
       'Date(s) and time(s): {{2}}',
       '',
       'Please remember that your deposit is non-refundable if you cancel within 72 hours of your appointment.',
+      '',
+      'Please use the buttons below to confirm your attendance or request another time.',
+      'Tap How to prepare for the preparation guide.',
+    ].join('\n');
+    example=['Alex','16 November 2026, 12:00'];
+    buttons=[
+      {type:'QUICK_REPLY',text:'Confirm attendance'},
+      {type:'QUICK_REPLY',text:'Need another time'},
+      {type:'URL',text:'How to prepare',url:faq},
+    ];
+  } else if (target.kind === 'reminder_72h_cash') {
+    // New Meta-reviewed identity; v4 body and all three buttons stay unchanged.
+    text=[
+      'Hi {{1}},',
+      '',
+      'Just a reminder that your tattoo session is coming up in three days.',
+      '',
+      'Date(s) and time(s): {{2}}',
+      '',
+      'Please remember that your deposit is non-refundable if you cancel within 72 hours of your appointment.',
+      '',
+      "A little note: cash payment is preferred, if that's convenient for you. Thank you!",
       '',
       'Please use the buttons below to confirm your attendance or request another time.',
       'Tap How to prepare for the preparation guide.',

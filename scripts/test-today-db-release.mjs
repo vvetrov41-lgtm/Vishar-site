@@ -493,3 +493,19 @@ for (const bad of [
   visitOutcomes.replace('20261113170000 | 20261113170000', '20261113170000 | '),
   visitOutcomes + '\n 20261113190000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+
+// Candidate-only cash note may follow the verified Phase 4 migration head.
+// The release gate still rejects an extra migration or an unexpected predecessor.
+const reminder72CashCandidate=[
+  ' Local | Remote | Time (UTC)',
+  ' 20261114090000 | 20261114090000 | t',
+  ' 20261114200000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(reminder72CashCandidate),'20261114200000');
+assert.equal(deferredTodayMigration(reminder72CashCandidate),null);
+for (const invalid of [
+  reminder72CashCandidate+'\n 20261114210000 | | t',
+  reminder72CashCandidate.replace('20261114200000 | |','20261114210000 | |'),
+  reminder72CashCandidate.replace('20261114090000 | 20261114090000','20261114090000 | '),
+  reminder72CashCandidate+'\n | 20261114190000 | t',
+]) assert.throws(()=>verifyTodayLineage(invalid));
