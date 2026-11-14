@@ -521,3 +521,18 @@ for (const invalid of [
   reminder72CashCandidate.replace('20261114090000 | 20261114090000','20261114090000 | '),
   reminder72CashCandidate+'\n | 20261114190000 | t',
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+// Live candidate migration must precede the inert operator-only activation
+// function and expanded sender allowlist; no skipped or extra schema versions.
+const reminder72V5Activation=[
+  ' Local | Remote | Time (UTC)',
+  ' 20261114200000 | 20261114200000 | t',
+  ' 20261114210000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(reminder72V5Activation),'20261114210000');
+assert.equal(deferredTodayMigration(reminder72V5Activation),null);
+for (const invalid of [
+  reminder72V5Activation+'\n 20261114220000 | | t',
+  reminder72V5Activation.replace('20261114210000 | |','20261114210001 | |'),
+  reminder72V5Activation.replace('20261114200000 | 20261114200000','20261114200000 | '),
+]) assert.throws(()=>verifyTodayLineage(invalid));
