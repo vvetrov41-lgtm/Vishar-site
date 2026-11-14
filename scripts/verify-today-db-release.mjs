@@ -121,6 +121,8 @@ export function verifyTodayLineage(source) {
     ['20261113233000', '20261114090000'],
     // Vladimir-only WhatsApp 72h cash note: inert Meta candidate, no live send switch.
     ['20261114090000', '20261114200000'],
+    // Extend sender identity allowlists and add operator-only promotion; no active switch.
+    ['20261114200000', '20261114210000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
