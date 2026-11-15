@@ -3304,7 +3304,7 @@
       "operationId": "getVisitOutcomeContext",
       "mcpTool": "crm_get_visit_outcome_context",
       "domain": "Projects",
-      "description": "Check the actual persisted outcome and linked tattoo bookings before recording a consultation. Uses the signed-in artist scope. Does not change any record.",
+      "description": "Read the persisted outcome and linked tattoo bookings for an in-person or video consultation in the signed-in artist scope. Does not change any record.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,

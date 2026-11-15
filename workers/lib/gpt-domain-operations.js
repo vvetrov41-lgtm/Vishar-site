@@ -216,8 +216,8 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     path: '/v1/appointments/{appointment_id}/visit-outcome',
     rpc: 'gpt_get_visit_outcome_context',
     params: [p.path('appointment_id', 'p_session_id')],
-    summary: 'Read one visit result, current version and existing bookings',
-    description: 'Check the actual persisted outcome and linked tattoo bookings before recording a consultation. Uses the signed-in artist scope. Does not change any record.',
+    summary: 'Read one consultation result, current version and existing bookings',
+    description: 'Read the persisted outcome and linked tattoo bookings for an in-person or video consultation in the signed-in artist scope. Does not change any record.',
   }),
   op({
     id: 'recordConsultationBookedOutcome', domain: 'Projects', method: 'POST',
