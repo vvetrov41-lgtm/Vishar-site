@@ -3329,7 +3329,8 @@
         "email"
       ],
       "handler": [
-        "public.gpt_get_visit_outcome_context"
+        "public.gpt_get_visit_outcome_context",
+        "public.get_visit_outcome_context"
       ],
       "compatibility": "existing_action_adapter",
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
