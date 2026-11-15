@@ -125,7 +125,7 @@ export function verifyTodayLineage(source) {
     // Authenticated GPT can record only a completed, booked, free consultation.
     ['20261114220000', '20261115110000'],
     // Restrict the GPT visit context to consultations before exposing it in the plugin.
-    ['20261115110000', '20261115120000'],
+    ['20261115110000', '20261115115900'],
     // Vladimir-only WhatsApp 72h cash note: inert Meta candidate, no live send switch.
     ['20261114090000', '20261114200000'],
     // Extend sender identity allowlists and add operator-only promotion; no active switch.

@@ -542,8 +542,8 @@ for (const invalid of [
 const consultationOutcomeAccess = [
   ' Local | Remote | Time (UTC)',
   ' 20261115110000 | 20261115110000 | t',
-  ' 20261115120000 | | t',
+  ' 20261115115900 | | t',
 ].join('\n');
-assert.equal(verifyTodayLineage(consultationOutcomeAccess), '20261115120000');
+assert.equal(verifyTodayLineage(consultationOutcomeAccess), '20261115115900');
 assert.equal(deferredTodayMigration(consultationOutcomeAccess), null);
 assert.throws(() => verifyTodayLineage(consultationOutcomeAccess + '\n 20261115130000 | | t'));
