@@ -229,10 +229,35 @@ begin
   -- Runs after the reconciliation above, so a moved appointment is judged by
   -- its new time, and before the executor, so nothing stale is sent in this
   -- same pass. It can only remove a send, never add one.
+  -- The withdrawal is irreversible (enrolment refuses a session that already
+  -- has jobs), so the authoritative session row is locked and re-read before
+  -- it is judged, as the executor does. A session locked by an in-flight
+  -- reschedule is skipped and judged by its committed time on the next tick.
   update public.automation_jobs j
   set status='cancelled', cancelled_at=now(),
       last_error_category='appointment_ineligible'
-  from public.sessions s
+  from (
+    select c.id, c.artist_id, c.start_at, c.end_at, c.actual_end_at
+    from public.sessions c
+    where c.start_at<=now()
+      and exists (
+        select 1 from public.automation_jobs p
+        where p.session_id=c.id and p.artist_id=c.artist_id
+          and p.status='pending'
+          and p.action_type='send_client_message'::public.automation_action_type
+          and p.attempt_count=0
+          and (
+            p.schedule_anchor='session_start'::public.automation_schedule_anchor
+            or
+            (p.schedule_anchor='session_end'::public.automation_schedule_anchor
+             and coalesce(c.actual_end_at,c.end_at)
+                 + make_interval(mins => p.anchor_offset_minutes)
+                 <= now() - interval '48 hours')
+          )
+      )
+    order by c.id
+    for update of c skip locked
+  ) s
   where j.status='pending'
     and j.action_type='send_client_message'::public.automation_action_type
     and j.attempt_count=0
