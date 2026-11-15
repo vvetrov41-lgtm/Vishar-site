@@ -212,7 +212,7 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     summary: 'Read one consultation with its client, linked or candidate enquiry and project, recent messages, notes and AI state',
   }),
   op({
-    id: 'getVisitOutcomeContext', domain: 'Scheduling', method: 'GET',
+    id: 'getVisitOutcomeContext', domain: 'Projects', method: 'GET',
     path: '/v1/appointments/{appointment_id}/visit-outcome',
     rpc: 'gpt_get_visit_outcome_context',
     params: [p.path('appointment_id', 'p_session_id')],
@@ -220,7 +220,7 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     description: 'Check the actual persisted outcome and linked tattoo bookings before recording a consultation. Uses the signed-in artist scope. Does not change any record.',
   }),
   op({
-    id: 'recordConsultationBookedOutcome', domain: 'Scheduling', method: 'POST',
+    id: 'recordConsultationBookedOutcome', domain: 'Projects', method: 'POST',
     path: '/v1/appointments/{appointment_id}/consultation-booked-outcome',
     rpc: 'gpt_record_consultation_booked_outcome',
     params: [
