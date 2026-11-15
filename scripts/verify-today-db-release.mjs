@@ -122,6 +122,8 @@ export function verifyTodayLineage(source) {
     // Visit outcomes: read a grouped deposit through its session share. One
     // read-only function replacement after the inert 72h cash candidate is live.
     ['20261114210000', '20261114220000'],
+    // Authenticated GPT can record only a completed, booked, free consultation.
+    ['20261114220000', '20261115110000'],
     // Vladimir-only WhatsApp 72h cash note: inert Meta candidate, no live send switch.
     ['20261114090000', '20261114200000'],
     // Extend sender identity allowlists and add operator-only promotion; no active switch.
