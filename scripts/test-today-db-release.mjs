@@ -522,25 +522,25 @@ for (const bad of [
   agentQuotaDeferral + '\n 20261115130000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 // Resilience: stale lifecycle jobs withdrawn, one migration after the
-// consultation-only GPT outcome read (20261115121000).
+// Today enquiry fact conflicts (20261115193915).
 const staleLifecycleJobs = [
   ' Local | Remote | Time (UTC)',
-  ' 20261115121000 | 20261115121000 | t',
-  ' 20261115130000 | | t',
+  ' 20261115193915 | 20261115193915 | t',
+  ' 20261115200000 | | t',
 ].join('\n');
-assert.equal(verifyTodayLineage(staleLifecycleJobs), '20261115130000');
+assert.equal(verifyTodayLineage(staleLifecycleJobs), '20261115200000');
 assert.equal(deferredTodayMigration(staleLifecycleJobs), null);
 for (const bad of [
-  staleLifecycleJobs.replace('20261115130000 | |', '20261115130001 | |'),
-  staleLifecycleJobs.replace('20261115121000 | 20261115121000', '20261115121000 | '),
-  staleLifecycleJobs + '\n 20261115140000 | | t',
+  staleLifecycleJobs.replace('20261115200000 | |', '20261115200001 | |'),
+  staleLifecycleJobs.replace('20261115193915 | 20261115193915', '20261115193915 | '),
+  staleLifecycleJobs + '\n 20261115210000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
-  ' 20261115120000 | 20261115120000 | t',
-  ' 20261115121000 | | t',
-  ' 20261115130000 | | t',
+  ' 20261115121000 | 20261115121000 | t',
+  ' 20261115193915 | | t',
+  ' 20261115200000 | | t',
 ].join('\n')));
 // Candidate-only cash note may follow the verified Phase 4 migration head.
 // The release gate still rejects an extra migration or an unexpected predecessor.
@@ -582,3 +582,15 @@ const consultationOutcomeAccess = [
 assert.equal(verifyTodayLineage(consultationOutcomeAccess), '20261115121000');
 assert.equal(deferredTodayMigration(consultationOutcomeAccess), null);
 assert.throws(() => verifyTodayLineage(consultationOutcomeAccess + '\n 20261115130000 | | t'));
+
+const enquiryFactConflicts = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115121000 | 20261115121000 | t',
+  ' 20261115193915 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(enquiryFactConflicts), '20261115193915');
+assert.equal(deferredTodayMigration(enquiryFactConflicts), null);
+assert.throws(() => verifyTodayLineage(enquiryFactConflicts.replace(
+  '20261115121000 | 20261115121000', '20261115121000 | '
+)));
+assert.throws(() => verifyTodayLineage(enquiryFactConflicts + '\n 20261115200000 | | t'));

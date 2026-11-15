@@ -1,4 +1,4 @@
--- 20261115130000_lifecycle_stale_jobs_withdrawn.sql
+-- 20261115200000_lifecycle_stale_jobs_withdrawn.sql
 --
 -- Resilience review (2026-11-15), scenario "consecutive tattoo sessions".
 --

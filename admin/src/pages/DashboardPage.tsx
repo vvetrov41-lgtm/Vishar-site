@@ -454,6 +454,7 @@ function NeedsYouRow({
   const { t, label, language } = useLanguage();
 
   const kindLabel = t(`today.item.${item.kind}`);
+  const kindBadgeClass = item.kind === 'new_enquiry' ? 'badge today-new-enquiry' : item.urgent ? 'badge warn' : 'badge';
   // A row about a person is titled with the person. A row about the system - a
   // batch of failed integration jobs - has no person to name, so it is titled
   // with what happened rather than with an apology for a missing name.
@@ -489,7 +490,7 @@ function NeedsYouRow({
       <div className="title">{title}</div>
       <div className="meta">
         {item.subject ? (
-          <><span className={item.urgent ? 'badge warn' : 'badge'}>{kindLabel}</span>{' '}</>
+          <><span className={kindBadgeClass}>{kindLabel}</span>{' '}</>
         ) : null}
         {detail ? <><span className="badge">{detail}</span>{' '}</> : null}
         {when}

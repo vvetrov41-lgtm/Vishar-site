@@ -50,6 +50,7 @@ describe('today workspace', () => {
 
     const reply = within(needsYou).getByText('Waiting for your reply').closest('a') as HTMLElement;
     expect(reply).toHaveAttribute('href', `#/clients/${SECOND_CLIENT_ID}`);
+    expect(within(reply).getByText('Waiting for your reply')).toHaveClass('warn');
   });
 
   it('refreshes only attention after a dismissal, not the calendar or Gmail', async () => {
@@ -163,6 +164,13 @@ describe('today workspace', () => {
       enabled,
       items: [
         {
+          key: 'new-enquiry', kind: 'new_enquiry', section: 'waiting_for_you',
+          reason: 'new_enquiry', artist_id: 'a1', client_id: CLIENT_ID,
+          subject: 'New Enquiry Client', href: '/enquiries/new-enquiry', at: '2026-09-01T07:30:00Z',
+          detail: 'Large-scale project / sleeve', sla_state: null,
+          ai_suggestion: null, acknowledgement: null, urgent: false,
+        },
+        {
           key: 'conflict-c1-deposit_paid_without_booking', kind: 'conflict', section: 'conflicts',
           reason: 'deposit_paid_without_booking', artist_id: 'a1', client_id: CLIENT_ID,
           subject: 'Server Pulse Client', href: `/clients/${CLIENT_ID}`, at: null,
@@ -205,6 +213,7 @@ describe('today workspace', () => {
         .closest('section') as HTMLElement;
     await waitFor(() => expect(within(needsYou).queryByText('Loading today…')).not.toBeInTheDocument());
       await within(needsYou).findByText('Server Pulse Client');
+      expect(within(needsYou).getByText('New enquiry')).toHaveClass('today-new-enquiry');
       expect(within(needsYou).getByText('Deposit paid, no session booked')).toBeInTheDocument();
       expect(within(needsYou).getByText('AI suggestion: offer dates')).toBeInTheDocument();
       expect(within(needsYou).getByText('Messages from unknown senders')).toBeInTheDocument();
