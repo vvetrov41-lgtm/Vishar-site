@@ -521,6 +521,27 @@ for (const bad of [
   agentQuotaDeferral.replace('20261115110000 | 20261115110000', '20261115110000 | '),
   agentQuotaDeferral + '\n 20261115130000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Resilience: stale lifecycle jobs withdrawn, one migration after the quota
+// deferral (20261115120000).
+const staleLifecycleJobs = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115120000 | 20261115120000 | t',
+  ' 20261115130000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(staleLifecycleJobs), '20261115130000');
+assert.equal(deferredTodayMigration(staleLifecycleJobs), null);
+for (const bad of [
+  staleLifecycleJobs.replace('20261115130000 | |', '20261115130001 | |'),
+  staleLifecycleJobs.replace('20261115120000 | 20261115120000', '20261115120000 | '),
+  staleLifecycleJobs + '\n 20261115140000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
+// Both resilience migrations pending at once is not a single approved step.
+assert.throws(() => verifyTodayLineage([
+  ' Local | Remote | Time (UTC)',
+  ' 20261115110000 | 20261115110000 | t',
+  ' 20261115120000 | | t',
+  ' 20261115130000 | | t',
+].join('\n')));
 // Candidate-only cash note may follow the verified Phase 4 migration head.
 // The release gate still rejects an extra migration or an unexpected predecessor.
 const reminder72CashCandidate=[
