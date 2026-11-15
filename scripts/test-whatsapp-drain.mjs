@@ -615,11 +615,13 @@ await test('approved cash v3 rejects invalid arity without contacting Meta',asyn
   assert.equal(graphCalls.length,0);
 });
 
-await test('reviewed lifecycle v3/v4 templates separate visible body from action tokens', async () => {
+await test('reviewed lifecycle templates separate visible body from action tokens', async () => {
   const confirm = 'booking_action:' + 'a'.repeat(64);
   const reschedule = 'booking_action:' + 'b'.repeat(64);
   for (const [templateName, purpose, params, bodyCount] of [
     ['vishar_lifecycle_reminder_72h_v3', 'session_reminder_72h',
+      ['Alex', 'Monday 16 November 12:00', confirm, reschedule], 2],
+    ['vishar_lifecycle_reminder_72h_v5', 'session_reminder_72h',
       ['Alex', 'Monday 16 November 12:00', confirm, reschedule], 2],
     ['vishar_lifecycle_reminder_24h_v3', 'session_reminder_24h',
       ['Alex', '12:00', reschedule], 2],
@@ -635,6 +637,8 @@ await test('reviewed lifecycle v3/v4 templates separate visible body from action
     const components = graphCalls[0].body.template.components;
     assert.deepEqual(components[0].parameters.map(p => p.text), params.slice(0, bodyCount));
     assert.deepEqual(components.slice(1).map(p => p.parameters[0].payload), params.slice(bodyCount));
+    assert.deepEqual(components.slice(1).map(p => p.index),
+      params.slice(bodyCount).map((_, index) => String(index)));
     assert.equal(components.length, 1 + params.length - bodyCount);
   }
 });
@@ -643,6 +647,7 @@ await test('new URL + reschedule templates keep button index one', async () => {
   const token='booking_action:'+'9'.repeat(64);
   for (const [name,purpose,params,expectedIndex] of [
     ['vishar_lifecycle_reminder_24h_v4','session_reminder_24h',['Alex','12:00',token],'1'],
+    ['vishar_lifecycle_reminder_24h_v5','session_reminder_24h',['Alex','12:00',token],'1'],
     ['vishar_lifecycle_consultation_v5','consultation_reminder',
       ['Alex','Monday 16 November 12:00','Label Tattoo Private, London',token],'1'],
     ['vishar_lifecycle_consultation_video_v1','consultation_reminder',
@@ -658,6 +663,7 @@ await test('new URL + reschedule templates keep button index one', async () => {
     assert.equal(components.length,2);
     assert.equal(components[1].sub_type,'quick_reply');
     assert.equal(components[1].index,expectedIndex);
+    assert.deepEqual(components[0].parameters.map(p => p.text), params.slice(0, -1));
     assert.equal(components[1].parameters[0].payload,token);
   }
 });
@@ -668,6 +674,8 @@ await test('reviewed lifecycle templates reject missing, duplicate, or mismatche
   for (const [templateName, purpose, params] of [
     ['vishar_lifecycle_reminder_72h_v3', 'session_reminder_72h', ['Alex', 'tomorrow', confirm, confirm]],
     ['vishar_lifecycle_reminder_24h_v3', 'session_reminder_24h', ['Alex', '12:00']],
+    ['vishar_lifecycle_reminder_24h_v5', 'session_reminder_24h', ['Alex', '12:00']],
+    ['vishar_lifecycle_reminder_72h_v5', 'session_reminder_72h', ['Alex', 'tomorrow', confirm, confirm]],
     ['vishar_lifecycle_consultation_v4', 'consultation_reminder', ['Alex', 'tomorrow', 'Studio', 'nope', confirm]],
     ['vishar_lifecycle_reminder_72h_v3', 'session_reminder_24h',
       ['Alex', 'tomorrow', confirm, 'booking_action:' + 'b'.repeat(64)]],
