@@ -91,5 +91,74 @@ select is(crm_private.pulse_fact_conflicts(
   'a1111111-1111-4111-8111-111111111111', 'd6400000-0000-4000-8000-000000000341'),
   array['fact_conflict_placement']::text[], 'optimized Today path retains genuine conflicts');
 
+-- Exact dimensions are comparable; a relative position is not a length.
+select is(crm_private.fact_size_cm('Starts 2 inches below my elbow, about 8 inches in total'),
+  20.32::numeric, 'prefer the explicit total to the starting offset');
+select is(crm_private.fact_size_cm('Starts 2 inches below the elbow, overall length: 8 inches'),
+  20.32::numeric, 'an overall length can also precede the measurement');
+select is(crm_private.fact_size_cm('5 cm wide by 12 cm tall'), null::numeric,
+  'two different dimensions without a total are ambiguous');
+select is(crm_private.fact_size_cm('20 cm / about 7.87 inches'), null::numeric,
+  'different equivalent-unit approximations are left to the artist');
+
+update public.enquiries
+set approximate_size = 'Starts 2 inches below my elbow, about 8 inches in total'
+where id = 'd6500000-0000-4000-8000-000000000341';
+update public.client_ai_state
+set brief = brief || '{"placement":"forearm","size":"8 inches in total"}'::jsonb,
+    source_watermark = crm_private.client_ai_watermark(artist_id, client_id)
+where client_id = 'd6400000-0000-4000-8000-000000000341';
+select is(crm_private.pulse_fact_conflicts(
+  'a1111111-1111-4111-8111-111111111111', 'd6400000-0000-4000-8000-000000000341'),
+  '{}'::text[], 'an active enquiry with the same total size stops generating the false conflict');
+
+-- An open thread keeps the client in Today after an enquiry becomes terminal.
+insert into public.communication_conversations (
+  id, artist_id, channel, client_id, link_state, integration_key, external_contact_id
+) values (
+  'd6600000-0000-4000-8000-000000000341', 'a1111111-1111-4111-8111-111111111111',
+  'whatsapp', 'd6400000-0000-4000-8000-000000000341',
+  'linked', 'vladimir-production', '447700909341'
+);
+update public.client_ai_state
+set brief = jsonb_set(brief, '{size}', '"4 inches"'::jsonb),
+    source_watermark = crm_private.client_ai_watermark(artist_id, client_id)
+where client_id = 'd6400000-0000-4000-8000-000000000341';
+
+create temp view fixture_fact_conflicts_today as
+select i->>'reason' as reason
+from jsonb_array_elements(crm_private.pulse_items('a1111111-1111-4111-8111-111111111111', false, false)) i
+where i->>'client_id' = 'd6400000-0000-4000-8000-000000000341'
+  and i->>'reason' like 'fact_conflict_%';
+select is((select reason from fixture_fact_conflicts_today), 'fact_conflict_size',
+  'Today still shows a genuine size conflict on an active enquiry');
+
+update public.enquiries set status = 'declined'
+where id = 'd6500000-0000-4000-8000-000000000341';
+update public.client_ai_state
+set source_watermark = crm_private.client_ai_watermark(artist_id, client_id)
+where client_id = 'd6400000-0000-4000-8000-000000000341';
+
+select ok(exists (select 1 from crm_private.pulse_active_clients('a1111111-1111-4111-8111-111111111111')
+  where client_id = 'd6400000-0000-4000-8000-000000000341'),
+  'the open thread still puts the client in Today scope');
+select is((select count(*) from fixture_fact_conflicts_today), 0::bigint,
+  'declining the enquiry removes the conflict despite the open thread');
+select is(crm_private.client_fact_conflicts(
+  'a1111111-1111-4111-8111-111111111111', 'd6400000-0000-4000-8000-000000000341'),
+  '{}'::text[], 'the client view agrees that the declined enquiry needs no conflict review');
+select ok(crm_private.client_fact_sources(
+  'a1111111-1111-4111-8111-111111111111', 'd6400000-0000-4000-8000-000000000341')
+  @> '[{"source":"enquiry_form","key":"size","value":"Starts 2 inches below my elbow, about 8 inches in total"}]',
+  'the original form text stays visible in provenance');
+
+update public.enquiries set status = 'closed'
+where id = 'd6500000-0000-4000-8000-000000000341';
+update public.client_ai_state
+set source_watermark = crm_private.client_ai_watermark(artist_id, client_id)
+where client_id = 'd6400000-0000-4000-8000-000000000341';
+select is((select count(*) from fixture_fact_conflicts_today), 0::bigint,
+  'a closed enquiry also stays out of Today conflicts');
+
 select * from finish(true);
 rollback;
