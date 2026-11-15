@@ -126,10 +126,10 @@ select ok((select outcome='booked' and linked_session_id='b5155555-5555-4555-855
 select is((select count(*)::integer from public.automation_jobs where session_id='b5154444-4444-4444-8444-444444444444'),0,
  'consultation write does not send or schedule client messages');
 
-select lives_ok(
-  $$select public.gpt_artist_context('a2222222-2222-4222-8222-222222222222')$$,
-  'owner selects Kristina with the same OAuth session');
 set local role authenticated;
+select lives_ok(
+  $select public.gpt_artist_context('a2222222-2222-4222-8222-222222222222')$,
+  'owner selects Kristina with the same OAuth session');
 select is((public.gpt_record_consultation_booked_outcome(
  'b5156666-6666-4666-8666-666666666666',
  'b5159000-0000-4000-8000-000000000006',0,
