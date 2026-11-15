@@ -146,9 +146,9 @@ paths:
   /v1/appointments/{appointment_id}/visit-outcome:
     get:
       operationId: getVisitOutcomeContext
-      summary: "Read one visit result, current version and existing bookings"
+      summary: "Read one consultation result, current version and existing bookings"
       x-openai-isConsequential: false
-      description: "Check the actual persisted outcome and linked tattoo bookings before recording a consultation. Uses the signed-in artist scope. Does not change any record."
+      description: "Read the persisted outcome and linked tattoo bookings for an in-person or video consultation in the signed-in artist scope. Does not change any record."
       parameters:
         - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}

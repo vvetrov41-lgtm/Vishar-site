@@ -132,9 +132,11 @@ export function verifyTodayLineage(source) {
     // reset instead of failing it. One function and its closed code list; no
     // client send.
     ['20261115110000', '20261115120000'],
+    // Restrict the GPT visit context to consultations before exposing it in the plugin.
+    ['20261115120000', '20261115121000'],
     // Resilience: withdraw lifecycle jobs that are no longer current. One
     // statement added to the scheduler tick; it can only remove a send.
-    ['20261115120000', '20261115130000'],
+    ['20261115121000', '20261115130000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

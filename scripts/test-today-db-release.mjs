@@ -521,25 +521,25 @@ for (const bad of [
   agentQuotaDeferral.replace('20261115110000 | 20261115110000', '20261115110000 | '),
   agentQuotaDeferral + '\n 20261115130000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
-// Resilience: stale lifecycle jobs withdrawn, one migration after the quota
-// deferral (20261115120000).
+// Resilience: stale lifecycle jobs withdrawn, one migration after the
+// consultation-only GPT outcome read (20261115121000).
 const staleLifecycleJobs = [
   ' Local | Remote | Time (UTC)',
-  ' 20261115120000 | 20261115120000 | t',
+  ' 20261115121000 | 20261115121000 | t',
   ' 20261115130000 | | t',
 ].join('\n');
 assert.equal(verifyTodayLineage(staleLifecycleJobs), '20261115130000');
 assert.equal(deferredTodayMigration(staleLifecycleJobs), null);
 for (const bad of [
   staleLifecycleJobs.replace('20261115130000 | |', '20261115130001 | |'),
-  staleLifecycleJobs.replace('20261115120000 | 20261115120000', '20261115120000 | '),
+  staleLifecycleJobs.replace('20261115121000 | 20261115121000', '20261115121000 | '),
   staleLifecycleJobs + '\n 20261115140000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
-// Both resilience migrations pending at once is not a single approved step.
+// Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
-  ' 20261115110000 | 20261115110000 | t',
-  ' 20261115120000 | | t',
+  ' 20261115120000 | 20261115120000 | t',
+  ' 20261115121000 | | t',
   ' 20261115130000 | | t',
 ].join('\n')));
 // Candidate-only cash note may follow the verified Phase 4 migration head.
@@ -572,3 +572,13 @@ for (const invalid of [
   reminder72V5Activation.replace('20261114210000 | |','20261114210001 | |'),
   reminder72V5Activation.replace('20261114200000 | 20261114200000','20261114200000 | '),
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+// Consultation-only GPT outcome read can be released as the sole next migration.
+const consultationOutcomeAccess = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115120000 | 20261115120000 | t',
+  ' 20261115121000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(consultationOutcomeAccess), '20261115121000');
+assert.equal(deferredTodayMigration(consultationOutcomeAccess), null);
+assert.throws(() => verifyTodayLineage(consultationOutcomeAccess + '\n 20261115130000 | | t'));
