@@ -3304,7 +3304,7 @@
       "operationId": "getVisitOutcomeContext",
       "mcpTool": "crm_get_visit_outcome_context",
       "domain": "Scheduling",
-      "description": "Read one visit result, current version and existing bookings",
+      "description": "Check the current visit outcome and its version before recording; signed-in artist scope only.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -5765,7 +5765,7 @@
       "operationId": "recordConsultationBookedOutcome",
       "mcpTool": "crm_record_consultation_booked_outcome",
       "domain": "Scheduling",
-      "description": "Record a completed consultation as successfully booked",
+      "description": "Free consultation only. Requires an existing tattoo booking for the same artist and client. Uses an idempotency key; no payments, client messages or calendar changes.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -5776,7 +5776,8 @@
           },
           "request_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Fresh idempotency UUID. Reuse only to retry the identical record."
           },
           "expected_version": {
             "type": "integer",
@@ -5800,7 +5801,7 @@
       "method": "POST",
       "path": "/v1/appointments/{appointment_id}/consultation-booked-outcome",
       "readWrite": "write",
-      "destructive": true,
+      "destructive": false,
       "permission": "manage_sessions",
       "scopes": [
         "email"
