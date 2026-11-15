@@ -131,7 +131,7 @@ const recordBookedConsultation = tools.find((tool) => tool.operationId === 'reco
 assert(consultationOutcomeContext?.definition.annotations.readOnlyHint, 'outcome context is a read-only plugin tool');
 assert.equal(recordBookedConsultation?.definition.annotations.readOnlyHint, false, 'outcome result is a write');
 assert.equal(recordBookedConsultation?.definition.annotations.destructiveHint, false, 'free consultation outcome has no destructive side effects');
-assert.deepEqual(recordBookedConsultation.definition.inputSchema.required.sort(), 
+assert.deepEqual([...recordBookedConsultation.definition.inputSchema.required].sort(), 
   ['appointment_id', 'request_id', 'expected_version', 'linked_session_id'].sort());
 assert.equal(recordBookedConsultation.definition.inputSchema.properties.expected_version.minimum, 0);
 assert.equal(recordBookedConsultation.definition.inputSchema.properties.expected_version.maximum, 0);
