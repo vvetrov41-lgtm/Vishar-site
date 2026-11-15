@@ -36,19 +36,19 @@ insert into public.sessions(id,artist_id,client_id,appointment_type,status,start
 values
 ('b5154444-4444-4444-8444-444444444444','a1111111-1111-4111-8111-111111111111',
 'b5152222-2222-4222-8222-222222222222','in_person_consultation','completed',
- now()-interval '7 days', now()-interval '7 days'+interval '30 minutes',0.5),
+ date_trunc('hour',now())-interval '7 days', date_trunc('hour',now())-interval '7 days'+interval '30 minutes',0.5),
 ('b5155555-5555-4555-8555-555555555555','a1111111-1111-4111-8111-111111111111',
 'b5152222-2222-4222-8222-222222222222','tattoo_session','confirmed',
- now()+interval '7 days',now()+interval '7 days 7 hours',7),
+ date_trunc('hour',now())+interval '7 days',date_trunc('hour',now())+interval '7 days 7 hours',7),
 ('b5156666-6666-4666-8666-666666666666','a2222222-2222-4222-8222-222222222222',
 'b5153333-3333-4333-8333-333333333333','in_person_consultation','completed',
- now()-interval '6 days',now()-interval '6 days'+interval '30 minutes',0.5),
+ date_trunc('hour',now())-interval '6 days',date_trunc('hour',now())-interval '6 days'+interval '30 minutes',0.5),
 ('b5157777-7777-4777-8777-777777777777','a2222222-2222-4222-8222-222222222222',
 'b5153333-3333-4333-8333-333333333333','tattoo_session','confirmed',
- now()+interval '8 days',now()+interval '8 days 7 hours',7),
+ date_trunc('hour',now())+interval '8 days',date_trunc('hour',now())+interval '8 days 7 hours',7),
 ('b5158888-8888-4888-8888-888888888888','a1111111-1111-4111-8111-111111111111',
 'b5152222-2222-4222-8222-222222222222','in_person_consultation','confirmed',
- now()+interval '1 day',now()+interval '1 day 30 minutes',0.5);
+ date_trunc('hour',now())+interval '1 day',date_trunc('hour',now())+interval '1 day 30 minutes',0.5);
 
 create function pg_temp.gpt_claims(p text) returns void language sql as $f$
  select set_config('request.jwt.claims',p,true)::void;
