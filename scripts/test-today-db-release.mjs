@@ -537,3 +537,13 @@ for (const invalid of [
   reminder72V5Activation.replace('20261114210000 | |','20261114210001 | |'),
   reminder72V5Activation.replace('20261114200000 | 20261114200000','20261114200000 | '),
 ]) assert.throws(()=>verifyTodayLineage(invalid));
+
+// Consultation-only GPT outcome read can be released as the sole next migration.
+const consultationOutcomeAccess = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115110000 | 20261115110000 | t',
+  ' 20261115120000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(consultationOutcomeAccess), '20261115120000');
+assert.equal(deferredTodayMigration(consultationOutcomeAccess), null);
+assert.throws(() => verifyTodayLineage(consultationOutcomeAccess + '\n 20261115130000 | | t'));
