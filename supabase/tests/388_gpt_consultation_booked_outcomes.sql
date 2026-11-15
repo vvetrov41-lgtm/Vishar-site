@@ -136,7 +136,7 @@ select is((select count(*)::integer from public.automation_jobs where session_id
 
 set local role authenticated;
 select lives_ok(
-  $stmt$select public.gpt_artist_context('a2222222-2222-4222-8222-222222222222')$stmt$,
+  $stmt$$select public.gpt_artist_context('a2222222-2222-4222-8222-222222222222')$$stmt$,
   'owner selects Kristina with the same OAuth session');
 select is((public.gpt_record_consultation_booked_outcome(
  'b5156666-6666-4666-8666-666666666666',
