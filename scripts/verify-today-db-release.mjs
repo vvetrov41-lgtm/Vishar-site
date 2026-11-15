@@ -128,6 +128,10 @@ export function verifyTodayLineage(source) {
     ['20261114090000', '20261114200000'],
     // Extend sender identity allowlists and add operator-only promotion; no active switch.
     ['20261114200000', '20261114210000'],
+    // Resilience: a spent daily AI allocation defers a CRM agent job to the
+    // reset instead of failing it. One function and its closed code list; no
+    // client send.
+    ['20261115110000', '20261115120000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
