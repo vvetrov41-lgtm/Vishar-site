@@ -91,7 +91,7 @@ await test('credentials and provider payloads are dropped', async () => {
     cookie: 'session=secret',
     secret: 'secret-value',
     apiKey: 'secret-value',
-    dsn: 'https://public@example.ingest.sentry.io/1',
+    dsn: 'https://public@example.invalid/1',
     providerResponse: { error: 'raw-provider-detail' },
     headers: { authorization: 'Bearer secret-token' },
   });

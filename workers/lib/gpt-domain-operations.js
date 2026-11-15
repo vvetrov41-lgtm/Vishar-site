@@ -212,6 +212,27 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     summary: 'Read one consultation with its client, linked or candidate enquiry and project, recent messages, notes and AI state',
   }),
   op({
+    id: 'getVisitOutcomeContext', domain: 'Projects', method: 'GET',
+    path: '/v1/appointments/{appointment_id}/visit-outcome',
+    rpc: 'gpt_get_visit_outcome_context',
+    params: [p.path('appointment_id', 'p_session_id')],
+    summary: 'Read one visit result, current version and existing bookings',
+    description: 'Check the actual persisted outcome and linked tattoo bookings before recording a consultation. Uses the signed-in artist scope. Does not change any record.',
+  }),
+  op({
+    id: 'recordConsultationBookedOutcome', domain: 'Projects', method: 'POST',
+    path: '/v1/appointments/{appointment_id}/consultation-booked-outcome',
+    rpc: 'gpt_record_consultation_booked_outcome',
+    params: [
+      p.path('appointment_id', 'p_session_id'),
+      requestId,
+      p.req(p.int('expected_version', 'p_expected_version', 0, 0)),
+      p.req(p.uuid('linked_session_id', 'p_linked_session_id')),
+    ],
+    summary: 'Record a completed consultation as successfully booked',
+    description: 'Only after checking the consultation and an existing tattoo booking of the same artist and client. Free consultation only, no new booking, payment, client message or calendar edit. Request ID is idempotent. Explicitly supplied by the owner.',
+  }),
+  op({
     id: 'getSchedulingPreferences', domain: 'Scheduling', method: 'GET', path: '/v1/scheduling/preferences',
     rpc: 'gpt_get_scheduling_preferences',
     summary: 'Read the artist working hours and consultation rules',

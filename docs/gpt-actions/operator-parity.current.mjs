@@ -211,6 +211,8 @@ export const OPERATOR_PARITY = Object.freeze([
   row('sessions.project.set_status', 'Scheduling', 'manage_sessions', 'write', A, 'setProjectSessionStatus', ['public.set_session_status']),
   row('sessions.booking_card.status', 'Scheduling', 'view_sessions', 'read', A, 'getSessionBookingCardStatus', ['public.get_session_booking_card_status']),
   row('sessions.consultation_context', 'Scheduling', 'view_sessions', 'read', A, 'getConsultationContext', ['public.gpt_get_consultation_context']),
+  row('sessions.visit_outcome.context', 'Projects', 'view_sessions', 'read', A, 'getVisitOutcomeContext', ['public.gpt_get_visit_outcome_context', 'public.get_visit_outcome_context']),
+  row('sessions.visit_outcome.booked', 'Projects', 'manage_sessions', 'write', A, 'recordConsultationBookedOutcome', ['public.gpt_record_consultation_booked_outcome', 'public.record_visit_outcome']),
   row('availability.list', 'Scheduling', 'view_sessions', 'read', A, 'listAvailability', ['public.gpt_list_availability_blocks', 'public.list_artist_availability_blocks']),
   row('availability.create', 'Scheduling', 'manage_sessions', 'write', A, 'createAvailability', ['public.gpt_create_availability_block', 'public.create_artist_availability_block']),
   row('availability.update', 'Scheduling', 'manage_sessions', 'write', A, 'updateAvailability', ['public.gpt_update_availability_block', 'public.update_artist_availability_block']),

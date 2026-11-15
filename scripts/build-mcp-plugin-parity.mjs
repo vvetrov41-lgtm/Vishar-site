@@ -91,7 +91,14 @@ const report = {
 };
 const rendered = `${JSON.stringify(report, null, 2)}\n`;
 if (process.argv.includes('--check')) {
-  if (readFileSync(output, 'utf8') !== rendered) throw new Error('Plugin parity report is stale');
+  if (readFileSync(output, 'utf8') !== rendered) {
+    const existing = JSON.parse(readFileSync(output, 'utf8'));
+    const index = report.operations.findIndex((row, i) => JSON.stringify(row) !== JSON.stringify(existing.operations?.[i]));
+    const detail = index >= 0
+      ? JSON.stringify({ expected: report.operations[index], actual: existing.operations?.[index] })
+      : JSON.stringify({ expectedSummary: report.summary, actualSummary: existing.summary });
+    throw new Error('Plugin parity report is stale: ' + detail.slice(0, 4000));
+  }
 } else {
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, rendered);
