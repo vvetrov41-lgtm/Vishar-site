@@ -607,6 +607,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   color: inherit;
   text-decoration: none;
 }
+.badge.today-new-enquiry {
+  color: #8ab6ff;
+  border-color: rgba(76, 141, 255, 0.55);
+  background: rgba(76, 141, 255, 0.14);
+}
 .today-dismiss {
   white-space: nowrap;
   align-self: center;
