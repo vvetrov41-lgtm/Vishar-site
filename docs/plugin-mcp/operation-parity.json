@@ -3303,7 +3303,7 @@
     {
       "operationId": "getVisitOutcomeContext",
       "mcpTool": "crm_get_visit_outcome_context",
-      "domain": "Scheduling",
+      "domain": "Projects",
       "description": "Check the current visit outcome and its version before recording; signed-in artist scope only.",
       "inputSchema": {
         "type": "object",
@@ -3335,7 +3335,7 @@
       "compatibility": "existing_action_adapter",
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
       "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
-      "sourceSchema": "openapi.scheduling.yaml"
+      "sourceSchema": "openapi.projects.yaml"
     },
     {
       "operationId": "getWhatsAppConversation",
@@ -5765,7 +5765,7 @@
     {
       "operationId": "recordConsultationBookedOutcome",
       "mcpTool": "crm_record_consultation_booked_outcome",
-      "domain": "Scheduling",
+      "domain": "Projects",
       "description": "Free consultation only. Requires an existing tattoo booking for the same artist and client. Uses an idempotency key; no payments, client messages or calendar changes.",
       "inputSchema": {
         "type": "object",
@@ -5814,7 +5814,7 @@
       "compatibility": "existing_action_adapter",
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
       "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
-      "sourceSchema": "openapi.scheduling.yaml"
+      "sourceSchema": "openapi.projects.yaml"
     },
     {
       "operationId": "recordInvoicePayment",
