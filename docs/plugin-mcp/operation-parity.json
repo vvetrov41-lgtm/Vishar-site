@@ -3304,7 +3304,7 @@
       "operationId": "getVisitOutcomeContext",
       "mcpTool": "crm_get_visit_outcome_context",
       "domain": "Projects",
-      "description": "Check the current visit outcome and its version before recording; signed-in artist scope only.",
+      "description": "Check the actual persisted outcome and linked tattoo bookings before recording a consultation. Uses the signed-in artist scope. Does not change any record.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -5766,7 +5766,7 @@
       "operationId": "recordConsultationBookedOutcome",
       "mcpTool": "crm_record_consultation_booked_outcome",
       "domain": "Projects",
-      "description": "Free consultation only. Requires an existing tattoo booking for the same artist and client. Uses an idempotency key; no payments, client messages or calendar changes.",
+      "description": "Only after checking the consultation and an existing tattoo booking of the same artist and client. Free consultation only, no new booking, payment, client message or calendar edit. Request ID is idempotent. Explicitly supplied by the owner.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -5778,7 +5778,7 @@
           "request_id": {
             "type": "string",
             "format": "uuid",
-            "description": "Fresh idempotency UUID. Reuse only to retry the identical record."
+            "description": "Fresh UUID for this intended action. Reuse it only to retry the identical request."
           },
           "expected_version": {
             "type": "integer",
