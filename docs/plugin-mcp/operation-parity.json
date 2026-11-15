@@ -1,11 +1,11 @@
 {
   "source": "13 current Unified GPT OpenAPI schemas and operator-parity.current.mjs",
   "summary": {
-    "currentGptOperations": 206,
-    "mcpTools": 206,
-    "semanticParityThroughAdapter": 206,
+    "currentGptOperations": 208,
+    "mcpTools": 208,
+    "semanticParityThroughAdapter": 208,
     "directHandlerWithoutAdapter": 0,
-    "requiringActionAdapter": 206,
+    "requiringActionAdapter": 208,
     "requiringSchemaChange": 0,
     "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
@@ -3301,6 +3301,42 @@
       "sourceSchema": "openapi.crm-core.yaml"
     },
     {
+      "operationId": "getVisitOutcomeContext",
+      "mcpTool": "crm_get_visit_outcome_context",
+      "domain": "Scheduling",
+      "description": "Read one visit result, current version and existing bookings",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "outputShape": null,
+      "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
+      "method": "GET",
+      "path": "/v1/appointments/{appointment_id}/visit-outcome",
+      "readWrite": "read",
+      "destructive": false,
+      "permission": "view_sessions",
+      "scopes": [
+        "email"
+      ],
+      "handler": [
+        "public.gpt_get_visit_outcome_context"
+      ],
+      "compatibility": "existing_action_adapter",
+      "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
+      "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
+      "sourceSchema": "openapi.scheduling.yaml"
+    },
+    {
       "operationId": "getWhatsAppConversation",
       "mcpTool": "crm_get_whats_app_conversation",
       "domain": "Communications",
@@ -5724,6 +5760,59 @@
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
       "securityConcern": "Cloudflare mutation/read boundary requires existing server-side control authorization.",
       "sourceSchema": "openapi.cloudflare.yaml"
+    },
+    {
+      "operationId": "recordConsultationBookedOutcome",
+      "mcpTool": "crm_record_consultation_booked_outcome",
+      "domain": "Scheduling",
+      "description": "Record a completed consultation as successfully booked",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 0
+          },
+          "linked_session_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "appointment_id",
+          "request_id",
+          "expected_version",
+          "linked_session_id"
+        ]
+      },
+      "outputShape": null,
+      "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
+      "method": "POST",
+      "path": "/v1/appointments/{appointment_id}/consultation-booked-outcome",
+      "readWrite": "write",
+      "destructive": true,
+      "permission": "manage_sessions",
+      "scopes": [
+        "email"
+      ],
+      "handler": [
+        "public.gpt_record_consultation_booked_outcome",
+        "public.record_visit_outcome"
+      ],
+      "compatibility": "existing_action_adapter",
+      "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
+      "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
+      "sourceSchema": "openapi.scheduling.yaml"
     },
     {
       "operationId": "recordInvoicePayment",
