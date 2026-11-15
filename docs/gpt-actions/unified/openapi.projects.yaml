@@ -15,36 +15,6 @@ servers:
 security:
   - supabaseOAuth: [email]
 paths:
-  /v1/appointments/{appointment_id}/visit-outcome:
-    get:
-      operationId: getVisitOutcomeContext
-      summary: "Read one visit result, current version and existing bookings"
-      description: "Check the current visit outcome and its version before recording; signed-in artist scope only."
-      x-openai-isConsequential: false
-      parameters:
-        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
-      responses: {'200': {description: "CRM data"}, '400': {description: "Invalid request"}, '403': {description: "Not permitted for this CRM user, GPT client or active artist"}}
-  /v1/appointments/{appointment_id}/consultation-booked-outcome:
-    post:
-      operationId: recordConsultationBookedOutcome
-      summary: "Record a completed consultation as successfully booked"
-      description: "Free consultation only. Requires an existing tattoo booking for the same artist and client. Uses an idempotency key; no payments, client messages or calendar changes."
-      x-openai-isConsequential: true
-      parameters:
-        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [request_id, expected_version, linked_session_id]
-              properties:
-                request_id: {type: string, format: uuid, description: "Fresh idempotency UUID. Reuse only to retry the identical record."}
-                expected_version: {type: integer, minimum: 0, maximum: 0}
-                linked_session_id: {type: string, format: uuid}
-      responses: {'200': {description: "Persisted visit result"}, '400': {description: "Invalid request"}, '403': {description: "Not permitted for this CRM user, GPT client or active artist"}}
   /v1/projects:
     get:
       operationId: listProjects
@@ -173,6 +143,36 @@ paths:
         - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 50, default: 30}}
       responses: {'200': {description: Activity summaries}}
+  /v1/appointments/{appointment_id}/visit-outcome:
+    get:
+      operationId: getVisitOutcomeContext
+      summary: "Read one visit result, current version and existing bookings"
+      description: "Check the current visit outcome and its version before recording; signed-in artist scope only."
+      x-openai-isConsequential: false
+      parameters:
+        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses: {'200': {description: "CRM data"}, '400': {description: "Invalid request"}, '403': {description: "Not permitted for this CRM user, GPT client or active artist"}}
+  /v1/appointments/{appointment_id}/consultation-booked-outcome:
+    post:
+      operationId: recordConsultationBookedOutcome
+      summary: "Record a completed consultation as successfully booked"
+      description: "Free consultation only. Requires an existing tattoo booking for the same artist and client. Uses an idempotency key; no payments, client messages or calendar changes."
+      x-openai-isConsequential: true
+      parameters:
+        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [request_id, expected_version, linked_session_id]
+              properties:
+                request_id: {type: string, format: uuid, description: "Fresh idempotency UUID. Reuse only to retry the identical record."}
+                expected_version: {type: integer, minimum: 0, maximum: 0}
+                linked_session_id: {type: string, format: uuid}
+      responses: {'200': {description: "Persisted visit result"}, '400': {description: "Invalid request"}, '403': {description: "Not permitted for this CRM user, GPT client or active artist"}}
 components:
   securitySchemes:
     supabaseOAuth:
