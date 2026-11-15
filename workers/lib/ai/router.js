@@ -50,6 +50,18 @@ export const PROVIDER_IDS = Object.freeze(new Set(Object.keys(PROVIDERS)));
 const SHARED_CLOUDFLARE_PROVIDERS = new Set(['qwen', 'workers_ai']);
 const DAILY_NEURON_QUOTA = /^cf_(?:3036|4006)(?:_quota)?$/;
 
+/**
+ * True when a failed routing result met the account-wide daily allocation.
+ * The allocation resets at 00:00 UTC, so an immediate retry cannot succeed;
+ * callers with a queue use this to defer the work instead of spending its
+ * retry budget inside the same exhausted day.
+ */
+export function isDailyQuotaFailure(routed) {
+  if (!routed || routed.ok !== false || !Array.isArray(routed.attempts)) return false;
+  return routed.attempts.some((attempt) => attempt?.errorCode === 'provider_rate_limited'
+    && DAILY_NEURON_QUOTA.test(attempt?.errorDetail ?? ''));
+}
+
 const FALLBACK_CODES = new Set([
   'provider_timeout',
   'provider_input_rejected',

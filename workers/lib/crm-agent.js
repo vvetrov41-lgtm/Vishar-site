@@ -12,7 +12,7 @@
 
 import { createSupabaseClient } from './supabase.js';
 import { createStorageClient } from './storage.js';
-import { runModelTask } from './ai/router.js';
+import { isDailyQuotaFailure, runModelTask } from './ai/router.js';
 import { MAX_IMAGE_BYTES } from './ai/tasks.js';
 import {
   CLIENT_DRAFT_PROMPT_VERSION, CLIENT_DRAFT_SCHEMA_VERSION, CLIENT_DRAFT_SYSTEM,
@@ -277,7 +277,7 @@ async function processClientStateJobV2(env, job, supabase, runTask) {
     { validateJson: (json) => diagnoseClientStateV2(normalizeClientStateV2(json), allowed) ?? true },
   );
   if (!model?.ok) {
-    return { outcome: 'failed', errorCode: 'ai_unavailable',
+    return { outcome: 'failed', errorCode: modelFailureCode(model),
       aiRun: record(model, 'failed', model?.errorCode ?? 'ai_unavailable', input.length) };
   }
   const valid = validateClientStateV2(normalizeClientStateV2(model.json), allowed);
@@ -347,7 +347,7 @@ async function processClientStateJob(env, job, supabase, runTask) {
     { validateJson: (json) => (validateClientStateAnalysis(json) !== null ? true : diagnoseClientStateAnalysis(json) ?? 'contract') },
   );
   if (!model?.ok) {
-    return { outcome: 'failed', errorCode: 'ai_unavailable', aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable', input.length) };
+    return { outcome: 'failed', errorCode: modelFailureCode(model), aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable', input.length) };
   }
 
   // Re-validated rather than trusting the router's check: the router proves the
@@ -409,7 +409,7 @@ async function processReferenceImageJob(env, job, supabase, runTask, deps) {
     },
   );
   if (!model?.ok) {
-    return { outcome: 'failed', errorCode: 'ai_unavailable', aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable') };
+    return { outcome: 'failed', errorCode: modelFailureCode(model), aiRun: telemetry(model, 'failed', model?.errorCode ?? 'ai_unavailable') };
   }
 
   const analysis = validateReferenceImageAnalysis(normalizeReferenceImageAnalysis(model.json));
@@ -430,8 +430,18 @@ async function processReferenceImageJob(env, job, supabase, runTask, deps) {
   };
 }
 
+/**
+ * The spent daily allocation is reported apart from an ordinary provider
+ * failure: the database then defers the job to the reset instead of spending
+ * its three attempts inside the same exhausted day.
+ */
+const QUOTA_EXHAUSTED = 'ai_quota_exhausted';
+function modelFailureCode(model) {
+  return isDailyQuotaFailure(model) ? QUOTA_EXHAUSTED : 'ai_unavailable';
+}
+
 export async function processCrmAgentJob(env, job, deps = {}) {
-  const { supabase = createSupabaseClient(env), runTask = runModelTask } = deps;
+  const { supabase = createSupabaseClient(env), runTask = runModelTask, quotaExhausted = false } = deps;
 
   // Identifiers come exclusively from the authenticated database claim. There
   // is no path by which a model, a client message or a webhook can name a job.
@@ -447,6 +457,10 @@ export async function processCrmAgentJob(env, job, deps = {}) {
     } catch { /* the lease expires and the job is recovered on a later tick */ }
     return { outcome: 'failed', errorCode: code };
   };
+
+  // An earlier job of this same drain already met the spent allocation. This
+  // job is claimed, so it is handed straight back without a doomed model call.
+  if (quotaExhausted) return release(QUOTA_EXHAUSTED);
 
   try {
     const result = job.job_type === 'analyze_reference_image'
@@ -478,8 +492,11 @@ export async function drainCrmAgent(env, { limit = 2, ...deps } = {}) {
     if (!Array.isArray(jobs)) return { processed: 0 };
 
     const outcomes = [];
+    let quotaExhausted = false;
     for (const job of jobs.slice(0, 3)) {
-      outcomes.push(await processCrmAgentJob(env, job, { ...deps, supabase }));
+      const outcome = await processCrmAgentJob(env, job, { ...deps, supabase, quotaExhausted });
+      if (outcome?.errorCode === QUOTA_EXHAUSTED) quotaExhausted = true;
+      outcomes.push(outcome);
     }
     return { processed: outcomes.length, outcomes };
   } catch {
