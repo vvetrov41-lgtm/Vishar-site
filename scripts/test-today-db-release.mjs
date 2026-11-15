@@ -561,3 +561,15 @@ const consultationOutcomeAccess = [
 assert.equal(verifyTodayLineage(consultationOutcomeAccess), '20261115121000');
 assert.equal(deferredTodayMigration(consultationOutcomeAccess), null);
 assert.throws(() => verifyTodayLineage(consultationOutcomeAccess + '\n 20261115130000 | | t'));
+
+const enquiryFactConflicts = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115121000 | 20261115121000 | t',
+  ' 20261115193915 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(enquiryFactConflicts), '20261115193915');
+assert.equal(deferredTodayMigration(enquiryFactConflicts), null);
+assert.throws(() => verifyTodayLineage(enquiryFactConflicts.replace(
+  '20261115121000 | 20261115121000', '20261115121000 | '
+)));
+assert.throws(() => verifyTodayLineage(enquiryFactConflicts + '\n 20261115200000 | | t'));
