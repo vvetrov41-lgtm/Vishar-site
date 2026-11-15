@@ -535,6 +535,20 @@ for (const bad of [
   staleLifecycleJobs.replace('20261115193915 | 20261115193915', '20261115193915 | '),
   staleLifecycleJobs + '\n 20261115210000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// GPT plugin booked outcome for a finished confirmed consultation, one
+// migration after the stale lifecycle jobs withdrawal (20261115200000).
+const gptBookedFinishedConsultation = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115200000 | 20261115200000 | t',
+  ' 20261115203000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(gptBookedFinishedConsultation), '20261115203000');
+assert.equal(deferredTodayMigration(gptBookedFinishedConsultation), null);
+for (const bad of [
+  gptBookedFinishedConsultation.replace('20261115203000 | |', '20261115203001 | |'),
+  gptBookedFinishedConsultation.replace('20261115200000 | 20261115200000', '20261115200000 | '),
+  gptBookedFinishedConsultation + '\n 20261115210000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',

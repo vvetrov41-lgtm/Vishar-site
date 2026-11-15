@@ -139,6 +139,9 @@ export function verifyTodayLineage(source) {
     // Resilience: withdraw lifecycle jobs that are no longer current. One
     // statement added to the scheduler tick; it can only remove a send.
     ['20261115193915', '20261115200000'],
+    // GPT plugin: «Записался» accepts a finished consultation that is still
+    // confirmed. One function redefinition; no client send.
+    ['20261115200000', '20261115203000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
