@@ -291,6 +291,93 @@ await test('a signed booking-card quick reply is applied through the atomic acti
   });
 });
 
+await test('a tap on a no-longer-actionable booking card is still recorded as the client message', async () => {
+  const calls = [];
+  const db = {
+    calls,
+    async rpc(name, args) {
+      calls.push({ name, args });
+      if (name === 'service_apply_whatsapp_booking_card_action') {
+        return { applied: false, reason: 'action_unavailable' };
+      }
+      return { changed: true };
+    },
+  };
+  const payload = `booking_action:${'d'.repeat(64)}`;
+  const response = await handleWhatsappWebhook(
+    postRequest(payloadFor({ messages: [inboundBookingButton({ payload })] }), V_SECRET),
+    env(),
+    db
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.map((call) => call.name), [
+    'service_apply_whatsapp_booking_card_action',
+    'record_whatsapp_inbound_message',
+  ]);
+  assert.deepEqual(calls[1].args, {
+    p_artist_id: V_ID,
+    p_integration_key: 'vladimir-production',
+    p_contact_wa_id: '447700900001',
+    p_provider_message_id: 'wamid.SYNTHETICBOOKINGBUTTON0001',
+    p_provider_timestamp: new Date(Number(TS) * 1000).toISOString(),
+    p_message_type: 'button',
+    p_body: null,
+  });
+  // The opaque capability never reaches the generic inbound record.
+  assert.equal(JSON.stringify(calls[1].args).includes(payload), false);
+});
+
+await test('an applied or replayed booking tap is not recorded a second time', async () => {
+  for (const result of [
+    { applied: true, replayed: false, action: 'confirm_attendance', outcome: 'confirmed' },
+    { applied: false, replayed: true, reason: 'provider_event_replayed' },
+  ]) {
+    const calls = [];
+    const db = { async rpc(name, args) { calls.push({ name, args }); return result; } };
+    const response = await handleWhatsappWebhook(
+      postRequest(payloadFor({ messages: [inboundBookingButton()] }), V_SECRET),
+      env(),
+      db
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(calls.map((call) => call.name), ['service_apply_whatsapp_booking_card_action']);
+  }
+});
+
+await test('a stale tap whose fallback record fails is retried by Meta, and the failure is logged by code only', async () => {
+  const calls = [];
+  const db = {
+    async rpc(name, args) {
+      calls.push({ name, args });
+      if (name === 'service_apply_whatsapp_booking_card_action') {
+        return { applied: false, reason: 'action_unavailable' };
+      }
+      const error = new Error('database rejected the row for +447700900001');
+      error.code = 'database_rejected';
+      throw error;
+    },
+  };
+  const logged = [];
+  const originalError = console.error;
+  console.error = (...args) => logged.push(args.join(' '));
+  let response;
+  try {
+    response = await handleWhatsappWebhook(
+      postRequest(payloadFor({ messages: [inboundBookingButton()] }), V_SECRET),
+      env(),
+      db
+    );
+  } finally {
+    console.error = originalError;
+  }
+  assert.equal(response.status, 503);
+  assert.equal(calls.length, 2);
+  assert.equal(logged.length, 1);
+  assert.equal(logged[0], 'whatsapp webhook ingest failed {"code":"database_rejected"}');
+  assert.equal(logged[0].includes('447700900001'), false);
+});
+
 await test('an unrelated button is recorded generically and cannot invoke a booking action', async () => {
   const db = fakeSupabase();
   const response = await handleWhatsappWebhook(

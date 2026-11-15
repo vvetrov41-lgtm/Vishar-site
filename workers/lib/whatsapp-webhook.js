@@ -227,6 +227,13 @@ function resolveSignedRoute(routes, matchedBindings, wabaId, phoneNumberId) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+function safeFailureCode(error) {
+  const code = error?.code;
+  return typeof code === 'string' && /^[a-z][a-z0-9_]{2,63}$/.test(code)
+    ? code
+    : 'whatsapp_webhook_error';
+}
+
 function jsonError(status) {
   return new Response(JSON.stringify({ ok: false }), {
     status,
@@ -275,7 +282,7 @@ async function ingestMessages(value, route, supabase) {
       : null;
 
     if (bookingActionPayload) {
-      await supabase.rpc('service_apply_whatsapp_booking_card_action', {
+      const actionResult = await supabase.rpc('service_apply_whatsapp_booking_card_action', {
         p_artist_id: route.artistId,
         p_integration_key: route.integrationKey,
         p_contact_wa_id: contactWaId,
@@ -283,7 +290,16 @@ async function ingestMessages(value, route, supabase) {
         p_provider_timestamp: providerTimestamp,
         p_payload: bookingActionPayload,
       });
-      continue;
+      // The database records the tap only when it applies the action. A tap on
+      // a card that is no longer actionable (expired, already used, superseded
+      // by a reschedule) is still something the client did: without a record
+      // the artist never learns the client tried to answer. Fall through to
+      // the ordinary inbound record, which is idempotent on the provider
+      // message id, so a webhook retry cannot duplicate it. The opaque payload
+      // is never stored.
+      if (actionResult?.applied !== false || actionResult?.reason !== 'action_unavailable') {
+        continue;
+      }
     }
 
     let body = null;
@@ -480,6 +496,11 @@ export async function handleWhatsappWebhook(request, env, supabase = null) {
     return new Response('EVENT_RECEIVED', { status: 200, headers: { 'Content-Type': 'text/plain' } });
   } catch (error) {
     if (error instanceof WhatsappWebhookError) return jsonError(error.status);
+    // Meta retries a 503, which is right for an outage. A deterministic
+    // database rejection is retried just the same and would otherwise stay
+    // invisible, so the bounded failure code is logged. No message content,
+    // contact number or provider identifier is ever logged.
+    console.error('whatsapp webhook ingest failed', JSON.stringify({ code: safeFailureCode(error) }));
     return jsonError(503);
   }
 }
