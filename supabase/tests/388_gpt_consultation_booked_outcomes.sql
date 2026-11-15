@@ -80,6 +80,12 @@ select lives_ok(
 select is((public.gpt_get_visit_outcome_context('b5154444-4444-4444-8444-444444444444')->>'version')::integer,0,
   'outcome read returns the expected first-write version');
 select throws_ok(
+  'select public.gpt_get_visit_outcome_context(''b5155555-5555-4555-8555-555555555555'')',
+  '22023', 'only consultation visit outcomes can be read here',
+  'GPT appointment read cannot expose a tattoo outcome with finance disabled'
+);
+
+select throws_ok(
   $$select public.gpt_record_consultation_booked_outcome(
     'b5156666-6666-4666-8666-666666666666',
     'b5159000-0000-4000-8000-000000000002',0,
