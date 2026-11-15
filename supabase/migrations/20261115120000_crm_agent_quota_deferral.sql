@@ -1,4 +1,4 @@
--- 20261115100000_crm_agent_quota_deferral.sql
+-- 20261115120000_crm_agent_quota_deferral.sql
 --
 -- Resilience review (2026-11-15), scenario "AI unavailable / quota spent".
 --

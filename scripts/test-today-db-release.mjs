@@ -507,19 +507,19 @@ for (const bad of [
   groupedDeposit.replace('20261114220000 | |', '20261114220001 | |'),
   groupedDeposit + '\n 20261114230000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
-// Resilience: CRM agent quota deferral, one migration after the grouped
-// deposit read (20261114220000).
+// Resilience: CRM agent quota deferral, one migration after the GPT
+// consultation outcome (20261115110000).
 const agentQuotaDeferral = [
   ' Local | Remote | Time (UTC)',
-  ' 20261114220000 | 20261114220000 | t',
-  ' 20261115100000 | | t',
+  ' 20261115110000 | 20261115110000 | t',
+  ' 20261115120000 | | t',
 ].join('\n');
-assert.equal(verifyTodayLineage(agentQuotaDeferral), '20261115100000');
+assert.equal(verifyTodayLineage(agentQuotaDeferral), '20261115120000');
 assert.equal(deferredTodayMigration(agentQuotaDeferral), null);
 for (const bad of [
-  agentQuotaDeferral.replace('20261115100000 | |', '20261115100001 | |'),
-  agentQuotaDeferral.replace('20261114220000 | 20261114220000', '20261114220000 | '),
-  agentQuotaDeferral + '\n 20261115110000 | | t',
+  agentQuotaDeferral.replace('20261115120000 | |', '20261115120001 | |'),
+  agentQuotaDeferral.replace('20261115110000 | 20261115110000', '20261115110000 | '),
+  agentQuotaDeferral + '\n 20261115130000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 // Candidate-only cash note may follow the verified Phase 4 migration head.
 // The release gate still rejects an extra migration or an unexpected predecessor.
