@@ -145,6 +145,9 @@ export function verifyTodayLineage(source) {
     // Today: open project with nothing booked next. Read-only pulse branch;
     // no client send.
     ['20261115203000', '20261116113000'],
+    // Fill a cancelled slot: one read-only candidate list for a cancelled
+    // appointment. No write, no queue, no client send.
+    ['20261116113000', '20261116150000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

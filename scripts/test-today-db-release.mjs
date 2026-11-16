@@ -563,6 +563,20 @@ for (const bad of [
   todayNextSessionMissing.replace('20261115203000 | 20261115203000', '20261115203000 | '),
   todayNextSessionMissing + '\n 20261116120000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Fill a cancelled slot, one read-only migration after the Today next-session-missing
+// pulse kind (20261116113000).
+const cancelledSlotCandidates = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261116113000 | 20261116113000 | t',
+  ' 20261116150000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(cancelledSlotCandidates), '20261116150000');
+assert.equal(deferredTodayMigration(cancelledSlotCandidates), null);
+for (const bad of [
+  cancelledSlotCandidates.replace('20261116150000 | |', '20261116150001 | |'),
+  cancelledSlotCandidates.replace('20261116113000 | 20261116113000', '20261116113000 | '),
+  cancelledSlotCandidates + '\n 20261116160000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
