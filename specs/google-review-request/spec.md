@@ -31,8 +31,7 @@ A suggestion appears on Today, section **Healing & reviews**, when all hold:
   block.
 
 The card shows client, project, last session date and a pre-filled editable
-message, e.g. "Hi {first_name}, how has your tattoo healed? If you can, send
-me a photo in daylight. {artist}". Actions:
+message (same text as the WhatsApp template below). Actions:
 - **Send** (opens the editable text, then sends through the conversation's
   channel, see Channels);
 - **Later** (hide for 14 days);
@@ -67,11 +66,11 @@ client page.
 - WhatsApp outside the 24-hour customer window needs an approved template.
   Step 1 is usually outside the window (28+ days), so it needs a new utility
   template `vishar_healing_check_v1` (Utility, en_GB, one variable: client
-  first name, two quick-reply buttons "Healed well" / "I have a question")
-  submitted to Meta. The template never mentions reviews, so it stays
-  Utility. A tap on "Healed well" is a structured positive reply for step 2;
-  the artist still decides. Kristina's identity stays gated until her
-  WhatsApp route exists. Step 3 is
+  first name, no buttons, no photo request) submitted to Meta. Body:
+  "Hi {{1}}, I hope you're doing well. Could you let me know how your tattoo
+  is healing, or how it has healed?" The template never mentions reviews, so
+  it stays Utility. Kristina's identity stays gated until her WhatsApp route
+  exists. Step 3 is
   normally inside the window opened by the client's reply and uses the
   existing free-form path `queue_communication_message`.
 - Submitting the template to Meta and activating it need Vladimir's explicit
