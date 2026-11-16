@@ -25,7 +25,9 @@ insert into public.clients (id, full_name, email) values
   ('e3940000-0000-4000-8000-0000000000c7', 'NS On hold', 'ns-7@example.test'),
   ('e3940000-0000-4000-8000-0000000000c8', 'NS Follow-up', 'ns-8@example.test'),
   ('e3940000-0000-4000-8000-0000000000c9', 'NS No sessions', 'ns-9@example.test'),
-  ('e3940000-0000-4000-8000-0000000000ca', 'NS Deferred', 'ns-a@example.test');
+  ('e3940000-0000-4000-8000-0000000000ca', 'NS Deferred', 'ns-a@example.test'),
+  ('e3940000-0000-4000-8000-0000000000cb', 'NS Cancelled visit', 'ns-b@example.test'),
+  ('e3940000-0000-4000-8000-0000000000cc', 'NS Plain cancel', 'ns-c@example.test');
 
 insert into public.projects (id, client_id, artist_id, status, title, hourly_rate, currency)
 select ('e3941000-0000-4000-8000-0000000000' || v.n)::uuid,
@@ -33,7 +35,7 @@ select ('e3941000-0000-4000-8000-0000000000' || v.n)::uuid,
        (select id from t_ns_artist), v.status::public.project_status, 'NS project ' || v.n, 140, 'GBP'
 from (values ('c1', 'active'), ('c2', 'active'), ('c3', 'active'), ('c4', 'active'),
              ('c5', 'draft'), ('c6', 'active'), ('c7', 'on_hold'), ('c8', 'active'),
-             ('c9', 'active'), ('ca', 'active')) v(n, status);
+             ('c9', 'active'), ('ca', 'active'), ('cb', 'active'), ('cc', 'active')) v(n, status);
 
 -- One past session per project; c4 also has a future booking.
 insert into public.sessions
@@ -54,8 +56,15 @@ from (values
   ('e3942000-0000-4000-8000-0000000000c6'::uuid, 'e3940000-0000-4000-8000-0000000000c6'::uuid, 'e3941000-0000-4000-8000-0000000000c6'::uuid, 'completed', interval '-1 day'),
   ('e3942000-0000-4000-8000-0000000000c7'::uuid, 'e3940000-0000-4000-8000-0000000000c7'::uuid, 'e3941000-0000-4000-8000-0000000000c7'::uuid, 'completed', interval '-10 days'),
   ('e3942000-0000-4000-8000-0000000000c8'::uuid, 'e3940000-0000-4000-8000-0000000000c8'::uuid, 'e3941000-0000-4000-8000-0000000000c8'::uuid, 'completed', interval '-10 days'),
-  ('e3942000-0000-4000-8000-0000000000ca'::uuid, 'e3940000-0000-4000-8000-0000000000ca'::uuid, 'e3941000-0000-4000-8000-0000000000ca'::uuid, 'completed', interval '-1 day')
+  ('e3942000-0000-4000-8000-0000000000ca'::uuid, 'e3940000-0000-4000-8000-0000000000ca'::uuid, 'e3941000-0000-4000-8000-0000000000ca'::uuid, 'completed', interval '-1 day'),
+  ('e3942000-0000-4000-8000-0000000000cb'::uuid, 'e3940000-0000-4000-8000-0000000000cb'::uuid, 'e3941000-0000-4000-8000-0000000000cb'::uuid, 'completed', interval '-10 days'),
+  ('e3942000-0000-4000-8000-0000000000cc'::uuid, 'e3940000-0000-4000-8000-0000000000cc'::uuid, 'e3941000-0000-4000-8000-0000000000cc'::uuid, 'completed', interval '-10 days')
 ) v(id, client_id, project_id, status, start_offset);
+
+-- The state apply_visit_status leaves for a visit cancelled on its outcome
+-- card (cb) and for an ordinary cancellation (cc).
+update public.sessions set status = 'cancelled', cancelled_at = now() - interval '9 days'
+where id in ('e3942000-0000-4000-8000-0000000000cb', 'e3942000-0000-4000-8000-0000000000cc');
 
 insert into public.visit_outcomes
   (session_id, artist_id, client_id, appointment_type, state, outcome, work_result,
@@ -66,6 +75,12 @@ select ('e3942000-0000-4000-8000-0000000000' || v.n)::uuid, (select id from t_ns
 from (values ('c1', 'next_session_needed'), ('c2', 'touch_up_needed'), ('c3', 'work_complete'),
              ('c4', 'next_session_needed'), ('c7', 'next_session_needed'),
              ('c8', 'next_session_needed')) v(n, work_result);
+
+insert into public.visit_outcomes
+  (session_id, artist_id, client_id, appointment_type, state, outcome, confirmed_at)
+values ('e3942000-0000-4000-8000-0000000000cb', (select id from t_ns_artist),
+        'e3940000-0000-4000-8000-0000000000cb', 'tattoo_session', 'confirmed', 'cancelled',
+        now() - interval '9 days');
 
 -- "Later" on the outcome card of a recent visit.
 insert into public.visit_outcomes
@@ -89,6 +104,11 @@ select is((select reason from pulse_394 where key = 'next-session-e3941000-0000-
   'touch_up_not_booked', '"Touch-up needed" with nothing booked shows');
 select is((select reason from pulse_394 where key = 'next-session-e3941000-0000-4000-8000-0000000000c5'),
   'last_session_result_unknown', 'an old visit with no recorded result shows');
+
+select is((select reason from pulse_394 where key = 'next-session-e3941000-0000-4000-8000-0000000000cb'),
+  'visit_cancelled_not_rebooked', 'a visit cancelled on its outcome card shows');
+select ok(not exists (select 1 from pulse_394 where key = 'next-session-e3941000-0000-4000-8000-0000000000cc'),
+  'an ordinary cancellation without an outcome does not show');
 
 select ok(not exists (select 1 from pulse_394 where key = 'next-session-e3941000-0000-4000-8000-0000000000c3'),
   '"Work complete" never shows');

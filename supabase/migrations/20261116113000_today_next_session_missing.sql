@@ -257,9 +257,12 @@ AS $function$
       select s.id, s.start_at, s.status, vo.outcome, vo.work_result
       from public.sessions s
       left join public.visit_outcomes vo on vo.session_id = s.id and vo.state = 'confirmed'
-      where s.project_id = p.id and s.artist_id = p_artist_id and s.cancelled_at is null
+      where s.project_id = p.id and s.artist_id = p_artist_id
         and s.appointment_type in ('tattoo_session', 'touch_up')
-        and s.status in ('confirmed', 'completed', 'no_show')
+        -- A visit recorded as "cancelled" through its outcome card is
+        -- cancelled by apply_visit_status, yet it still left the work undone.
+        and ((s.cancelled_at is null and s.status in ('confirmed', 'completed', 'no_show'))
+             or vo.outcome = 'cancelled')
         and s.end_at < (select t from now_)
       order by s.start_at desc, s.id desc
       limit 1
