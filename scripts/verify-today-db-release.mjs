@@ -142,6 +142,9 @@ export function verifyTodayLineage(source) {
     // GPT plugin: «Записался» accepts a finished consultation that is still
     // confirmed. One function redefinition; no client send.
     ['20261115200000', '20261115203000'],
+    // Fill a cancelled slot: one read-only candidate list for a cancelled
+    // appointment. No write, no queue, no client send.
+    ['20261115203000', '20261116100000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

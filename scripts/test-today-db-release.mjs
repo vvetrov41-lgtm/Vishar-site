@@ -549,6 +549,20 @@ for (const bad of [
   gptBookedFinishedConsultation.replace('20261115200000 | 20261115200000', '20261115200000 | '),
   gptBookedFinishedConsultation + '\n 20261115210000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Fill a cancelled slot, one read-only migration after the GPT booked
+// outcome for a finished consultation (20261115203000).
+const cancelledSlotCandidates = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115203000 | 20261115203000 | t',
+  ' 20261116100000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(cancelledSlotCandidates), '20261116100000');
+assert.equal(deferredTodayMigration(cancelledSlotCandidates), null);
+for (const bad of [
+  cancelledSlotCandidates.replace('20261116100000 | |', '20261116100001 | |'),
+  cancelledSlotCandidates.replace('20261115203000 | 20261115203000', '20261115203000 | '),
+  cancelledSlotCandidates + '\n 20261116110000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
