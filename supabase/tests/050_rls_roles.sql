@@ -922,6 +922,8 @@ insert into expected_function_acl values
   ('public.defer_visit_outcome(uuid,uuid,integer,timestamptz)', false, true, false),
   ('public.list_visit_outcome_history(uuid)', false, true, false),
   ('public.list_client_visit_outcomes(uuid)', false, true, false),
+  -- Fill a cancelled slot: read-only, re-checks view_sessions + view_clients.
+  ('public.list_cancelled_slot_candidates(uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
