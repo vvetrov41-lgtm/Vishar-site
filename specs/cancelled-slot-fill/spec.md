@@ -24,12 +24,12 @@ Candidates, in priority order (one row per client, best reason wins):
 | # | Reason | Slot | Rule |
 |---|---|---|---|
 | 1 | `deposit_paid_no_date` | tattoo/touch-up | project draft/active/on_hold with deposit `paid`, or enquiry `deposit_paid` without a project |
-| 2 | `open_follow_up` | any | open follow-up due before slot start + 14 days |
+| 2 | `open_follow_up` | any | open follow-up due before slot start + 14 days; client from the follow-up, else its project or enquiry |
 | 3 | `touch_up_due` | tattoo/touch-up | last completed tattoo session 4-16 weeks before the slot, no touch-up after it |
 | 4 | `project_no_date` | tattoo/touch-up | active project, deposit `not_required`/`requested`, touched in the last 180 days |
 | 5 | `enquiry_awaiting_consultation` | consultation | enquiry `new`/`reviewing`/`accepted`/`quote_sent`, created in the last 60 days, no consultation ever booked |
 
-Within a priority: slot length `fits` first, then `unknown`, then `longer`;
+Within a priority (also when one client has several qualifying records): slot length `fits` first, then `unknown`, then `longer`;
 then the longest wait. Needed hours: project estimate / estimated sessions,
 else the last tattoo session length; touch-up 1 h; consultation 0.5 h.
 
