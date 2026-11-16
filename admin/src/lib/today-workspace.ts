@@ -39,7 +39,9 @@ export type TodayItemKind =
   | 'client_follow_up_due'
   | 'client_cold'
   // A visit whose actual result the artist has not confirmed yet.
-  | 'visit_outcome';
+  | 'visit_outcome'
+  // An open project whose last session left work to do, nothing booked next.
+  | 'next_session_missing';
 
 /**
  * Client-originated work first: those are the items where the delay is visible
