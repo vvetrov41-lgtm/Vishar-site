@@ -54,7 +54,9 @@ select v.*, (select workspace_id from t_sf_artist) from (values
   ('e9c00000-0000-4000-8000-000000000005', 'Una Unsubscribed', 'sf-u@example.test', null),
   ('e9c00000-0000-4000-8000-000000000006', 'Pat Project', 'sf-p@example.test', null),
   ('e9c00000-0000-4000-8000-000000000007', 'Eve Enquiry', 'sf-e@example.test', null),
-  ('e9c00000-0000-4000-8000-000000000008', 'Archie Archived', 'sf-a@example.test', null)
+  ('e9c00000-0000-4000-8000-000000000008', 'Archie Archived', 'sf-a@example.test', null),
+  ('e9c00000-0000-4000-8000-000000000009', 'Gus Two Projects', 'sf-g@example.test', null),
+  ('e9c00000-0000-4000-8000-00000000000a', 'Fiona Followup', 'sf-f@example.test', null)
 ) v(id, full_name, email, phone);
 
 insert into public.projects (id, client_id, artist_id, status, title, deposit_status, estimated_hours, estimated_sessions, currency)
@@ -70,6 +72,14 @@ from (values
   ('e9d00000-0000-4000-8000-000000000008'::uuid, 'e9c00000-0000-4000-8000-000000000008'::uuid, 'active', 'SF archived', 'paid', 6::numeric, 1)
 ) v(id, client_id, status, title, dep, hours, sessions);
 
+-- Gus has an older paid project longer than the slot and a newer one that fits.
+insert into public.projects (id, client_id, artist_id, status, title, deposit_status, estimated_hours, estimated_sessions, currency, created_at, updated_at)
+select v.id, 'e9c00000-0000-4000-8000-000000000009', (select id from t_sf_artist), 'active', v.title, 'paid', v.hours, 1, 'GBP', v.at, v.at
+from (values
+  ('e9d00000-0000-4000-8000-000000000091'::uuid, 'SF Gus long', 8::numeric, now() - interval '40 days'),
+  ('e9d00000-0000-4000-8000-000000000092'::uuid, 'SF Gus short', 4::numeric, now() - interval '2 days')
+) v(id, title, hours, at);
+
 update public.clients set archived_at = now() where id = 'e9c00000-0000-4000-8000-000000000008';
 
 insert into public.communication_suppressions (client_id, channel, reason, is_active)
@@ -83,6 +93,19 @@ insert into public.enquiries (
   (select id from t_sf_artist), 'SF-394-0007', 'e9e00000-0000-4000-8000-0000000000f7',
   repeat('7', 64), 'reviewing', 'complete', 'Eve Enquiry', 'sf-e@example.test',
   'Small fine-line piece', '2026-01-01', now() - interval '5 days', now() - interval '5 days');
+
+insert into public.enquiries (
+  id, client_id, artist_id, reference_number, idempotency_key, intake_fingerprint, status,
+  intake_state, submitted_full_name, submitted_email, privacy_notice_version, privacy_acknowledged_at
+) values ('e9e00000-0000-4000-8000-00000000000a', 'e9c00000-0000-4000-8000-00000000000a',
+  (select id from t_sf_artist), 'SF-394-000A', 'e9e00000-0000-4000-8000-0000000000fa',
+  repeat('a', 64), 'waiting_for_client', 'complete', 'Fiona Followup', 'sf-f@example.test',
+  '2026-01-01', now());
+
+-- A follow-up created from the enquiry page carries the enquiry, not the client.
+insert into public.follow_ups (id, artist_id, enquiry_id, client_id, status, due_at, subject)
+values ('e9f00000-0000-4000-8000-00000000000a', (select id from t_sf_artist),
+  'e9e00000-0000-4000-8000-00000000000a', null, 'open', now() + interval '3 days', 'Offer a date');
 
 insert into public.sessions
   (id, artist_id, client_id, project_id, appointment_type, status, start_at, end_at,
@@ -148,31 +171,43 @@ select is((select r #>> '{slot,duration_hours}' from t_sf_tattoo)::numeric, 6::n
 select is(
   (select array_agg(c ->> 'client_name' order by ord) from t_sf_tattoo,
      jsonb_array_elements(r -> 'candidates') with ordinality as x(c, ord)),
-  array['Dana Deposit', 'Theo Touchup', 'Pat Project'],
-  'deposit without a date first, then touch-up due, then project without a date');
+  array['Gus Two Projects', 'Dana Deposit', 'Fiona Followup', 'Theo Touchup', 'Pat Project'],
+  'deposit without a date first (longest wait first), then open follow-up, touch-up due, project without a date');
 
 select is(
   (select array_agg(c ->> 'reason' order by ord) from t_sf_tattoo,
      jsonb_array_elements(r -> 'candidates') with ordinality as x(c, ord)),
-  array['deposit_paid_no_date', 'touch_up_due', 'project_no_date'],
+  array['deposit_paid_no_date', 'deposit_paid_no_date', 'open_follow_up', 'touch_up_due', 'project_no_date'],
   'each candidate carries its reason');
 
 select is(
   (select array_agg(c ->> 'fit' order by ord) from t_sf_tattoo,
      jsonb_array_elements(r -> 'candidates') with ordinality as x(c, ord)),
-  array['fits', 'fits', 'longer'],
+  array['fits', 'fits', 'unknown', 'fits', 'longer'],
   'five hours per session fits, a touch-up fits, an eight-hour session is longer');
 
 select is(
-  (select (r -> 'candidates' -> 0 ->> 'phone') from t_sf_tattoo), '+447700900001',
+  (select c ->> 'project_id' from t_sf_tattoo, jsonb_array_elements(r -> 'candidates') c
+   where c ->> 'client_name' = 'Gus Two Projects'),
+  'e9d00000-0000-4000-8000-000000000092',
+  'for a client with two paid projects the one that fits the slot is offered, not the older longer one');
+
+select is(
+  (select c ->> 'follow_up_id' from t_sf_tattoo, jsonb_array_elements(r -> 'candidates') c
+   where c ->> 'client_name' = 'Fiona Followup'),
+  'e9f00000-0000-4000-8000-00000000000a',
+  'a follow-up linked only to an enquiry resolves its client through the enquiry');
+
+select is(
+  (select c ->> 'phone' from t_sf_tattoo, jsonb_array_elements(r -> 'candidates') c where c ->> 'client_name' = 'Dana Deposit'), '+447700900001',
   'the candidate phone is returned for a manual message');
 
 select ok(
-  (select (r -> 'candidates' -> 0 ->> 'draft_message') like 'Hi Dana, a slot has just opened up on % from 11:00 to 17:00.%' from t_sf_tattoo),
+  (select (c ->> 'draft_message') like 'Hi Dana, a slot has just opened up on % from 11:00 to 17:00.%' from t_sf_tattoo, jsonb_array_elements(r -> 'candidates') c where c ->> 'client_name' = 'Dana Deposit'),
   'the draft greets the client by first name with the slot time in the artist time zone');
 
 select ok(
-  (select (r -> 'candidates' -> 1 ->> 'draft_message') like '%touch-up%' from t_sf_tattoo),
+  (select (r -> 'candidates' -> 3 ->> 'draft_message') like '%touch-up%' from t_sf_tattoo),
   'the touch-up draft talks about a touch-up');
 
 select ok(
@@ -186,11 +221,11 @@ select ok(
 select is(
   (select array_agg(c ->> 'client_name')
      from jsonb_array_elements(public.list_cancelled_slot_candidates('e9500000-0000-4000-8000-000000000004') -> 'candidates') c),
-  array['Eve Enquiry'],
-  'a consultation slot is offered to a recent enquiry still waiting for a consultation');
+  array['Fiona Followup', 'Eve Enquiry'],
+  'a consultation slot is offered to an open follow-up, then a recent enquiry still waiting for a consultation');
 
 select ok(
-  (public.list_cancelled_slot_candidates('e9500000-0000-4000-8000-000000000004') -> 'candidates' -> 0 ->> 'draft_message')
+  (public.list_cancelled_slot_candidates('e9500000-0000-4000-8000-000000000004') -> 'candidates' -> 1 ->> 'draft_message')
     like 'Hi Eve, a consultation slot has just opened up on % at 10:00.%',
   'the consultation draft names the consultation time');
 

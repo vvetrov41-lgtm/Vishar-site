@@ -147,13 +147,18 @@ as $fn$
 
     union all
     -- 2. An open follow-up the artist already planned for this client.
-    select 2, 'open_follow_up', fu.client_id, fu.project_id, fu.enquiry_id, fu.id,
+    -- A follow-up created from an enquiry or project may carry no client id
+    -- of its own, so resolve the client through the linked record.
+    select 2, 'open_follow_up',
+      coalesce(fu.client_id, fp.client_id, fe.client_id), fu.project_id, fu.enquiry_id, fu.id,
       ph.needed_hours, fu.due_at
     from state st
     join public.follow_ups fu on fu.artist_id = st.artist_id
+    left join public.projects fp on fp.id = fu.project_id
+    left join public.enquiries fe on fe.id = fu.enquiry_id
     left join project_hours ph on ph.project_id = fu.project_id
     where fu.status = 'open'
-      and fu.client_id is not null
+      and coalesce(fu.client_id, fp.client_id, fe.client_id) is not null
       and fu.due_at <= st.start_at + interval '14 days'
 
     union all
@@ -206,18 +211,27 @@ as $fn$
           and c.appointment_type in ('in_person_consultation', 'video_consultation')
       )
   ),
-  eligible as (
-    select r.*, c.full_name, c.phone_normalized, c.email, c.instagram, c.preferred_contact,
+  fitted as (
+    select r.*,
       case
         when r.needed_hours is null then 'unknown'
         when r.needed_hours <= st.hours then 'fits'
         else 'longer'
-      end as fit,
+      end as fit
+    from raw r
+    cross join state st
+  ),
+  eligible as (
+    select r.*, c.full_name, c.phone_normalized, c.email, c.instagram, c.preferred_contact,
+      -- Same order as the final ranking, so a client's fitting project wins
+      -- over an older one that is longer than the slot.
       row_number() over (
         partition by r.client_id
-        order by r.priority, r.waiting_since nulls last
+        order by r.priority,
+          case r.fit when 'fits' then 0 when 'unknown' then 1 else 2 end,
+          r.waiting_since nulls last
       ) as per_client
-    from raw r
+    from fitted r
     cross join state st
     join public.clients c on c.id = r.client_id
     where st.slot_state = 'open'
