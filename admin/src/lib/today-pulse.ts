@@ -67,7 +67,7 @@ const KINDS = new Set<TodayItemKind>([
   'reschedule_requested', 'reply', 'email_send_failed', 'email_draft_to_approve', 'payment_to_confirm',
   'unconfirmed_appointment', 'deposit_outstanding', 'new_enquiry', 'overdue_follow_up',
   'integration_failure', 'conflict', 'unmatched_inbound', 'client_follow_up_due', 'client_cold',
-  'visit_outcome',
+  'visit_outcome', 'next_session_missing',
 ]);
 
 /**
