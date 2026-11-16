@@ -24,8 +24,8 @@ received a healing reply (production data, 2026-11-16).
 A suggestion appears on Today, section **Healing & reviews**, when all hold:
 - the client's latest tattoo_session/touch_up has a confirmed visit outcome
   `attended` (`public.visit_outcomes`);
-- at least 28 days have passed since the last session of that consecutive
-  block;
+- at least 28 days (4 weeks, confirmed by Vladimir 2026-11-16) have passed
+  since the last session of that consecutive block;
 - the client has no future confirmed tattoo_session/touch_up;
 - no healing question was sent, postponed past now, or dismissed for that
   block.
@@ -66,7 +66,12 @@ client page.
   60 of 63 linked clients, Instagram for 3), else email.
 - WhatsApp outside the 24-hour customer window needs an approved template.
   Step 1 is usually outside the window (28+ days), so it needs a new utility
-  template (working name `healing_check_v1`) submitted to Meta. Step 3 is
+  template `vishar_healing_check_v1` (Utility, en_GB, one variable: client
+  first name, two quick-reply buttons "Healed well" / "I have a question")
+  submitted to Meta. The template never mentions reviews, so it stays
+  Utility. A tap on "Healed well" is a structured positive reply for step 2;
+  the artist still decides. Kristina's identity stays gated until her
+  WhatsApp route exists. Step 3 is
   normally inside the window opened by the client's reply and uses the
   existing free-form path `queue_communication_message`.
 - Submitting the template to Meta and activating it need Vladimir's explicit
@@ -80,8 +85,11 @@ review_asked|closed`, snoozed_until, healing_message_id, reply_message_id,
 review_message_id, timestamps, version, operation-id idempotency.
 
 Per-artist setting `google_review_url` (https, google.com / g.page domains
-only), editable on the artist setup page. Without it step 3 is disabled with a
-hint.
+only). Seeded from the artists' own sites:
+- Vladimir: `https://g.page/r/CRBB4T36uQ6wEBI/review` (vishar-site `index.html`);
+- Kristina: `https://g.page/r/CTWQsqzepVfJEBI/review` (kisa `public/index.html`,
+  `public/aftercare/index.html`).
+Without it step 3 is disabled with a hint.
 
 ## Phases (one small PR each)
 1. Table, RPCs (`list_review_suggestions`, `act_on_review_suggestion`),
