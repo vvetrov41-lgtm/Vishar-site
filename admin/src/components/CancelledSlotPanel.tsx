@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { useLanguage, type Language } from '../lib/i18n';
 import { Link } from '../lib/router';
 import { useApi, useOptionalSession } from '../lib/session';
@@ -90,7 +90,8 @@ function CandidateRow({ candidate, slotHours, language }: { candidate: SlotCandi
   const [draft, setDraft] = useState(candidate.draft_message);
   const [copied, setCopied] = useState(false);
   const digits = whatsappDigits(candidate.phone);
-  const fieldId = `slot-draft-${candidate.client_id}`;
+  // Unique per rendered row: two open slot panels can list the same client.
+  const fieldId = useId();
 
   async function copyDraft() {
     try {
