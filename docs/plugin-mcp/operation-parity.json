@@ -9,7 +9,7 @@
     "requiringSchemaChange": 0,
     "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 12,
+    "excludedStage2Candidates": 13,
     "unresolved": 0
   },
   "operations": [
@@ -9229,6 +9229,11 @@
       "operationId": "setProjectArchiveState",
       "status": "excluded_initial_release",
       "reason": "Owner-only project soft archive and restore with an appointment guard. GPT access is not enabled or routed. Not in the current 13 OpenAPI schemas."
+    },
+    {
+      "operationId": "listCancelledSlotCandidates",
+      "status": "excluded_initial_release",
+      "reason": "Read-only list of clients who could take a cancelled slot, with draft texts; the artist sends manually. Plugin wrapper ships in stage 3 of specs/cancelled-slot-fill. Not in the current 13 OpenAPI schemas."
     },
     {
       "operationId": "linkMonzoRecordedReceipt",

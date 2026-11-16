@@ -86,6 +86,7 @@ export const API_OPERATIONS = {
   'save that visit outcome': { kind: 'write', ru: 'сохранить итог визита' },
   'postpone that visit outcome': { kind: 'write', ru: 'отложить итог визита' },
   'load the visit history': { kind: 'read', ru: 'загрузить историю визитов' },
+  'load slot candidates': { kind: 'read', ru: 'подобрать клиентов на освободившееся окно' },
   'load follow-ups': { kind: 'read', ru: 'загрузить напоминания' },
   'load forms and websites': { kind: 'read', ru: 'загрузить формы и сайты' },
   'load integrations': { kind: 'read', ru: 'загрузить интеграции' },

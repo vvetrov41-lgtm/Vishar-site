@@ -213,6 +213,10 @@ export const OPERATOR_PARITY = Object.freeze([
   row('sessions.consultation_context', 'Scheduling', 'view_sessions', 'read', A, 'getConsultationContext', ['public.gpt_get_consultation_context']),
   row('sessions.visit_outcome.context', 'Projects', 'view_sessions', 'read', A, 'getVisitOutcomeContext', ['public.gpt_get_visit_outcome_context', 'public.get_visit_outcome_context']),
   row('sessions.visit_outcome.booked', 'Projects', 'manage_sessions', 'write', A, 'recordConsultationBookedOutcome', ['public.gpt_record_consultation_booked_outcome', 'public.record_visit_outcome']),
+  // Fill a cancelled slot: read-only candidate list; the plugin wrapper is stage 3.
+  row('sessions.cancelled_slot.candidates', 'Projects', 'view_sessions', 'read', N, 'listCancelledSlotCandidates', ['public.list_cancelled_slot_candidates'], {
+    note: 'Read-only list of clients who could take a cancelled slot, with draft texts; the artist sends manually. Plugin wrapper ships in stage 3 of specs/cancelled-slot-fill.',
+  }),
   row('availability.list', 'Scheduling', 'view_sessions', 'read', A, 'listAvailability', ['public.gpt_list_availability_blocks', 'public.list_artist_availability_blocks']),
   row('availability.create', 'Scheduling', 'manage_sessions', 'write', A, 'createAvailability', ['public.gpt_create_availability_block', 'public.create_artist_availability_block']),
   row('availability.update', 'Scheduling', 'manage_sessions', 'write', A, 'updateAvailability', ['public.gpt_update_availability_block', 'public.update_artist_availability_block']),
