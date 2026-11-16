@@ -549,18 +549,32 @@ for (const bad of [
   gptBookedFinishedConsultation.replace('20261115200000 | 20261115200000', '20261115200000 | '),
   gptBookedFinishedConsultation + '\n 20261115210000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
-// Healing question Meta candidate, one migration after the GPT booked
-// consultation outcome (20261115203000).
-const healingCheckCandidate = [
+// Today next-session-missing pulse kind, one migration after the GPT
+// booked-outcome fix (20261115203000).
+const todayNextSessionMissing = [
   ' Local | Remote | Time (UTC)',
   ' 20261115203000 | 20261115203000 | t',
+  ' 20261116113000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(todayNextSessionMissing), '20261116113000');
+assert.equal(deferredTodayMigration(todayNextSessionMissing), null);
+for (const bad of [
+  todayNextSessionMissing.replace('20261116113000 | |', '20261116113001 | |'),
+  todayNextSessionMissing.replace('20261115203000 | 20261115203000', '20261115203000 | '),
+  todayNextSessionMissing + '\n 20261116120000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
+// Healing question Meta candidate, one migration after the Today
+// next-session-missing pulse kind (20261116113000).
+const healingCheckCandidate = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261116113000 | 20261116113000 | t',
   ' 20261116120000 | | t',
 ].join('\n');
 assert.equal(verifyTodayLineage(healingCheckCandidate), '20261116120000');
 assert.equal(deferredTodayMigration(healingCheckCandidate), null);
 for (const bad of [
   healingCheckCandidate.replace('20261116120000 | |', '20261116120001 | |'),
-  healingCheckCandidate.replace('20261115203000 | 20261115203000', '20261115203000 | '),
+  healingCheckCandidate.replace('20261116113000 | 20261116113000', '20261116113000 | '),
   healingCheckCandidate + '\n 20261116130000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
