@@ -68,7 +68,7 @@ client page.
   template `vishar_healing_check_v1` (Utility, en_GB, one variable: client
   first name, no buttons, no photo request) submitted to Meta. Body:
   "Hi {{1}}, I hope you're doing well. Could you let me know how your tattoo
-  is healing, or how it has healed?" The template never mentions reviews, so
+  has healed?" The template never mentions reviews, so
   it stays Utility. Kristina's identity stays gated until her WhatsApp route
   exists. Step 3 is
   normally inside the window opened by the client's reply and uses the
