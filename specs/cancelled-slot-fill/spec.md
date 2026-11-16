@@ -1,6 +1,6 @@
 # Fill a cancelled slot
 
-Status: stages 1-2 of 3 (database read, CRM panel). Migration `20261116100000_cancelled_slot_candidates.sql`.
+Status: stages 1-2 of 3 (database read, CRM panel). Migration `20261116150000_cancelled_slot_candidates.sql`.
 
 ## Problem
 When a client cancels, the freed time is usually lost: in the moment nobody
