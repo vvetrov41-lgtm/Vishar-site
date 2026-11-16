@@ -549,6 +549,20 @@ for (const bad of [
   gptBookedFinishedConsultation.replace('20261115200000 | 20261115200000', '20261115200000 | '),
   gptBookedFinishedConsultation + '\n 20261115210000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Healing question Meta candidate, one migration after the GPT booked
+// consultation outcome (20261115203000).
+const healingCheckCandidate = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261115203000 | 20261115203000 | t',
+  ' 20261116120000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(healingCheckCandidate), '20261116120000');
+assert.equal(deferredTodayMigration(healingCheckCandidate), null);
+for (const bad of [
+  healingCheckCandidate.replace('20261116120000 | |', '20261116120001 | |'),
+  healingCheckCandidate.replace('20261115203000 | 20261115203000', '20261115203000 | '),
+  healingCheckCandidate + '\n 20261116130000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',

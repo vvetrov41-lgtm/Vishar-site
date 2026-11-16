@@ -581,6 +581,14 @@ const LIFECYCLE_UTILITY_DEFINITIONS = Object.freeze({
     text: 'Hi {{1}}, how is your tattoo feeling today after your sessions with {{2}}? Your aftercare guide is here again: {{3}}. No need to reply if everything is fine.',
     examples: ['Alex', 'Vladimir', 'https://vishartattoo.com/aftercare/'],
   }),
+  // Artist-initiated healing question, about four weeks after the last session
+  // (specs/google-review-request). No buttons and no photo request, by the
+  // artist's choice; it never mentions reviews so it stays Utility.
+  healing_check: Object.freeze({
+    name: 'vishar_healing_check_v1',
+    text: 'Hi {{1}}, I hope all is well with you. How has your tattoo healed?',
+    examples: ['Alex'],
+  }),
 });
 
 // The v2 reminder is deliberately a NEW Meta Utility template. Existing v1
@@ -670,7 +678,8 @@ const POST_SESSION_ARTIST_URLS = Object.freeze({
 
 function lifecycleTemplateDefinition(purpose, name, language, artistId = null) {
   const definition = LIFECYCLE_UTILITY_DEFINITIONS[purpose];
-  if (!definition || !TEMPLATE_NAME.test(name) || !TEMPLATE_LANGUAGE.test(language)) {
+  if (!definition || !TEMPLATE_NAME.test(name) || !TEMPLATE_LANGUAGE.test(language)
+      || (definition.name && definition.name !== name)) {
     throw Object.assign(new Error('unsupported lifecycle template'), {
       code: 'whatsapp_template_contract_invalid',
     });

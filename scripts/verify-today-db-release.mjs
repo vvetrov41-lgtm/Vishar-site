@@ -142,6 +142,9 @@ export function verifyTodayLineage(source) {
     // GPT plugin: «Записался» accepts a finished consultation that is still
     // confirmed. One function redefinition; no client send.
     ['20261115200000', '20261115203000'],
+    // Google review request: stage the Vladimir-only healing question Utility
+    // template for Meta review. Inert candidate; no registry row or send path.
+    ['20261115203000', '20261116120000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
