@@ -1,6 +1,6 @@
 # Fill a cancelled slot
 
-Status: stages 1-2 of 3 (database read, CRM panel). Migration `20261116150000_cancelled_slot_candidates.sql`.
+Status: stages 1-3. Migrations `20261116150000_cancelled_slot_candidates.sql` (released 2026-11-16) and `20261116160000_gpt_cancelled_slot_candidates.sql` (plugin).
 
 ## Problem
 When a client cancels, the freed time is usually lost: in the moment nobody
@@ -47,7 +47,11 @@ draft renderer are not callable by any API role.
 1. Database read + pgTAP (`supabase/tests/394_cancelled_slot_candidates.sql`).
 2. CRM: panel on a cancelled appointment with candidates, copy draft and a
    WhatsApp link (`wa.me`) that opens the artist's own WhatsApp.
-3. ChatGPT plugin: read-only tool returning the same list.
+3. ChatGPT plugin: `listCancelledSlotCandidates` (`crm_list_cancelled_slot_candidates`),
+   `GET /v1/appointments/{appointment_id}/cancelled-slot-candidates`, over
+   `public.gpt_list_cancelled_slot_candidates` (human OAuth token, active GPT
+   artist must own the appointment). Same JSON as the CRM panel. pgTAP
+   `395_gpt_cancelled_slot_candidates.sql`.
 
 ## Not in scope
 Automatic sending, holding the slot, waitlists, Google Calendar busy time

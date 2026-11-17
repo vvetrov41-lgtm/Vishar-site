@@ -220,6 +220,14 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     description: 'Read the persisted outcome and linked tattoo bookings for an in-person or video consultation in the signed-in artist scope. Does not change any record.',
   }),
   op({
+    id: 'listCancelledSlotCandidates', domain: 'Projects', method: 'GET',
+    path: '/v1/appointments/{appointment_id}/cancelled-slot-candidates',
+    rpc: 'gpt_list_cancelled_slot_candidates',
+    params: [p.path('appointment_id', 'p_session_id')],
+    summary: 'List clients who could take a cancelled appointment slot, with draft messages',
+    description: 'For a cancelled appointment whose time is still ahead and free, returns up to five clients of the signed-in artist (deposit paid without a date, open follow-up, touch-up due, project without a date, or enquiry waiting for a consultation) with the reason, how the slot length fits, contact details and an English draft. Read-only: nothing is sent, queued or booked. The owner sends any message themselves.',
+  }),
+  op({
     id: 'recordConsultationBookedOutcome', domain: 'Projects', method: 'POST',
     path: '/v1/appointments/{appointment_id}/consultation-booked-outcome',
     rpc: 'gpt_record_consultation_booked_outcome',

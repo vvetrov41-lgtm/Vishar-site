@@ -173,6 +173,15 @@ paths:
                 expected_version: {type: "integer", minimum: 0, maximum: 0}
                 linked_session_id: {type: "string", format: "uuid"}
       responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/appointments/{appointment_id}/cancelled-slot-candidates:
+    get:
+      operationId: listCancelledSlotCandidates
+      summary: "List clients who could take a cancelled appointment slot, with draft messages"
+      x-openai-isConsequential: false
+      description: "For a cancelled appointment whose time is still ahead and free, returns up to five clients of the signed-in artist (deposit paid without a date, open follow-up, touch-up due, project without a date, or enquiry waiting for a consultation) with the reason, how the slot length fits, contact details and an English draft. Read-only: nothing is sent, queued or booked. The owner sends any message themselves."
+      parameters:
+        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
 components:
   securitySchemes:
     supabaseOAuth:

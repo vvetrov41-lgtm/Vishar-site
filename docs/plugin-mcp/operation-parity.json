@@ -1,15 +1,15 @@
 {
   "source": "13 current Unified GPT OpenAPI schemas and operator-parity.current.mjs",
   "summary": {
-    "currentGptOperations": 208,
-    "mcpTools": 208,
-    "semanticParityThroughAdapter": 208,
+    "currentGptOperations": 209,
+    "mcpTools": 209,
+    "semanticParityThroughAdapter": 209,
     "directHandlerWithoutAdapter": 0,
-    "requiringActionAdapter": 208,
+    "requiringActionAdapter": 209,
     "requiringSchemaChange": 0,
     "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 13,
+    "excludedStage2Candidates": 12,
     "unresolved": 0
   },
   "operations": [
@@ -3832,6 +3832,43 @@
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
       "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
       "sourceSchema": "openapi.integrations.yaml"
+    },
+    {
+      "operationId": "listCancelledSlotCandidates",
+      "mcpTool": "crm_list_cancelled_slot_candidates",
+      "domain": "Projects",
+      "description": "For a cancelled appointment whose time is still ahead and free, returns up to five clients of the signed-in artist (deposit paid without a date, open follow-up, touch-up due, project without a date, or enquiry waiting for a consultation) with the reason, how the slot length fits, contact details and an English draft. Read-only: nothing is sent, queued or booked. The owner sends any message themselves.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "appointment_id"
+        ]
+      },
+      "outputShape": null,
+      "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
+      "method": "GET",
+      "path": "/v1/appointments/{appointment_id}/cancelled-slot-candidates",
+      "readWrite": "read",
+      "destructive": false,
+      "permission": "view_sessions",
+      "scopes": [
+        "email"
+      ],
+      "handler": [
+        "public.gpt_list_cancelled_slot_candidates",
+        "public.list_cancelled_slot_candidates"
+      ],
+      "compatibility": "existing_action_adapter",
+      "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
+      "securityConcern": "Active Artist/workspace is derived from the signed-in actor, not tool arguments.",
+      "sourceSchema": "openapi.projects.yaml"
     },
     {
       "operationId": "listClients",
@@ -9229,11 +9266,6 @@
       "operationId": "setProjectArchiveState",
       "status": "excluded_initial_release",
       "reason": "Owner-only project soft archive and restore with an appointment guard. GPT access is not enabled or routed. Not in the current 13 OpenAPI schemas."
-    },
-    {
-      "operationId": "listCancelledSlotCandidates",
-      "status": "excluded_initial_release",
-      "reason": "Read-only list of clients who could take a cancelled slot, with draft texts; the artist sends manually. Plugin wrapper ships in stage 3 of specs/cancelled-slot-fill. Not in the current 13 OpenAPI schemas."
     },
     {
       "operationId": "linkMonzoRecordedReceipt",
