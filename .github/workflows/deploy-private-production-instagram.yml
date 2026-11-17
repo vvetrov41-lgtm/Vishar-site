@@ -267,12 +267,17 @@ jobs:
           for (const [name, expected] of [
             ['INSTAGRAM_OAUTH_ENABLED', 'true'],
             ['INSTAGRAM_DRAIN_ENABLED', 'true'],
-            ['INSTAGRAM_ENRICHMENT_ENABLED', 'false'],
             ['VISHAR_ENVIRONMENT', 'production'],
           ]) {
             if (values.get(name) !== expected) {
               throw new Error('Production Instagram capability drift: ' + name);
             }
+          }
+          // Participant enrichment is read-only towards Meta and is switched on
+          // by this release. The live value is "false" before the first such
+          // release and "true" after it; anything else is drift.
+          if (!['true', 'false'].includes(values.get('INSTAGRAM_ENRICHMENT_ENABLED'))) {
+            throw new Error('Production Instagram capability drift: INSTAGRAM_ENRICHMENT_ENABLED');
           }
           const requiredSecrets = new Set(['INSTAGRAM_APP_SECRET','INSTAGRAM_TOKEN_ENCRYPTION_KEY','INSTAGRAM_WEBHOOK_VERIFY_TOKEN','SUPABASE_SECRET_KEY']);
           const present = data.result.bindings.filter(b => b.type === 'secret_text').map(b => b.name);
@@ -374,7 +379,7 @@ jobs:
           INSTAGRAM_ACCOUNT_KRISTINA: ${{ vars.CRM_PRODUCTION_INSTAGRAM_ACCOUNT_KRISTINA }}
           ENABLE_INSTAGRAM_OAUTH: ${{ github.event_name == 'push' && 'true' || inputs.enable_oauth }}
           ENABLE_INSTAGRAM_DRAIN: ${{ github.event_name == 'push' && 'true' || inputs.enable_drain }}
-          ENABLE_INSTAGRAM_ENRICHMENT: ${{ github.event_name == 'push' && 'false' || inputs.enable_enrichment }}
+          ENABLE_INSTAGRAM_ENRICHMENT: ${{ github.event_name == 'push' && 'true' || inputs.enable_enrichment }}
         shell: bash
         run: |
           set -euo pipefail
@@ -494,7 +499,7 @@ jobs:
           DEPLOY_REQUESTED: ${{ github.event_name == 'push' && 'true' || inputs.deploy }}
           ENABLE_OAUTH: ${{ github.event_name == 'push' && 'true' || inputs.enable_oauth }}
           ENABLE_DRAIN: ${{ github.event_name == 'push' && 'true' || inputs.enable_drain }}
-          ENABLE_ENRICHMENT: ${{ github.event_name == 'push' && 'false' || inputs.enable_enrichment }}
+          ENABLE_ENRICHMENT: ${{ github.event_name == 'push' && 'true' || inputs.enable_enrichment }}
         run: |
           {
             echo '### Private CRM Instagram connector production gate'

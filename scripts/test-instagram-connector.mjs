@@ -32,7 +32,7 @@ import {
   __testing as supabaseTesting,
   createInstagramSupabase,
 } from '../workers/lib/instagram-supabase.js';
-import worker, { __testing as workerTesting } from '../workers/instagram-production.js';
+import worker, { __testing as workerTesting, enrichInstagramParticipants } from '../workers/instagram-production.js';
 
 let passes = 0;
 let failures = 0;
@@ -1438,6 +1438,29 @@ await test('the outbound drain and enrichment ride the shared maintenance call o
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+await test('enrichment reports unreadable profiles by failure code, never by id', async () => {
+  const fetchImpl = async (target) => {
+    const href = String(target);
+    if (href.includes('service_list_unenriched_participants')) {
+      return new Response(JSON.stringify([
+        { artist_id: 'a1111111-1111-4111-8111-111111111111', integration_key: 'instagram', external_contact_id: '1234567890123456' },
+        { artist_id: 'a1111111-1111-4111-8111-111111111111', integration_key: 'instagram', external_contact_id: '2234567890123456' },
+      ]), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    // Every other call (token lookup, Graph) is refused.
+    return new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } });
+  };
+  const result = await enrichInstagramParticipants(env({ INSTAGRAM_ENRICHMENT_ENABLED: 'true' }), fetchImpl);
+  assert.equal(result.considered, 2);
+  assert.equal(result.enriched, 0);
+  assert.equal(result.empty, 0);
+  const codes = Object.keys(result.failures);
+  assert.ok(codes.length >= 1, 'a failure code is reported');
+  assert.equal(Object.values(result.failures).reduce((a, b) => a + b, 0), 2);
+  for (const code of codes) assert.match(code, /^[a-z][a-z0-9_]{2,63}$/);
+  assert.ok(!JSON.stringify(result).includes('1234567890123456'), 'no participant id in the summary');
 });
 
 console.log(`instagram connector: ${passes} passed, ${failures} failed`);
