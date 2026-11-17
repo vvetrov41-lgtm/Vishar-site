@@ -436,6 +436,27 @@ assert.throws(() => verifyTodayLineage(oauthOnly.replace(
   '20261113110000 | |', '20261113120000 | |')),
   'v5 cannot skip the prior OAuth migration');
 
+// 17 Nov: #1304 and #1303 merged before either was released. Defer only the
+// inert healing candidate, so 160000 goes out alone; nothing else qualifies.
+const slotAndHealing = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261116150000 | 20261116150000 | t',
+  ' 20261116160000 | | t',
+  ' 20261116170000 | | t',
+].join('\n');
+assert.equal(deferredTodayMigration(slotAndHealing),
+  '20261116170000_healing_check_whatsapp_candidate.sql');
+assert.throws(() => verifyTodayLineage(slotAndHealing),
+  'two pending migrations still fail the ordinary one-migration release gate');
+assert.equal(verifyTodayLineage(slotAndHealing.replace('\n 20261116170000 | | t', '')), '20261116160000');
+for (const bad of [
+  slotAndHealing + '\n 20261116180000 | | t',
+  slotAndHealing.replace('20261116170000 | |', '20261116170001 | |'),
+  slotAndHealing.replace('20261116160000 | |', '20261116160001 | |'),
+  slotAndHealing.replace('20261116150000 | 20261116150000', '20261116150000 | '),
+  slotAndHealing.replace('20261116150000 | 20261116150000', '20261116150000 | 20261116113000'),
+]) assert.throws(() => deferredTodayMigration(bad));
+
 // A personal-conversation notice clean-up is permitted only after production
 // confirms every previously applied (including remote-reconciled) migration.
 const personalNoticeLineage = [

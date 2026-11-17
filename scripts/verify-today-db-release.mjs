@@ -165,7 +165,7 @@ export function verifyTodayLineage(source) {
 }
 
 /**
- * Exact two-file staging exception for the already merged 13 Nov SQL.
+ * Exact two-file staging exceptions for already merged SQL (13 and 17 Nov).
  * The ordinary one-pending verification below is NOT weakened.
  */
 export function deferredTodayMigration(source) {
@@ -187,6 +187,16 @@ export function deferredTodayMigration(source) {
       && pending[1] === '20261113120000'
       && local.slice(0,remote.length).every((v,i) => v === remote[i])) {
     return '20261113120000_whatsapp_reminder_24h_clean_v5.sql';
+  }
+  // 17 Nov: #1304 (GPT slot candidates) and #1303 (inert healing template
+  // candidate) merged before either was released. Release 160000 alone first;
+  // 170000 follows in its own run through the ordinary one-pending gate.
+  if (remote.at(-1) === '20261116150000'
+      && pending.length === 2
+      && pending[0] === '20261116160000'
+      && pending[1] === '20261116170000'
+      && local.slice(0,remote.length).every((v,i) => v === remote[i])) {
+    return '20261116170000_healing_check_whatsapp_candidate.sql';
   }
   // All other states must pass the existing strict one-pending release gate.
   verifyTodayLineage(source);
