@@ -590,6 +590,20 @@ for (const bad of [
   gptCancelledSlotCandidates.replace('20261116150000 | 20261116150000', '20261116150000 | '),
   gptCancelledSlotCandidates + '\n 20261116170000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Healing question Meta candidate, one migration after the GPT cancelled-slot
+// wrapper (20261116160000).
+const healingCheckCandidate = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261116160000 | 20261116160000 | t',
+  ' 20261116170000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(healingCheckCandidate), '20261116170000');
+assert.equal(deferredTodayMigration(healingCheckCandidate), null);
+for (const bad of [
+  healingCheckCandidate.replace('20261116170000 | |', '20261116170001 | |'),
+  healingCheckCandidate.replace('20261116160000 | 20261116160000', '20261116160000 | '),
+  healingCheckCandidate + '\n 20261116180000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',

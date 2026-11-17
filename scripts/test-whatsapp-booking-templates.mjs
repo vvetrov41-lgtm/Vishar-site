@@ -828,3 +828,23 @@ console.log('WhatsApp booking template maintenance tests passed.');
   ), /unknown post-session Meta artist/);
 }
 
+
+{
+  // Artist-initiated healing question: body only, client first name only,
+  // no buttons, no photo request, no review wording.
+  const template = __testing.lifecycleTemplateDefinition(
+    'healing_check', 'vishar_healing_check_v1', 'en_GB',
+    'a1111111-1111-4111-8111-111111111111',
+  );
+  assert.equal(template.category, 'UTILITY');
+  assert.equal(template.name, 'vishar_healing_check_v1');
+  assert.equal(template.components.length, 1);
+  assert.equal(template.components[0].type, 'BODY');
+  assert.equal(template.components[0].text,
+    'Hi {{1}}, I hope all is well with you. How has your tattoo healed?');
+  assert.deepEqual(template.components[0].example.body_text, [['Alex']]);
+  assert.doesNotMatch(template.components[0].text, /review|photo|\{\{2\}\}/i);
+  assert.throws(() => __testing.lifecycleTemplateDefinition(
+    'healing_check', 'vishar_healing_check_v2', 'en_GB',
+  ), /unsupported lifecycle template/);
+}
