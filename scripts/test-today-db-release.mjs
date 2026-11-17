@@ -577,19 +577,32 @@ for (const bad of [
   cancelledSlotCandidates.replace('20261116113000 | 20261116113000', '20261116113000 | '),
   cancelledSlotCandidates + '\n 20261116160000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
-// Healing question Meta candidate, one migration after the cancelled-slot
-// candidate list (20261116150000).
-const healingCheckCandidate = [
+// Fill a cancelled slot stage 3, one GPT read wrapper after stage 1.
+const gptCancelledSlotCandidates = [
   ' Local | Remote | Time (UTC)',
   ' 20261116150000 | 20261116150000 | t',
   ' 20261116160000 | | t',
 ].join('\n');
-assert.equal(verifyTodayLineage(healingCheckCandidate), '20261116160000');
+assert.equal(verifyTodayLineage(gptCancelledSlotCandidates), '20261116160000');
+assert.equal(deferredTodayMigration(gptCancelledSlotCandidates), null);
+for (const bad of [
+  gptCancelledSlotCandidates.replace('20261116160000 | |', '20261116160001 | |'),
+  gptCancelledSlotCandidates.replace('20261116150000 | 20261116150000', '20261116150000 | '),
+  gptCancelledSlotCandidates + '\n 20261116170000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
+// Healing question Meta candidate, one migration after the GPT cancelled-slot
+// wrapper (20261116160000).
+const healingCheckCandidate = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261116160000 | 20261116160000 | t',
+  ' 20261116170000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(healingCheckCandidate), '20261116170000');
 assert.equal(deferredTodayMigration(healingCheckCandidate), null);
 for (const bad of [
-  healingCheckCandidate.replace('20261116160000 | |', '20261116160001 | |'),
-  healingCheckCandidate.replace('20261116150000 | 20261116150000', '20261116150000 | '),
-  healingCheckCandidate + '\n 20261116170000 | | t',
+  healingCheckCandidate.replace('20261116170000 | |', '20261116170001 | |'),
+  healingCheckCandidate.replace('20261116160000 | 20261116160000', '20261116160000 | '),
+  healingCheckCandidate + '\n 20261116180000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([

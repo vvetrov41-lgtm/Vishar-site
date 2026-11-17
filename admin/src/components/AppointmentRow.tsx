@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { calendarSyncLabel } from '../lib/calendar-sync';
 import { SessionCheckout } from './SessionCheckout';
 import { VisitOutcomePanel } from './VisitOutcomeCard';
+import { CancelledSlotPanel } from './CancelledSlotPanel';
 import { appointmentDisplayStatus } from '../lib/appointment-display-status';
 import { formatDateTime } from '../lib/format';
 import type { Language } from '../lib/i18n';
@@ -81,6 +82,7 @@ export function AppointmentRow({
       </div>
       <VisitOutcomePanel appointment={appointment} initiallyOpen={outcomeOpen} onSaved={onOutcomeSaved} />
       <SessionCheckout appointment={appointment} />
+      <CancelledSlotPanel appointment={appointment} />
       {mayManage && isActive ? (
         <>
           <div className="actions">
