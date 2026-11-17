@@ -229,7 +229,6 @@ export const TASK_WORKERS_AI_MODELS = Object.freeze(new Set([
   '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   '@cf/openai/gpt-oss-120b',
   '@cf/mistralai/mistral-small-3.1-24b-instruct',
-  '@cf/qwen/qwen3-30b-a3b-fp8',
 ]));
 
 /** The Workers AI model a task pins, or null when it uses the shared tier model. */
