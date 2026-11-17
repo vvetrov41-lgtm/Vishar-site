@@ -151,6 +151,9 @@ export function verifyTodayLineage(source) {
     // Fill a cancelled slot, stage 3: GPT read wrapper over the same list.
     // No write, no queue, no client send.
     ['20261116150000', '20261116160000'],
+    // Reconcile six function bodies with production: each body is the exact
+    // production definition, so production behaviour does not change.
+    ['20261116160000', '20261117100000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
