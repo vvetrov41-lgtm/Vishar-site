@@ -6,18 +6,22 @@ import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { deferredTodayMigration } from './verify-today-db-release.mjs';
 
-const FILENAME = '20261113120000_whatsapp_reminder_24h_clean_v5.sql';
-const SOURCE = 'supabase/migrations/' + FILENAME;
+// Every file that may ever be deferred, each tied to one exact ledger state
+// in deferredTodayMigration().
+const DEFERRABLE = [
+  '20261113120000_whatsapp_reminder_24h_clean_v5.sql',
+  '20261116170000_healing_check_whatsapp_candidate.sql',
+];
 const mode = process.argv[2];
 const targetDir = resolve(mode === '--stage' ? process.argv[4] ?? '' : process.argv[3] ?? '');
 if (mode !== '--stage' && mode !== '--restore') throw new Error('Expected --stage or --restore');
 if (!targetDir || targetDir === resolve('.')) throw new Error('Staging directory missing');
-const destination = join(targetDir,FILENAME);
 
-const committedBytes = () => execFileSync('git',['show','HEAD:'+SOURCE],{maxBuffer:8*1024*1024});
-function assertCanonicalBytes(path) {
+const sourceOf = (file) => 'supabase/migrations/' + file;
+const committedBytes = (file) => execFileSync('git',['show','HEAD:'+sourceOf(file)],{maxBuffer:8*1024*1024});
+function assertCanonicalBytes(path, file) {
   const actual=readFileSync(path);
-  if (!actual.equals(committedBytes())) throw new Error('Migration source differs from immutable HEAD');
+  if (!actual.equals(committedBytes(file))) throw new Error('Migration source differs from immutable HEAD');
 }
 
 if (mode === '--stage') {
@@ -25,25 +29,27 @@ if (mode === '--stage') {
   if (!migrationList) throw new Error('Migration ledger input missing');
   const toDefer=deferredTodayMigration(readFileSync(migrationList,'utf8'));
   if (toDefer === null) {
-    if (!existsSync(SOURCE)) throw new Error('Expected committed migration file is missing');
-    assertCanonicalBytes(SOURCE);
     console.log('Already a strictly permitted single migration; no staging');
   } else {
-    if (toDefer !== FILENAME || !existsSync(SOURCE) || existsSync(destination))
+    const source=sourceOf(toDefer), destination=join(targetDir,toDefer);
+    if (!DEFERRABLE.includes(toDefer) || !existsSync(source) || existsSync(destination))
       throw new Error('Unexpected migration staging state');
-    assertCanonicalBytes(SOURCE);
+    assertCanonicalBytes(source,toDefer);
     mkdirSync(targetDir,{recursive:true});
-    renameSync(SOURCE,destination);
-    assertCanonicalBytes(destination);
-    console.log('Deferred exactly one reviewed later migration on this runner');
+    renameSync(source,destination);
+    assertCanonicalBytes(destination,toDefer);
+    console.log('Deferred exactly one reviewed later migration on this runner: '+toDefer);
   }
 } else {
-  if (existsSync(destination)) {
-    if (existsSync(SOURCE)) throw new Error('Cannot overwrite source during restore');
-    assertCanonicalBytes(destination);
-    renameSync(destination,SOURCE);
+  for (const file of DEFERRABLE) {
+    const source=sourceOf(file), destination=join(targetDir,file);
+    if (existsSync(destination)) {
+      if (existsSync(source)) throw new Error('Cannot overwrite source during restore');
+      assertCanonicalBytes(destination,file);
+      renameSync(destination,source);
+    }
+    if (!existsSync(source)) throw new Error('Canonical migration missing after restore');
+    assertCanonicalBytes(source,file);
   }
-  if (!existsSync(SOURCE)) throw new Error('Canonical migration missing after restore');
-  assertCanonicalBytes(SOURCE);
   console.log('Source restored and matches immutable Git HEAD');
 }
