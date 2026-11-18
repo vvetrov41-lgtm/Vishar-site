@@ -255,6 +255,11 @@ begin
     raise exception 'visit is not an attended tattoo visit of this artist' using errcode = '23503';
   end if;
 
+  -- Serialise every decision on this visit, including the first one, when no
+  -- row exists yet to lock: concurrent first calls and retries wait here and
+  -- then see the recorded row and operation instead of a unique violation.
+  perform pg_advisory_xact_lock(hashtextextended('review_request:' || p_anchor_session_id::text, 0));
+
   select * into v_row from public.review_requests
   where anchor_session_id = p_anchor_session_id
   for update;
