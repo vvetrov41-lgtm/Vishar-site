@@ -816,12 +816,19 @@ export async function enrichInstagramParticipants(env, fetchImpl = fetch, limit 
   });
   const rows = Array.isArray(pending) ? pending : [];
   let enriched = 0;
+  let empty = 0;
+  // Failure codes only, never an id or a handle: the tick log must say whether
+  // Meta refuses profile reads without recording who was looked up.
+  const failures = {};
 
   for (const row of rows) {
     try {
       const token = await usableToken(env, db, row.artist_id, fetchImpl);
       const profile = await getParticipantProfile(row.external_contact_id, token.access_token, fetchImpl);
-      if (!profile.username && !profile.name) continue;
+      if (!profile.username && !profile.name) {
+        empty += 1;
+        continue;
+      }
       await db.rpc('service_update_communication_participant', {
         p_artist_id: row.artist_id,
         p_channel: 'instagram',
@@ -830,13 +837,15 @@ export async function enrichInstagramParticipants(env, fetchImpl = fetch, limit 
         p_display_label: profile.name,
       });
       enriched += 1;
-    } catch {
+    } catch (error) {
       // Enrichment is cosmetic. A participant whose profile cannot be read
       // stays addressable by id and is retried on a later tick.
+      const code = safeFailureCode(error);
+      failures[code] = (failures[code] ?? 0) + 1;
     }
   }
 
-  return { considered: rows.length, enriched };
+  return { considered: rows.length, enriched, empty, failures };
 }
 
 function safeFailureCode(error) {

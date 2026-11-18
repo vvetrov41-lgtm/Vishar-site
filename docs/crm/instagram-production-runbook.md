@@ -394,9 +394,10 @@ The order matters. Each step is safe to stop at.
    scheduler's `POST /internal/instagram/maintain` call. Queued replies are
    delivered from that artist's own account.
 
-7. **Enrichment.** Optionally re-run with `enable_enrichment=true` so
-   participant handles are resolved and the inbox shows names rather than
-   "Unknown sender".
+7. **Enrichment.** Every exact-head `instagram-code-only` release sets
+   `INSTAGRAM_ENRICHMENT_ENABLED=true`; a manual run uses
+   `enable_enrichment=true`. Participant handles are then resolved and the
+   inbox shows names rather than "Unknown sender".
 
 Verify each step with the Cloudflare MCP live-state read described in
 `.agents/skills/vishar-code-navigation/SKILL.md` section 4A: confirm the
