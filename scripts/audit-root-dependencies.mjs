@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 const ALLOWED_ADVISORY_URL = 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm';
 // Tailwind 3 parses only the repository's own CSS at build time. Each entry is
@@ -12,8 +13,15 @@ const ALLOWED_ADVISORY_URL = 'https://github.com/advisories/GHSA-vfj7-8cjw-p6xm'
 const ALLOWED_ADVISORIES = Object.freeze([
   { url: ALLOWED_ADVISORY_URL, name: 'braces' },
   { url: 'https://github.com/advisories/GHSA-rj75-hqrm-r3gf', name: 'postcss-selector-parser' },
+  // picomatch ReDoS (all releases up to 4.0.7, no patched version published).
+  // Reached only through build and test tooling: Tailwind 3 in the site, Vite
+  // and Vitest in the CRM. None of it ships in a bundle or a Worker.
+  { url: 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf', name: 'picomatch' },
 ]);
-const ALLOWED_DIRECT_ROOTS = new Set(['tailwindcss']);
+// A direct root is accepted only while it is a devDependency (never runtime or
+// optional) of the package being audited, and only when every cause below it
+// is an approved advisory above.
+const ALLOWED_DIRECT_ROOTS = new Set(['tailwindcss', 'vite', 'vitest']);
 const SEVERITY_RANK = new Map([
   ['info', 0],
   ['low', 1],
@@ -146,6 +154,38 @@ function runSelfTest() {
   swapped.vulnerabilities['postcss-selector-parser'].via = [{ ...selectorParser, name: 'braces' }];
   assert.equal(evaluateAudit(swapped, packageJson).ok, false, 'an advisory is allowed only for its own package');
 
+  const picomatchAdvisory = {
+    source: 1003,
+    name: 'picomatch',
+    dependency: 'picomatch',
+    url: 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf',
+    severity: 'high',
+    range: '<=4.0.7',
+  };
+  const crmReport = {
+    auditReportVersion: 2,
+    vulnerabilities: {
+      picomatch: { name: 'picomatch', severity: 'high', isDirect: false, via: [picomatchAdvisory] },
+      fdir: { name: 'fdir', severity: 'high', isDirect: false, via: ['picomatch'] },
+      tinyglobby: { name: 'tinyglobby', severity: 'high', isDirect: false, via: ['fdir', 'picomatch'] },
+      vite: { name: 'vite', severity: 'high', isDirect: true, via: ['fdir', 'picomatch', 'tinyglobby'] },
+      vitest: { name: 'vitest', severity: 'high', isDirect: true, via: ['picomatch', 'tinyglobby'] },
+    },
+  };
+  const crmPackage = { devDependencies: { vite: '^6.4.3', vitest: '4.1.12' } };
+  assert.equal(evaluateAudit(crmReport, crmPackage).ok, true, 'the picomatch advisory through dev-only Vite and Vitest is allowed');
+  assert.equal(
+    evaluateAudit(crmReport, { dependencies: { vite: '^6.4.3' }, devDependencies: { vite: '^6.4.3', vitest: '4.1.12' } }).ok,
+    false,
+    'Vite as a runtime dependency is not covered',
+  );
+  const crmExtra = structuredClone(crmReport);
+  crmExtra.vulnerabilities.vite.via.push({ ...picomatchAdvisory, source: 1004, name: 'vite', url: 'https://github.com/advisories/GHSA-vite-other' });
+  assert.equal(evaluateAudit(crmExtra, crmPackage).ok, false, 'a Vite advisory of its own still blocks CI');
+  const picomatchUrlOnOtherPackage = structuredClone(crmReport);
+  picomatchUrlOnOtherPackage.vulnerabilities.picomatch.via = [{ ...picomatchAdvisory, name: 'fdir', dependency: 'fdir' }];
+  assert.equal(evaluateAudit(picomatchUrlOnOtherPackage, crmPackage).ok, false, 'the picomatch approval does not cover another package');
+
   console.log('npm audit allowlist self-test passed');
 }
 
@@ -182,7 +222,9 @@ function main() {
     process.exit(2);
   }
 
-  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  // The package audited is the one in the working directory (repository root
+  // for the site and Worker, admin/ for the CRM), matching what npm audit read.
+  const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'));
   const evaluation = evaluateAudit(report, packageJson, auditLevel);
 
   if (!evaluation.ok) {
@@ -193,7 +235,7 @@ function main() {
   if (evaluation.allowed.length > 0) {
     console.warn(
       `npm audit found only the approved dev-build advisories ${ALLOWED_ADVISORIES.map((a) => a.url).join(', ')} `
-      + `through Tailwind 3 (${evaluation.allowed.join(', ')}). No patched version fits Tailwind 3 yet; CI remains fail-closed for every other advisory.`,
+      + `through dev-only build tooling (${evaluation.allowed.join(', ')}). No patched version fits yet; CI remains fail-closed for every other advisory.`,
     );
   } else {
     console.log(`npm audit: no ${auditLevel}+ vulnerabilities`);
