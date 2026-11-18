@@ -182,7 +182,9 @@ jobs:
         run: npm ci
 
       - name: Audit dependencies
-        run: npm audit --audit-level=moderate
+        run: |
+          node ../scripts/audit-root-dependencies.mjs --self-test
+          node ../scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Test
         run: npm test
