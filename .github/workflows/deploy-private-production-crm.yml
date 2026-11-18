@@ -255,7 +255,9 @@ jobs:
 
       - name: Audit CRM dependencies
         working-directory: admin
-        run: npm audit --audit-level=moderate
+        run: |
+          node ../scripts/audit-root-dependencies.mjs --self-test
+          node ../scripts/audit-root-dependencies.mjs --audit-level=moderate
 
       - name: Test, typecheck and build only the private CRM
         working-directory: admin
