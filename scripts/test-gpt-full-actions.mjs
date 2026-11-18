@@ -206,6 +206,27 @@ async function capture(request, upstreamBody = {}) {
   assert.deepEqual(captured.payload, { p_conversation_id: A, p_body: 'Hello from a bounded test', p_request_id: V });
 }
 
+// A closed WhatsApp window reaches the GPT as a specific, fixed explanation.
+// Any other 23514 wording stays behind the generic text.
+{
+  const windowClosed = 'The client has not written on WhatsApp in the last 24 hours, so a free-form WhatsApp reply cannot be sent and nothing was queued. Use an approved WhatsApp template or email instead; free-form replies work again for 24 hours after the client writes on WhatsApp.';
+  const refuse = (message) => async () => new Response(JSON.stringify({
+    code: '23514', message, details: 'private detail', hint: 'private hint',
+  }), { status: 400, headers: { 'content-type': 'application/json' } });
+  for (const path of [`/v1/communications/conversations/${A}/reply`, `/v1/whatsapp/conversations/${A}/messages`]) {
+    const response = await handleGptActionsRequest(new Request(`https://gpt.example${path}`, {
+      method: 'POST', headers: jsonHeaders, body: JSON.stringify({ request_id: V, body: 'See you on Saturday!' }),
+    }), env, refuse('WhatsApp free-form window is closed for this client'));
+    assert.deepEqual(await parsed(response), { status: 400, body: { error: '23514', message: windowClosed } });
+  }
+  for (const message of ['private constraint text', 'WhatsApp free-form window is closed for this client ', 'toString', '__proto__']) {
+    const response = await handleGptActionsRequest(new Request(`https://gpt.example/v1/communications/conversations/${A}/reply`, {
+      method: 'POST', headers: jsonHeaders, body: JSON.stringify({ request_id: V, body: 'Hi' }),
+    }), env, refuse(message));
+    assert.deepEqual(await parsed(response), { status: 400, body: { error: '23514', message: 'The request violates CRM validation rules.' } });
+  }
+}
+
 // Private-file Actions expose metadata RPCs only, never a Storage path parameter.
 {
   const { captured } = await capture(

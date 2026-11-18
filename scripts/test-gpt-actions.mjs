@@ -226,4 +226,22 @@ async function read(response) {
   });
 }
 
+{
+  // The appointment proxy shares the fixed 23514 mapping: only the reviewed
+  // WhatsApp window message is explained, anything else stays generic.
+  const call = (message) => handleGptActionsRequest(
+    new Request('https://gpt.example/v1/appointments/11111111-1111-4111-8111-111111111111/cancel', {
+      method: 'POST',
+      headers: { authorization: 'Bearer header.payload.signature', 'content-type': 'application/json' },
+      body: JSON.stringify({ request_id: '11111111-1111-4111-8111-111111111111', expected_calendar_version: 4 }),
+    }),
+    enabledEnv,
+    async () => new Response(JSON.stringify({ code: '23514', message }), { status: 400, headers: { 'content-type': 'application/json' } }),
+  );
+  assert.match((await read(await call('WhatsApp free-form window is closed for this client'))).body.message, /^The client has not written on WhatsApp in the last 24 hours/);
+  assert.deepEqual(await read(await call('private constraint text')), {
+    status: 400, body: { error: '23514', message: 'The request violates CRM validation rules.' },
+  });
+}
+
 console.log('GPT Actions proxy tests passed: OAuth-only, fail-closed and artist_id-free.');

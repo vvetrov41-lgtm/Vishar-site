@@ -109,6 +109,14 @@ function contextRoute(request, url, body) {
   return { rpc: 'gpt_artist_context', payload: { p_artist_id: artistId }, responseKind: 'object' };
 }
 
+// Database refusals whose exact message is a fixed, reviewed string get a
+// specific explanation. Any other message stays hidden behind the generic text,
+// so arbitrary database wording never crosses this boundary.
+const KNOWN_VALIDATION_MESSAGES = Object.freeze({
+  'WhatsApp free-form window is closed for this client':
+    'The client has not written on WhatsApp in the last 24 hours, so a free-form WhatsApp reply cannot be sent and nothing was queued. Use an approved WhatsApp template or email instead; free-form replies work again for 24 hours after the client writes on WhatsApp.',
+});
+
 function safeRpcError(status, text) {
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
@@ -119,9 +127,13 @@ function safeRpcError(status, text) {
     '23503': 'A referenced CRM record was not found.',
     '23514': 'The request violates CRM validation rules.',
   };
+  const known = code === '23514' && typeof parsed?.message === 'string'
+    && Object.prototype.hasOwnProperty.call(KNOWN_VALIDATION_MESSAGES, parsed.message)
+    ? KNOWN_VALIDATION_MESSAGES[parsed.message]
+    : null;
   const message = code === '22023' && typeof parsed?.message === 'string'
     ? parsed.message.slice(0, 300)
-    : messages[code] || 'The CRM action could not be completed.';
+    : known || messages[code] || 'The CRM action could not be completed.';
   const mapped = status === 401 ? 401
     : status === 403 || code === '42501' ? 403
       : code === '40001' ? 409
