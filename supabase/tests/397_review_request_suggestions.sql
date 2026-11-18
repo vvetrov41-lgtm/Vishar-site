@@ -55,14 +55,15 @@ select v.id, v.name, v.email, (select workspace_id from t_rr_artist) from (value
   ('e97c0000-0000-4000-8000-000000000005', 'Ella Unsubscribed', 'rr-e@example.test'),
   ('e97c0000-0000-4000-8000-000000000006', 'Finn Long Ago', 'rr-f@example.test'),
   ('e97c0000-0000-4000-8000-000000000007', 'Hal Touchup', 'rr-h@example.test'),
-  ('e97c0000-0000-4000-8000-000000000008', 'Ivy Asked', 'rr-i@example.test')
+  ('e97c0000-0000-4000-8000-000000000008', 'Ivy Asked', 'rr-i@example.test'),
+  ('e97c0000-0000-4000-8000-000000000009', 'Kim Newer Visit', 'rr-k@example.test')
 ) v(id, name, email);
 
 insert into public.projects (id, client_id, artist_id, status, title, deposit_status, currency)
 select ('e97d0000-0000-4000-8000-00000000000' || v.n)::uuid,
        ('e97c0000-0000-4000-8000-00000000000' || v.n)::uuid,
        (select id from t_rr_artist), 'active', 'RR project ' || v.n, 'not_required', 'GBP'
-from (values ('1'), ('2'), ('3'), ('4'), ('5'), ('6'), ('7'), ('8')) v(n);
+from (values ('1'), ('2'), ('3'), ('4'), ('5'), ('6'), ('7'), ('8'), ('9')) v(n);
 
 insert into public.communication_suppressions (client_id, channel, reason, is_active)
 values ('e97c0000-0000-4000-8000-000000000005', 'whatsapp', 'unsubscribed', true);
@@ -85,7 +86,11 @@ from (values
   ('61', 'tattoo_session', 'completed', 200),
   ('71', 'tattoo_session', 'completed', 50),
   ('72', 'touch_up', 'completed', 30),
-  ('81', 'tattoo_session', 'completed', 45)
+  ('81', 'tattoo_session', 'completed', 45),
+  -- Kim: an attended visit 40 days ago and a newer one auto-completed five
+  -- days ago whose outcome is not recorded yet.
+  ('91', 'tattoo_session', 'completed', 40),
+  ('92', 'tattoo_session', 'completed', 5)
 ) v(s, kind, status, d);
 
 -- Dan has his next session booked.
@@ -113,7 +118,8 @@ from (values
   ('61', 'tattoo_session', 'work_complete', 200),
   ('71', 'tattoo_session', 'touch_up_needed', 50),
   ('72', 'touch_up', 'work_complete', 30),
-  ('81', 'tattoo_session', 'work_complete', 45)
+  ('81', 'tattoo_session', 'work_complete', 45),
+  ('91', 'tattoo_session', 'work_complete', 40)
 ) v(s, kind, work_result, d);
 
 -- Ivy was already asked how her tattoo healed.
@@ -148,7 +154,7 @@ select throws_ok(
 select pg_temp.as_profile('e9700000-0000-4000-8000-0000000000a1');
 
 select is(pg_temp.suggested(), array['Alice Healed', 'Hal Touchup'],
-  'only finished, healed-long-enough, unbooked, unsuppressed, never-asked clients are suggested, oldest first');
+  'only finished, healed-long-enough, unbooked, unsuppressed, never-asked clients with no newer visit are suggested, oldest first');
 
 select is(
   (select x from jsonb_array_elements(public.list_review_suggestions((select id from t_rr_artist)) -> 'suggestions') x
@@ -194,6 +200,18 @@ select is(
 select is(
   (select version from public.review_requests where anchor_session_id = 'e9750000-0000-4000-8000-000000000011'),
   2, 'each decision bumps the version');
+select is(
+  public.act_on_review_suggestion((select id from t_rr_artist), 'e9750000-0000-4000-8000-000000000011',
+    'snooze', 'e97a0000-0000-4000-8000-000000000001') ->> 'state',
+  'snoozed', 'a late retry of the first operation returns its recorded result');
+select is(
+  (select state || '/' || version from public.review_requests
+   where anchor_session_id = 'e9750000-0000-4000-8000-000000000011'),
+  'dismissed/2', 'and does not overwrite the later decision');
+select throws_ok(
+  $$select public.act_on_review_suggestion((select id from t_rr_artist), 'e9750000-0000-4000-8000-000000000021',
+      'snooze', 'e97a0000-0000-4000-8000-000000000001')$$,
+  '22023', null, 'an operation id cannot be reused for another visit');
 select ok(
   (select snoozed_until is null from public.review_requests where anchor_session_id = 'e9750000-0000-4000-8000-000000000011'),
   'a dismissed row has no snooze date');

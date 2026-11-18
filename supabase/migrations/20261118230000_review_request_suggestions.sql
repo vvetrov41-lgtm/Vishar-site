@@ -19,7 +19,8 @@
 --   each with a draft healing question.
 -- * public.act_on_review_suggestion(artist, anchor, action, operation):
 --   'snooze' (hide for 1-60 days, default 14) or 'dismiss' (never for that
---   visit). Idempotent per operation id.
+--   visit). Idempotent per operation id: every processed operation is
+--   recorded, so a late retry never overwrites a later decision.
 
 create table crm_private.artist_review_settings (
   artist_id uuid primary key references public.artists(id) on delete cascade,
@@ -67,6 +68,20 @@ create table public.review_requests (
 );
 
 create index review_requests_artist_client_idx on public.review_requests (artist_id, client_id);
+
+-- Every processed decision, so a delayed retry of an earlier operation
+-- returns its recorded result instead of overwriting a later decision.
+create table crm_private.review_request_operations (
+  operation_id uuid primary key,
+  review_request_id uuid not null references public.review_requests(id) on delete cascade,
+  action text not null,
+  result jsonb not null,
+  created_at timestamptz not null default now()
+);
+
+alter table crm_private.review_request_operations enable row level security;
+alter table crm_private.review_request_operations force row level security;
+revoke all on table crm_private.review_request_operations from public, anon, authenticated, service_role;
 
 alter table public.review_requests enable row level security;
 alter table public.review_requests force row level security;
@@ -119,16 +134,23 @@ as $fn$
     join public.clients c on c.id = an.client_id
     left join public.projects p on p.id = an.project_id
     where c.archived_at is null
-      -- Anything booked after the visit means the block is not over.
+      -- Any later visit, booked or already done (sessions are auto-completed
+      -- before their outcome is recorded), means the block is not over or the
+      -- newest tattoo has not healed long enough. A later visit recorded as a
+      -- no-show or cancelled leaves nothing new to heal.
       and not exists (
         select 1 from public.sessions n
         left join public.projects np on np.id = n.project_id
         where n.artist_id = p_artist_id
           and coalesce(n.client_id, np.client_id) = an.client_id
           and n.appointment_type in ('tattoo_session', 'touch_up')
-          and n.status in ('draft', 'proposed', 'confirmed')
+          and n.status in ('draft', 'proposed', 'confirmed', 'completed')
           and n.cancelled_at is null
           and n.start_at > an.start_at
+          and not exists (
+            select 1 from public.visit_outcomes nvo
+            where nvo.session_id = n.id and nvo.state = 'confirmed'
+              and nvo.outcome in ('no_show', 'cancelled'))
       )
       and not exists (
         select 1 from public.communication_suppressions cs
@@ -207,6 +229,7 @@ declare
   v_client uuid;
   v_now timestamptz := clock_timestamp();
   v_row public.review_requests%rowtype;
+  v_result jsonb;
 begin
   perform crm_private.require_artist_access(p_artist_id, 'send_communications');
 
@@ -236,10 +259,19 @@ begin
   where anchor_session_id = p_anchor_session_id
   for update;
 
+  select o.result into v_result
+  from crm_private.review_request_operations o
+  join public.review_requests r on r.id = o.review_request_id
+  where o.operation_id = p_operation_id;
   if found then
-    if v_row.last_operation_id = p_operation_id then
-      return to_jsonb(v_row) - 'created_by' - 'updated_by';
+    if v_result ->> 'anchor_session_id' <> p_anchor_session_id::text
+       or v_result ->> 'artist_id' <> p_artist_id::text then
+      raise exception 'operation id was used for another visit' using errcode = '22023';
     end if;
+    return v_result;
+  end if;
+
+  if v_row.id is not null then
     if v_row.state not in ('snoozed', 'dismissed') then
       raise exception 'healing question already sent for this visit' using errcode = '55000';
     end if;
@@ -265,7 +297,10 @@ begin
     returning * into v_row;
   end if;
 
-  return to_jsonb(v_row) - 'created_by' - 'updated_by';
+  v_result := to_jsonb(v_row) - 'created_by' - 'updated_by';
+  insert into crm_private.review_request_operations (operation_id, review_request_id, action, result)
+  values (p_operation_id, v_row.id, p_action, v_result);
+  return v_result;
 end;
 $fn$;
 
