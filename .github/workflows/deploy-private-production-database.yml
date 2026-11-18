@@ -186,6 +186,15 @@ jobs:
       - name: Reset local database without development seed
         run: supabase db reset --local --no-seed
 
+      - name: Verify local function definitions match the committed manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Local Supabase stack's well-known development login, not a secret.
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -X -A -t -v ON_ERROR_STOP=1 -f scripts/function-manifest.sql > "$RUNNER_TEMP/function-manifest.tsv"
+          node scripts/check-function-manifest.mjs --compare "$RUNNER_TEMP/function-manifest.tsv"
+
       - name: Run full pgTAP suite
         run: supabase test db
 
@@ -269,6 +278,13 @@ jobs:
           supabase migration list > "$RUNNER_TEMP/full-migration-readback.txt"
           node scripts/check-production-migration-ledger.mjs "$RUNNER_TEMP/full-migration-readback.txt"
 
+      # Read-only: the Management API query runs with read_only=true and only
+      # function signatures are printed. Catches bodies, settings or grants
+      # that production carries outside the migrations.
+      - name: Verify production function definitions match the released manifest
+        if: success() && (github.event_name == 'push' || inputs.deploy)
+        run: node scripts/check-function-manifest.mjs --production
+
 
       - name: Production database boundary summary
         if: always()
@@ -283,7 +299,7 @@ jobs:
             echo "- Release branch: \`$GITHUB_REF_NAME\`"
             echo "- Deploy requested: \`$DEPLOY_REQUESTED\`"
             echo '- Local validation: clean no-seed reset, pgTAP and PostgreSQL lint'
-            echo '- Remote validation: migration list and db push --dry-run'
+            echo '- Remote validation: migration list, db push --dry-run and read-only function definition check'
             echo '- Remote reset command: none'
             echo '- Seed command: none'
           } >> "$GITHUB_STEP_SUMMARY"

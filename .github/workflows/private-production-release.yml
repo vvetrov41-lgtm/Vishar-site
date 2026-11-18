@@ -307,6 +307,15 @@ jobs:
       - name: Reset local database without development seed
         run: supabase db reset --local --no-seed
 
+      - name: Verify local function definitions match the committed manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Local Supabase stack's well-known development login, not a secret.
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -X -A -t -v ON_ERROR_STOP=1 -f scripts/function-manifest.sql > "$RUNNER_TEMP/function-manifest.tsv"
+          node scripts/check-function-manifest.mjs --compare "$RUNNER_TEMP/function-manifest.tsv"
+
       - name: Run full pgTAP suite
         run: supabase test db
 
@@ -518,6 +527,11 @@ jobs:
         run: |
           supabase migration list
           supabase db push --dry-run
+
+      # Read-only: the Management API query runs with read_only=true and only
+      # function signatures are printed.
+      - name: Verify production function definitions match the released manifest
+        run: node scripts/check-function-manifest.mjs --production
 
       - name: Install locked CRM dependencies
         working-directory: admin

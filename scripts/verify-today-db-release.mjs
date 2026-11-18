@@ -154,6 +154,9 @@ export function verifyTodayLineage(source) {
     // Google review request: stage the Vladimir-only healing question Utility
     // template for Meta review. Inert candidate; no registry row or send path.
     ['20261116160000', '20261116170000'],
+    // Reconcile six function bodies with production: each body is the exact
+    // production definition, so production behaviour does not change.
+    ['20261116170000', '20261117100000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

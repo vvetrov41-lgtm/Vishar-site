@@ -625,6 +625,19 @@ for (const bad of [
   healingCheckCandidate.replace('20261116160000 | 20261116160000', '20261116160000 | '),
   healingCheckCandidate + '\n 20261116180000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Function body reconciliation follows the healing question Meta candidate.
+const functionBodyReconcile = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261116170000 | 20261116170000 | t',
+  ' 20261117100000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(functionBodyReconcile), '20261117100000');
+assert.equal(deferredTodayMigration(functionBodyReconcile), null);
+for (const bad of [
+  functionBodyReconcile.replace('20261117100000 | |', '20261117100001 | |'),
+  functionBodyReconcile.replace('20261116170000 | 20261116170000', '20261116170000 | '),
+  functionBodyReconcile + '\n 20261117110000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
