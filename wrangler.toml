@@ -96,8 +96,12 @@ INTAKE_PREFLIGHT_PROVIDER = "jev"
 # database dedupes to one sweep per client per day and caps the batch, so this
 # bounds the extra spend. Unset (or 0) turns the sweep off.
 CRM_BRIEF_CONVERGE_PER_HOUR = "8"
-AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,qwen"
-AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
+# 2026-11-17 live eval (run 44054777839): client state falls back from Llama
+# to Gemma on the same binding (Qwen took 39 s against a 30 s timeout), and
+# reference extraction runs Gemma first with Qwen as fallback. Rollback:
+# "workers_ai,qwen" and "qwen,workers_ai".
+AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,workers_ai"
+AI_ROUTE_VISION_REFERENCE_EXTRACTION = "workers_ai,qwen"
 
 # Model routing. Provider order per task and the model identifier per tier are
 # configuration, not code: change them here (or override them as Worker
@@ -156,9 +160,9 @@ binding = "AI"
 [env.preview.vars]
 VISHAR_ENVIRONMENT = "preview"
 AI_ROUTE_ENQUIRY_INTAKE = "workers_ai,qwen"
-AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,qwen"
+AI_ROUTE_CRM_CLIENT_STATE = "workers_ai,workers_ai"
 AI_QWEN_ENQUIRY_SCHEMA = "transport"
-AI_ROUTE_VISION_REFERENCE_EXTRACTION = "qwen,workers_ai"
+AI_ROUTE_VISION_REFERENCE_EXTRACTION = "workers_ai,qwen"
 AI_ROUTE_CONCEPT_CONSULT = "workers_ai,qwen"
 AI_ROUTE_AFTERCARE_SUPPORT = "workers_ai,qwen"
 AI_ROUTE_TEXT_SUMMARIZATION = "qwen,workers_ai"

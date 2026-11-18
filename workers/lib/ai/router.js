@@ -281,10 +281,11 @@ export async function runModelTask(env, taskName, input = {}, deps = {}) {
 
   const chain = experiment?.provider ? [experiment.provider] : plan.chain;
   const candidates = chain
-    .map((id) => {
+    .map((id, index) => {
       const provider = PROVIDERS[id];
       let config = provider ? provider.configure(env, plan.modality) : null;
-      if (config && id === 'workers_ai' && plan.workersAiModel) config = { ...config, model: plan.workersAiModel };
+      const workersAiModel = experiment?.provider ? plan.workersAiModel : plan.workersAiModels?.[index];
+      if (config && id === 'workers_ai' && workersAiModel) config = { ...config, model: workersAiModel };
       if (config && experiment?.model && id === 'workers_ai') config = { ...config, model: experiment.model };
       return config ? { provider, config } : null;
     })
