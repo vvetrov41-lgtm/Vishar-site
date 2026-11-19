@@ -27,7 +27,7 @@ expectIncludes("! grep -Eq '^\\s*\\[triggers\\]\\s*$|^\\s*crons\\s*=' wrangler.t
 expectIncludes('command: deploy --config wrangler.toml --env="" --strict --tag ${{ github.sha }}', 'defensive tagged deploy');
 expectExcludes(' --strict --keep-vars --tag', 'forbidden untracked Worker variables');
 expectIncludes('node scripts/verify-tattooai-variable-reconciliation.mjs --self-test', 'CI variable reconciliation test');
-expectIncludes('node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-before.json" --allow-legacy-deepseek', 'pre-release drift gate');
+expectIncludes('node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-before.json" --allow-legacy-deepseek --allow-pending-changes', 'pre-release drift gate');
 expectIncludes('node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-after.json" --compare-before "$RUNNER_TEMP/tattooai-settings-before.json"', 'post-release binding preservation and orphan removal');
 expectIncludes('-X PUT "$api"', 'direct Cloudflare schedule reconciliation');
 expectIncludes("--data '[]'", 'zero-schedule payload');

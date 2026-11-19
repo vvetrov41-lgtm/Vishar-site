@@ -138,10 +138,17 @@ const TASKS = Object.freeze({
   // largest here because one call returns a summary, a brief and a
   // recommendation, and a truncated answer fails schema validation and is
   // paid for twice.
+  //
+  // Fallback is Gemma 4 on the same Workers AI binding, not Qwen. Live eval
+  // 2026-11-17 (run 44054777839): Llama 2.0 s, Gemma 10.7 s, Qwen 39.2 s,
+  // i.e. Qwen exceeds this task's 30 s timeout, which matches the 38 failed
+  // Qwen fallback attempts (21 timeouts) seen in the week before. The second
+  // `workers_ai` entry runs `workersAiFallbackModel`.
   crm_client_state: {
     capability: 'extraction',
     modality: 'text',
-    chain: ['workers_ai', 'qwen'],
+    chain: ['workers_ai', 'workers_ai'],
+    workersAiFallbackModel: '@cf/google/gemma-4-26b-a4b-it',
     timeoutMs: 30_000,
     maxOutputTokens: 1_800,
     temperature: 0,
@@ -188,10 +195,13 @@ const TASKS = Object.freeze({
   // and this one is schema-validated before anything is persisted. Gemma on
   // the shared Workers AI binding is the real fallback: unlike external OpenAI,
   // it is available without an API key and keeps private images on Cloudflare.
+  // Gemma leads since the 2026-11-17 live eval (run 44054777839): schema-valid
+  // in 3.0 s against Qwen's 9.9 s on the same synthetic reference. Qwen is
+  // the fallback.
   vision_reference_extraction: {
     capability: 'vision',
     modality: 'vision',
-    chain: ['qwen', 'workers_ai'],
+    chain: ['workers_ai', 'qwen'],
     timeoutMs: 30_000,
     maxOutputTokens: 900,
     temperature: 0,
@@ -239,6 +249,26 @@ export function workersAiModelFor(env, taskName, definition) {
   return TASK_WORKERS_AI_MODELS.has(configured) ? configured : definition.workersAiModel;
 }
 
+/**
+ * Workers AI model per chain position, or null where the provider is not
+ * Workers AI or uses the shared tier model. The first `workers_ai` entry runs
+ * the pinned task model (or the tier model); a later `workers_ai` entry runs
+ * `workersAiFallbackModel`, so a task can fall back to a second Workers AI
+ * model. Without a declared fallback model, a repeated entry gets null and
+ * runs the tier model.
+ */
+function workersAiModelsFor(chain, primaryModel, definition) {
+  const fallback = TASK_WORKERS_AI_MODELS.has(definition?.workersAiFallbackModel)
+    ? definition.workersAiFallbackModel : null;
+  let seen = false;
+  return chain.map((id) => {
+    if (id !== 'workers_ai') return null;
+    const model = seen ? fallback : primaryModel;
+    seen = true;
+    return model;
+  });
+}
+
 const TASK_NAME_RE = /^[a-z][a-z0-9_]{2,63}$/;
 const PROVIDER_ID_RE = /^[a-z][a-z0-9_]{1,31}$/;
 
@@ -253,13 +283,17 @@ function clampInteger(value, min, max, fallback) {
  * provider id, exceed the per-request provider cap, or empty a chain — a route
  * that fails those checks is ignored and the compiled default stands.
  */
-export function routeOverrideFor(env, taskName, knownProviderIds) {
+export function routeOverrideFor(env, taskName, knownProviderIds, { workersAiFallback = false } = {}) {
   const raw = env?.[`AI_ROUTE_${taskName.toUpperCase()}`];
   if (typeof raw !== 'string' || !raw.trim()) return null;
 
   const requested = raw.split(',').map((entry) => entry.trim().toLowerCase()).filter(Boolean);
   if (!requested.length || requested.length > MAX_PROVIDERS_PER_REQUEST) return null;
-  if (new Set(requested).size !== requested.length) return null;
+  // A provider may appear once. The one exception is `workers_ai,workers_ai`
+  // for a task that declares a second Workers AI model to fall back to.
+  const repeatsWorkersAiFallback = workersAiFallback
+    && requested.length === 2 && requested.every((id) => id === 'workers_ai');
+  if (new Set(requested).size !== requested.length && !repeatsWorkersAiFallback) return null;
   if (!requested.every((id) => PROVIDER_ID_RE.test(id) && knownProviderIds.has(id))) return null;
 
   return requested;
@@ -282,8 +316,10 @@ export function resolveTask(env, taskName, knownProviderIds = new Set()) {
   const definition = TASKS[taskName];
   if (!definition) return null;
 
-  const override = routeOverrideFor(env, taskName, knownProviderIds);
+  const override = routeOverrideFor(env, taskName, knownProviderIds,
+    { workersAiFallback: TASK_WORKERS_AI_MODELS.has(definition.workersAiFallbackModel) });
   const chain = (override ?? definition.chain).slice(0, MAX_PROVIDERS_PER_REQUEST);
+  const workersAiModel = workersAiModelFor(env, taskName, definition);
 
   return Object.freeze({
     task: taskName,
@@ -296,7 +332,8 @@ export function resolveTask(env, taskName, knownProviderIds = new Set()) {
     maxOutputTokens: clampInteger(definition.maxOutputTokens, 16, MAX_OUTPUT_TOKENS, 512),
     temperature: definition.temperature,
     structured: definition.structured === true,
-    workersAiModel: workersAiModelFor(env, taskName, definition),
+    workersAiModel,
+    workersAiModels: Object.freeze(workersAiModelsFor(chain, workersAiModel, definition)),
   });
 }
 
