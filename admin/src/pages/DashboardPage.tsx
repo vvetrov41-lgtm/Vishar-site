@@ -387,7 +387,8 @@ export function DashboardPage() {
       {mayManageReviews && !scopeLoading ? (
         <HealingReviews
           // A new artist scope is a new block: nothing in flight carries over.
-          key={selectedArtistId ?? 'all'}
+          // The prefix keeps the key distinct from its sibling WaitingOnClients.
+          key={`healing-${selectedArtistId ?? 'all'}`}
           artistIds={healingArtistIds}
           canDecide={mayManageReviews}
         />
