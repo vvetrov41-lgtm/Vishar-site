@@ -4,15 +4,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { App } from '../App';
-import { LINKED_CONVERSATION_ID, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
+import { CONVERSATION_ID, LINKED_CONVERSATION_ID, VLADIMIR_ARTIST_ID, renderWithSession } from './fixtures';
 import { createReplyDraftApi, ReplyDraftError } from '../lib/reply-draft-api';
 import type { CrmClient } from '../lib/api';
 
 const DRAFT = 'Hey! I charge £140 per hour or £980 for a full day 🙌🏻';
 
-function attention(notCrm: string | null = null) {
+function attention(notCrm: string | null = null, conversationId = LINKED_CONVERSATION_ID) {
   return {
-    conversation_id: LINKED_CONVERSATION_ID,
+    conversation_id: conversationId,
     artist_id: VLADIMIR_ARTIST_ID,
     awaiting_reply_since: '2026-08-30T09:00:00Z',
     not_crm_at: notCrm,
@@ -62,16 +62,26 @@ describe('Suggest reply', () => {
     expect(screen.queryByRole('button', { name: 'Suggest reply' })).toBeNull();
   });
 
-  it('is hidden in a personal (not CRM) conversation', async () => {
+  it('is hidden in a personal (not CRM) conversation with nothing linked', async () => {
+    vi.stubGlobal('fetch', worker(true));
+    renderWithSession(<App />, {
+      role: 'booking_manager',
+      path: `/inbox/${CONVERSATION_ID}`,
+      conversationAttention: attention('2026-08-30T10:00:00Z', CONVERSATION_ID),
+    });
+    await screen.findByPlaceholderText('Write a reply…');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(screen.queryByRole('button', { name: 'Suggest reply' })).toBeNull();
+  });
+
+  it('is offered once a formerly personal conversation is linked to a client', async () => {
     vi.stubGlobal('fetch', worker(true));
     renderWithSession(<App />, {
       role: 'booking_manager',
       path: `/inbox/${LINKED_CONVERSATION_ID}`,
       conversationAttention: attention('2026-08-30T10:00:00Z'),
     });
-    await screen.findByPlaceholderText('Write a reply…');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.queryByRole('button', { name: 'Suggest reply' })).toBeNull();
+    expect(await screen.findByRole('button', { name: 'Suggest reply' })).toBeInTheDocument();
   });
 
   it('says the WhatsApp window is closed instead of drafting', async () => {

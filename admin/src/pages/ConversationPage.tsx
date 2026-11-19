@@ -194,7 +194,7 @@ export function ConversationPage({ conversationId }: { conversationId: string })
     () => (mayReply ? api.replyDraftsAvailable() : Promise.resolve(false)),
     [api, mayReply],
   );
-  const { data: attention } = useAsync(
+  const { data: attention, reload: reloadAttention } = useAsync(
     () => (draftsAvailable ? api.getConversationAttention(conversationId) : Promise.resolve(null)),
     [api, conversationId, draftsAvailable],
   );
@@ -267,9 +267,11 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   // closes over a plain channel value rather than the whole record.
   const replyChannel = conversation.channel;
   const canSend = mayReply && !archived;
-  // Not offered in personal chats or while the attention read is unknown.
+  const linked = conversation.client_id !== null || conversation.enquiry_id !== null;
+  // Not offered in personal chats or while the attention read is unknown. The
+  // personal mark applies only while nothing is linked, as in the database.
   const canSuggest = canSend && draftsAvailable === true
-    && attention != null && attention.not_crm_at == null;
+    && attention != null && (attention.not_crm_at == null || linked);
 
   async function suggest() {
     setDrafting(true);
@@ -388,9 +390,10 @@ export function ConversationPage({ conversationId }: { conversationId: string })
 
       <ConversationOperatorState
         conversationId={conversationId}
-        linked={conversation.client_id !== null || conversation.enquiry_id !== null}
+        linked={linked}
         mayAct={mayReply}
         api={api}
+        onChange={reloadAttention}
         language={language}
       />
 
