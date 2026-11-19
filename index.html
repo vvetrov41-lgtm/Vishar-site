@@ -127,7 +127,7 @@
     .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
     .hero-title{letter-spacing:-.025em}
     @media (max-width: 639px) and (max-height: 680px) {
-        main > header { align-items: flex-start; padding-top: 4rem; }
+        main > header.flex { align-items: flex-start; padding: 4rem 1rem 0; }
         .hero-title { font-size: 1.875rem; line-height: 1.2; margin-bottom: .5rem; }
         .hero-specialty { font-size: .875rem; line-height: 1.5; margin-bottom: .5rem; }
         .hero-rate { margin-bottom: .5rem; }
@@ -273,19 +273,15 @@
         </div>
         <div class="relative z-10 max-w-4xl fade-in">
             <h1 class="hero-title text-5xl md:text-8xl font-semibold mb-6 tracking-tight">Realism, made to last.</h1>
-            <p class="hero-specialty text-xl md:text-2xl text-white/60 mb-4 font-light">Colour and black-and-grey realism.</p>
+            <p class="hero-specialty text-xl md:text-2xl text-white/60 mb-4 font-light">Custom colour and black-and-grey tattoos.</p>
             <p class="hero-rate text-sm leading-relaxed text-white/80 mb-6">
                 <span class="block sm:inline">Private studio in West Kensington, London</span>
                 <span class="hidden sm:inline" aria-hidden="true"> · </span><span>£140/hour · £980 for 7 hours</span>
             </p>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
-                <div class="flex flex-col items-center max-w-xs">
-                    <a href="/booking/" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Send a tattoo enquiry</a>
-                    <p class="mt-3 text-xs leading-relaxed text-white/60">Your enquiry goes directly to me. I’ll review it before offering a consultation or date.</p>
-                </div>
+                <a href="/booking/" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Send a tattoo enquiry</a>
                 <a href="#portfolio" class="px-8 py-3 text-white font-medium hover:underline flex items-center gap-2">View Work →</a>
             </div>
-            <p class="mt-8 text-white/60 text-sm">Custom designs only, no flash</p>
             <p class="hero-featured text-white/50" aria-label="Recognition">Featured in Global Tattoo Mag · Ink Legends Magazine · Big London Tattoo Show 2025</p>
         </div>
     </header>
