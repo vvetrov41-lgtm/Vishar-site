@@ -638,6 +638,19 @@ for (const bad of [
   functionBodyReconcile.replace('20261116170000 | 20261116170000', '20261116170000 | '),
   functionBodyReconcile + '\n 20261117110000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Reply draft context follows the review request suggestions.
+const replyDraftContext = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261118230000 | 20261118230000 | t',
+  ' 20261119010000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(replyDraftContext), '20261119010000');
+assert.equal(deferredTodayMigration(replyDraftContext), null);
+for (const bad of [
+  replyDraftContext.replace('20261119010000 | |', '20261119010001 | |'),
+  replyDraftContext.replace('20261118230000 | 20261118230000', '20261118230000 | '),
+  replyDraftContext + '\n 20261119020000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
