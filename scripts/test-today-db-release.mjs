@@ -651,19 +651,6 @@ for (const bad of [
   reviewRequestSuggestions.replace('20261117100000 | 20261117100000', '20261117100000 | '),
   reviewRequestSuggestions + '\n 20261118240000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
-// Reply draft context follows the review request suggestions.
-const replyDraftContext = [
-  ' Local | Remote | Time (UTC)',
-  ' 20261118230000 | 20261118230000 | t',
-  ' 20261119010000 | | t',
-].join('\n');
-assert.equal(verifyTodayLineage(replyDraftContext), '20261119010000');
-assert.equal(deferredTodayMigration(replyDraftContext), null);
-for (const bad of [
-  replyDraftContext.replace('20261119010000 | |', '20261119010001 | |'),
-  replyDraftContext.replace('20261118230000 | 20261118230000', '20261118230000 | '),
-  replyDraftContext + '\n 20261119020000 | | t',
-]) assert.throws(() => verifyTodayLineage(bad));
 // Two pending migrations at once is not a single approved step.
 assert.throws(() => verifyTodayLineage([
   ' Local | Remote | Time (UTC)',
@@ -723,3 +710,25 @@ assert.throws(() => verifyTodayLineage(enquiryFactConflicts.replace(
   '20261115121000 | 20261115121000', '20261115121000 | '
 )));
 assert.throws(() => verifyTodayLineage(enquiryFactConflicts + '\n 20261115200000 | | t'));
+
+const explicitReplyClosings = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261118230000 | 20261118230000 | t',
+  ' 20261119090000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(explicitReplyClosings), '20261119090000');
+assert.equal(deferredTodayMigration(explicitReplyClosings), null);
+assert.throws(() => verifyTodayLineage(explicitReplyClosings + '\n 20261119090100 | | t'));
+// Reply draft context follows the explicit conversation closings.
+const replyDraftContext = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261119090000 | 20261119090000 | t',
+  ' 20261119100000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(replyDraftContext), '20261119100000');
+assert.equal(deferredTodayMigration(replyDraftContext), null);
+for (const bad of [
+  replyDraftContext.replace('20261119100000 | |', '20261119100001 | |'),
+  replyDraftContext.replace('20261119090000 | 20261119090000', '20261119090000 | '),
+  replyDraftContext + '\n 20261119110000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));

@@ -81,6 +81,40 @@ select ok(crm_private.conversation_awaiting_reply_since((select id from ack_case
 select ok(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=9)) is not null,
   'explicit reply_required evidence wins over a short acknowledgement');
 
+-- Exercise the two explicit closes through the shared Today and reminder rule.
+insert into ack_cases values
+  (10,pg_temp.seed_reply_case(10,'Okay mate thank you')),
+  (11,pg_temp.seed_reply_case(11,'Never mind I found the button haha thanks',true,'provider_app')),
+  (12,pg_temp.seed_reply_case(12,'Thanks mate, please cancel Friday',true,'provider_app')),
+  (13,pg_temp.seed_reply_case(13,'Okay mate thank you',false)),
+  (14,pg_temp.seed_reply_case(14,'Thanks mate')),
+  (15,pg_temp.seed_reply_case(15,'Never mind I found it. Can you move the appointment?',true,'provider_app'));
+
+insert into crm_private.client_reply_marks (artist_id,client_id,message_at,reply_state,source)
+select c.artist_id,c.client_id,m.provider_timestamp,
+  case when a.n=10 then 'no_reply_needed' else 'reply_required' end,
+  case when a.n=14 then 'operator' else 'classifier' end
+from ack_cases a
+join public.communication_conversations c on c.id=a.id
+join public.communication_messages m on m.conversation_id=c.id and m.direction='inbound'
+where a.n in (10,11,14);
+
+select is(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=10)),
+  null::timestamptz, 'a thank-you after a studio reply needs no second reply');
+select is(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=11)),
+  null::timestamptz, 'an explicit withdrawal wins over a classifier mistake');
+select is(crm_private.unanswered_waiting_since('conversation',c.artist_id,c.id),
+  null::timestamptz, 'the reminder scheduler also skips the explicit withdrawal')
+from public.communication_conversations c join ack_cases a on a.id=c.id where a.n=11;
+select ok(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=12)) is not null,
+  'thanks plus a cancellation without a question mark still needs attention');
+select ok(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=13)) is not null,
+  'an acknowledgement as a first contact still needs attention');
+select ok(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=14)) is not null,
+  'an explicit operator mark still takes priority');
+select ok(crm_private.conversation_awaiting_reply_since((select id from ack_cases where n=15)) is not null,
+  'an explicit withdrawal followed by a new question still needs attention');
+
 select ok(not has_function_privilege('anon','crm_private.is_short_reply_acknowledgement(text)','execute')
     and not has_function_privilege('authenticated','crm_private.is_short_reply_acknowledgement(text)','execute')
     and not has_function_privilege('authenticated','crm_private.conversation_awaiting_reply_since(uuid)','execute')

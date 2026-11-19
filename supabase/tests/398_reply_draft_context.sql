@@ -1,6 +1,6 @@
 -- 398_reply_draft_context.sql
 --
--- Migration 20261119010000: public.get_reply_draft_context returns the
+-- Migration 20261119100000: public.get_reply_draft_context returns the
 -- artist's own past (client message, reply) pairs as voice examples for a
 -- reply draft. It must never return a personal (not-CRM) conversation,
 -- another artist's replies, automation or canned messages, and it masks
