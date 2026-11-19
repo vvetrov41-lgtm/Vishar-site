@@ -145,7 +145,7 @@ insert into public.communication_messages(
   conversation_id, artist_id, channel, direction, origin, status, body, created_at
 ) values (
   'f1004300-0000-4000-8000-000000000001', 'a1111111-1111-4111-8111-111111111111',
-  'whatsapp', 'inbound', 'contact', 'received', 'Thanks!', '2026-10-02 17:00:00+01'
+  'whatsapp', 'inbound', 'contact', 'received', 'Is Saturday morning free?', '2026-10-02 17:00:00+01'
 );
 update public.communication_conversations
 set last_inbound_at = '2026-10-02 17:00:00+01', last_message_at = '2026-10-02 17:00:00+01'
