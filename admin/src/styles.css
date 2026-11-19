@@ -1405,3 +1405,16 @@ section.card[id] { scroll-margin-top: 56px; }
   .visit-outcome-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .visit-segment button { flex: 0 1 auto; }
 }
+
+/* Healing & reviews on Today. */
+.healing-review-row { display: block; }
+.healing-review-row .title { color: inherit; text-decoration: none; }
+.healing-reply {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.healing-review-edit { margin-top: 8px; }
+.healing-review-edit textarea { width: 100%; font-size: 16px; }
