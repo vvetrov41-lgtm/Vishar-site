@@ -20,10 +20,13 @@ as $function$
         regexp_replace(coalesce(p_text, ''),
           '[[:alnum:]._%+-]+@[[:alnum:].-]+\.[[:alpha:]]{2,}', '[email]', 'g'),
         '(https?://|www\.)[^[:space:]]+', '[link]', 'gi'),
-      -- Sort codes written as 12-34-56 or 12 34 56.
-      '\m[0-9]{2}[ -][0-9]{2}[ -][0-9]{2}\M', '[number]', 'g'),
-    -- Phone and account numbers: seven or more digits, spaces or dashes allowed.
-    '\+?[0-9][0-9 ()-]{5,}[0-9]', '[number]', 'g');
+      -- Sort codes: 12-34-56 anywhere, or any spacing right after "sort code".
+      -- A bare "14 15 16" stays readable: it is more often dates than a bank.
+      '(sort[ -]?code[^0-9]{0,4})[0-9]{2}[ -]?[0-9]{2}[ -]?[0-9]{2}|\m[0-9]{2}-[0-9]{2}-[0-9]{2}\M',
+      '\1[number]', 'gi'),
+    -- Phone and account numbers: at least seven digits, with at most two
+    -- separators between neighbouring digits, so "14 - 15 November" survives.
+    '\+?\(?[0-9](?:[ ()-]{0,2}[0-9]){6,}', '[number]', 'g');
 $function$;
 
 revoke all on function crm_private.mask_reply_draft_text(text)
@@ -100,13 +103,13 @@ begin
     from (
       select m.direction::text as direction,
         left(crm_private.mask_reply_draft_text(m.body), 600) as text,
-        m.created_at
+        coalesce(m.provider_timestamp, m.sent_at, m.created_at) as created_at
       from public.communication_messages m
       where m.conversation_id = p_conversation_id
         and m.message_type = 'text'
         and nullif(btrim(coalesce(m.body, '')), '') is not null
         and m.status::text in ('received', 'sent', 'delivered', 'read')
-      order by m.created_at desc
+      order by coalesce(m.provider_timestamp, m.sent_at, m.created_at) desc
       limit 20
     ) x;
 
@@ -114,12 +117,14 @@ begin
   -- same conversation, written by a person (provider app or CRM), within three
   -- days. A reply the artist sent word for word three or more times is a canned
   -- message, not a voice example.
+  -- Conversation order is the provider's time, not ingestion time: a late
+  -- webhook must not pair a reply with the wrong client message.
   with texts as (
     select m.conversation_id, m.direction::text as direction, m.origin::text as origin,
-      m.body, m.created_at,
+      m.body, coalesce(m.provider_timestamp, m.sent_at, m.created_at) as created_at,
       lag(m.direction::text) over w as prev_direction,
       lag(m.body) over w as prev_body,
-      lag(m.created_at) over w as prev_at
+      lag(coalesce(m.provider_timestamp, m.sent_at, m.created_at)) over w as prev_at
     from public.communication_messages m
     join public.communication_conversations c on c.id = m.conversation_id
     where m.artist_id = v_artist_id
@@ -130,7 +135,8 @@ begin
       and nullif(btrim(coalesce(m.body, '')), '') is not null
       and m.status::text in ('received', 'sent', 'delivered', 'read')
       and (m.direction::text = 'inbound' or m.origin::text in ('provider_app', 'crm'))
-    window w as (partition by m.conversation_id order by m.created_at)
+    window w as (partition by m.conversation_id
+      order by coalesce(m.provider_timestamp, m.sent_at, m.created_at), m.created_at, m.id)
   ), canned as (
     select t.body from texts t
     where t.direction = 'outbound'

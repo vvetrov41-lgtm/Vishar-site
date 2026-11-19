@@ -30,6 +30,11 @@ select is(
   'phones, emails, sort codes and links are masked'
 );
 select is(
+  crm_private.mask_reply_draft_text('I can do 14 - 15 November or 28-29, Sort code: 30 14 71, call (020) 7946 0958'),
+  'I can do 14 - 15 November or 28-29, Sort code: [number], call [number]',
+  'date ranges survive; spaced sort codes after the label and bracketed phones are masked'
+);
+select is(
   crm_private.mask_reply_draft_text('£140 per hour or £980 for a full day (7 hours), 14 and 15 November'),
   '£140 per hour or £980 for a full day (7 hours), 14 and 15 November',
   'rates, hours and dates stay readable'
@@ -113,6 +118,14 @@ select pg_temp.msg('02', 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'in
 select pg_temp.msg('02', 'a1111111-1111-4111-8111-111111111111', 'whatsapp', 'outbound', 'automation', 'read',
   'Automated booking card text', 270);
 
+-- A late webhook: this client message was written just before the reply
+-- (provider time) but ingested after it. Pairing must follow provider time.
+insert into public.communication_messages (
+  conversation_id, artist_id, channel, direction, origin, status, body, created_at, provider_timestamp
+) values
+  ('f3983333-0000-4000-8000-000000000002', 'a1111111-1111-4111-8111-111111111111', 'whatsapp',
+   'inbound', 'contact', 'received', 'Ingested late, written just before the reply', now() - interval '250 minutes',
+   now() - interval '295 minutes');
 select pg_temp.msg(c, 'a1111111-1111-4111-8111-111111111111', 'instagram', 'inbound', 'contact', 'received',
   'Hi there, I love your realism work', 200)
   from unnest(array['03', '04', '05']) c;
@@ -156,8 +169,8 @@ select is((select v -> 'examples' -> 0 ->> 'reply' from ctx),
   'Hey mate! I charge £140 per hour or £980 for a full day 🙌🏻',
   'the example is the artist''s own reply from a client conversation');
 select is((select v -> 'examples' -> 0 ->> 'client' from ctx),
-  'Hello, could you tell me your prices for a half sleeve?',
-  'the example carries the client message it answered');
+  'Ingested late, written just before the reply',
+  'the example pairs the reply with the client message just before it in provider time');
 select ok((select (v -> 'examples')::text !~ '(Personal reply|Kristina reply|Automated booking|Please fill in the enquiry form)' from ctx),
   'no personal, other-artist, automated or canned reply is an example');
 
