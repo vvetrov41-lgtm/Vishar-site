@@ -930,6 +930,9 @@ insert into expected_function_acl values
   ('public.list_review_suggestions(uuid)', false, true, false),
   ('public.act_on_review_suggestion(uuid,uuid,text,uuid,integer)', false, true, false),
   ('public.send_healing_question(uuid,uuid,uuid)', false, true, false),
+  ('public.list_review_followups(uuid)', false, true, false),
+  ('public.ask_for_review(uuid,uuid,uuid,text)', false, true, false),
+  ('public.close_review_request(uuid,uuid,uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
