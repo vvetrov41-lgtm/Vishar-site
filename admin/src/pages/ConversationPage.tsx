@@ -23,6 +23,7 @@ import { useLanguage } from '../lib/i18n';
 import { Link, useRouter } from '../lib/router';
 import { useApi, useSession } from '../lib/session';
 import type { OutgoingReviewIssue } from '../lib/outgoing-review-api';
+import { ReplyDraftError, type ReplyDraftFailure } from '../lib/reply-draft-api';
 import { ClientContextStrip } from '../components/ClientContextStrip';
 import { ConversationOperatorState } from '../components/ConversationOperatorState';
 import { can } from '../lib/permissions';
@@ -82,6 +83,13 @@ const COPY = {
     reviewWarnings: 'AI found items worth checking. Edit the text or send manually if you are sure.',
     reviewUnavailable: 'AI check is unavailable. Check the details yourself before sending.',
     sendAnyway: 'Send anyway',
+    suggestReply: 'Suggest reply',
+    suggesting: 'Writing a draft…',
+    draftNotice: 'Draft from your past replies. Read and edit it before sending: nothing is sent until you press Send.',
+    draftWindowClosed: 'The WhatsApp 24-hour window is closed, so no draft was written. A reply now would fail.',
+    draftNothing: 'There is no client message to answer yet.',
+    draftDenied: 'You cannot get drafts for this conversation.',
+    draftUnavailable: 'A draft is unavailable right now. Write the reply yourself.',
     archived: 'Archived',
     archive: 'Archive',
     unarchive: 'Move back to the inbox',
@@ -141,6 +149,13 @@ const COPY = {
     reviewWarnings: 'AI нашёл спорные моменты. Исправь текст или отправь вручную, если всё верно.',
     reviewUnavailable: 'Проверка AI недоступна. Проверь детали самостоятельно перед отправкой.',
     sendAnyway: 'Всё равно отправить',
+    suggestReply: 'Предложить ответ',
+    suggesting: 'Пишем черновик…',
+    draftNotice: 'Черновик по твоим прошлым ответам. Прочитай и поправь его: ничего не уйдёт, пока ты не нажмёшь «Отправить».',
+    draftWindowClosed: 'Окно WhatsApp 24 часа закрыто, поэтому черновик не написан. Ответ сейчас не дойдёт.',
+    draftNothing: 'Пока нет сообщения клиента, на которое нужно ответить.',
+    draftDenied: 'Для этого диалога черновики недоступны.',
+    draftUnavailable: 'Черновик сейчас недоступен. Напиши ответ сам.',
     archived: 'В архиве',
     archive: 'В архив',
     unarchive: 'Вернуть в список',
@@ -171,6 +186,18 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   const [actionError, setActionError] = useState<string | null>(null);
   const [body, setBody] = useState('');
   const [review, setReview] = useState<{ target: string; body: string; issues: OutgoingReviewIssue[]; unavailable: boolean } | null>(null);
+  // The draft only fills the textarea. Sending stays the existing two-step
+  // review-then-send path, so a draft is never sent without the artist.
+  const [drafting, setDrafting] = useState(false);
+  const [draftState, setDraftState] = useState<{ target: string; outcome: 'filled' | ReplyDraftFailure } | null>(null);
+  const { data: draftsAvailable } = useAsync<boolean>(
+    () => (mayReply ? api.replyDraftsAvailable() : Promise.resolve(false)),
+    [api, mayReply],
+  );
+  const { data: attention } = useAsync(
+    () => (draftsAvailable ? api.getConversationAttention(conversationId) : Promise.resolve(null)),
+    [api, conversationId, draftsAvailable],
+  );
 
   const {
     data: conversation, loading, error, reload,
@@ -240,6 +267,34 @@ export function ConversationPage({ conversationId }: { conversationId: string })
   // closes over a plain channel value rather than the whole record.
   const replyChannel = conversation.channel;
   const canSend = mayReply && !archived;
+  // Not offered in personal chats or while the attention read is unknown.
+  const canSuggest = canSend && draftsAvailable === true
+    && attention != null && attention.not_crm_at == null;
+
+  async function suggest() {
+    setDrafting(true);
+    setActionError(null);
+    try {
+      const draft = await api.suggestReply(conversationId);
+      setBody(draft.slice(0, 1000));
+      setReview(null);
+      setDraftState({ target: conversationId, outcome: 'filled' });
+    } catch (cause) {
+      const reason: ReplyDraftFailure = cause instanceof ReplyDraftError ? cause.reason : 'unavailable';
+      setDraftState({ target: conversationId, outcome: reason });
+    } finally {
+      setDrafting(false);
+    }
+  }
+  const draftMessage = draftState && draftState.target === conversationId
+    ? {
+      filled: copy.draftNotice,
+      window_closed: copy.draftWindowClosed,
+      nothing_to_answer: copy.draftNothing,
+      access_denied: copy.draftDenied,
+      unavailable: copy.draftUnavailable,
+    }[draftState.outcome]
+    : null;
 
   async function send(event: FormEvent) {
     event.preventDefault();
@@ -464,11 +519,14 @@ export function ConversationPage({ conversationId }: { conversationId: string })
               id="conversation-reply"
               value={body}
               maxLength={1000}
-              disabled={busy}
+              disabled={busy || drafting}
               placeholder={copy.replyPlaceholder}
               onChange={(event) => { setBody(event.target.value); setReview(null); }}
             />
             <p className="notice">{copy.windowNotice}</p>
+            {draftMessage ? (
+              <p className={draftState?.outcome === 'filled' ? 'notice' : 'notice warn'} role="status">{draftMessage}</p>
+            ) : null}
             {review && review.target === conversationId && review.body === body.trim() ? (
               <div className={review.unavailable || review.issues.length ? 'notice warn' : 'notice'} role="status">
                 <p>{review.unavailable ? copy.reviewUnavailable
@@ -479,7 +537,12 @@ export function ConversationPage({ conversationId }: { conversationId: string })
               </div>
             ) : null}
             <div className="actions">
-              <button type="submit" className="primary" disabled={busy || !body.trim()}>
+              {canSuggest ? (
+                <button type="button" disabled={busy || drafting} onClick={() => { void suggest(); }}>
+                  {drafting ? copy.suggesting : copy.suggestReply}
+                </button>
+              ) : null}
+              <button type="submit" className="primary" disabled={busy || drafting || !body.trim()}>
                 {busy ? (review ? copy.sending : copy.reviewing)
                   : review && review.body === body.trim() && review.target === conversationId
                     ? (review.unavailable || review.issues.length ? copy.sendAnyway : copy.send)
