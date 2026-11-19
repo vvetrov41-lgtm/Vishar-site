@@ -157,6 +157,8 @@ export function verifyTodayLineage(source) {
     // Reconcile six function bodies with production: each body is the exact
     // production definition, so production behaviour does not change.
     ['20261116170000', '20261117100000'],
+    // Resolve explicit WhatsApp conversation closings before reply reminders.
+    ['20261117100000', '20261119090000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
