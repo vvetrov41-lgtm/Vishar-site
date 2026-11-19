@@ -58,8 +58,10 @@ deposit".
   Worker. The synthetic internal hostname is the capability boundary; the route
   is unreachable from the public Worker URL and never receives browser CORS.
 - Scheduler: the existing `vishar-telegram-drain-production` cron. No new cron.
-- Model tasks: `crm_client_state` and `vision_reference_extraction`, both
-  Qwen-first through the existing router. No new provider and no new API key.
+- Model tasks: `crm_client_state` (Llama, then Gemma 4 on the same Workers AI
+  binding) and `vision_reference_extraction` (Gemma 4, then Qwen), through the
+  existing router; order from the 2026-11-17 live eval. No new provider and no
+  new API key.
 - Production Supabase project only: `vfjexhfdbrjmuxfdvbdx`.
 
 ## Switches

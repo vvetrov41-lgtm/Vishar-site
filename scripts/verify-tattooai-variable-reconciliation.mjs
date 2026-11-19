@@ -29,6 +29,16 @@ export function trackedVars(toml) {
   return values;
 }
 
+// Reviewed route changes this release applies. Before the deploy only, the
+// live value may still be the previous one listed here; after the deploy the
+// strict check (without the flag) requires the tracked value. Each entry names
+// the exact previous value, so any other drift still aborts the release.
+export const PENDING_CHANGES = Object.freeze(new Map([
+  // 2026-11-17 AI eval (run 44054777839), approved by the owner 2026-11-18.
+  ['AI_ROUTE_CRM_CLIENT_STATE', 'workers_ai,qwen'],
+  ['AI_ROUTE_VISION_REFERENCE_EXTRACTION', 'qwen,workers_ai'],
+]));
+
 function bindingsFrom(snapshot) {
   if (!snapshot || snapshot.success !== true || !Array.isArray(snapshot.result?.bindings)) {
     throw new Error('Cloudflare Worker settings unavailable');
@@ -45,13 +55,18 @@ function bindingsFrom(snapshot) {
   return snapshot.result.bindings;
 }
 
-export function verifySnapshot(snapshot, tracked, { allowLegacyDeepseek = false, before = null } = {}) {
+export function verifySnapshot(snapshot, tracked, {
+  allowLegacyDeepseek = false, before = null, pendingChanges = null,
+} = {}) {
   const bindings = bindingsFrom(snapshot);
   const remote = new Map(bindings.filter(item => item.type === 'plain_text')
     .map(item => [item.name, item.text]));
   for (const [name, value] of tracked) {
     if (!remote.has(name)) throw new Error('Tracked Cloudflare variable missing: ' + name);
-    if (remote.get(name) !== value) throw new Error('Tracked Cloudflare variable drift: ' + name);
+    if (remote.get(name) !== value
+      && !(pendingChanges?.has(name) && remote.get(name) === pendingChanges.get(name))) {
+      throw new Error('Tracked Cloudflare variable drift: ' + name);
+    }
   }
   const remoteOnly = [...remote.keys()].filter(name => !tracked.has(name)).sort();
   if (!(remoteOnly.length === 0
@@ -91,7 +106,19 @@ function selfTest() {
   const secretLoss = structuredClone(base);
   secretLoss.result.bindings = secretLoss.result.bindings.filter(item => item.name !== 'SERVICE_KEY');
   assert.throws(() => verifySnapshot(secretLoss, vars, { before: base }), /Non-plaintext bindings/);
-  console.log('TattooAI variable reconciliation self-test: 7 safety checks passed.');
+  for (const name of PENDING_CHANGES.keys()) assert.ok(vars.has(name), 'pending change is tracked: ' + name);
+  const pending = structuredClone(base);
+  for (const [name, previous] of PENDING_CHANGES) {
+    pending.result.bindings.find(item => item.name === name).text = previous;
+  }
+  assert.equal(verifySnapshot(pending, vars, { pendingChanges: PENDING_CHANGES }).legacyVariablePresent, false);
+  assert.throws(() => verifySnapshot(pending, vars), /drift/);
+  const otherValue = structuredClone(base);
+  otherValue.result.bindings.find(item => item.name === 'AI_ROUTE_CRM_CLIENT_STATE').text = 'qwen';
+  assert.throws(() => verifySnapshot(otherValue, vars, { pendingChanges: PENDING_CHANGES }), /drift/);
+  const otherName = structuredClone(drift);
+  assert.throws(() => verifySnapshot(otherName, vars, { pendingChanges: PENDING_CHANGES }), /drift/);
+  console.log('TattooAI variable reconciliation self-test: 11 safety checks passed.');
 }
 
 const argv = process.argv.slice(2);
@@ -106,10 +133,11 @@ if (argv[0] === '--self-test') {
   const tracked = trackedVars(fs.readFileSync(new URL('../wrangler.toml', import.meta.url), 'utf8'));
   const result = verifySnapshot(JSON.parse(fs.readFileSync(file, 'utf8')), tracked, {
     allowLegacyDeepseek: argv.includes('--allow-legacy-deepseek'),
+    pendingChanges: argv.includes('--allow-pending-changes') ? PENDING_CHANGES : null,
     before,
   });
   console.log('Cloudflare AI bindings verified: ' + result.trackedVariables
     + ' tracked variables; DeepSeek orphan ' + (result.legacyVariablePresent ? 'present before cleanup' : 'absent') + '.');
 } else {
-  throw new Error('Usage: --self-test or --check settings.json [--allow-legacy-deepseek] [--compare-before before.json]');
+  throw new Error('Usage: --self-test or --check settings.json [--allow-legacy-deepseek] [--allow-pending-changes] [--compare-before before.json]');
 }

@@ -924,6 +924,10 @@ insert into expected_function_acl values
   ('public.list_client_visit_outcomes(uuid)', false, true, false),
   -- Fill a cancelled slot: read-only, re-checks view_sessions + view_clients.
   ('public.list_cancelled_slot_candidates(uuid)', false, true, false),
+  -- Google review request (20261118230000): suggestions re-check view_clients +
+  -- view_sessions; later/don't-ask decisions need send_communications.
+  ('public.list_review_suggestions(uuid)', false, true, false),
+  ('public.act_on_review_suggestion(uuid,uuid,text,uuid,integer)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
@@ -988,7 +992,7 @@ select ok(
        'message_templates', 'client_marketing_consent',
        'communication_suppressions',
        'invoices', 'invoice_line_items', 'credit_notes',
-      'monzo_recorded_receipt_links', 'visit_outcomes', 'visit_outcome_revisions')),
+      'monzo_recorded_receipt_links', 'visit_outcomes', 'visit_outcome_revisions', 'review_requests')),
   'every CRM table has row level security enabled and forced'
 );
 

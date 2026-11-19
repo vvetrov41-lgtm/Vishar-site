@@ -108,7 +108,8 @@ jobs:
           jq -e '.success == true and any(.result.bindings[]?; .name == "AI" and .type == "ai")' "$RUNNER_TEMP/tattooai-settings-before.json" >/dev/null
           # The sole permitted remote-only plaintext binding is retired DeepSeek.
           # Abort before deploying if any tracked setting changed in Cloudflare.
-          node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-before.json" --allow-legacy-deepseek
+          # Only the exact previous values listed in PENDING_CHANGES pass here.
+          node scripts/verify-tattooai-variable-reconciliation.mjs --check "$RUNNER_TEMP/tattooai-settings-before.json" --allow-legacy-deepseek --allow-pending-changes
       - name: Deploy exact code snapshot
         uses: cloudflare/wrangler-action@9acf94ace14e7dc412b076f2c5c20b8ce93c79cd # v3
         with:
