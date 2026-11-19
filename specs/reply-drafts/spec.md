@@ -44,10 +44,13 @@ Corpus available for examples (read-only query, 2026-11-18):
   The draft follows the client's language.
 - **Facts.** Every number in a draft must appear in the conversation or in the
   artist's standard facts. Otherwise the draft is rejected, never trimmed.
-  Standard facts (pending Vladimir's decision, 2026-11-18): hourly rate £140,
-  day rate £980 for 7 hours, free consultation at the West Kensington studio.
-  Project estimates, dates, availability, deposits and payment details stay
-  the artist's to write.
+  Standard facts (Vladimir, 2026-11-19: "only rates"): hourly rate £140 and
+  day rate £980 for 7 hours. Project estimates, dates, availability, deposits
+  and payment details stay the artist's to write.
+- **Consultation** is not offered by default. A draft may suggest the free
+  consultation at the West Kensington studio only when the client's latest
+  messages show doubt (unsure about the design, the placement, a cover-up
+  or whether to go ahead).
 - **Window.** When the WhatsApp service window is closed the button says so
   before drafting; the composer's existing failure path is unchanged.
 - **Not offered** in not-CRM conversations, archived conversations, or for an
