@@ -453,7 +453,7 @@ function offerAttributionConsentUpgrade() {
   banner.setAttribute('aria-label', 'Booking source analytics consent');
   banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
   banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional booking source history: with your permission, this site can remember the first and latest known visit sources for 30 days, and link them to an enquiry if you send one. No previous visits are recovered. <a href="/privacy/" class="text-white/80 underline">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="touch-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black">Allow</button><button type="button" id="touch-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm text-white/70">No thanks</button></div>';
-  document.body.appendChild(banner);
+  (document.getElementById('booking-consent') || document.body).appendChild(banner);
   banner.querySelector('#touch-accept').addEventListener('click', function () {
     setTouchConsent('granted');
     captureTouchAttribution();
@@ -488,7 +488,7 @@ banner.innerHTML = `
     <button type="button" id="cookie-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button>
     <button type="button" id="cookie-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button>
   </div>`;
-document.body.appendChild(banner);
+(document.getElementById('booking-consent') || document.body).appendChild(banner);
 
 banner.querySelector('#cookie-accept').addEventListener('click', function () {
   setConsent('granted');

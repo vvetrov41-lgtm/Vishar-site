@@ -126,6 +126,14 @@
     ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:0 0}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:10px}
     .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
     .hero-title{letter-spacing:-.025em}
+    @media (max-width: 639px) and (max-height: 680px) {
+        main > header { align-items: flex-start; padding-top: 4rem; }
+        .hero-title { font-size: 1.875rem; line-height: 1.2; margin-bottom: .5rem; }
+        .hero-specialty { font-size: .875rem; line-height: 1.5; margin-bottom: .5rem; }
+        .hero-rate { margin-bottom: .5rem; }
+        #cookie-consent { padding: 1rem; }
+        #cookie-consent > p { line-height: 1.5; margin-bottom: .75rem; }
+    }
 .sticky-cta{position:fixed;bottom:0;left:0;right:0;z-index:90;padding:12px 16px;padding-bottom:max(12px,env(safe-area-inset-bottom));background:rgba(0,0,0,.85);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px);border-top:1px solid rgba(255,255,255,.08);transform:translateY(0);transition:transform .35s cubic-bezier(.4,0,.2,1),opacity .35s ease;opacity:1}
     .sticky-cta.hidden-cta{transform:translateY(100%);opacity:0;pointer-events:none}
     .sticky-cta a{display:block;width:100%;text-align:center;padding:14px 24px;background:#fff;color:#000;border-radius:9999px;font-weight:600;font-size:.875rem;transition:background .2s,transform .15s}
@@ -265,19 +273,19 @@
         </div>
         <div class="relative z-10 max-w-4xl fade-in">
             <h1 class="hero-title text-5xl md:text-8xl font-semibold mb-6 tracking-tight">Realism, made to last.</h1>
-            <p class="text-xl md:text-2xl text-white/60 mb-10 font-light">Colour and black-and-grey realism. Now accepting enquiries for future London appointments.</p>
+            <p class="hero-specialty text-xl md:text-2xl text-white/60 mb-4 font-light">Colour and black-and-grey realism.</p>
+            <p class="hero-rate text-sm leading-relaxed text-white/80 mb-6">
+                <span class="block sm:inline">Private studio in West Kensington, London</span>
+                <span class="hidden sm:inline" aria-hidden="true"> · </span><span>£140/hour · £980 for 7 hours</span>
+            </p>
             <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
                 <div class="flex flex-col items-center max-w-xs">
-                    <a href="/booking/" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Send your concept</a>
+                    <a href="/booking/" class="px-8 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-all active:scale-95">Send a tattoo enquiry</a>
                     <p class="mt-3 text-xs leading-relaxed text-white/60">Your enquiry goes directly to me. I’ll review it before offering a consultation or date.</p>
                 </div>
                 <a href="#portfolio" class="px-8 py-3 text-white font-medium hover:underline flex items-center gap-2">View Work →</a>
             </div>
-            <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4 text-white/60 text-sm">
-                <div class="flex items-center gap-2"><span class="text-white/80">✦</span><span>Custom designs only, no flash</span></div>
-                <div class="flex items-center gap-2"><span class="text-white/80">✦</span><span>London enquiries now open</span></div>
-                <div class="flex items-center gap-2"><span class="text-white/80">✦</span><span>£140/hr · <span data-booking-window>Check current availability</span></span></div>
-            </div>
+            <p class="mt-8 text-white/60 text-sm">Custom designs only, no flash</p>
             <p class="hero-featured text-white/50" aria-label="Recognition">Featured in Global Tattoo Mag · Ink Legends Magazine · Big London Tattoo Show 2025</p>
         </div>
     </header>
@@ -430,7 +438,7 @@
             <div>
                 <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-4">About the artist</p>
                 <h2 class="text-3xl md:text-5xl font-semibold tracking-tight mb-6">Realism built around you.</h2>
-                <p class="text-base md:text-lg text-white/60 leading-relaxed mb-6">I'm Vladimir Vishar, a tattoo artist specialising in Colour Realism and Black &amp; Grey. I create custom portraits, large-scale projects and cover-ups, with London appointments now open.</p>
+                <p class="text-base md:text-lg text-white/60 leading-relaxed mb-6">I'm Vladimir Vishar, a tattoo artist specialising in Colour Realism and Black &amp; Grey. I create custom portraits, large-scale projects and cover-ups.</p>
                 <div class="space-y-3 text-sm leading-relaxed text-white/60 mb-8">
                     <p><span class="text-white font-medium">Designed for your body.</span> Placement, scale and flow come first.</p>
                     <p><span class="text-white font-medium">Guided by your references.</span> Every composition is adapted into a custom tattoo.</p>
@@ -487,14 +495,14 @@
                 <div>
                     <h2 class="text-5xl font-semibold mb-8 tracking-tighter leading-tight">Let's build your piece.</h2>
                     <div class="space-y-8">
-                        <div><p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Location</p><p class="text-2xl font-light">London · studio details confirmed with appointment</p></div>
+                        <div><p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Location</p><p class="text-2xl font-light">West Kensington, London. I’ll confirm the exact address with your appointment.</p></div>
                         <div><p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Inquiries</p><a href="mailto:info@vishartattoo.com" class="text-2xl font-light hover:text-white transition-colors">info@vishartattoo.com</a></div>
                         <div><p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2">Social</p><a href="https://www.instagram.com/vladimir_vishar" target="_blank" rel="noopener noreferrer" class="text-2xl font-light hover:text-white transition-colors">Instagram</a></div>
                     </div>
                 </div>
                 <div class="flex items-center justify-center md:justify-end">
                     <div class="flex flex-col items-center gap-3">
-                        <a href="/booking/" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110 glow-border"><span class="text-xl font-medium tracking-tight">Send your concept <br><span class="text-sm font-light opacity-60">£140/hr</span></span></a>
+                        <a href="/booking/" class="w-64 h-64 rounded-full border border-white/10 flex items-center justify-center text-center p-8 group hover:bg-white hover:text-black transition-all duration-500 scale-100 hover:scale-110 glow-border"><span class="text-xl font-medium tracking-tight">Send a tattoo enquiry <br><span class="text-sm font-light opacity-60">£140/hour · £980 for 7 hours</span></span></a>
                         <p class="text-xs leading-relaxed text-white/60 text-center max-w-xs">Your enquiry goes directly to me. I’ll review it before offering a consultation or date.</p>
                     </div>
                 </div>
