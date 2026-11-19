@@ -26,6 +26,7 @@ import {
   isAppointmentClientActionPath,
 } from './routes/appointment-client-action.js';
 import { handleOutgoingMessageReview, isOutgoingMessageReviewPath } from './routes/outgoing-message-review.js';
+import { handleReplyDraft, isReplyDraftPath } from './routes/reply-draft.js';
 import {
   handleAiRouterProbeRequest,
   isAiRouterProbePath,
@@ -270,6 +271,9 @@ export default {
     // public booking origins. Rate-limited like every other public POST.
     if (isOutgoingMessageReviewPath(request)) {
       return handleOutgoingMessageReview(request, env);
+    }
+    if (isReplyDraftPath(request)) {
+      return handleReplyDraft(request, env);
     }
     if (isEnquiryTranslationPath(request)) {
       return handleEnquiryTranslationRequest(request, env);

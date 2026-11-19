@@ -169,6 +169,21 @@ const TASKS = Object.freeze({
     structured: true,
   },
 
+  // "Suggest reply" in the CRM composer (specs/reply-drafts): one draft in
+  // the artist's voice from the conversation and their own past replies.
+  // Gemma leads (best Workers AI fidelity in the 2026-10-04 and 2026-11-17
+  // evals), Qwen falls back. The artist edits and sends; nothing auto-sends.
+  reply_draft: {
+    capability: 'drafting',
+    modality: 'text',
+    chain: ['workers_ai', 'qwen'],
+    workersAiModel: '@cf/google/gemma-4-26b-a4b-it',
+    timeoutMs: 25_000,
+    maxOutputTokens: 500,
+    temperature: 0.4,
+    structured: true,
+  },
+
   // Manual Russian translation of a client's enquiry, on the artist's click
   // only. Never the incumbent Llama 8B: its Russian changed placements and
   // subjects in production (2026-10-04 audit). Live eval 2026-10-04 on 10
