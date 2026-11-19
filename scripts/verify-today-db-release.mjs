@@ -157,6 +157,9 @@ export function verifyTodayLineage(source) {
     // Reconcile six function bodies with production: each body is the exact
     // production definition, so production behaviour does not change.
     ['20261116170000', '20261117100000'],
+    // Google review request, phase 1: review links, decision table and
+    // read/decide RPCs. No send, queue or UI.
+    ['20261117100000', '20261118230000'],
     // Reply drafts: read-only, operator-scoped draft context and voice
     // examples. No write, no queue, no client send. Follows the review
     // request suggestions (#1310, 20261118230000).

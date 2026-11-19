@@ -179,14 +179,19 @@ await test('every declared task resolves to known providers and bounded limits',
 });
 
 await test('default task chains match the verified production routes', () => {
-  for (const name of ['enquiry_intake', 'crm_client_state', 'crm_draft_reply',
-      'enquiry_translation', 'concept_consult', 'aftercare_support']) {
+  for (const name of ['enquiry_intake', 'crm_draft_reply',
+      'enquiry_translation', 'concept_consult', 'aftercare_support',
+      'vision_reference_extraction']) {
     assert.deepEqual([...tasks.resolveTask({}, name, router.PROVIDER_IDS).chain],
       ['workers_ai', 'qwen'], name);
   }
+  // Llama, then Gemma on the same binding (2026-11-17 eval: Qwen 39 s > 30 s).
+  const clientState = tasks.resolveTask({}, 'crm_client_state', router.PROVIDER_IDS);
+  assert.deepEqual([...clientState.chain], ['workers_ai', 'workers_ai']);
+  assert.deepEqual([...clientState.workersAiModels], [null, GEMMA_MODEL]);
   for (const name of ['text_summarization', 'text_classification',
       'text_extraction', 'high_quality_reasoning', 'vision_reference_understanding',
-      'vision_document_extraction', 'vision_reference_extraction']) {
+      'vision_document_extraction']) {
     assert.deepEqual([...tasks.resolveTask({}, name, router.PROVIDER_IDS).chain],
       ['qwen', 'workers_ai'], name);
   }
@@ -455,6 +460,68 @@ await test('Qwen vision failure falls through to Gemma on the same binding', asy
   assert.equal(recovered.fallbackUsed, true);
   assert.equal(stub.calls.length, 2);
   assert.deepEqual(stub.calls.map((call) => call.model), [QWEN_MODEL, GEMMA_MODEL]);
+});
+
+await test('client state falls back from Llama to Gemma, never to Qwen', async () => {
+  const stub = aiBinding((model) => (model === LLAMA_MODEL
+    ? new Error('model overloaded')
+    : { response: '{"label":"ok"}' }));
+  const result = await router.runModelTask({ AI: stub.AI }, 'crm_client_state', textInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(result.ok, true);
+  assert.equal(result.provider, 'workers_ai');
+  assert.equal(result.model, GEMMA_MODEL);
+  assert.equal(result.fallbackUsed, true);
+  assert.deepEqual(stub.calls.map((call) => call.model), [LLAMA_MODEL, GEMMA_MODEL]);
+  assert.equal(stub.calls[1].input.chat_template_kwargs?.enable_thinking, false);
+
+  const healthy = aiBinding(() => ({ response: '{"label":"ok"}' }));
+  const first = await router.runModelTask({ AI: healthy.AI }, 'crm_client_state', textInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(first.model, LLAMA_MODEL);
+  assert.equal(first.fallbackUsed, false);
+  assert.equal(healthy.calls.length, 1);
+});
+
+await test('only a task with a Workers AI fallback model may repeat workers_ai in an env route', () => {
+  const pinned = tasks.resolveTask({ AI_ROUTE_CRM_CLIENT_STATE: 'workers_ai,workers_ai' }, 'crm_client_state', router.PROVIDER_IDS);
+  assert.equal(pinned.routeSource, 'env');
+  assert.deepEqual([...pinned.workersAiModels], [null, GEMMA_MODEL]);
+  const rollback = tasks.resolveTask({ AI_ROUTE_CRM_CLIENT_STATE: 'workers_ai,qwen' }, 'crm_client_state', router.PROVIDER_IDS);
+  assert.deepEqual([...rollback.chain], ['workers_ai', 'qwen'], 'the old route stays available as a rollback');
+  assert.deepEqual([...rollback.workersAiModels], [null, null]);
+  for (const route of ['qwen,qwen', 'workers_ai,workers_ai,workers_ai']) {
+    assert.equal(tasks.resolveTask({ AI_ROUTE_CRM_CLIENT_STATE: route }, 'crm_client_state', router.PROVIDER_IDS).routeSource,
+      'default', route);
+  }
+  const other = tasks.resolveTask({ AI_ROUTE_CRM_DRAFT_REPLY: 'workers_ai,workers_ai' }, 'crm_draft_reply', router.PROVIDER_IDS);
+  assert.equal(other.routeSource, 'default', 'no fallback model, no repeat');
+});
+
+await test('the production and preview routes match the compiled defaults for the 2026-11-17 order', () => {
+  const toml = readFileSync(path.join(rootDir, 'wrangler.toml'), 'utf8');
+  const values = (name) => [...toml.matchAll(new RegExp('^' + name + ' = "([^"]*)"$', 'gm'))].map((m) => m[1]);
+  assert.deepEqual(values('AI_ROUTE_CRM_CLIENT_STATE'), ['workers_ai,workers_ai', 'workers_ai,workers_ai']);
+  assert.deepEqual(values('AI_ROUTE_VISION_REFERENCE_EXTRACTION'), ['workers_ai,qwen', 'workers_ai,qwen']);
+});
+
+await test('reference extraction runs Gemma first and falls back to Qwen', async () => {
+  const healthy = aiBinding(() => ({ response: '{"label":"red square"}' }));
+  const first = await router.runModelTask({ AI: healthy.AI }, 'vision_reference_extraction', visionInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(first.ok, true);
+  assert.equal(first.model, GEMMA_MODEL);
+  assert.deepEqual(healthy.calls.map((call) => call.model), [GEMMA_MODEL]);
+
+  const stub = aiBinding((model) => (model === GEMMA_MODEL
+    ? new Error('vision unavailable')
+    : { response: '{"label":"red square"}' }));
+  const recovered = await router.runModelTask({ AI: stub.AI }, 'vision_reference_extraction', visionInput,
+    { fetchImpl: forbiddenFetch(), requiredKeys: ['label'] });
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.provider, 'qwen');
+  assert.equal(recovered.model, QWEN_MODEL);
+  assert.deepEqual(stub.calls.map((call) => call.model), [GEMMA_MODEL, QWEN_MODEL]);
 });
 
 await test('without the binding nothing is attempted', async () => {

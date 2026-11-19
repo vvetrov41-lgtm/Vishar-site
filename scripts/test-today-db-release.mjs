@@ -638,6 +638,19 @@ for (const bad of [
   functionBodyReconcile.replace('20261116170000 | 20261116170000', '20261116170000 | '),
   functionBodyReconcile + '\n 20261117110000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+// Review request suggestions follow the function body reconciliation.
+const reviewRequestSuggestions = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261117100000 | 20261117100000 | t',
+  ' 20261118230000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(reviewRequestSuggestions), '20261118230000');
+assert.equal(deferredTodayMigration(reviewRequestSuggestions), null);
+for (const bad of [
+  reviewRequestSuggestions.replace('20261118230000 | |', '20261118230001 | |'),
+  reviewRequestSuggestions.replace('20261117100000 | 20261117100000', '20261117100000 | '),
+  reviewRequestSuggestions + '\n 20261118240000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 // Reply draft context follows the review request suggestions.
 const replyDraftContext = [
   ' Local | Remote | Time (UTC)',
