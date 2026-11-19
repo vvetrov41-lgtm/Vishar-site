@@ -710,3 +710,12 @@ assert.throws(() => verifyTodayLineage(enquiryFactConflicts.replace(
   '20261115121000 | 20261115121000', '20261115121000 | '
 )));
 assert.throws(() => verifyTodayLineage(enquiryFactConflicts + '\n 20261115200000 | | t'));
+
+const explicitReplyClosings = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261118230000 | 20261118230000 | t',
+  ' 20261119090000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(explicitReplyClosings), '20261119090000');
+assert.equal(deferredTodayMigration(explicitReplyClosings), null);
+assert.throws(() => verifyTodayLineage(explicitReplyClosings + '\n 20261119090100 | | t'));
