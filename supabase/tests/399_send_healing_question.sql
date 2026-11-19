@@ -1,4 +1,4 @@
--- 398_send_healing_question.sql
+-- 399_send_healing_question.sql
 -- Google review request, phase 2a: the artist's "Ask" button queues the
 -- approved WhatsApp template vishar_healing_check_v1 for a current healing
 -- suggestion, and the WhatsApp drain resolver re-checks it at send time.

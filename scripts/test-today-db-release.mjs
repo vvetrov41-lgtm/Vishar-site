@@ -719,10 +719,23 @@ const explicitReplyClosings = [
 assert.equal(verifyTodayLineage(explicitReplyClosings), '20261119090000');
 assert.equal(deferredTodayMigration(explicitReplyClosings), null);
 assert.throws(() => verifyTodayLineage(explicitReplyClosings + '\n 20261119090100 | | t'));
+// Reply draft context follows the explicit conversation closings.
+const replyDraftContext = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261119090000 | 20261119090000 | t',
+  ' 20261119100000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(replyDraftContext), '20261119100000');
+assert.equal(deferredTodayMigration(replyDraftContext), null);
+for (const bad of [
+  replyDraftContext.replace('20261119100000 | |', '20261119100001 | |'),
+  replyDraftContext.replace('20261119090000 | 20261119090000', '20261119090000 | '),
+  replyDraftContext + '\n 20261119110000 | | t',
+]) assert.throws(() => verifyTodayLineage(bad));
 
 const sendHealingQuestion = [
   ' Local | Remote | Time (UTC)',
-  ' 20261119090000 | 20261119090000 | t',
+  ' 20261119100000 | 20261119100000 | t',
   ' 20261119120000 | | t',
 ].join('\n');
 assert.equal(verifyTodayLineage(sendHealingQuestion), '20261119120000');
