@@ -719,3 +719,12 @@ const explicitReplyClosings = [
 assert.equal(verifyTodayLineage(explicitReplyClosings), '20261119090000');
 assert.equal(deferredTodayMigration(explicitReplyClosings), null);
 assert.throws(() => verifyTodayLineage(explicitReplyClosings + '\n 20261119090100 | | t'));
+
+const sendHealingQuestion = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261119090000 | 20261119090000 | t',
+  ' 20261119120000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(sendHealingQuestion), '20261119120000');
+assert.equal(deferredTodayMigration(sendHealingQuestion), null);
+assert.throws(() => verifyTodayLineage(sendHealingQuestion + '\n 20261119120100 | | t'));
