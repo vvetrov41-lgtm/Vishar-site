@@ -55,9 +55,13 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const keys = useRef(new OperationKeys());
+  // Only the newest load may write: an older one, or one for a scope that
+  // has since changed, must not put another artist's buttons on screen.
+  const generation = useRef(0);
   const scope = artistIds.join(',');
 
   const load = useCallback(async () => {
+    const mine = ++generation.current;
     const ids = scope ? scope.split(',') : [];
     const results = await Promise.all(ids.map(async (artistId): Promise<ArtistLists | 'unavailable' | 'failed'> => {
       try {
@@ -85,9 +89,12 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
         return 'failed';
       }
     }));
+    if (mine !== generation.current) return;
     setLists(results.filter((row): row is ArtistLists => typeof row === 'object'));
     setLoadError(results.includes('failed'));
   }, [api, scope]);
+
+  useEffect(() => () => { generation.current += 1; }, []);
 
   useEffect(() => {
     setLists(null);

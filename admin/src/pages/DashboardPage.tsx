@@ -385,7 +385,12 @@ export function DashboardPage() {
       />
 
       {mayManageReviews && !scopeLoading ? (
-        <HealingReviews artistIds={healingArtistIds} canDecide={mayManageReviews} />
+        <HealingReviews
+          // A new artist scope is a new block: nothing in flight carries over.
+          key={selectedArtistId ?? 'all'}
+          artistIds={healingArtistIds}
+          canDecide={mayManageReviews}
+        />
       ) : null}
 
       <Section title={t('today.ahead')}>
