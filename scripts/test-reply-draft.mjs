@@ -74,6 +74,8 @@ await test('a grounded draft is returned and nothing is sent', async () => {
 await test('numbers that only an example carries are rejected', async () => {
   assert.equal(diagnoseDraft({ draft: 'We could do 14 and 15 November' }, context), 'ungrounded_number');
   assert.equal(diagnoseDraft({ draft: 'Around 3 sessions I think' }, context), 'ungrounded_number');
+  assert.equal(diagnoseDraft({ draft: 'It is £140.00 per hour or £980.00 for 7.0 hours' }, context), null, 'equivalent rate formats are grounded');
+  assert.equal(diagnoseDraft({ draft: 'It is £140.50 per hour' }, context), 'ungrounded_number');
   assert.equal(diagnoseDraft({ draft: 'Send the deposit and you are booked' }, context), 'unsafe');
   assert.equal(diagnoseDraft({ draft: 'See https://example.test' }, context), 'unsafe');
   assert.equal(diagnoseDraft({ draft: 'ok', extra: 1 }, context), 'shape');

@@ -101,7 +101,14 @@ export function buildDraftInput(context, maxChars = 11_000) {
 }
 
 const NUMBER_TOKEN = /\d+(?:[.,]\d+)*/g;
-const normalizeNumber = (token) => token.replace(/,(?=\d{3}\b)/g, '').replace(',', '.');
+// "£140.00", "140" and "1,400" vs "1400" must compare equal, so both sides
+// are reduced to the same canonical numeric string.
+const normalizeNumber = (token) => {
+  const plain = token.replace(/,(?=\d{3}\b)/g, '').replace(',', '.');
+  if (!/^\d+(?:\.\d+)?$/.test(plain)) return plain;
+  const n = Number(plain);
+  return Number.isFinite(n) ? String(n) : plain;
+};
 
 const FORBIDDEN = /https?:|www\.|\[(?:link|email|number)\]|\b(?:deposit|booked|confirmed|reserved?|guaranteed|bank|sort code|account number|invoice|pay(?:ment)? (?:now|here|link))\b|ignore (?:previous|all)|system prompt/i;
 
@@ -123,7 +130,7 @@ export function diagnoseDraft(value, context) {
   }
   for (const key of ['hourly_rate', 'full_day_rate', 'full_day_hours']) {
     const n = rateNumber(context?.rates?.[key]);
-    if (n !== null) known.add(String(n));
+    if (n !== null) known.add(normalizeNumber(String(n)));
   }
   for (const t of draft.match(NUMBER_TOKEN) ?? []) {
     if (!known.has(normalizeNumber(t))) return 'ungrounded_number';
