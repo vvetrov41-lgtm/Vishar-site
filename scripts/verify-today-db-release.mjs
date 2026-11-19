@@ -162,6 +162,9 @@ export function verifyTodayLineage(source) {
     ['20261117100000', '20261118230000'],
     // Resolve explicit conversation closings before reply reminders.
     ['20261118230000', '20261119090000'],
+    // Reply drafts: read-only, operator-scoped draft context and voice
+    // examples. No write, no queue, no client send.
+    ['20261119090000', '20261119100000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
