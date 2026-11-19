@@ -4,7 +4,9 @@
 -- client conversations, so a model can write in that artist's own voice.
 --
 -- Nothing here sends, queues or stores a message. Personal conversations
--- (not_crm_at) are never a draft target and never an example. Contact details
+-- (not_crm_at while no client or enquiry is linked, as in
+-- crm_private.conversation_hidden_as_not_crm) are never a draft target and
+-- never an example. Contact details
 -- are masked before any text leaves the database.
 
 create function crm_private.mask_reply_draft_text(p_text text)
@@ -63,7 +65,7 @@ begin
     from public.communication_conversations c
     where c.id = p_conversation_id
       and c.state::text = 'open'
-      and c.not_crm_at is null
+      and (c.not_crm_at is null or c.client_id is not null or c.enquiry_id is not null)
       and c.channel::text in ('whatsapp', 'instagram');
   if v_artist_id is null then
     raise exception 'conversation unavailable for a reply draft' using errcode = '42501';
@@ -129,7 +131,7 @@ begin
     join public.communication_conversations c on c.id = m.conversation_id
     where m.artist_id = v_artist_id
       and c.artist_id = v_artist_id
-      and c.not_crm_at is null
+      and (c.not_crm_at is null or c.client_id is not null or c.enquiry_id is not null)
       and c.id <> p_conversation_id
       and m.message_type = 'text'
       and nullif(btrim(coalesce(m.body, '')), '') is not null

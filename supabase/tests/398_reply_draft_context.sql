@@ -71,6 +71,7 @@ from public.artists a where a.id = 'a1111111-1111-4111-8111-111111111111';
 -- c06 personal chat marked not-CRM (Vladimir)
 -- c07 Kristina's conversation
 -- c08 personal chat marked not-CRM as a draft target
+-- c09 marked not-CRM earlier, since linked to a client: CRM work again
 insert into public.communication_conversations (
   id, artist_id, channel, integration_key, external_contact_id, client_id, link_state, state,
   last_message_at, last_inbound_at, not_crm_at
@@ -91,7 +92,10 @@ insert into public.communication_conversations (
   ('f3983333-0000-4000-8000-000000000007', 'a2222222-2222-4222-8222-222222222222', 'instagram',
    'ig_kristina', '5560000039807', null, 'unmatched', 'open', now(), now(), null),
   ('f3983333-0000-4000-8000-000000000008', 'a1111111-1111-4111-8111-111111111111', 'whatsapp',
-   'whatsapp_main', '447700939808', null, 'unmatched', 'open', now(), now(), now());
+   'whatsapp_main', '447700939808', null, 'unmatched', 'open', now(), now(), now()),
+  ('f3983333-0000-4000-8000-000000000009', 'a1111111-1111-4111-8111-111111111111', 'whatsapp',
+   'whatsapp_main', '447700939809', 'f3982222-2222-4222-8222-222222222201', 'linked', 'open',
+   now(), now(), now() - interval '2 days');
 
 create function pg_temp.msg(p_conv text, p_artist text, p_channel text, p_direction text,
   p_origin text, p_status text, p_body text, p_minutes integer)
@@ -177,6 +181,10 @@ select ok((select (v -> 'examples')::text !~ '(Personal reply|Kristina reply|Aut
 select throws_ok(
   $$select public.get_reply_draft_context('f3983333-0000-4000-8000-000000000008')$$,
   '42501', null, 'a personal (not-CRM) conversation is never a draft target'
+);
+select lives_ok(
+  $$select public.get_reply_draft_context('f3983333-0000-4000-8000-000000000009')$$,
+  'a formerly personal conversation linked to a client is a draft target again'
 );
 
 -- ---------------------------------------------------------------------------
