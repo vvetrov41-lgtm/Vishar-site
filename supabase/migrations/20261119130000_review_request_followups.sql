@@ -41,9 +41,10 @@ as $fn$
     on m.conversation_id = q.conversation_id and m.artist_id = rr.artist_id
   where rr.id = p_request_id
     and m.direction = 'inbound'
-    and m.created_at > rr.healing_asked_at
-    and m.created_at <= rr.healing_asked_at + interval '21 days'
-  order by m.created_at desc, m.id desc
+    -- When the client sent it, not when a late or replayed webhook stored it.
+    and coalesce(m.provider_timestamp, m.created_at) > rr.healing_asked_at
+    and coalesce(m.provider_timestamp, m.created_at) <= rr.healing_asked_at + interval '21 days'
+  order by coalesce(m.provider_timestamp, m.created_at) desc, m.id desc
   limit 1;
 $fn$;
 
@@ -94,7 +95,7 @@ begin
           'healing_message_status', q.status,
           'conversation_id', q.conversation_id,
           'status', case when r.id is null then 'awaiting_reply' else 'replied' end,
-          'replied_at', r.created_at,
+          'replied_at', coalesce(r.provider_timestamp, r.created_at),
           'reply_message_id', r.id,
           'reply_text', left(r.body, 1000),
           'reply_attachment_count', coalesce(jsonb_array_length(r.attachments), 0),
@@ -225,7 +226,7 @@ begin
 
   update public.review_requests set
     state = 'review_asked',
-    replied_at = v_reply.created_at,
+    replied_at = coalesce(v_reply.provider_timestamp, v_reply.created_at),
     reply_message_id = v_reply.id,
     review_asked_at = v_now,
     review_message_id = (v_sent ->> 'message_id')::uuid,
@@ -274,7 +275,7 @@ begin
 
   update public.review_requests set
     state = 'closed',
-    replied_at = v_reply.created_at,
+    replied_at = coalesce(v_reply.provider_timestamp, v_reply.created_at),
     reply_message_id = v_reply.id,
     closed_at = v_now,
     last_operation_id = p_operation_id,

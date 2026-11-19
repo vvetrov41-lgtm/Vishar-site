@@ -132,6 +132,18 @@ select throws_ok(
       'e99a0000-0000-4000-8000-000000000010', 'Thanks!')$$,
   '55000', 'the client has not replied to the healing question', 'no review request before a reply');
 
+-- A message Alice sent before the question, delivered late by the webhook,
+-- is stored after the question but is not a reply to it.
+insert into public.communication_messages(
+  id, conversation_id, artist_id, channel, direction, origin, status, message_type, body,
+  provider_timestamp, created_at)
+select 'e99f0000-0000-4000-8000-000000000009', 'e99e0000-0000-4000-8000-000000000001', id,
+       'whatsapp', 'inbound', 'contact', 'received', 'text', 'Sent before the question',
+       now() - interval '1 day', clock_timestamp()
+from t_fu_artist;
+select is(pg_temp.item((select alice from t_fu_req)) ->> 'status', 'awaiting_reply',
+  'a late-delivered message sent before the question is not a reply');
+
 -- Alice replies two days later (inside the 24-hour window now).
 insert into public.communication_messages(
   id, conversation_id, artist_id, channel, direction, origin, status, message_type, body, created_at)
