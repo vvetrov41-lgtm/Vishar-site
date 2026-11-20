@@ -741,3 +741,12 @@ const sendHealingQuestion = [
 assert.equal(verifyTodayLineage(sendHealingQuestion), '20261119120000');
 assert.equal(deferredTodayMigration(sendHealingQuestion), null);
 assert.throws(() => verifyTodayLineage(sendHealingQuestion + '\n 20261119120100 | | t'));
+
+const reviewFollowups = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261119120000 | 20261119120000 | t',
+  ' 20261119130000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(reviewFollowups), '20261119130000');
+assert.equal(deferredTodayMigration(reviewFollowups), null);
+assert.throws(() => verifyTodayLineage(reviewFollowups + '\n 20261119130100 | | t'));

@@ -168,6 +168,8 @@ export function verifyTodayLineage(source) {
     // Google review request, phase 2a: the artist's Ask button queues the
     // approved healing-question template; the drain resolver re-checks it.
     ['20261119100000', '20261119120000'],
+    // Google review request, phase 2b: show the reply, ask for a review or close.
+    ['20261119120000', '20261119130000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
