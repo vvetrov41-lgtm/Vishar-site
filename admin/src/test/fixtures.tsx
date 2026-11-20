@@ -439,6 +439,8 @@ export interface FakeClientOptions {
   projectFinanceRows?: unknown[];
   /** What `get_statistics` answers. Omitted means STATISTICS_RESULT for the role. */
   statistics?: unknown;
+  /** What `get_conversation_attention` answers. Omitted keeps the default path. */
+  conversationAttention?: unknown;
   /** What `get_conversation_link_suggestion` answers. Omitted means no match. */
   linkSuggestion?: unknown;
   /** The eligibility reason `get_session_booking_card_status` reports. */
@@ -1330,6 +1332,9 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
           },
           error: null,
         };
+      }
+      if (name === 'get_conversation_attention' && options.conversationAttention !== undefined) {
+        return { data: options.conversationAttention, error: null };
       }
       if (name === 'get_conversation_link_suggestion') {
         return { data: options.linkSuggestion ?? { status: 'none' }, error: null };
