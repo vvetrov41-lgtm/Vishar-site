@@ -22,6 +22,7 @@ import { useArtistScope } from '../lib/artist-scope';
 import { groupEmailThreads, type EmailThread } from '../lib/email-threads';
 import { summariseToday, WAITING_ON_CLIENT_KINDS, type GmailAwaitingReply, type TodayItem } from '../lib/today-workspace';
 import { WaitingOnClients } from '../components/WaitingOnClients';
+import { HealingReviews } from '../components/HealingReviews';
 import { VisitOutcomeCard } from '../components/VisitOutcomeCard';
 import { pulseToTodayItems, type TodayPulse } from '../lib/today-pulse';
 import { typeLabel } from './AppointmentsPage';
@@ -82,7 +83,10 @@ export function DashboardPage() {
   const { profile, memberships } = useSession();
   const { t, label, language } = useLanguage();
   const role = profile?.role;
-  const { selectedArtistId, loading: scopeLoading } = useArtistScope();
+  const { selectedArtistId, artists, loading: scopeLoading } = useArtistScope();
+  // Healing and review suggestions ask per artist; "all artists" asks each one.
+  const healingArtistIds = selectedArtistId ? [selectedArtistId] : artists.map((artist) => artist.id);
+  const mayManageReviews = can(role, 'manageFollowUps');
   const mayManageFinance = canAccess(role, 'manageFinance', memberships);
   const mayDismissAttention = can(role, 'manageNotifications');
   const mayViewEnquiries = can(role, 'viewEnquiries');
@@ -379,6 +383,16 @@ export function DashboardPage() {
         unavailable={!serverPulse && !pulseState.loading}
         onChanged={() => pulseState.reload()}
       />
+
+      {mayManageReviews && !scopeLoading ? (
+        <HealingReviews
+          // A new artist scope is a new block: nothing in flight carries over.
+          // The prefix keeps the key distinct from its sibling WaitingOnClients.
+          key={`healing-${selectedArtistId ?? 'all'}`}
+          artistIds={healingArtistIds}
+          canDecide={mayManageReviews}
+        />
+      ) : null}
 
       <Section title={t('today.ahead')}>
         {!scheduleState.data ? (

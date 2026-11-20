@@ -44,6 +44,7 @@ import { createAiIntakeApi, type AiIntakeApi } from './ai-intake-api';
 import { createAttentionApi, type AttentionApi } from './attention-api';
 import { createTodayPulseApi, type TodayPulseApi } from './today-pulse';
 import { createVisitOutcomeApi, type VisitOutcomeApi } from './visit-outcome-api';
+import { createReviewRequestsApi, type ReviewRequestsApi } from './review-requests-api';
 import { createCancelledSlotApi, type CancelledSlotApi } from './cancelled-slot-api';
 import { createSchedulingApi, type SchedulingApi } from './scheduling-api';
 import { createInstagramConnectionsApi, type InstagramConnectionsApi } from './instagram-connections-api';
@@ -85,7 +86,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & OutgoingReviewApi & ReplyDraftApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi & VisitOutcomeApi & CancelledSlotApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & OutgoingReviewApi & ReplyDraftApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi & VisitOutcomeApi & ReviewRequestsApi & CancelledSlotApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -174,6 +175,7 @@ export function SessionProvider({
       createAttentionApi(client),
       createTodayPulseApi(client),
       createVisitOutcomeApi(client),
+      createReviewRequestsApi(client),
       createCancelledSlotApi(client),
       createSchedulingApi(client),
       createInstagramConnectionsApi(client),

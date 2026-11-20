@@ -1309,6 +1309,13 @@ export function createFakeClient(options: FakeClientOptions): CrmClient {
       if (name === 'snooze_attention_item' || name === 'clear_attention_acknowledgement') {
         return { data: { acknowledged: true }, error: null };
       }
+      // Healing and review suggestions: none unless a test supplies its own handler.
+      if (name === 'list_review_suggestions') {
+        return { data: { artist_id: (args as any)?.p_artist_id, review_url_configured: true, suggestions: [] }, error: null };
+      }
+      if (name === 'list_review_followups') {
+        return { data: { artist_id: (args as any)?.p_artist_id, review_url_configured: true, items: [] }, error: null };
+      }
       if (name === 'get_today_pulse') {
         return {
           data: options.todayPulse ?? { generated_at: '2026-09-01T08:00:00Z', enabled: false, items: [], artists: [] },
