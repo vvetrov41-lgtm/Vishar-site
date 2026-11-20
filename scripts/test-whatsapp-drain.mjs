@@ -771,6 +771,55 @@ await test('lifecycle Utility payload passes current-snapshot guard and sends on
   assert.equal(rpcCalls.filter(x => x.name === 'service_begin_communication_send').length, 1);
 });
 
+await test('healing question payload sends the one-parameter approved template', async () => {
+  const { fetchImpl, graphCalls } = makeFetch({
+    lifecyclePayloadsByOutbox: {
+      [VLADIMIR_OUTBOX]: [{
+        is_lifecycle: true, communication_message_id: claimedJob().whatsapp_message_id,
+        artist_id: claimedJob().artist_id, purpose: 'healing_check',
+        template_name: 'vishar_healing_check_v1', template_language: 'en_GB',
+        body_parameters: ['Alex'], delivery_allowed: true,
+      }],
+    },
+  });
+  const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+  assert.equal(result.outcome, 'succeeded');
+  assert.equal(graphCalls.length, 1);
+  assert.equal(graphCalls[0].body.template.name, 'vishar_healing_check_v1');
+  assert.deepEqual(graphCalls[0].body.template.components,
+    [{ type: 'body', parameters: [{ type: 'text', text: 'Alex' }] }]);
+});
+
+await test('healing purpose and template name must match exactly', async () => {
+  for (const payload of [
+    { purpose: 'healing_check', template_name: 'vishar_lifecycle_checkin_v1', body_parameters: ['Alex'] },
+    { purpose: 'post_session_checkin', template_name: 'vishar_healing_check_v1', body_parameters: ['Alex'] },
+    { purpose: 'healing_check', template_name: 'vishar_healing_check_v1', body_parameters: ['Alex', 'Vladimir'] },
+  ]) {
+    const { fetchImpl, graphCalls } = makeFetch({
+      lifecyclePayloadsByOutbox: {
+        [VLADIMIR_OUTBOX]: [{
+          is_lifecycle: true, communication_message_id: claimedJob().whatsapp_message_id,
+          artist_id: claimedJob().artist_id, template_language: 'en_GB',
+          delivery_allowed: true, ...payload,
+        }],
+      },
+    });
+    const result = await drainWhatsappOutboxById(env, { outboxId: VLADIMIR_OUTBOX, fetchImpl });
+    assert.equal(result.outcome, 'failed');
+    assert.equal(result.errorCode, 'whatsapp_lifecycle_payload_invalid');
+    assert.equal(graphCalls.length, 0);
+  }
+  for (const message of [
+    { purpose: 'healing_check', templateName: 'vishar_lifecycle_checkin_v1', bodyParameters: ['Alex'] },
+    { purpose: 'healing_check', templateName: 'vishar_healing_check_v1', bodyParameters: ['Alex', 'x'] },
+  ]) {
+    const result = await sendWhatsappUtilityTemplate(env, route(),
+      { to: '447700900001', language: 'en_GB', ...message }, async () => { throw new Error('no call'); });
+    assert.deepEqual(result, { delivered: false, errorCode: 'whatsapp_template_invalid' });
+  }
+});
+
 await test('stale lifecycle block never records send intent or contacts Meta', async () => {
   const { fetchImpl, rpcCalls, graphCalls } = makeFetch({
     lifecyclePayloadsByOutbox: {

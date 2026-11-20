@@ -929,6 +929,7 @@ insert into expected_function_acl values
   -- view_sessions; later/don't-ask decisions need send_communications.
   ('public.list_review_suggestions(uuid)', false, true, false),
   ('public.act_on_review_suggestion(uuid,uuid,text,uuid,integer)', false, true, false),
+  ('public.send_healing_question(uuid,uuid,uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),

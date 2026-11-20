@@ -732,3 +732,12 @@ for (const bad of [
   replyDraftContext.replace('20261119090000 | 20261119090000', '20261119090000 | '),
   replyDraftContext + '\n 20261119110000 | | t',
 ]) assert.throws(() => verifyTodayLineage(bad));
+
+const sendHealingQuestion = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261119100000 | 20261119100000 | t',
+  ' 20261119120000 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(sendHealingQuestion), '20261119120000');
+assert.equal(deferredTodayMigration(sendHealingQuestion), null);
+assert.throws(() => verifyTodayLineage(sendHealingQuestion + '\n 20261119120100 | | t'));

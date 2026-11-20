@@ -356,6 +356,7 @@ const LIFECYCLE_UTILITY_PURPOSES = new Set([
   'session_reminder_72h', 'session_reminder_24h',
   'post_session_aftercare', 'post_session_checkin',
   'consultation_reminder',
+  'healing_check',
 ]);
 
 export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl = fetch) {
@@ -386,6 +387,8 @@ export async function sendWhatsappUtilityTemplate(env, route, message, fetchImpl
     || !TEMPLATE_NAME.test(templateName) || !TEMPLATE_LANGUAGE.test(language)
     || !Array.isArray(params) || params.length < 1 || params.length > 10
     || params.some((value) => typeof value !== 'string' || !value.trim() || value.length > 1024)
+    || ((purpose === 'healing_check') !== (templateName === 'vishar_healing_check_v1'))
+    || (purpose === 'healing_check' && params.length !== 1)
     || (reviewedActionSpec && (
       purpose !== reviewedActionSpec.purpose
       || params.length !== reviewedActionSpec.body + reviewedActionSpec.actions

@@ -141,6 +141,9 @@ const LIFECYCLE_PURPOSES = new Set([
   'session_reminder_72h', 'session_reminder_24h',
   'post_session_aftercare', 'post_session_checkin',
   'consultation_reminder',
+  // Artist-initiated healing question (specs/google-review-request): exactly
+  // one approved template with one body parameter, the client's first name.
+  'healing_check',
 ]);
 function validateLifecycleTemplatePayload(payload, job) {
   if (!payload || payload.is_lifecycle !== true) return null;
@@ -168,6 +171,9 @@ function validateLifecycleTemplatePayload(payload, job) {
       || payload.body_parameters.length < 1 || payload.body_parameters.length > 10
       || payload.body_parameters.some((v) =>
         typeof v !== 'string' || !v.trim() || v.length > 1024)
+      || ((payload.purpose === 'healing_check')
+        !== (payload.template_name === 'vishar_healing_check_v1'))
+      || (payload.purpose === 'healing_check' && payload.body_parameters.length !== 1)
       || (reviewedActionSpec && (
         payload.purpose !== reviewedActionSpec.purpose
         || payload.body_parameters.length !== reviewedActionSpec.body + reviewedActionSpec.actions

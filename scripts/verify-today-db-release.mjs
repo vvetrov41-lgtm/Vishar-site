@@ -165,6 +165,9 @@ export function verifyTodayLineage(source) {
     // Reply drafts: read-only, operator-scoped draft context and voice
     // examples. No write, no queue, no client send.
     ['20261119090000', '20261119100000'],
+    // Google review request, phase 2a: the artist's Ask button queues the
+    // approved healing-question template; the drain resolver re-checks it.
+    ['20261119100000', '20261119120000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
