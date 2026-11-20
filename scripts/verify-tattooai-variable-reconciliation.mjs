@@ -37,6 +37,9 @@ export const PENDING_CHANGES = Object.freeze(new Map([
   // 2026-11-17 AI eval (run 44054777839), approved by the owner 2026-11-18.
   ['AI_ROUTE_CRM_CLIENT_STATE', 'workers_ai,qwen'],
   ['AI_ROUTE_VISION_REFERENCE_EXTRACTION', 'qwen,workers_ai'],
+  // Reply drafts (specs/reply-drafts), approved by the owner 2026-11-20.
+  // null: the variable did not exist before this release.
+  ['REPLY_DRAFTS_ENABLED', null],
 ]));
 
 function bindingsFrom(snapshot) {
@@ -62,7 +65,10 @@ export function verifySnapshot(snapshot, tracked, {
   const remote = new Map(bindings.filter(item => item.type === 'plain_text')
     .map(item => [item.name, item.text]));
   for (const [name, value] of tracked) {
-    if (!remote.has(name)) throw new Error('Tracked Cloudflare variable missing: ' + name);
+    if (!remote.has(name)) {
+      if (pendingChanges?.has(name) && pendingChanges.get(name) === null) continue;
+      throw new Error('Tracked Cloudflare variable missing: ' + name);
+    }
     if (remote.get(name) !== value
       && !(pendingChanges?.has(name) && remote.get(name) === pendingChanges.get(name))) {
       throw new Error('Tracked Cloudflare variable drift: ' + name);
@@ -109,13 +115,21 @@ function selfTest() {
   for (const name of PENDING_CHANGES.keys()) assert.ok(vars.has(name), 'pending change is tracked: ' + name);
   const pending = structuredClone(base);
   for (const [name, previous] of PENDING_CHANGES) {
-    pending.result.bindings.find(item => item.name === name).text = previous;
+    if (previous === null) {
+      pending.result.bindings = pending.result.bindings.filter(item => item.name !== name);
+    } else {
+      pending.result.bindings.find(item => item.name === name).text = previous;
+    }
   }
   assert.equal(verifySnapshot(pending, vars, { pendingChanges: PENDING_CHANGES }).legacyVariablePresent, false);
-  assert.throws(() => verifySnapshot(pending, vars), /drift/);
+  assert.throws(() => verifySnapshot(pending, vars), /drift|missing/);
   const otherValue = structuredClone(base);
   otherValue.result.bindings.find(item => item.name === 'AI_ROUTE_CRM_CLIENT_STATE').text = 'qwen';
   assert.throws(() => verifySnapshot(otherValue, vars, { pendingChanges: PENDING_CHANGES }), /drift/);
+  // A pending new variable may be absent before, never present with another value.
+  const wrongNew = structuredClone(base);
+  wrongNew.result.bindings.find(item => item.name === 'REPLY_DRAFTS_ENABLED').text = 'maybe';
+  assert.throws(() => verifySnapshot(wrongNew, vars, { pendingChanges: PENDING_CHANGES }), /drift/);
   const otherName = structuredClone(drift);
   assert.throws(() => verifySnapshot(otherName, vars, { pendingChanges: PENDING_CHANGES }), /drift/);
   console.log('TattooAI variable reconciliation self-test: 11 safety checks passed.');

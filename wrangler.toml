@@ -60,6 +60,9 @@ SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 # Publishable key is public by design; user JWT enforces RLS on the review RPC.
 SUPABASE_PUBLISHABLE_KEY = "sb_publishable_c-0ZoGd5j8OfpC1NL5ehMg_4LB5t79M"
 OUTGOING_AI_REVIEW_ENABLED = "true"
+# "Suggest reply" drafts in the CRM composer (specs/reply-drafts), enabled by
+# the owner 2026-11-20. Drafts only: nothing is sent. "false" is the kill switch.
+REPLY_DRAFTS_ENABLED = "true"
 VISHAR_ENVIRONMENT = "production"
 # Emergency email backup kill switch. Disable independently of CRM and Gmail.
 BOOKING_FALLBACK_ENABLED = "true"
