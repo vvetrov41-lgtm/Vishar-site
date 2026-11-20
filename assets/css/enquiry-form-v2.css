@@ -1,10 +1,8 @@
 /* Enquiry form v2. Black, quiet, no icons. Selected choices invert. */
 html[data-enquiry-form="v2"] #tattoo-enquiry-form { display: none !important; }
 html:not([data-enquiry-form="v2"]) #enquiry-v2 { display: none !important; }
-@media (max-width: 767px) {
-  html[data-enquiry-form="v2"] .booking-aside { order: 2; }
-  html[data-enquiry-form="v2"] .booking-main { order: 1; }
-}
+#booking-consent:not(:empty) { display: grid; gap: .75rem; margin-bottom: 1.25rem; }
+#booking-consent > [role="region"] { position: static; max-width: none; }
 
 #enquiry-v2 { min-height: 28rem; }
 .ef-form { position: relative; border: 1px solid rgba(255,255,255,.1); border-radius: 1.5rem; background: rgba(255,255,255,.03); padding: 1.25rem 1rem 1.25rem; }

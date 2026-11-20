@@ -90,7 +90,7 @@
   </script>
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/tailwind.css">
-  <link rel="stylesheet" href="/assets/css/enquiry-form-v2.css?v=20261009">
+  <link rel="stylesheet" href="/assets/css/enquiry-form-v2.css?v=20261119">
   <style>
     body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     ::selection{background:rgba(0,113,227,.35);color:#fff}
@@ -225,65 +225,68 @@
       <nav aria-label="Breadcrumb" class="text-xs text-white/50"><a href="/" class="text-white/60 hover:text-white">Home</a><span class="mx-2">/</span><span class="text-white/70">Tattoo enquiry</span></nav>
     </div>
 
-    <header class="py-20 md:py-28 px-6">
+    <header class="pt-6 pb-8 md:pt-10 md:pb-12 px-6">
       <div class="max-w-[900px] mx-auto text-center">
-        <p class="text-xs uppercase tracking-[0.3em] text-apple-blue mb-5">London bookings now open</p>
-        <h1 class="hero-title text-4xl md:text-7xl font-semibold mb-6">Tell me about your tattoo.</h1>
-        <p class="text-lg md:text-xl text-white/50 font-light leading-relaxed max-w-2xl mx-auto">I am accepting enquiries for future London appointments. Send the practical details below and I’ll review the project personally before any appointment is offered.</p>
+        <h1 class="hero-title text-3xl md:text-5xl font-semibold mb-3">Tell me about your tattoo.</h1>
+        <p class="text-sm md:text-base leading-relaxed text-white/70">
+          <span class="block sm:inline">Private studio in West Kensington, London</span>
+          <span class="hidden sm:inline" aria-hidden="true"> · </span><span>£140/hour · £980 for 7 hours</span>
+        </p>
       </div>
     </header>
 
-    <section class="px-6 py-24">
+    <section class="px-6 pb-24">
       <div class="max-w-[1200px] mx-auto grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
-        <aside class="booking-aside space-y-5">
-          <div class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-            <p class="text-xs uppercase tracking-[0.25em] text-white/35 mb-4">Before you send</p>
-            <ul class="space-y-3 text-sm leading-relaxed text-white/50">
-              <li>My rate is £140 per hour. A standard full-day session is up to 7 hours.</li>
-              <li>I focus on medium and large colour or black-and-grey realism projects.</li>
-              <li>For cover-ups, please attach at least one clear photo of the existing tattoo. A close-up and a wider placement photo are recommended.</li>
-              <li>The London studio address will be confirmed with your appointment.</li>
-            </ul>
+        <div>
+          <div id="enquiry-v2" aria-live="off"></div>
+          <form id="tattoo-enquiry-form" class="rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-10" novalidate>
+            <div class="grid md:grid-cols-2 gap-5">
+              <label><span class="field-label">Full name <span class="required">*</span></span><input class="form-field" type="text" name="name" autocomplete="name" maxlength="120" required></label>
+              <label><span class="field-label">Email <span class="required">*</span></span><input class="form-field" type="email" name="email" autocomplete="email" maxlength="320" required></label>
+              <label><span class="field-label">Phone / WhatsApp <span id="phone-required-mark" class="required hidden">*</span></span><input id="phone-input" class="form-field" type="tel" name="phone" autocomplete="tel" maxlength="80" placeholder="UK mobile or number with country code"><span id="phone-required-note" class="mt-2 hidden text-xs leading-relaxed text-white/35">Required when WhatsApp is selected.</span></label>
+              <label><span class="field-label">Instagram <span class="text-white/35">(optional)</span></span><input id="instagram-input" class="form-field" type="text" name="instagram" maxlength="80" placeholder="@username"></label>
+              <label><span class="field-label">Preferred reply <span class="required">*</span></span><select id="preferred-reply" class="form-field" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option></select></label>
+              <label><span class="field-label">Where are you travelling from?</span><input class="form-field" type="text" name="travellingFrom" maxlength="120" placeholder="City or country"></label>
+              <label><span class="field-label">Project type <span class="required">*</span></span><select class="form-field" name="projectType" required><option value="">Choose one</option><option>Colour realism</option><option>Black and grey realism</option><option>Portrait</option><option>Cover-up</option><option>Large-scale project / sleeve</option><option>Not sure yet</option></select></label>
+              <label><span class="field-label">Placement <span class="required">*</span></span><input class="form-field" type="text" name="placement" maxlength="160" placeholder="For example: outer forearm" required></label>
+              <label><span class="field-label">Approximate size <span class="required">*</span></span><input class="form-field" type="text" name="size" maxlength="120" placeholder="Centimetres or body area" required></label>
+              <label><span class="field-label">Existing tattoo / cover-up? <span class="required">*</span></span><select class="form-field" name="coverUp" required><option value="">Choose one</option><option>No</option><option>Yes</option><option>Not sure</option></select></label>
+              <label class="form-span"><span class="field-label">When would you like to start?</span><input class="form-field" type="text" name="timing" maxlength="160" placeholder="Preferred month, flexible dates, or as soon as available"></label>
+              <label class="form-span"><span class="field-label">How did you hear about Vladimir? <span class="required">*</span></span><select id="discovery-source" class="form-field" name="discoverySource" required><option value="">Choose one</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="ai">ChatGPT / AI</option><option value="referral">Recommendation / Friend</option><option value="convention">Tattoo convention</option><option value="returning_client">Returning client</option><option value="other">Other</option></select></label>
+              <label id="discovery-detail-field" class="form-span hidden"><span id="discovery-detail-label" class="field-label">More details</span><input id="discovery-source-detail" class="form-field" type="text" name="discoverySourceDetail" maxlength="240"></label>
+              <label class="form-span"><span class="field-label">Your idea <span class="required">*</span></span><textarea class="form-field idea-field" name="idea" maxlength="3500" placeholder="Describe the subject, mood, composition and any important personal details." required></textarea></label>
+              <label class="form-span"><span class="field-label">Reference images <span class="required">*</span></span><input id="reference-files" class="form-field" type="file" name="references" accept="image/jpeg,image/png,image/webp" multiple required><span class="mt-2 block text-xs leading-relaxed text-white/35">Attach 1–3 JPG, PNG or WebP images, 4 MB each. For a cover-up, include one close-up and one wider placement photo.</span></label>
+            </div>
+
+            <div class="mt-6 hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
+            <label class="mt-6 flex items-start gap-3 text-sm leading-relaxed text-white/50"><input class="consent-box mt-1 h-4 w-4" type="checkbox" name="privacyAcknowledged" required><span>I have read the <a href="/privacy/" class="text-white underline underline-offset-4 decoration-white/20">privacy notice</a> and understand how my details and images will be used to review and reply to this enquiry. <span class="required">*</span></span></label>
+
+            <button id="enquiry-submit" type="submit" class="mt-7 w-full rounded-full bg-white px-6 py-4 font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Send enquiry to Vladimir</button>
+            <p id="enquiry-status" class="status-box mt-4 text-sm text-white/50" role="status" aria-live="polite"></p>
+          </form>
+          <div id="enquiry-success" class="hidden rounded-3xl border border-green-400/30 bg-green-400/10 p-6 md:p-10" role="status" aria-live="polite" tabindex="-1">
+            <p class="text-xs uppercase tracking-[0.25em] text-green-400 mb-4">Enquiry sent</p>
+            <h2 class="text-2xl md:text-3xl font-semibold mb-4">Thank you. Your enquiry has been sent.</h2>
+            <p id="enquiry-success-message" class="text-sm md:text-base leading-relaxed text-white/60"></p>
           </div>
-          <div class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-            <p class="text-sm font-medium mb-2">What happens next?</p>
-            <p class="text-sm leading-relaxed text-white/50">I’ll review the idea, placement, size and references. If it fits my work, I’ll reply with an initial estimate and arrange a free consultation if needed. Sending this form does not reserve a date.</p>
+        </div>
+        <aside>
+          <div id="booking-consent"></div>
+          <div class="space-y-5">
+            <div class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+              <p class="text-xs uppercase tracking-[0.25em] text-white/35 mb-4">Before you send</p>
+              <ul class="space-y-3 text-sm leading-relaxed text-white/50">
+                <li>I focus on medium and large colour or black-and-grey realism projects.</li>
+                <li>For cover-ups, please attach at least one clear photo of the existing tattoo. A close-up and a wider placement photo are recommended.</li>
+                <li>I’ll confirm the exact studio address with your appointment.</li>
+              </ul>
+            </div>
+            <div class="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+              <p class="text-sm font-medium mb-2">What happens next?</p>
+              <p class="text-sm leading-relaxed text-white/50">I’ll review the idea, placement, size and references. If it fits my work, I’ll reply with an initial estimate and arrange a free consultation if needed. Sending this form does not reserve a date.</p>
+            </div>
           </div>
         </aside>
-
-        <div class="booking-main">
-        <div id="enquiry-v2" aria-live="off"></div>
-        <form id="tattoo-enquiry-form" class="rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-10" novalidate>
-          <div class="grid md:grid-cols-2 gap-5">
-            <label><span class="field-label">Full name <span class="required">*</span></span><input class="form-field" type="text" name="name" autocomplete="name" maxlength="120" required></label>
-            <label><span class="field-label">Email <span class="required">*</span></span><input class="form-field" type="email" name="email" autocomplete="email" maxlength="320" required></label>
-            <label><span class="field-label">Phone / WhatsApp <span id="phone-required-mark" class="required hidden">*</span></span><input id="phone-input" class="form-field" type="tel" name="phone" autocomplete="tel" maxlength="80" placeholder="UK mobile or number with country code"><span id="phone-required-note" class="mt-2 hidden text-xs leading-relaxed text-white/35">Required when WhatsApp is selected.</span></label>
-            <label><span class="field-label">Instagram <span class="text-white/35">(optional)</span></span><input id="instagram-input" class="form-field" type="text" name="instagram" maxlength="80" placeholder="@username"></label>
-            <label><span class="field-label">Preferred reply <span class="required">*</span></span><select id="preferred-reply" class="form-field" name="preferredReply" required><option value="">Choose one</option><option>Email</option><option>WhatsApp</option></select></label>
-            <label><span class="field-label">Where are you travelling from?</span><input class="form-field" type="text" name="travellingFrom" maxlength="120" placeholder="City or country"></label>
-            <label><span class="field-label">Project type <span class="required">*</span></span><select class="form-field" name="projectType" required><option value="">Choose one</option><option>Colour realism</option><option>Black and grey realism</option><option>Portrait</option><option>Cover-up</option><option>Large-scale project / sleeve</option><option>Not sure yet</option></select></label>
-            <label><span class="field-label">Placement <span class="required">*</span></span><input class="form-field" type="text" name="placement" maxlength="160" placeholder="For example: outer forearm" required></label>
-            <label><span class="field-label">Approximate size <span class="required">*</span></span><input class="form-field" type="text" name="size" maxlength="120" placeholder="Centimetres or body area" required></label>
-            <label><span class="field-label">Existing tattoo / cover-up? <span class="required">*</span></span><select class="form-field" name="coverUp" required><option value="">Choose one</option><option>No</option><option>Yes</option><option>Not sure</option></select></label>
-            <label class="form-span"><span class="field-label">When would you like to start?</span><input class="form-field" type="text" name="timing" maxlength="160" placeholder="Preferred month, flexible dates, or as soon as available"></label>
-            <label class="form-span"><span class="field-label">How did you hear about Vladimir? <span class="required">*</span></span><select id="discovery-source" class="form-field" name="discoverySource" required><option value="">Choose one</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="ai">ChatGPT / AI</option><option value="referral">Recommendation / Friend</option><option value="convention">Tattoo convention</option><option value="returning_client">Returning client</option><option value="other">Other</option></select></label>
-            <label id="discovery-detail-field" class="form-span hidden"><span id="discovery-detail-label" class="field-label">More details</span><input id="discovery-source-detail" class="form-field" type="text" name="discoverySourceDetail" maxlength="240"></label>
-            <label class="form-span"><span class="field-label">Your idea <span class="required">*</span></span><textarea class="form-field idea-field" name="idea" maxlength="3500" placeholder="Describe the subject, mood, composition and any important personal details." required></textarea></label>
-            <label class="form-span"><span class="field-label">Reference images <span class="required">*</span></span><input id="reference-files" class="form-field" type="file" name="references" accept="image/jpeg,image/png,image/webp" multiple required><span class="mt-2 block text-xs leading-relaxed text-white/35">Attach 1–3 JPG, PNG or WebP images, 4 MB each. For a cover-up, include one close-up and one wider placement photo.</span></label>
-          </div>
-
-          <div class="mt-6 hidden" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
-          <label class="mt-6 flex items-start gap-3 text-sm leading-relaxed text-white/50"><input class="consent-box mt-1 h-4 w-4" type="checkbox" name="privacyAcknowledged" required><span>I have read the <a href="/privacy/" class="text-white underline underline-offset-4 decoration-white/20">privacy notice</a> and understand how my details and images will be used to review and reply to this enquiry. <span class="required">*</span></span></label>
-
-          <button id="enquiry-submit" type="submit" class="mt-7 w-full rounded-full bg-white px-6 py-4 font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Send enquiry to Vladimir</button>
-          <p id="enquiry-status" class="status-box mt-4 text-sm text-white/50" role="status" aria-live="polite"></p>
-        </form>
-        <div id="enquiry-success" class="hidden rounded-3xl border border-green-400/30 bg-green-400/10 p-6 md:p-10" role="status" aria-live="polite" tabindex="-1">
-          <p class="text-xs uppercase tracking-[0.25em] text-green-400 mb-4">Enquiry sent</p>
-          <h2 class="text-2xl md:text-3xl font-semibold mb-4">Thank you. Your enquiry has been sent.</h2>
-          <p id="enquiry-success-message" class="text-sm md:text-base leading-relaxed text-white/60"></p>
-        </div>
-        </div>
       </div>
     </section>
   </main>
@@ -502,7 +505,7 @@
       banner.setAttribute('aria-label', 'Advertising measurement consent');
       banner.className = 'fixed bottom-4 left-4 right-4 md:left-auto md:right-6 md:bottom-6 md:max-w-sm z-[200] rounded-2xl border border-white/10 bg-black/90 backdrop-blur-md p-5 shadow-2xl';
       banner.innerHTML = '<p class="text-sm leading-relaxed text-white/60 mb-4">Optional advertising measurement can show whether a Meta or ChatGPT ad resulted in an enquiry. With your consent, Meta can also receive securely hashed email/phone matching data and later booking-status events. It stays off unless you accept. <a href="/privacy/" class="text-white/80 underline underline-offset-4 decoration-white/30 hover:text-white transition-colors">Privacy &amp; cookies</a></p><div class="flex gap-3"><button type="button" id="advertising-measurement-accept" class="flex-1 rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition-all hover:bg-white/90 active:scale-95">Accept</button><button type="button" id="advertising-measurement-decline" class="flex-1 rounded-full border border-white/15 px-4 py-2.5 text-sm font-medium text-white/70 transition-colors hover:text-white hover:border-white/30">Decline</button></div>';
-      document.body.appendChild(banner);
+      document.getElementById('booking-consent').appendChild(banner);
 
       banner.querySelector('#advertising-measurement-accept').addEventListener('click', function () {
         setMissingAdvertisingConsent('granted');

@@ -662,8 +662,7 @@ await test('15 keyboard only: select, continue, back', async () => {
 
 await test('16 accessibility (axe) and layout on every step, iPhone SE and iPhone 13', async () => {
   for (const device of ['iPhone SE', 'iPhone 13']) {
-    // A stored choice keeps the consent banner from covering the form while
-    // contrast and target sizes are measured.
+    // The consent UI is tested separately from the individual form steps.
     const { page, context } = await openPage({ device, init: () => { localStorage.setItem('vishar-cookie-consent', 'denied'); localStorage.setItem('vishar-meta-ads-consent', 'denied'); localStorage.setItem('vishar-meta-ads-consent-version', '2026-10-08-capi'); localStorage.setItem('vishar-openai-ads-consent', 'denied'); } });
     await page.evaluate(() => {
       window.__cls = 0;
@@ -712,6 +711,34 @@ await test('17 Edit from review returns to review', async () => {
   await expectSection(page, 'Review');
   assert.ok(await page.locator('.ef-summary').getByText('Changed idea').count());
   await context.close();
+});
+
+await test('18 first visit: body areas stay usable while consent is pending', async () => {
+  for (const device of ['iPhone SE', 'iPhone 13', 'desktop']) {
+    const { page, context } = await openPage({ device });
+    try {
+      const banner = page.locator('#booking-consent #cookie-consent');
+      await banner.waitFor();
+      const firstChoice = page.locator('.ef-choice').first();
+      const choiceBounds = await firstChoice.boundingBox();
+      const formBounds = await page.locator('.ef-form').boundingBox();
+      const bannerBounds = await banner.boundingBox();
+      assert.ok(choiceBounds.y + choiceBounds.height <= page.viewportSize().height,
+        `${device}: first body area is fully above the fold`);
+      assert.ok(bannerBounds.y >= formBounds.y + formBounds.height || bannerBounds.x >= formBounds.x + formBounds.width,
+        `${device}: consent and form do not overlap`);
+
+      await pick(page, 'Arm');
+      await next(page);
+      await expectSection(page, 'Details');
+      assert.equal(await banner.isVisible(), true, 'a choice is optional to continue');
+      await banner.getByRole('button', { name: 'Decline' }).click();
+      await banner.waitFor({ state: 'detached' });
+      assert.equal(await page.evaluate(() => localStorage.getItem('vishar-cookie-consent')), 'denied');
+    } finally {
+      await context.close();
+    }
+  }
 });
 
 await browser.close();
