@@ -915,7 +915,6 @@ insert into expected_function_acl values
   ('public.attach_payment_request_to_invoice(uuid,uuid)', false, true, false),
   ('public.record_invoice_payment(uuid,uuid,numeric,timestamptz,text,text)', false, true, false),
   ('public.record_session_receipt(uuid,uuid,text,numeric,text,timestamptz)', false, true, false),
-  ('public.gpt_record_session_receipt(uuid,uuid,text,numeric,text,timestamptz)', false, true, false),
   ('public.confirm_monzo_session_receipt(uuid,uuid,text)', false, true, false),
   ('public.create_credit_note(uuid,uuid,numeric,text)', false, true, false),
 

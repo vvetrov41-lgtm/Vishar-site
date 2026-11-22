@@ -49,6 +49,8 @@ select is((select count(*) from public.payment_requests
   2::bigint, 'manual recording is not contingent on a provider route');
 select ok(not has_function_privilege('anon','public.record_session_receipt(uuid,uuid,text,numeric,text,timestamptz)','EXECUTE'),
   'anonymous callers cannot record receipts');
+select ok(has_function_privilege('authenticated','public.gpt_record_session_receipt(uuid,uuid,text,numeric,text,timestamptz)','EXECUTE'),
+  'the restored GPT fixture allows signed-in callers to reach the scope check');
 select ok(not has_function_privilege('service_role','public.gpt_record_session_receipt(uuid,uuid,text,numeric,text,timestamptz)','EXECUTE'),
   'plugin action requires a human authentication context');
 
