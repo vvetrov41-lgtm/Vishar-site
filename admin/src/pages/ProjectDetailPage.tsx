@@ -358,11 +358,14 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                   </div>
                   <div className="meta" style={{ marginTop: 4 }}>
                     {typeLabel(appointment.appointment_type, language)} · {durationValue(appointment.duration_hours, language)}
-                    {' · '}{label('paymentStatus', appointment.payment_status)}
+                    {mayViewFinance && !['cancelled', 'no_show'].includes(appointment.status) ? (
+                      <> · {appointment.payment_status === 'unpaid'
+                        ? t('sessions.paymentNotRecorded') : label('paymentStatus', appointment.payment_status)}</>
+                    ) : null}
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
                     {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
-                  {!isArchived ? <SessionCheckout appointment={appointment} /> : null}
+                  {!isArchived ? <SessionCheckout appointment={appointment} onChanged={reload} /> : null}
 
                   {active ? (
                     <BookingCardStatusLine

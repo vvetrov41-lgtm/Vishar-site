@@ -1,15 +1,15 @@
 {
   "source": "13 current Unified GPT OpenAPI schemas and operator-parity.current.mjs",
   "summary": {
-    "currentGptOperations": 209,
-    "mcpTools": 209,
-    "semanticParityThroughAdapter": 209,
+    "currentGptOperations": 210,
+    "mcpTools": 210,
+    "semanticParityThroughAdapter": 210,
     "directHandlerWithoutAdapter": 0,
-    "requiringActionAdapter": 209,
+    "requiringActionAdapter": 210,
     "requiringSchemaChange": 0,
     "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 12,
+    "excludedStage2Candidates": 13,
     "unresolved": 0
   },
   "operations": [
@@ -5968,6 +5968,78 @@
       "sourceSchema": "openapi.project-finance.yaml"
     },
     {
+      "operationId": "recordSessionReceipt",
+      "mcpTool": "crm_record_session_receipt",
+      "domain": "Project Finance",
+      "description": "Money action. Use only when the user confirms the exact amount already received, the session, and whether it was a deposit or a session payment. No Monzo confirmation is needed. For money collected by a studio use studio_direct. Reuse the same request ID on an identical retry.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Fresh UUID for this intended action. Reuse it only to retry the identical request."
+          },
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "deposit",
+              "session_balance"
+            ]
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 100000
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "studio_direct",
+              "bank_transfer",
+              "card",
+              "other"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "session_id",
+          "request_id",
+          "purpose",
+          "amount",
+          "method"
+        ]
+      },
+      "outputShape": null,
+      "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
+      "method": "POST",
+      "path": "/v1/sessions/{session_id}/received-payment",
+      "readWrite": "write",
+      "destructive": true,
+      "permission": "manage_finance",
+      "scopes": [
+        "email"
+      ],
+      "handler": [
+        "public.gpt_record_session_receipt",
+        "public.record_session_receipt"
+      ],
+      "compatibility": "existing_action_adapter",
+      "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
+      "securityConcern": "Verify amount, idempotency and actor capability server-side.",
+      "sourceSchema": "openapi.project-finance.yaml"
+    },
+    {
       "operationId": "removeEnquiryFile",
       "mcpTool": "crm_remove_enquiry_file",
       "domain": "Projects",
@@ -9271,6 +9343,11 @@
       "operationId": "linkMonzoRecordedReceipt",
       "status": "excluded_initial_release",
       "reason": "Ledger-safe evidence association for a verified Monzo transfer and an already-recorded invoice receipt; requires explicit human confirmation. Not in the current 13 OpenAPI schemas."
+    },
+    {
+      "operationId": "confirmMonzoSessionReceipt",
+      "status": "excluded_initial_release",
+      "reason": "Explicit human confirmation of an unmatched Monzo transfer for a chosen appointment. Independent of the manual receipt operation already available to the plugin. Not in the current 13 OpenAPI schemas."
     },
     {
       "operationId": "reconcileMonzoLegacyPaidDeposit",

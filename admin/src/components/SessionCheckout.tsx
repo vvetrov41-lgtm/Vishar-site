@@ -1,22 +1,27 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { formatMoney } from '../lib/format';
 import { useLanguage } from '../lib/i18n';
 import { canAccess } from '../lib/permissions';
 import { Link } from '../lib/router';
-import { calculateSessionCheckout, type CheckoutWarning } from '../lib/session-checkout';
+import type { CheckoutWarning } from '../lib/session-checkout';
 import { suggestSessionPrice } from '../lib/session-pricing';
 import { useApi, useOptionalSession, useSession } from '../lib/session';
 import type { Appointment } from '../lib/appointment-api';
 import type { InvoiceDocument } from '../lib/invoice-api';
-import type { ProjectPaymentRequest } from '../lib/payment-api';
+import type { PaymentMethod } from '../lib/visit-outcome-api';
+
+const RECEIPT_METHODS: PaymentMethod[] = ['cash', 'studio_direct', 'bank_transfer', 'card', 'other'];
 
 interface CheckoutData {
   price: number | null;
   suggestion: number | null;
-  requests: ProjectPaymentRequest[];
   invoices: InvoiceDocument[];
-  legacyUnallocatedDeposit: boolean;
+  depositPaid: number;
+  invoicedPaid: number;
+  due: number | null;
+  warnings: CheckoutWarning[];
+  payableInvoiceId: string | null;
 }
 
 const CHECKOUT_COPY = {
@@ -40,6 +45,11 @@ const CHECKOUT_COPY = {
     received: 'Фактически получено, GBP',
     record: 'Записать полученную оплату',
     recording: 'Записываю…',
+    depositEntry: 'Записать полученный депозит',
+    depositAmount: 'Сумма полученного депозита',
+    method: 'Как приняли деньги',
+    receiptDate: 'Дата получения',
+    methods: { cash: 'Наличные', studio_direct: 'Приняла студия', bank_transfer: 'Перевод', card: 'Карта', other: 'Другое' },
     invoice: 'Открыть счёт',
     payments: 'Финансы проекта',
     paidAll: 'Все платежи за сеанс учтены',
@@ -83,6 +93,11 @@ const CHECKOUT_COPY = {
     received: 'Money actually received, GBP',
     record: 'Record money received',
     recording: 'Recording…',
+    depositEntry: 'Record a deposit received',
+    depositAmount: 'Deposit received',
+    method: 'How the money was received',
+    receiptDate: 'Date received',
+    methods: { cash: 'Cash', studio_direct: 'Received by studio', bank_transfer: 'Bank transfer', card: 'Card', other: 'Other' },
     invoice: 'Open invoice',
     payments: 'Project finances',
     paidAll: 'All payments for this session accounted for',
@@ -118,7 +133,7 @@ function parseAmount(raw: string): number | null {
 /** Render only a capability-scoped toggle; no API access until it is opened.
  * Isolated calendar rows in tests can render without a SessionProvider.
  */
-export function SessionCheckout({ appointment }: { appointment: Appointment }) {
+export function SessionCheckout({ appointment, onChanged }: { appointment: Appointment; onChanged?: () => void }) {
   const session = useOptionalSession();
   const { language } = useLanguage();
   const [opened, setOpened] = useState(false);
@@ -138,11 +153,11 @@ export function SessionCheckout({ appointment }: { appointment: Appointment }) {
       </div>
     );
   }
-  return <SessionCheckoutDetails appointment={appointment} />;
+  return <SessionCheckoutDetails appointment={appointment} onChanged={onChanged} />;
 }
 
 /** Authentication and all ledger reads happen only after opening. */
-function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
+function SessionCheckoutDetails({ appointment, onChanged }: { appointment: Appointment; onChanged?: () => void }) {
   const api = useApi();
   const { profile, memberships } = useSession();
   const { language } = useLanguage();
@@ -155,9 +170,15 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [priceInput, setPriceInput] = useState('');
   const [paymentInput, setPaymentInput] = useState('');
+  const [depositInput, setDepositInput] = useState('');
+  const [method, setMethod] = useState<PaymentMethod | ''>('');
+  const [depositMethod, setDepositMethod] = useState<PaymentMethod | ''>('');
+  const [receiptDate, setReceiptDate] = useState('');
+  const [depositDate, setDepositDate] = useState('');
+  const today = new Intl.DateTimeFormat('en-CA').format(new Date());
   const [refresh, setRefresh] = useState(0);
   const paymentAttempt = useRef<{ key: string; scope: string } | null>(null);
-  const invoiceCreation = useRef<{ key: string; scope: string } | null>(null);
+  const depositAttempt = useRef<{ key: string; scope: string } | null>(null);
 
   const scopedMemberships = memberships.filter((member) => member.artist_id === appointment.artist_id);
   const canView = canAccess(profile?.role, 'viewFinance', scopedMemberships);
@@ -171,12 +192,11 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.listSessionFinance(projectId),
-      api.listProjectPaymentRequests(projectId),
+      api.getVisitOutcomeContext(appointment.id),
       api.listInvoices({ projectId, limit: 100 }),
       api.getProjectFinance(projectId),
       api.getArtistSessionPricing(appointment.artist_id).catch(() => null),
-    ]).then(async ([prices, requests, invoiceSummaries, projectFinance, artistPricing]) => {
+    ]).then(async ([context, invoiceSummaries, projectFinance, artistPricing]) => {
       // A bounded invoice listing must fail closed instead of ignoring older rows.
       if (invoiceSummaries.length >= 100) {
         throw new Error(copy.warning.incomplete_history);
@@ -184,7 +204,8 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
       const documents = await Promise.all(invoiceSummaries
         .filter((row) => row.status !== 'void')
         .map((row) => api.getInvoice(row.id)));
-      const storedPrice = prices.find((price) => price.session_id === appointment.id)?.price ?? null;
+      if (!context.finance) throw new Error(copy.failed);
+      const storedPrice = context.finance.stored_price;
       const minutes = appointment.duration_hours != null
         ? Math.round(Number(appointment.duration_hours) * 60)
         : Math.round((Date.parse(appointment.end_at) - Date.parse(appointment.start_at)) / 60_000);
@@ -197,11 +218,12 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
       setData({
         price: storedPrice,
         suggestion: suggestion?.currency === appointment.currency ? suggestion.price : null,
-        requests,
-        invoices: documents,
-        legacyUnallocatedDeposit: projectFinance?.deposit_status === 'paid'
-          && (projectFinance.deposit_amount ?? 0) > 0
-          && !requests.some((request) => request.purpose === 'deposit' && request.net_paid > 0),
+        invoices: documents.filter((document) => document.line_items.some((line) => line.session_id === appointment.id)),
+        depositPaid: context.finance.deposit_paid,
+        invoicedPaid: context.finance.invoiced_paid,
+        due: context.finance.due,
+        warnings: context.finance.warnings,
+        payableInvoiceId: context.finance.payable_invoice_id,
       });
       const validSuggestion = suggestion?.currency === appointment.currency ? suggestion.price : null;
       setPriceInput(storedPrice == null ? String(validSuggestion ?? '') : String(storedPrice));
@@ -217,26 +239,25 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
   }, [api, open, canView, projectId, appointment.id, appointment.artist_id,
     appointment.currency, appointment.duration_hours, appointment.start_at, appointment.end_at, refresh, language]);
 
-  const balance = useMemo(() => {
-    if (!data) return null;
-    const calculated = calculateSessionCheckout(appointment.id, appointment.currency, data.price, data.requests, data.invoices);
-    if (!data.legacyUnallocatedDeposit) return calculated;
-    return {
-      ...calculated,
-      due: null,
-      payableInvoice: null,
-      warnings: [...new Set([...calculated.warnings, 'unallocated_deposit' as const])],
-    };
-  }, [appointment.id, appointment.currency, data]);
-
-  const due = balance?.due ?? null;
-  const provisionalDue = data?.price == null && data?.suggestion != null && balance?.warnings.length === 0
-    ? Math.max(0, Math.round((data.suggestion - balance.depositPaid - balance.invoicedPaid) * 100) / 100)
+  const due = data?.due ?? null;
+  const provisionalDue = data?.price == null && data?.suggestion != null && data.warnings.length === 0
+    ? Math.max(0, Math.round((data.suggestion - data.depositPaid - data.invoicedPaid) * 100) / 100)
     : null;
+  const canTakeReceipt = canManage && !busy && !loading
+    && ['proposed', 'confirmed', 'completed'].includes(appointment.status);
+  const showDepositEntry = canManage && ['proposed', 'confirmed', 'completed'].includes(appointment.status)
+    && !['paid', 'refunded'].includes(appointment.payment_status);
+  const canRecordDeposit = showDepositEntry && canTakeReceipt;
+  const canRecordWithUnallocatedDeposit = data?.price != null && data.invoices.length === 0
+    && data.warnings.length === 1 && data.warnings[0] === 'unallocated_deposit';
+  const paymentLimit = due ?? (canRecordWithUnallocatedDeposit && data?.price != null
+    ? data.price - data.depositPaid - data.invoicedPaid : 0);
+  const showPaymentEntry = canManage && ['confirmed', 'completed'].includes(appointment.status)
+    && Date.parse(appointment.start_at) <= Date.now() && !['paid', 'refunded'].includes(appointment.payment_status)
+    && paymentLimit > 0 && (Boolean(data?.payableInvoiceId) || data?.invoices.length === 0);
   const validReceipt = parseAmount(paymentInput);
-  const canRecord = canManage && !busy && due != null && due > 0
-    && validReceipt != null && validReceipt <= due
-    && (balance?.payableInvoice != null || balance?.sessionInvoices.length === 0);
+  const canRecord = showPaymentEntry && canTakeReceipt && method !== ''
+    && validReceipt != null && validReceipt <= paymentLimit;
 
   useEffect(() => {
     setPaymentInput(due != null && due > 0 ? String(due) : '');
@@ -271,12 +292,13 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
     return ref.current.key;
   }
 
-  async function recordReceived() {
-    const amount = parseAmount(paymentInput);
-    if (!balance || !projectId || amount == null || !canRecord) {
-      setError(copy.invalid);
-      return;
-    }
+  async function recordReceived(purpose: 'deposit' | 'session_balance') {
+    const isDeposit = purpose === 'deposit';
+    const amount = parseAmount(isDeposit ? depositInput : paymentInput);
+    const receiptMethod = isDeposit ? depositMethod : method;
+    const receivedDate = isDeposit ? depositDate : receiptDate;
+    const occurredAt = receivedDate ? new Date(`${receivedDate}T00:00`).toISOString() : undefined;
+    if (amount == null || !receiptMethod || (receivedDate && receivedDate > today) || (isDeposit ? !canRecordDeposit : !canRecord)) return;
     if (!await confirmDialog({
       title: copy.receiveConfirmTitle,
       message: copy.receiveConfirmMessage + ' ' + formatMoney(amount, appointment.currency, language),
@@ -287,46 +309,28 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
     setBusy(true);
     setError(null);
     setNotice(null);
+    const attempt = isDeposit ? depositAttempt : paymentAttempt;
     try {
-      const invoiceId = balance.payableInvoice?.invoice.id;
-      if (invoiceId) {
-        await api.recordInvoicePayment({
-          invoiceId,
-          amount,
-          idempotencyKey: idempotencyKey(paymentAttempt, `${invoiceId}:${amount}`),
-        });
-      } else if (balance.sessionInvoices.length === 0) {
-        // The invoice is exclusively for the post-deposit balance. If any step
-        // fails, reload existing invoices rather than silently creating another.
-        const created = await api.createInvoice({
-          projectId,
-          idempotencyKey: idempotencyKey(invoiceCreation, `${appointment.id}:${balance.due}`),
-          notes: 'Balance for one tattoo session. Deposit recorded separately.',
-        });
-        await api.setInvoiceLineItem({
-          invoiceId: created.invoice_id,
-          sessionId: appointment.id,
-          description: 'Tattoo session balance after allocated deposit',
-          quantity: 1,
-          unitAmount: balance.due ?? 0,
-        });
-        await api.issueInvoice(created.invoice_id);
-        await api.recordInvoicePayment({
-          invoiceId: created.invoice_id,
-          amount,
-          idempotencyKey: idempotencyKey(paymentAttempt, `${created.invoice_id}:${amount}`),
-        });
+      const receipt = await api.recordSessionReceipt({
+        sessionId: appointment.id, purpose, method: receiptMethod, amount, occurredAt,
+        requestId: idempotencyKey(attempt, `${appointment.id}:${purpose}:${amount}:${receiptMethod}:${occurredAt ?? ''}`),
+      });
+      if (!receipt.confirmed) throw new Error(copy.failed);
+      attempt.current = null;
+      if (isDeposit) {
+        setDepositInput('');
+        setDepositMethod('');
+        setDepositDate('');
       } else {
-        throw new Error(copy.unknown);
+        setPaymentInput('');
+        setMethod('');
+        setReceiptDate('');
       }
-      paymentAttempt.current = null;
-      invoiceCreation.current = null;
       setNotice(copy.success);
       setRefresh((value) => value + 1);
+      onChanged?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : copy.failed);
-      // A partially created invoice is visible on the next read for recovery.
-      setRefresh((value) => value + 1);
     } finally {
       setBusy(false);
     }
@@ -357,7 +361,7 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
           {loading ? <p className="meta" role="status">{copy.loading}</p> : null}
           {error ? <p className="notice warn" role="alert">{error}</p> : null}
           {notice ? <p className="notice ok" role="status">{notice}</p> : null}
-          {data && balance ? (
+          {data ? (
             <>
               {data.price == null ? (
                 <p className="notice warn">{copy.missingPrice}</p>
@@ -391,17 +395,17 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
                 <dt>{copy.price}</dt>
                 <dd style={{ margin: 0 }}>{data.price == null ? '—' : formatMoney(data.price, appointment.currency, language)}</dd>
                 <dt>{copy.deposit}</dt>
-                <dd style={{ margin: 0 }}>−{formatMoney(balance.depositPaid, appointment.currency, language)}</dd>
+                <dd style={{ margin: 0 }}>−{formatMoney(data.depositPaid, appointment.currency, language)}</dd>
                 <dt>{copy.paid}</dt>
-                <dd style={{ margin: 0 }}>−{formatMoney(balance.invoicedPaid, appointment.currency, language)}</dd>
+                <dd style={{ margin: 0 }}>−{formatMoney(data.invoicedPaid, appointment.currency, language)}</dd>
                 <dt><strong>{copy.due}</strong></dt>
                 <dd style={{ margin: 0 }}><strong>{due == null ? '—' : formatMoney(due, appointment.currency, language)}</strong></dd>
               </dl>
-              {balance.warnings.length ? (
+              {data.warnings.length ? (
                 <div className="notice warn" role="status">
                   {copy.unknown}
                   <ul style={{ marginBottom: 0 }}>
-                    {balance.warnings.map((warning: CheckoutWarning) => (
+                    {data.warnings.map((warning: CheckoutWarning) => (
                       <li key={warning}>{copy.warning[warning]}</li>
                     ))}
                   </ul>
@@ -411,7 +415,7 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
                 <p className="meta">{copy.staleStatus}</p>
               ) : null}
               {due === 0 ? <p className="notice ok">{copy.paidAll}</p> : null}
-              {canManage && due != null && due > 0 ? (
+              {showPaymentEntry ? (
                 <div className="actions" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
                   <label style={{ flex: '1 1 145px', minWidth: 0 }}>
                     <span>{copy.received.replace('GBP', appointment.currency)}</span>
@@ -423,13 +427,50 @@ function SessionCheckoutDetails({ appointment }: { appointment: Appointment }) {
                       disabled={busy}
                     />
                   </label>
-                  <button type="button" className="primary" disabled={!canRecord} onClick={() => { void recordReceived(); }}>
+                  <label>
+                    <span>{copy.method}</span>
+                    <select value={method} onChange={(event) => setMethod(event.target.value as typeof method)} disabled={busy}>
+                      <option value="">—</option>
+                      {RECEIPT_METHODS.map((value) => <option key={value} value={value}>{copy.methods[value]}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span>{copy.receiptDate}</span>
+                    <input type="date" value={receiptDate || today} max={today} onChange={(event) => setReceiptDate(event.target.value)} disabled={busy} />
+                  </label>
+                  <button type="button" className="primary" disabled={!canRecord} onClick={() => { void recordReceived('session_balance'); }}>
                     {busy ? copy.recording : copy.record}
                   </button>
                 </div>
               ) : null}
+              {showDepositEntry ? (
+                <details>
+                  <summary>{copy.depositEntry}</summary>
+                  <div className="actions" style={{ alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <label>
+                      <span>{copy.depositAmount} ({appointment.currency})</span>
+                      <input inputMode="decimal" value={depositInput} onChange={(event) => setDepositInput(event.target.value)} disabled={busy} />
+                    </label>
+                    <label>
+                      <span>{copy.method}</span>
+                      <select value={depositMethod} onChange={(event) => setDepositMethod(event.target.value as typeof depositMethod)} disabled={busy}>
+                        <option value="">—</option>
+                        {RECEIPT_METHODS.map((value) => <option key={value} value={value}>{copy.methods[value]}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{copy.receiptDate}</span>
+                      <input type="date" value={depositDate || today} max={today} onChange={(event) => setDepositDate(event.target.value)} disabled={busy} />
+                    </label>
+                    <button type="button" className="primary" disabled={!canRecordDeposit || !depositMethod || parseAmount(depositInput) == null}
+                      onClick={() => { void recordReceived('deposit'); }}>
+                      {copy.depositEntry}
+                    </button>
+                  </div>
+                </details>
+              ) : null}
               <div className="actions" style={{ marginTop: 10, flexWrap: 'wrap' }}>
-                {balance.sessionInvoices.map((document) => (
+                {data.invoices.map((document) => (
                   <Link key={document.invoice.id} to={`/invoices/${document.invoice.id}`}>
                     {copy.invoice} {document.invoice.invoice_number}
                   </Link>

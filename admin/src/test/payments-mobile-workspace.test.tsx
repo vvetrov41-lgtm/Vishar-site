@@ -50,6 +50,28 @@ function renderPayments(options: Record<string, unknown> = {}) {
 }
 
 describe('mobile deposits workspace', () => {
+  it('lets the operator choose and confirm a session for an unmatched transfer', async () => {
+    const transfer = { ...confirmedCandidate(1), status: 'unmatched', confirmed: false };
+    const { rpcCalls } = renderPayments({
+      reconciliationCandidates: [transfer],
+      rpcHandlers: { confirm_monzo_session_receipt: () => ({ data: { confirmed: true }, error: null }) },
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Choose a session manually' }));
+    expect(rpcCalls.some((call) => call.name === 'confirm_monzo_session_receipt')).toBe(false);
+    fireEvent.change(screen.getByLabelText('Client name'), { target: { value: 'Fixture' } });
+    const session = screen.getByLabelText('Session') as HTMLSelectElement;
+    fireEvent.change(session, { target: { value: SESSION.id } });
+    fireEvent.change(screen.getByLabelText('Payment purpose'), { target: { value: 'deposit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm payment' }));
+    const confirm = await screen.findByRole('alertdialog');
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Confirm payment' }));
+    await waitFor(() => expect(rpcCalls).toContainEqual({
+      name: 'confirm_monzo_session_receipt',
+      args: { p_candidate_id: transfer.id, p_session_id: SESSION.id, p_purpose: 'deposit' },
+    }));
+  });
+
   it('shows four upcoming sessions first and expands on demand', async () => {
     renderPayments({ extraSessions: Array.from({ length: 5 }, (_, index) => futureSession(index)) });
 

@@ -351,6 +351,20 @@ export const DOMAIN_OPERATIONS = Object.freeze([
     description: 'Money action. Only when the user states the deposit was actually received.',
   }),
   op({
+    id: 'recordSessionReceipt', domain: 'Project Finance', method: 'POST',
+    path: '/v1/sessions/{session_id}/received-payment', rpc: 'gpt_record_session_receipt',
+    params: [
+      p.path('session_id', 'p_session_id'),
+      requestId,
+      p.req(p.enum('purpose', 'p_purpose', ['deposit', 'session_balance'])),
+      p.req(p.num('amount', 'p_amount', 0.01, 100000)),
+      p.req(p.enum('method', 'p_method', ['cash', 'studio_direct', 'bank_transfer', 'card', 'other'])),
+      p.dateTime('occurred_at', 'p_occurred_at'),
+    ],
+    summary: 'Confirm money already received for a tattoo session',
+    description: 'Money action. Use only when the user confirms the exact amount already received, the session, and whether it was a deposit or a session payment. No Monzo confirmation is needed. For money collected by a studio use studio_direct. Reuse the same request ID on an identical retry.',
+  }),
+  op({
     id: 'requestGroupedSessionDeposit', domain: 'Project Finance', method: 'POST', path: '/v1/sessions/deposit-request',
     rpc: 'gpt_request_grouped_session_deposit',
     params: [

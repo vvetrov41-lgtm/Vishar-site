@@ -213,6 +213,29 @@ paths:
         - {name: payment_request_id, in: path, required: true, schema: {type: string, format: uuid}}
       requestBody: {required: true, content: {application/json: {schema: {type: object, additionalProperties: false, properties: {}}}}}
       responses: {'200': {description: Payment request cancellation result}}
+  /v1/sessions/{session_id}/received-payment:
+    post:
+      operationId: recordSessionReceipt
+      summary: "Confirm money already received for a tattoo session"
+      x-openai-isConsequential: true
+      description: "Money action. Use only when the user confirms the exact amount already received, the session, and whether it was a deposit or a session payment. No Monzo confirmation is needed. For money collected by a studio use studio_direct. Reuse the same request ID on an identical retry."
+      parameters:
+        - {name: "session_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["request_id", "purpose", "amount", "method"]
+              properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
+                purpose: {type: "string", enum: ["deposit", "session_balance"]}
+                amount: {type: "number", minimum: 0.01, maximum: 100000}
+                method: {type: "string", enum: ["cash", "studio_direct", "bank_transfer", "card", "other"]}
+                occurred_at: {type: "string", format: "date-time"}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/payments/requests/{payment_request_id}/manual-payment:
     post:
       operationId: recordManualPayment

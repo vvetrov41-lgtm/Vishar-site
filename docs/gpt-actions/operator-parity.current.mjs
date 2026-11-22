@@ -240,6 +240,7 @@ export const OPERATOR_PARITY = Object.freeze([
   row('payments.session_deposit.request', 'Project Finance', 'manage_finance', 'money', A, 'requestSessionDeposit', ['public.gpt_request_session_deposit', 'public.request_session_deposit']),
   row('payments.session_deposit.request_grouped', 'Project Finance', 'manage_finance', 'money', A, 'requestGroupedSessionDeposit', ['public.request_grouped_session_deposit']),
   row('payments.request.cancel', 'Project Finance', 'manage_finance', 'money', A, 'cancelPaymentRequest', ['public.gpt_cancel_payment_request', 'public.cancel_payment_request']),
+  row('payments.session_receipt.record', 'Project Finance', 'manage_finance', 'money', A, 'recordSessionReceipt', ['public.gpt_record_session_receipt', 'public.record_session_receipt']),
   row('payments.record_manual', 'Project Finance', 'record_payments', 'money', A, 'recordManualPayment', ['public.gpt_record_manual_payment', 'public.record_manual_payment']),
 
   // ------------------------------------------------ Billing & Reconciliation
@@ -265,6 +266,7 @@ export const OPERATOR_PARITY = Object.freeze([
   row('monzo.reconciliation.ignore', 'Billing & Reconciliation', 'manage_finance', 'write', A, 'ignoreMonzoReconciliationCandidate', ['public.ignore_monzo_reconciliation_candidate']),
   row('monzo.reconciliation.confirm', 'Billing & Reconciliation', 'record_payments', 'money', A, 'confirmMonzoReconciliationCandidate', ['public.confirm_monzo_reconciliation_candidate']),
   row('monzo.reconciliation.link_recorded_receipt', 'Billing & Reconciliation', 'manage_finance', 'money', N, 'linkMonzoRecordedReceipt', ['public.link_monzo_recorded_receipt'], { note: 'Ledger-safe evidence association for a verified Monzo transfer and an already-recorded invoice receipt; requires explicit human confirmation.' }),
+  row('monzo.reconciliation.session_receipt', 'Billing & Reconciliation', 'manage_finance', 'money', N, 'confirmMonzoSessionReceipt', ['public.confirm_monzo_session_receipt'], { note: 'Explicit human confirmation of an unmatched Monzo transfer for a chosen appointment. Independent of the manual receipt operation already available to the plugin.' }),
   row('monzo.reconciliation.legacy_paid_deposit', 'Billing & Reconciliation', 'manage_finance', 'money', N, 'reconcileMonzoLegacyPaidDeposit', ['public.reconcile_monzo_legacy_paid_deposit'], { note: 'Verified bank transfer for a previously marked-paid project deposit, after explicit operator selection of the existing client and session; creates one immutable receipt without duplicate notification.' }),
 
   // ---------------------------------------------------------- Communications
