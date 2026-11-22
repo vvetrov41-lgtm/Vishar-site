@@ -1,0 +1,3 @@
+# Plan
+
+Add an artist-scoped, idempotent database operation that reuses existing payment requests and immutable ledger entries. The operation validates the amount, appointment and payment method. It records on a compatible open request when one exists, or creates an internal record for already received money. Keep payment link creation and client outreach out of the new receipt flow. Make the session checkout and receipt projection consume the same deposit and payment facts. Expose the operation in the plugin and keep Monzo matching explicitly confirmed and separate from cash and studio receipts.

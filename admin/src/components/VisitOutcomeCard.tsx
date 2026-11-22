@@ -32,7 +32,7 @@ type Step = 'ask' | 'attended' | 'consultation' | 'saved';
 type OutcomeField = 'hours' | 'price' | 'received' | 'method' | 'booking' | 'followDate';
 
 const TATTOO_TYPES: AppointmentType[] = ['tattoo_session', 'touch_up'];
-const METHODS: PaymentMethod[] = ['cash', 'bank_transfer', 'card', 'other'];
+const METHODS: PaymentMethod[] = ['cash', 'bank_transfer', 'card', 'studio_direct', 'other'];
 const WORK_RESULTS: WorkResult[] = ['work_complete', 'next_session_needed', 'touch_up_needed'];
 
 export interface VisitOutcomeCardProps {
@@ -115,6 +115,9 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
     return result && result.currency === currency ? result.price : null;
   }, [context, isTattoo, workedMinutes, finance, pricing, currency]);
   const preview = previewPayment(finance, priceValue, receivedValue ?? 0, outside);
+  const canRecordWithUnallocatedDeposit = context?.session.payment_status !== 'paid'
+    && finance?.session_invoice_count === 0
+    && finance.warnings.length === 1 && finance.warnings[0] === 'unallocated_deposit';
 
   const openAttended = useCallback(() => {
     if (!context) return;
@@ -384,17 +387,18 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
               </label>
 
               {preview.state === 'needs_review' ? (
-                <p className="notice warn">{copy.needsReview}{' '}
+                <p className="notice warn">{canRecordWithUnallocatedDeposit ? copy.depositNeedsReview : copy.needsReview}{' '}
                   {context.session.project_id ? <Link to={`/projects/${context.session.project_id}`}>{copy.projectFinance}</Link> : null}
                 </p>
-              ) : (
+              ) : null}
+              {preview.state !== 'needs_review' || canRecordWithUnallocatedDeposit ? (
                 <>
                   <div className="visit-outcome-money meta">
                     {finance && finance.deposit_paid > 0 ? <div>{copy.depositApplied}: {formatMoney(finance.deposit_paid, currency, language)}</div> : null}
                     {finance && finance.invoiced_paid > 0 ? <div>{copy.receivedEarlier}: {formatMoney(finance.invoiced_paid, currency, language)}</div> : null}
                     {preview.dueBefore != null ? <div><strong>{copy.toCollect}: {formatMoney(preview.dueBefore, currency, language)}</strong></div> : null}
                   </div>
-                  {preview.dueBefore !== 0 ? (
+                  {preview.dueBefore != null && preview.dueBefore !== 0 ? (
                     <label className="visit-check">
                       <input type="checkbox" checked={outside} onChange={(event) => { setOutside(event.target.checked); if (event.target.checked) setReceived(''); setFieldError(null); }} />
                       {copy.paidOutside}
@@ -435,7 +439,7 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
                     </p>
                   ) : null}
                 </>
-              )}
+              ) : null}
             </>
           ) : (
             <p className="meta">{copy.noFinance}</p>
@@ -558,8 +562,17 @@ function SavedSummary({ context, language }: { context: VisitOutcomeContext; lan
   if (outcome.worked_minutes) parts.push(copy.workedFor(minutesToHoursInput(outcome.worked_minutes)));
   if (outcome.work_result) parts.push(copy.work[outcome.work_result]);
   if (outcome.final_price != null) parts.push(`${copy.priceShort}: ${formatMoney(outcome.final_price, currency, language)}`);
-  if (outcome.payment_state) parts.push(copy.paymentState[outcome.payment_state]);
-  if (outcome.outstanding) parts.push(`${copy.outstanding}: ${formatMoney(outcome.outstanding, currency, language)}`);
+  const finance = context.finance;
+  const state = outcome.outcome === 'attended' && finance
+    ? finance.warnings.length > 0
+      ? 'needs_review'
+      : outcome.paid_outside_crm || finance.due === 0
+        ? 'paid'
+        : finance.deposit_paid + finance.invoiced_paid > 0 ? 'part_paid' : outcome.payment_state
+    : outcome.payment_state;
+  const outstanding = finance ? finance.due : outcome.outstanding;
+  if (state) parts.push(copy.paymentState[state]);
+  if (outstanding && state !== 'paid') parts.push(`${copy.outstanding}: ${formatMoney(outstanding, currency, language)}`);
   return (
     <div className="visit-outcome-saved">
       <p className="meta"><span className="badge ok">{copy.confirmed}</span> {parts.join(' · ')}</p>
@@ -623,13 +636,14 @@ const COPY: Record<Language, Copy> = {
     paidOutside: 'Остаток уже получен раньше, вне CRM (новый платёж не создаётся)',
     receivedNow: (c: string) => `Получено сейчас, ${c}`,
     method: 'Способ оплаты',
-    methods: { cash: 'Наличные', bank_transfer: 'Перевод', card: 'Карта', other: 'Другое' },
+    methods: { cash: 'Наличные', bank_transfer: 'Перевод', card: 'Карта', studio_direct: 'Приняла студия', other: 'Другое' },
     summary: (total: string, now: string, left: string) => `Всего оплачено ${total}, новое поступление ${now}, остаток ${left}`,
     paymentState: {
       paid: 'Оплачено полностью', part_paid: 'Оплачено частично', unpaid: 'Не оплачено',
       needs_review: 'Нужна сверка', not_recorded: 'Оплата не указана', unknown: '',
     },
     outstanding: 'Остаток',
+    depositNeedsReview: 'Депозит ещё нужно распределить. Полученную сумму можно записать сейчас.',
     needsReview: 'Платежи по этому сеансу нужно сверить в финансах проекта. Итог можно сохранить без новой оплаты.',
     projectFinance: 'Финансы проекта',
     noFinance: 'Стоимость и оплату подтвердит человек с доступом к финансам.',
@@ -728,13 +742,14 @@ const COPY: Record<Language, Copy> = {
     paidOutside: 'The balance was already received outside the CRM (no new payment is created)',
     receivedNow: (c: string) => `Received now, ${c}`,
     method: 'Payment method',
-    methods: { cash: 'Cash', bank_transfer: 'Bank transfer', card: 'Card', other: 'Other' },
+    methods: { cash: 'Cash', bank_transfer: 'Bank transfer', card: 'Card', studio_direct: 'Received by studio', other: 'Other' },
     summary: (total: string, now: string, left: string) => `Paid in total ${total}, new money now ${now}, balance ${left}`,
     paymentState: {
       paid: 'Paid in full', part_paid: 'Part paid', unpaid: 'Unpaid',
       needs_review: 'Needs review', not_recorded: 'Payment not recorded', unknown: '',
     },
     outstanding: 'Balance',
+    depositNeedsReview: 'The deposit still needs to be allocated. You can record money received now.',
     needsReview: 'Payments for this session need review in project finances. You can save the outcome without a new payment.',
     projectFinance: 'Project finances',
     noFinance: 'Someone with finance access confirms the price and payment.',

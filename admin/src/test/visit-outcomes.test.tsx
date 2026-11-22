@@ -188,6 +188,31 @@ describe('Today visit outcomes', () => {
     expect((await screen.findAllByText(/Outcome saved/)).length).toBeGreaterThan(0);
   });
 
+  it('records an explicit studio receipt even when an old deposit needs allocation', async () => {
+    const recorded: Array<Record<string, unknown> | undefined> = [];
+    renderWithSession(<VisitOutcomeCard sessionId={SESSION_ID} />, {
+      role: 'owner',
+      rpcHandlers: {
+        get_visit_outcome_context: () => ({ data: {
+          ...tattooContext(), finance: finance({ deposit_paid: 0, warnings: ['unallocated_deposit'] }),
+        }, error: null }),
+        record_visit_outcome: (args) => {
+          recorded.push(args);
+          return { data: { session_status: 'completed', aftercare_already_sent: true }, error: null };
+        },
+      },
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Session happened' }));
+    fireEvent.change(screen.getByLabelText(/Actual working time/), { target: { value: '5.5' } });
+    fireEvent.change(screen.getByLabelText(/Final price, GBP/), { target: { value: '770' } });
+    fireEvent.change(screen.getByLabelText(/Received now, GBP/), { target: { value: '470' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Received by studio' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save outcome' }));
+    await waitFor(() => expect(recorded[0]).toMatchObject({
+      p_details: { received_now: 470, payment_method: 'studio_direct' },
+    }));
+  });
+
   it('shows errors by the edited field and never sends invalid payment data', async () => {
     const recorded: Array<Record<string, unknown> | undefined> = [];
     renderWithSession(<App />, {

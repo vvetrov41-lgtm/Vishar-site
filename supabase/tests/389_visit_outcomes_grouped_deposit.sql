@@ -4,7 +4,7 @@
 -- payment as "unallocated" and refused to compute a balance. Covers: the share
 -- of a fully paid group counts once, the other members are untouched, a session
 -- outside the group gets no deposit, an incomplete group asks for review, and
--- recording the balance never touches the deposit transaction.
+-- recording an independent receipt never touches the deposit transaction.
 -- Synthetic rows, rolled back; no provider call.
 begin;
 select no_plan();
@@ -166,14 +166,13 @@ select is((public.get_visit_outcome_context('e8500000-0000-4000-8000-0000000000a
 select ok((public.get_visit_outcome_context('e8500000-0000-4000-8000-0000000000b1') -> 'finance' -> 'warnings')
           ? 'unallocated_deposit',
   'a partly paid group is not attributed to a session');
-select throws_ok($$select public.record_visit_outcome('e8500000-0000-4000-8000-0000000000b1',
-  'e8900000-0000-4000-8000-0000000000f3', 0, 'attended',
-  jsonb_build_object('worked_minutes', 420, 'final_price', 980, 'received_now', 500, 'payment_method', 'cash'))$$,
-  '23514', null, 'no new money is accepted until that group is reconciled');
 select is((public.record_visit_outcome('e8500000-0000-4000-8000-0000000000b1',
-  'e8900000-0000-4000-8000-0000000000f4', 0, 'attended',
-  jsonb_build_object('worked_minutes', 420, 'final_price', 980)) ->> 'payment_state'),
-  'needs_review', 'the outcome is still saved, marked for review');
+  'e8900000-0000-4000-8000-0000000000f3', 0, 'attended',
+  jsonb_build_object('worked_minutes', 420, 'final_price', 980, 'received_now', 500, 'payment_method', 'cash')) ->> 'payment_state'),
+  'needs_review', 'the receipt is saved and the balance still needs a group allocation review');
+select is((public.get_visit_outcome_context('e8500000-0000-4000-8000-0000000000b1')
+  -> 'finance' ->> 'invoiced_paid')::numeric, 500::numeric,
+  'the independent cash receipt is counted once');
 reset role;
 
 select * from finish(true);

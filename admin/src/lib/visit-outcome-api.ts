@@ -13,7 +13,7 @@ export type TattooOutcome = 'attended' | 'no_show' | 'cancelled';
 export type ConsultationOutcome = 'booked' | 'ready_to_book' | 'thinking' | 'declined' | 'no_show';
 export type VisitOutcomeValue = TattooOutcome | ConsultationOutcome;
 export type WorkResult = 'work_complete' | 'next_session_needed' | 'touch_up_needed';
-export type PaymentMethod = 'cash' | 'bank_transfer' | 'card' | 'other';
+export type PaymentMethod = 'cash' | 'bank_transfer' | 'card' | 'studio_direct' | 'other';
 export type VisitPaymentState = 'paid' | 'part_paid' | 'unpaid' | 'needs_review' | 'not_recorded';
 
 export type FinanceWarning =

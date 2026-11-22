@@ -403,14 +403,13 @@ select ok((public.get_visit_outcome_context('e7500000-0000-4000-8000-00000000001
   'a project deposit without a session allocation is reported for review');
 select is(public.get_visit_outcome_context('e7500000-0000-4000-8000-000000000011') -> 'finance' ->> 'due',
   null, 'no balance is invented while the ledger needs review');
-select throws_ok($$select public.record_visit_outcome('e7500000-0000-4000-8000-000000000011',
-  'e7900000-0000-4000-8000-000000000110', 0, 'attended',
-  jsonb_build_object('worked_minutes', 240, 'final_price', 560, 'received_now', 360, 'payment_method', 'cash'))$$,
-  '23514', null, 'new money is refused until the deposit is reconciled');
 select is((public.record_visit_outcome('e7500000-0000-4000-8000-000000000011',
-  'e7900000-0000-4000-8000-000000000111', 0, 'attended',
-  jsonb_build_object('worked_minutes', 240, 'final_price', 560)) ->> 'payment_state'),
-  'needs_review', 'the outcome can still be saved, marked for review');
+  'e7900000-0000-4000-8000-000000000110', 0, 'attended',
+  jsonb_build_object('worked_minutes', 240, 'final_price', 560,
+    'received_now', 360, 'payment_method', 'cash')) ->> 'payment_state'),
+  'needs_review', 'independent receipt is saved while the deposit still needs allocation');
+select is(public.get_visit_outcome_context('e7500000-0000-4000-8000-000000000011') -> 'finance' ->> 'invoiced_paid',
+  '360.00', 'explicit cash receipt is immediately available in the session finance projection');
 reset role;
 
 -- ------------------------- finance capability is enforced on the server

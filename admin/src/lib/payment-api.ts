@@ -1,3 +1,4 @@
+import type { PaymentMethod } from './visit-outcome-api';
 import { ApiError, friendlyMessage, type CrmClient, type ApiOperation } from './api';
 
 export interface DepositTier {
@@ -179,6 +180,17 @@ export interface ProjectPaymentRequest {
   outstanding_amount: number;
 }
 
+export interface SessionReceiptResult {
+  payment_request_id: string;
+  payment_transaction_id: string;
+  amount: number;
+  currency: string;
+  confirmed: boolean;
+  payment_status: string;
+  balance_needs_review?: boolean;
+  replayed: boolean;
+}
+
 export interface ManualPaymentResult {
   payment_transaction_id: string;
   payment_request_id: string;
@@ -203,7 +215,9 @@ export interface RecordedMonzoReceiptOption {
   payment_transaction_id: string;
   payment_request_id: string;
   client_name: string;
-  invoice_number: string;
+  invoice_number: string | null;
+  purpose?: string;
+  session_start_at?: string | null;
   occurred_at: string;
   amount: number;
   currency: string;
@@ -477,6 +491,27 @@ export function createPaymentApi(client: CrmClient) {
       });
     },
 
+    async recordSessionReceipt(input: {
+      sessionId: string;
+      requestId: string;
+      purpose: 'deposit' | 'session_balance';
+      amount: number;
+      method: PaymentMethod;
+      occurredAt?: string;
+    }): Promise<SessionReceiptResult> {
+      return unwrap<SessionReceiptResult>(
+        await client.rpc('record_session_receipt', {
+          p_session_id: input.sessionId,
+          p_request_id: input.requestId,
+          p_purpose: input.purpose,
+          p_amount: input.amount,
+          p_method: input.method,
+          p_occurred_at: input.occurredAt ?? null,
+        }),
+        'record that manual payment'
+      );
+    },
+
     async recordManualPayment(input: {
       paymentRequestId: string;
       amount: number;
@@ -549,6 +584,21 @@ export function createPaymentApi(client: CrmClient) {
         await client.rpc('reconcile_monzo_legacy_paid_deposit', {
           p_candidate_id: input.candidateId,
           p_session_id: input.sessionId,
+        }),
+        'match that Monzo payment'
+      );
+    },
+
+    async confirmMonzoSessionReceipt(input: {
+      candidateId: string;
+      sessionId: string;
+      purpose: 'deposit' | 'session_balance';
+    }): Promise<SessionReceiptResult> {
+      return unwrap<SessionReceiptResult>(
+        await client.rpc('confirm_monzo_session_receipt', {
+          p_candidate_id: input.candidateId,
+          p_session_id: input.sessionId,
+          p_purpose: input.purpose,
         }),
         'match that Monzo payment'
       );

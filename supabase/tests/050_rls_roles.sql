@@ -914,6 +914,8 @@ insert into expected_function_acl values
   ('public.void_invoice(uuid,text)', false, true, false),
   ('public.attach_payment_request_to_invoice(uuid,uuid)', false, true, false),
   ('public.record_invoice_payment(uuid,uuid,numeric,timestamptz,text,text)', false, true, false),
+  ('public.record_session_receipt(uuid,uuid,text,numeric,text,timestamptz)', false, true, false),
+  ('public.confirm_monzo_session_receipt(uuid,uuid,text)', false, true, false),
   ('public.create_credit_note(uuid,uuid,numeric,text)', false, true, false),
 
   -- Visit outcomes: signed-in CRM users only; every call re-checks the
@@ -940,12 +942,16 @@ insert into expected_function_acl values
   ('crm_private.no_active_owner()', false, true, true);
 
 select is(
-  (select count(*)::int
+  (select string_agg(format('%s [anon=%s, authenticated=%s, service=%s]', e.signature,
+      has_function_privilege('anon', e.signature, 'EXECUTE'),
+      has_function_privilege('authenticated', e.signature, 'EXECUTE'),
+      has_function_privilege('service_role', e.signature, 'EXECUTE')), E'\n' order by e.signature)
    from expected_function_acl e
-   where has_function_privilege('anon', e.signature, 'EXECUTE') = e.anon_allowed
-     and has_function_privilege('authenticated', e.signature, 'EXECUTE') = e.authenticated_allowed
-     and has_function_privilege('service_role', e.signature, 'EXECUTE') = e.service_role_allowed),
-  (select count(*)::int from expected_function_acl),
+   where (has_function_privilege('anon', e.signature, 'EXECUTE'),
+          has_function_privilege('authenticated', e.signature, 'EXECUTE'),
+          has_function_privilege('service_role', e.signature, 'EXECUTE'))
+         is distinct from (e.anon_allowed, e.authenticated_allowed, e.service_role_allowed)),
+  null::text,
   'every intentionally callable function has exactly its documented API-role grants'
 );
 

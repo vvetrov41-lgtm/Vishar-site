@@ -165,6 +165,9 @@ export function PaymentsPage() {
   const [busyGroup, setBusyGroup] = useState(false);
   const [selectedGroupSessionIds, setSelectedGroupSessionIds] = useState<string[]>([]);
   const [busyCandidate, setBusyCandidate] = useState<string | null>(null);
+  const [bankSession, setBankSession] = useState<{ candidateId: string; sessionId: string; purpose: '' | 'deposit' | 'session_balance' } | null>(null);
+  const [bankClientFilter, setBankClientFilter] = useState('');
+
   const [manualMatch, setManualMatch] = useState<Record<string, boolean>>({});
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DepositRequestResult | null>(null);
@@ -194,6 +197,21 @@ export function PaymentsPage() {
     () => artists.find((artist) => artist.id === selectedArtistId) ?? null,
     [artists, selectedArtistId]
   );
+  const bankSessionOptions = useMemo(() => {
+    if (!bankSession) return [];
+    const candidate = reconciliationCandidates.find((entry) => entry.id === bankSession.candidateId);
+    if (!candidate) return [];
+    const search = bankClientFilter.trim().toLocaleLowerCase();
+    return appointments.filter((entry) => {
+      const name = clientNames.get(entry.client_id);
+      return name && name.toLocaleLowerCase().includes(search)
+        && entry.artist_id === selectedArtistId && entry.project_id
+        && entry.currency === candidate.currency && ['proposed', 'confirmed', 'completed'].includes(entry.status)
+        && !['paid', 'refunded'].includes(entry.payment_status);
+    }).sort((left, right) =>
+      Math.abs(Date.parse(left.start_at) - Date.parse(candidate.occurred_at))
+        - Math.abs(Date.parse(right.start_at) - Date.parse(candidate.occurred_at)));
+  }, [appointments, bankClientFilter, bankSession, clientNames, reconciliationCandidates, selectedArtistId]);
   const selectedMembership = useMemo(
     () => memberships.find((membership) => membership.artist_id === selectedArtistId && membership.is_active) ?? null,
     [memberships, selectedArtistId]
@@ -276,7 +294,6 @@ export function PaymentsPage() {
     for (const candidate of candidates) {
       const preferred = candidate.matched_payment_request?.payment_request_id
         ?? candidate.suggested_payment_request?.payment_request_id
-        ?? candidate.match_options[0]?.payment_request_id
         ?? '';
       next[candidate.id] = preferred;
     }
@@ -333,6 +350,8 @@ export function PaymentsPage() {
     setOneOffNotice(null);
     setReconciliationNotice(null);
     setSelectedGroupSessionIds([]);
+    setBankSession(null);
+    setBankClientFilter('');
     setDestinationNotice(null);
     setDestinationAmount('');
     setDestinationUrl('');
@@ -616,8 +635,8 @@ export function PaymentsPage() {
     const approved = await confirmDialog({
       title: language === 'ru' ? 'Связать с уже записанной оплатой?' : 'Link bank transfer to recorded payment?',
       message: language === 'ru'
-        ? 'Monzo ' + money(candidate.amount, candidate.currency, locale) + ' будет связан с уже записанной оплатой клиента ' + selected.client_name + ' (счёт ' + selected.invoice_number + '). Новые деньги в CRM не добавятся.'
-        : 'Link Monzo ' + money(candidate.amount, candidate.currency, locale) + ' to ' + selected.client_name + ' existing receipt (invoice ' + selected.invoice_number + '). No second payment is created.',
+        ? 'Monzo ' + money(candidate.amount, candidate.currency, locale) + ' будет связан с уже записанной оплатой клиента ' + selected.client_name + '. Новые деньги в CRM не добавятся.'
+        : 'Link Monzo ' + money(candidate.amount, candidate.currency, locale) + ' to ' + selected.client_name + '. No second payment is created.',
       confirmLabel: language === 'ru' ? 'Сопоставить без повторной оплаты' : 'Link without adding another payment',
       cancelLabel: cancelLabelFor(language),
       tone: 'primary',
@@ -674,6 +693,39 @@ export function PaymentsPage() {
       setError(cause instanceof Error ? cause.message : (
         language === 'ru' ? 'Не удалось безопасно сопоставить старый депозит.' : 'Could not safely match the existing deposit.'
       ));
+    } finally {
+      setBusyCandidate(null);
+    }
+  }
+
+  async function confirmBankSession(candidate: MonzoReconciliationCandidate) {
+    if (!selectedArtistId || !canManageReconciliation || bankSession?.candidateId !== candidate.id || !bankSession.purpose) return;
+    const purpose = bankSession.purpose;
+    const appointment = bankSessionOptions.find((entry) => entry.id === bankSession.sessionId);
+    if (purpose === 'session_balance' && appointment && (appointment.status === 'proposed' || Date.parse(appointment.start_at) > Date.now())) return;
+    if (!appointment) return;
+    const client = clientNames.get(appointment.client_id) ?? copy.clientUnknown;
+    if (!await confirmDialog({
+      title: copy.confirmPaymentTitle,
+      message: copy.confirmPrompt(money(candidate.amount, candidate.currency, locale),
+        `${client} · ${new Date(appointment.start_at).toLocaleString(locale)}`)
+        + (purpose === 'deposit' ? (language === 'ru' ? ' Назначение: депозит.' : ' Purpose: deposit.')
+          : (language === 'ru' ? ' Назначение: оплата сеанса.' : ' Purpose: session payment.')),
+      confirmLabel: copy.confirmPayment,
+      cancelLabel: cancelLabelFor(language),
+      tone: 'primary',
+    })) return;
+    setBusyCandidate(candidate.id);
+    setError(null);
+    setReconciliationNotice(null);
+    try {
+      const receipt = await api.confirmMonzoSessionReceipt({ candidateId: candidate.id, sessionId: appointment.id, purpose });
+      if (!receipt.confirmed) throw new Error(copy.confirmError);
+      setBankSession(null);
+      setReconciliationNotice(language === 'ru' ? 'Перевод записан в оплату сеанса.' : 'Transfer recorded against the session.');
+      await reload(selectedArtistId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : copy.confirmError);
     } finally {
       setBusyCandidate(null);
     }
@@ -896,29 +948,31 @@ export function PaymentsPage() {
                         </div>
                       ) : canMutate ? (
                         <div className="form-grid">
-                          <label className="field field-wide">
-                            <span>{copy.depositRequest}</span>
-                            <select
-                              value={selectedRequestId}
-                              onChange={(event) => setMatchSelection((current) => ({
-                                ...current,
-                                [candidate.id]: event.target.value,
-                              }))}
-                            >
-                              <option value="">{copy.chooseEligibleRequest}</option>
-                              {candidate.match_options.map((option) => (
-                                <option key={option.payment_request_id} value={option.payment_request_id}>
-                                  {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
+                          {candidate.match_options.length > 0 ? (
+                            <label className="field field-wide">
+                              <span>{copy.depositRequest}</span>
+                              <select
+                                value={selectedRequestId}
+                                onChange={(event) => setMatchSelection((current) => ({
+                                  ...current,
+                                  [candidate.id]: event.target.value,
+                                }))}
+                              >
+                                <option value="">{copy.chooseEligibleRequest}</option>
+                                {candidate.match_options.map((option) => (
+                                  <option key={option.payment_request_id} value={option.payment_request_id}>
+                                    {requestSummaryLabel(option, locale, copy)}{option.is_suggested ? ` · ${copy.suggestedSuffix}` : ''}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ) : null}
                           {!matched && recordedOptions.length > 0 ? (
                             <div className="field-wide">
                               <p className="muted">
                                 {language === 'ru'
-                                  ? 'Уже записал эту оплату в CRM? Выбери клиента и счёт. Второго платежа не будет.'
-                                  : 'Already recorded this transfer on an invoice? Select that receipt. No duplicate payment is created.'}
+                                  ? 'Уже записал эту оплату в CRM? Выбери запись об оплате. Второго платежа не будет.'
+                                  : 'Already recorded this transfer? Select that receipt. No duplicate payment is created.'}
                               </p>
                               <label className="field">
                                 <span>{language === 'ru' ? 'Уже записанная оплата' : 'Existing recorded payment'}</span>
@@ -929,10 +983,12 @@ export function PaymentsPage() {
                                     [candidate.id]: event.target.value,
                                   }))}
                                 >
-                                  <option value="">{language === 'ru' ? 'Выбери клиента и счёт' : 'Choose client and invoice'}</option>
+                                  <option value="">{language === 'ru' ? 'Выбери запись об оплате' : 'Choose a recorded payment'}</option>
                                   {recordedOptions.map((option) => (
                                     <option key={option.payment_transaction_id} value={option.payment_transaction_id}>
-                                      {option.client_name} · {option.invoice_number} · {money(option.amount, option.currency, locale)} · {new Date(option.occurred_at).toLocaleString(locale)}
+                                      {option.client_name}
+                                      {option.invoice_number ? ` · ${option.invoice_number}` : option.session_start_at ? ` · ${new Date(option.session_start_at).toLocaleDateString(locale)}` : ''}
+                                      {option.purpose === 'deposit' ? ` · ${copy.depositSuffix}` : ''} · {money(option.amount, option.currency, locale)} · {new Date(option.occurred_at).toLocaleString(locale)}
                                     </option>
                                   ))}
                                 </select>
@@ -986,17 +1042,70 @@ export function PaymentsPage() {
                             </div>
                           ) : null}
                           {candidate.match_options.length === 0 && recordedOptions.length === 0 && legacyOptions.length === 0 ? (
-                            <div className="notice field-wide">{copy.noExactOutstandingAmount}</div>
+                            <div className="field-wide">
+                              <p className="muted">{copy.noExactOutstandingAmount}</p>
+                              {bankSession?.candidateId !== candidate.id ? (
+                                <button type="button" className="secondary-button" onClick={() => {
+                                  setBankClientFilter('');
+                                  setBankSession({ candidateId: candidate.id, sessionId: '', purpose: '' });
+                                }}>
+                                  {language === 'ru' ? 'Выбрать сеанс вручную' : 'Choose a session manually'}
+                                </button>
+                              ) : (
+                                <>
+                                  <label className="field">
+                                    <span>{language === 'ru' ? 'Имя клиента' : 'Client name'}</span>
+                                    <input value={bankClientFilter} onChange={(event) => {
+                                      setBankClientFilter(event.target.value);
+                                      setBankSession({ ...bankSession, sessionId: '' });
+                                    }} />
+                                  </label>
+                                  <label className="field">
+                                    <span>{language === 'ru' ? 'Сеанс' : 'Session'}</span>
+                                    <select value={bankSession.sessionId} onChange={(event) => setBankSession({
+                                      ...bankSession, sessionId: event.target.value,
+                                    })}>
+                                      <option value="">{language === 'ru' ? 'Выбери сеанс' : 'Choose a session'}</option>
+                                      {bankSessionOptions.map((entry) => (
+                                          <option key={entry.id} value={entry.id}>
+                                            {clientNames.get(entry.client_id) ?? copy.clientUnknown} · {new Date(entry.start_at).toLocaleString(locale)}
+                                          </option>
+                                        ))}
+                                    </select>
+                                  </label>
+                                  {bankSessionOptions.length === 0 ? (
+                                    <p className="muted">{language === 'ru' ? 'Подходящих сеансов не найдено.' : 'No eligible sessions found.'}</p>
+                                  ) : null}
+                                  <label className="field">
+                                    <span>{language === 'ru' ? 'Назначение платежа' : 'Payment purpose'}</span>
+                                    <select value={bankSession.purpose} onChange={(event) => setBankSession({
+                                      ...bankSession, purpose: event.target.value as typeof bankSession.purpose,
+                                    })}>
+                                      <option value="">—</option>
+                                      <option value="deposit">{language === 'ru' ? 'Депозит' : 'Deposit'}</option>
+                                      <option value="session_balance">{language === 'ru' ? 'Оплата сеанса' : 'Session payment'}</option>
+                                    </select>
+                                  </label>
+                                  <button type="button" className="primary-button"
+                                    disabled={!bankSession.sessionId || !bankSession.purpose || busyCandidate === candidate.id}
+                                    onClick={() => void confirmBankSession(candidate)}>
+                                    {copy.confirmPayment}
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           ) : null}
                           <div className="button-row field-wide">
-                            <button
-                              type="button"
-                              className="secondary-button"
-                              disabled={busyCandidate === candidate.id || !selectedRequestId}
-                              onClick={() => void matchCandidate(candidate)}
-                            >
-                              {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
-                            </button>
+                            {candidate.match_options.length > 0 ? (
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                disabled={busyCandidate === candidate.id || !selectedRequestId}
+                                onClick={() => void matchCandidate(candidate)}
+                              >
+                                {busyCandidate === candidate.id ? copy.working : matched ? copy.changeMatch : copy.match}
+                              </button>
+                            ) : null}
                             {matched ? (
                               <button
                                 type="button"
