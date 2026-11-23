@@ -464,7 +464,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         <Section title={copy.deposit}>
           <ProjectDepositRequirementControl project={project} onChanged={reloadAfterFinancialChange} />
           <ProjectDepositPanel project={project} finance={finance} appointments={appointments}
-            refreshKey={financeRefreshKey} onChanged={reload} />
+            refreshKey={financeRefreshKey} onChanged={reloadAfterFinancialChange} />
         </Section>
       ) : null}
 
