@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { ProjectDepositPanel } from '../components/ProjectDepositPanel';
 import { RouterProvider } from '../lib/router';
 import type { Project } from '../lib/types';
@@ -40,13 +40,14 @@ const PROJECT = {
   archived_at: null,
 } as Project;
 
-function renderPanel() {
-  return render(
+function panel(refreshKey = 0) {
+  return (
     <RouterProvider initialPath={`/projects/${PROJECT.id}`}>
       <ProjectDepositPanel
         project={PROJECT}
         finance={null}
         appointments={[]}
+        refreshKey={refreshKey}
         onChanged={() => {}}
       />
     </RouterProvider>
@@ -79,9 +80,9 @@ beforeEach(() => {
 
 describe('compact project deposit controls', () => {
   it('keeps guidance and the manual settlement path collapsed by default', async () => {
-    renderPanel();
+    render(panel());
 
-    expect(await screen.findByText('Current deposit amount')).toBeInTheDocument();
+    expect(await screen.findByText('Configured deposit request amount')).toBeInTheDocument();
 
     const workflow = screen.getByText('How deposits work').closest('details');
     expect(workflow).not.toBeNull();
@@ -90,6 +91,26 @@ describe('compact project deposit controls', () => {
     const manual = screen.getByText('Confirm deposit manually').closest('details');
     expect(manual).not.toBeNull();
     expect(manual).not.toHaveAttribute('open');
+  });
+
+  it('refreshes the total on the open project and excludes balances from closed requests', async () => {
+    const original = { id: 'deposit-1', purpose: 'deposit', amount: 500, currency: 'GBP',
+      status: 'paid', net_paid: 500, outstanding_amount: 0 };
+    const cancelled = { id: 'deposit-2', purpose: 'deposit', amount: 250, currency: 'GBP',
+      status: 'cancelled', net_paid: 0, outstanding_amount: 250 };
+    apiMocks.listProjectPaymentRequests.mockResolvedValueOnce([original, cancelled]);
+    const view = render(panel());
+    const line = await screen.findByText('Deposits received for this project');
+    expect(line.nextElementSibling).toHaveTextContent('£500.00');
+    expect(within(screen.getByText('£250.00 · cancelled').closest('.row') as HTMLElement)
+      .queryByText(/outstanding/i)).not.toBeInTheDocument();
+
+    apiMocks.listProjectPaymentRequests.mockResolvedValueOnce([original, cancelled,
+      { ...original, id: 'deposit-3', amount: 300, net_paid: 300 },
+      { ...original, id: 'balance-1', purpose: 'session_balance', amount: 470, net_paid: 470 },
+    ]);
+    view.rerender(panel(1));
+    expect(await screen.findByText('£800.00')).toBeInTheDocument();
   });
 
   it('links straight to Payments when the artist has no deposit policy', async () => {
@@ -107,7 +128,7 @@ describe('compact project deposit controls', () => {
       open_payment_request_status: null,
     });
 
-    renderPanel();
+    render(panel());
 
     expect(await screen.findByText(/no project deposit policy yet/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Configure in Payments' })).toHaveAttribute(

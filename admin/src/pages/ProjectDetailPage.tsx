@@ -48,6 +48,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
   const role = profile?.role;
   const copy = COPY[language];
   const [busy, setBusy] = useState(false);
+  const [financeRefreshKey, incrementFinanceRefresh] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const [projectStatus, setProjectStatus] = useState<ProjectStatus>('draft');
   const [editingDescription, setEditingDescription] = useState(false);
@@ -90,7 +91,11 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       notes,
     };
   }, [api, projectId, role, memberships]);
-  useAppointmentResponseRefresh(reload, !editingDescription && !busy);
+  function reloadAfterFinancialChange() {
+    reload();
+    incrementFinanceRefresh((value) => value + 1);
+  }
+  useAppointmentResponseRefresh(reloadAfterFinancialChange, !editingDescription && !busy);
 
   useEffect(() => {
     if (data?.project) setProjectStatus(data.project.status);
@@ -373,7 +378,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     {mayViewFinance && price !== null ? ` · ${formatMoney(price, appointment.currency, language)}` : ''}
                     {` · ${copy.calendar}: ${calendarSyncLabel(appointment, language)}`}
                   </div>
-                  {!isArchived ? <SessionCheckout appointment={appointment} onChanged={reload} /> : null}
+                  {!isArchived ? <SessionCheckout appointment={appointment} onChanged={reloadAfterFinancialChange} /> : null}
 
                   {active ? (
                     <BookingCardStatusLine
@@ -457,8 +462,9 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
       {mayManageFinance ? (
         <Section title={copy.deposit}>
-          <ProjectDepositRequirementControl project={project} onChanged={reload} />
-          <ProjectDepositPanel project={project} finance={finance} appointments={appointments} onChanged={reload} />
+          <ProjectDepositRequirementControl project={project} onChanged={reloadAfterFinancialChange} />
+          <ProjectDepositPanel project={project} finance={finance} appointments={appointments}
+            refreshKey={financeRefreshKey} onChanged={reload} />
         </Section>
       ) : null}
 
@@ -468,6 +474,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
             projectId={project.id}
             currency={project.currency}
             mayManage={mayManageFinance}
+            refreshKey={financeRefreshKey}
           />
         </Section>
       ) : null}

@@ -18,10 +18,12 @@ export function ProjectInvoicesPanel({
   projectId,
   currency,
   mayManage,
+  refreshKey = 0,
 }: {
   projectId: string;
   currency: string;
   mayManage: boolean;
+  refreshKey?: number;
 }) {
   const api = useApi();
   const { navigate } = useRouter();
@@ -32,7 +34,7 @@ export function ProjectInvoicesPanel({
 
   const { data, loading, reload } = useAsync<InvoiceSummary[]>(
     () => api.listInvoices({ projectId }),
-    [api, projectId]
+    [api, projectId, refreshKey]
   );
 
   async function create() {
