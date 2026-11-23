@@ -692,12 +692,15 @@ function useClientVisitOutcomes(appointments: Appointment[]): Map<string, Client
     async () => (clientId ? api.listClientVisitOutcomes(clientId).catch(() => []) : []),
     [api, clientId],
   );
+  useAppointmentResponseRefresh(state.reload, clientId !== null);
   return new Map((state.data ?? []).filter((row) => row.state === 'confirmed').map((row) => [row.session_id, row]));
 }
 
 function ClientAppointmentRow({ appointment, outcome }: { appointment: Appointment; outcome?: ClientVisitOutcome }) {
   const { t, label, language } = useLanguage();
   const cancelled = appointment.cancelled_at !== null;
+  const actual = outcome?.outcome === 'attended' ? outcome.worked_minutes : null;
+  const duration = actual == null ? appointment.duration_hours : Math.round(actual * 100 / 60) / 100;
   return (
     <Link to={`/appointments/${appointment.id}`} className="row">
       <div className="title">{formatDateTime(appointment.start_at, language)}</div>
@@ -706,8 +709,8 @@ function ClientAppointmentRow({ appointment, outcome }: { appointment: Appointme
         <span className={cancelled ? 'badge danger' : appointment.status === 'confirmed' && appointment.client_response === 'attendance_confirmed' && appointment.client_response_calendar_version === appointment.calendar_version ? 'badge ok' : 'badge'}>
           {appointmentDisplayStatus(appointment, language, label('sessionStatus', appointment.status))}
         </span>{' '}
-        {appointment.duration_hours !== null ? (
-          <span className="badge">{appointment.duration_hours} {t('common.hoursShort')}</span>
+        {duration !== null ? (
+          <span className="badge">{duration} {t('common.hoursShort')}</span>
         ) : null}
         {outcome?.outcome ? <>{' '}<span className="badge ok">{visitOutcomeLabel(outcome.outcome, language)}</span></> : null}
       </div>

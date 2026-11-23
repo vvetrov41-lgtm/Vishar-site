@@ -146,12 +146,38 @@ paths:
   /v1/appointments/{appointment_id}/visit-outcome:
     get:
       operationId: getVisitOutcomeContext
-      summary: "Read one consultation result, current version and existing bookings"
+      summary: "Read the saved outcome and current version of a tattoo visit or consultation"
       x-openai-isConsequential: false
-      description: "Read the persisted outcome and linked tattoo bookings for an in-person or video consultation in the signed-in artist scope. Does not change any record."
+      description: "Read actual worked time, current appointment and outcome version, and permitted finance (price, deposits, previous receipts and balance). For consultations, includes linked bookings. Read before recording or correcting a visit."
       parameters:
         - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
       responses: {'200': {description: "CRM data"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
+  /v1/appointments/{appointment_id}/tattoo-visit:
+    post:
+      operationId: recordTattooVisit
+      summary: "Record or correct a tattoo visit with actual time, price and confirmed payment"
+      x-openai-isConsequential: true
+      description: "Use the exact appointment and version from getVisitOutcomeContext. On a first visit record the actual worked minutes, never the scheduled slot. If the operator gave only hours and the normal rate applies, omit final_price to use CRM pricing. On corrections, omitted fields keep the saved details. Include received_now only for an exact amount the operator says they have received and that has not already been entered. Deposit received separately uses recordSessionReceipt with purpose deposit. Cash and studio receipts are recorded directly. Unknown method is other. One write records all facts together; reuse request_id on identical retries. Use cancelAppointment for cancellation."
+      parameters:
+        - {name: "appointment_id", in: "path", required: true, schema: {type: "string", format: "uuid"}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: ["request_id", "expected_version"]
+              properties:
+                request_id: {type: "string", format: "uuid", description: "Fresh UUID for this intended action. Reuse it only to retry the identical request."}
+                expected_version: {type: "integer", minimum: 0}
+                worked_minutes: {type: "integer", minimum: 1, maximum: 1440}
+                final_price: {type: "number", minimum: 0.01, maximum: 100000}
+                received_now: {type: "number", minimum: 0.01, maximum: 100000}
+                payment_method: {type: "string", enum: ["cash", "studio_direct", "bank_transfer", "card", "other"]}
+                work_result: {type: "string", enum: ["work_complete", "next_session_needed", "touch_up_needed"]}
+                notes: {type: "string", maxLength: 2000}
+      responses: {'200': {description: "Result of the CRM action"}, '400': {description: 'Invalid request'}, '403': {description: 'Not permitted for this CRM user, GPT client or active artist'}}
   /v1/appointments/{appointment_id}/consultation-booked-outcome:
     post:
       operationId: recordConsultationBookedOutcome

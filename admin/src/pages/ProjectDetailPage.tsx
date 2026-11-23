@@ -1,5 +1,6 @@
 import { isBlockingDetailLoad } from '../lib/detail-loading';
 import { useEffect, useState } from 'react';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { ActivityFeed } from '../components/ActivityFeed';
@@ -33,6 +34,7 @@ interface ProjectData {
   clientName: string | null;
   finance: ProjectFinance | null;
   appointments: Appointment[];
+  outcomeMinutes: Map<string, number>;
   sessionFinance: SessionFinance[];
   notes: InternalNote[];
 }
@@ -59,6 +61,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
         clientName: null,
         finance: null,
         appointments: [],
+        outcomeMinutes: new Map(),
         sessionFinance: [],
         notes: [],
       };
@@ -66,11 +69,12 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
 
     const scopedMemberships = memberships.filter((membership) => membership.artist_id === project.artist_id);
     const mayViewFinance = canAccess(role, 'viewFinance', scopedMemberships);
-    const [finance, appointments, sessionFinance, notes] = await Promise.all([
+    const [finance, appointments, sessionFinance, notes, outcomes] = await Promise.all([
       mayViewFinance ? api.getProjectFinance(projectId) : Promise.resolve(null),
       api.listAppointments({ projectId }),
       mayViewFinance ? api.listSessionFinance(projectId) : Promise.resolve([]),
       can(role, 'viewNotes') ? api.listNotes({ projectId }) : Promise.resolve([]),
+      api.listClientVisitOutcomes(project.client_id).catch(() => []),
     ]);
 
     const [clientRow] = await api.listClientsByIds([project.client_id]);
@@ -80,10 +84,13 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
       clientName: clientRow?.full_name ?? null,
       finance,
       appointments,
+      outcomeMinutes: new Map(outcomes.filter((row) => row.state === 'confirmed' && row.outcome === 'attended'
+        && row.worked_minutes != null).map((row) => [row.session_id, row.worked_minutes!])),
       sessionFinance,
       notes,
     };
   }, [api, projectId, role, memberships]);
+  useAppointmentResponseRefresh(reload, !editingDescription && !busy);
 
   useEffect(() => {
     if (data?.project) setProjectStatus(data.project.status);
@@ -347,6 +354,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
           <div className="list">
             {appointments.map((appointment) => {
               const price = priceFor(appointment.id);
+              const worked = data.outcomeMinutes.get(appointment.id);
               const active = ['draft', 'proposed', 'confirmed'].includes(appointment.status);
               return (
                 <div key={appointment.id} className="row" style={{ paddingBlock: 12 }}>
@@ -357,7 +365,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                     </span>
                   </div>
                   <div className="meta" style={{ marginTop: 4 }}>
-                    {typeLabel(appointment.appointment_type, language)} · {durationValue(appointment.duration_hours, language)}
+                    {typeLabel(appointment.appointment_type, language)} · {durationValue(worked == null ? appointment.duration_hours : worked / 60, language)}
                     {mayViewFinance && !['cancelled', 'no_show'].includes(appointment.status) ? (
                       <> · {appointment.payment_status === 'unpaid'
                         ? t('sessions.paymentNotRecorded') : label('paymentStatus', appointment.payment_status)}</>
@@ -370,7 +378,7 @@ export function ProjectDetailPage({ projectId }: { projectId: string }) {
                   {active ? (
                     <BookingCardStatusLine
                       sessionId={appointment.id}
-                      refreshKey={`${appointment.status}:${appointment.start_at}:${appointment.calendar_version}:${price ?? ''}:${project.deposit_status}`}
+                      refreshKey={`${appointment.status}:${appointment.start_at}:${appointment.calendar_version}:${price ?? ''}:${project.deposit_status}:${appointment.payment_status}:${worked ?? ''}`}
                     />
                   ) : null}
 
