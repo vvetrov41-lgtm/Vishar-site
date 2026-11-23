@@ -151,6 +151,15 @@ select is((public.gpt_record_consultation_booked_outcome(
  'Kristina can record her own successful consultation');
 
 -- Chat visit and web checkout share one ledger and versioned outcome.
+select ok(
+  has_function_privilege('authenticated',
+    'public.gpt_record_tattoo_visit(uuid,uuid,integer,integer,numeric,numeric,text,text,text)','execute')
+  and not has_function_privilege('anon',
+    'public.gpt_record_tattoo_visit(uuid,uuid,integer,integer,numeric,numeric,text,text,text)','execute')
+  and not has_function_privilege('service_role',
+    'public.gpt_record_tattoo_visit(uuid,uuid,integer,integer,numeric,numeric,text,text,text)','execute'),
+  'a chat tattoo receipt requires an authenticated human'
+);
 reset role;
 insert into public.sessions(id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at,duration_hours)
 values ('b5155555-5555-4555-8555-555555555556','a1111111-1111-4111-8111-111111111111',
