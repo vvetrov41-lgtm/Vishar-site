@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney } from '../lib/format';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { useLanguage } from '../lib/i18n';
@@ -15,11 +15,13 @@ import type { Project, ProjectFinance } from '../lib/types';
 export function ProjectDepositPanel({
   project,
   finance,
+  refreshKey = 0,
   onChanged,
 }: {
   project: Project;
   finance: ProjectFinance | null;
   appointments: Appointment[];
+  refreshKey?: number;
   onChanged: () => void;
 }) {
   const api = useApi();
@@ -36,11 +38,24 @@ export function ProjectDepositPanel({
   const [overrideInput, setOverrideInput] = useState('');
   const [reusableUrl, setReusableUrl] = useState('');
   const [oneOffUrl, setOneOffUrl] = useState('');
+  const loadSequence = useRef(0);
+  const loadedProject = useRef<string | null>(null);
+  const lastOverride = useRef('');
 
   const depositRequests = useMemo(
     () => requests.filter((request) => request.purpose === 'deposit'),
     [requests]
   );
+  const receivedDeposits = useMemo(() => {
+    // The request API returns at most 100 rows. Only show a project total when
+    // the read covers the whole history, and never add amounts across currencies.
+    if (requests.length >= 100) return [];
+    const totals = new Map<string, number>();
+    for (const request of depositRequests) {
+      totals.set(request.currency, (totals.get(request.currency) ?? 0) + request.net_paid);
+    }
+    return [...totals].filter(([, total]) => total !== 0);
+  }, [depositRequests, requests.length]);
   const openDepositRequest = useMemo(
     () => depositRequests.find(
       (request) =>
@@ -68,18 +83,21 @@ export function ProjectDepositPanel({
     ? null
     : formatMoney(manualProjectAmount, manualProjectCurrency, language);
 
-  async function reload() {
-    setLoading(true);
+  async function reload(background = false) {
+    const sequence = ++loadSequence.current;
+    if (!background) setLoading(true);
     try {
       const [nextRequests, nextPreview] = await Promise.all([
         api.listProjectPaymentRequests(project.id),
         api.previewProjectDeposit(project.id).catch(() => null),
       ]);
+      if (sequence !== loadSequence.current) return;
       setRequests(nextRequests);
       setPreview(nextPreview);
-      setOverrideInput(
-        nextPreview?.override_amount != null ? String(nextPreview.override_amount) : ''
-      );
+      const nextOverride = nextPreview?.override_amount == null ? '' : String(nextPreview.override_amount);
+      const previousOverride = lastOverride.current;
+      lastOverride.current = nextOverride;
+      setOverrideInput((current) => !background || current === previousOverride ? nextOverride : current);
       setManualAmounts((current) => {
         const updated = { ...current };
         for (const request of nextRequests) {
@@ -90,15 +108,20 @@ export function ProjectDepositPanel({
         return updated;
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : copy.loadFailed);
+      if (sequence === loadSequence.current) {
+        setError(cause instanceof Error ? cause.message : copy.loadFailed);
+      }
     } finally {
-      setLoading(false);
+      if (sequence === loadSequence.current) setLoading(false);
     }
   }
 
   useEffect(() => {
-    void reload();
-  }, [project.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    const background = loadedProject.current === project.id;
+    loadedProject.current = project.id;
+    void reload(background);
+    return () => { loadSequence.current += 1; };
+  }, [project.id, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(key: string, action: () => Promise<unknown>, failure: string) {
     setBusy(key);
@@ -194,7 +217,16 @@ export function ProjectDepositPanel({
       </details>
 
       {loading ? <p className="notice">{copy.loading}</p> : null}
-      {legacyPaid ? <p className="notice ok">{copy.legacyPaidNotice}</p> : null}
+      {receivedDeposits.length > 0 && !loading ? (
+        <dl className="definition">
+          {receivedDeposits.map(([depositCurrency, total]) => (
+            <Fragment key={depositCurrency}>
+              <dt>{copy.depositsReceived}</dt>
+              <dd>{formatMoney(total, depositCurrency, language)}</dd>
+            </Fragment>
+          ))}
+        </dl>
+      ) : legacyPaid ? <p className="notice ok">{copy.legacyPaidNotice}</p> : null}
 
       {!loading && preview && !preview.policy_configured ? (
         <div className="notice warn">
@@ -224,7 +256,7 @@ export function ProjectDepositPanel({
           </div>
 
           {amountLocked ? (
-            <p className="notice warn">{copy.amountLocked}</p>
+            <p className="notice warn">{hasOpenRequest ? copy.amountLocked : copy.amountLockedPaid}</p>
           ) : (
             // Most projects keep the recommended amount, so changing it is one
             // closed line rather than a form, two buttons and a paragraph.
@@ -344,7 +376,10 @@ export function ProjectDepositPanel({
                   {formatMoney(request.amount, request.currency, language)} · {requestStatus(request.status, language)}
                 </div>
                 <div className="meta">
-                  {copy.received}: {formatMoney(request.net_paid, request.currency, language)} · {copy.outstanding}: {formatMoney(request.outstanding_amount, request.currency, language)}
+                  {copy.received}: {formatMoney(request.net_paid, request.currency, language)}
+                  {!['cancelled', 'expired'].includes(request.status) ? (
+                    <> · {copy.outstanding}: {formatMoney(request.outstanding_amount, request.currency, language)}</>
+                  ) : null}
                 </div>
 
                 {request.outstanding_amount > 0 && ['pending', 'partially_paid'].includes(request.status) ? (
@@ -565,12 +600,14 @@ const COPY = {
     workflowSteps: '1. Check the amount. 2. Create the payment link. 3. Send it to the client. When Monzo reports the payment, CRM reconciles it against that request.',
     configurePayments: 'Configure in Payments',
     stepAmount: '1. Deposit amount',
-    currentAmount: 'Current deposit amount',
+    currentAmount: 'Configured deposit request amount',
+    depositsReceived: 'Deposits received for this project',
     usingRecommended: (amount: string) => `Using the recommended amount: ${amount}.`,
     usingOverride: 'Using a manual amount for this project.',
     changeAmount: 'Use a different amount',
     amountHelp: 'Enter a value only when this project needs a different deposit. Otherwise keep the recommended amount.',
-    amountLocked: 'This amount is already fixed by an open or paid payment request. To change it, cancel the unpaid request below first, then set the new amount and create a new link.',
+    amountLocked: 'An open request fixes this amount. If the request is unpaid, you can cancel it before setting a new amount.',
+    amountLockedPaid: 'This project deposit has already been confirmed.',
     saveAmount: 'Use this amount',
     useRecommended: 'Use recommended amount',
     stepLink: '2. Payment link',
@@ -599,7 +636,7 @@ const COPY = {
     notCalculable: 'This project deposit cannot be calculated yet. A percentage policy needs a positive project estimate.',
     loading: 'Loading deposit…',
     loadFailed: 'Could not load project payment requests.',
-    legacyPaidNotice: 'Deposit received. This project is already marked as paid.',
+    legacyPaidNotice: 'The deposit is marked as received on this project.',
     alreadyOpen: 'A payment request already exists. Use it as-is, or cancel it below before changing the deposit amount.',
     requestCreated: (amount: string) => `Payment request for ${amount} created. Send this path to the client:`,
     requestReady: 'The payment path is ready to send.',
@@ -640,12 +677,14 @@ const COPY = {
     workflowSteps: '1. Проверь сумму. 2. Создай ссылку на оплату. 3. Отправь её клиенту. Когда Monzo сообщит об оплате, CRM сопоставит деньги именно с этим запросом.',
     configurePayments: 'Настроить в «Платежах»',
     stepAmount: '1. Сумма депозита',
-    currentAmount: 'Текущая сумма депозита',
+    currentAmount: 'Настроенная сумма запроса на депозит',
+    depositsReceived: 'Получено депозитов по проекту',
     usingRecommended: (amount: string) => `Используется рекомендованная сумма: ${amount}.`,
     usingOverride: 'Для этого проекта установлена своя сумма.',
     changeAmount: 'Другая сумма депозита',
     amountHelp: 'Вводи сумму только если для этого проекта нужен другой депозит. Иначе оставь рекомендованную сумму.',
-    amountLocked: 'Сумма уже зафиксирована активным или оплаченным запросом. Чтобы изменить её, сначала отмени неоплаченный запрос ниже, затем укажи новую сумму и создай новую ссылку.',
+    amountLocked: 'Сумма закреплена открытым запросом. Если запрос ещё не оплачен, его можно отменить и указать новую сумму.',
+    amountLockedPaid: 'Депозит проекта уже подтверждён.',
     saveAmount: 'Использовать эту сумму',
     useRecommended: 'Вернуть рекомендованную сумму',
     stepLink: '2. Ссылка на оплату',
@@ -674,7 +713,7 @@ const COPY = {
     notCalculable: 'Депозит проекта пока нельзя рассчитать. Для процентного правила нужна положительная смета проекта.',
     loading: 'Загружаем депозит…',
     loadFailed: 'Не удалось загрузить платёжные запросы проекта.',
-    legacyPaidNotice: 'Депозит получен. Проект уже отмечен как оплаченный.',
+    legacyPaidNotice: 'Депозит проекта отмечен как полученный.',
     alreadyOpen: 'Платёжный запрос уже создан. Используй его как есть или отмени ниже, если нужно поменять сумму депозита.',
     requestCreated: (amount: string) => `Запрос на ${amount} создан. Отправь клиенту эту ссылку:`,
     requestReady: 'Ссылка готова к отправке клиенту.',
