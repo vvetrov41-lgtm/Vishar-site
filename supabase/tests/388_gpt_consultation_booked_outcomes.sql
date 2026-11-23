@@ -150,5 +150,52 @@ select is((public.gpt_record_consultation_booked_outcome(
  'b5157777-7777-4777-8777-777777777777')->>'outcome'),'booked',
  'Kristina can record her own successful consultation');
 
+-- Chat visit and web checkout share one ledger and versioned outcome.
+reset role;
+insert into public.sessions(id,artist_id,client_id,project_id,appointment_type,status,start_at,end_at,duration_hours)
+values ('b5155555-5555-4555-8555-555555555556','a1111111-1111-4111-8111-111111111111',
+  'b5152222-2222-4222-8222-222222222222','b515aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','tattoo_session','completed',
+  date_trunc('hour',now())-interval '4 days',date_trunc('hour',now())-interval '4 days'+interval '7 hours',7);
+set local role authenticated;
+select public.gpt_artist_context('a1111111-1111-4111-8111-111111111111');
+select throws_ok(
+  $$select public.gpt_record_tattoo_visit('b5155555-5555-4555-8555-555555555556',
+    'b5159000-0000-4000-8000-000000000011',0,300,null,450,'studio_direct')$$,
+  '42501', null, 'chat visit rejects a GPT client without finance permission');
+
+select pg_temp.gpt_claims('{"sub":"b5151111-1111-4111-8111-111111111111","role":"authenticated"}');
+select public.configure_gpt_full_management('vishar-unified-gpt',true,true,true);
+select pg_temp.gpt_claims('{"sub":"b5151111-1111-4111-8111-111111111111","role":"authenticated","client_id":"oauth-visit-outcome-515"}');
+select lives_ok($$select public.record_session_receipt('b5155555-5555-4555-8555-555555555556',
+  'b5159000-0000-4000-8000-000000000012','deposit',250,'cash')$$,
+  'the web can record the deposit before the visit is confirmed in chat');
+select is((public.gpt_get_visit_outcome_context('b5155555-5555-4555-8555-555555555556')->'finance'->>'deposit_paid')::numeric,
+  250::numeric, 'chat immediately reads the same deposit');
+select is((public.gpt_record_tattoo_visit('b5155555-5555-4555-8555-555555555556',
+  'b5159000-0000-4000-8000-000000000013',0,300,null,450,'studio_direct')->>'outstanding')::numeric,
+  0::numeric, 'five actual hours and the studio receipt settle the visit atomically');
+select is((public.gpt_record_tattoo_visit('b5155555-5555-4555-8555-555555555556',
+  'b5159000-0000-4000-8000-000000000013',0,300,null,450,'studio_direct')->>'idempotent_replay'),
+  'true', 'replaying a chat receipt writes nothing');
+select throws_ok(
+  $$select public.gpt_record_tattoo_visit('b5155555-5555-4555-8555-555555555556',
+    'b5159000-0000-4000-8000-000000000014',0,300,null,450,'studio_direct')$$,
+  '40001', null, 'a second write based on a stale outcome cannot record the receipt');
+select throws_ok(
+  $$select public.gpt_record_tattoo_visit('b5157777-7777-4777-8777-777777777777',
+    'b5159000-0000-4000-8000-000000000015',0,300,null,450,'studio_direct')$$,
+  '42501', null, 'cannot write another artist’s visit');
+select ok((select (v->'outcome'->>'worked_minutes')::int=300 and (v->'outcome'->>'final_price')::numeric=700
+  and v->'outcome'->>'payment_state' = 'paid' and (v->'finance'->>'invoiced_paid')::numeric=450
+  and (v->'session'->>'scheduled_minutes')::int=420
+  from (select public.get_visit_outcome_context('b5155555-5555-4555-8555-555555555556') as v) readback),
+  'the web reads actual hours and exact settlement while the reserved slot stays intact');
+select is(public.gpt_record_tattoo_visit('b5155555-5555-4555-8555-555555555556',
+  'b5159000-0000-4000-8000-000000000016',1,p_notes=>'Session finished as planned')->>'payment_state',
+  'paid', 'a correction can preserve price and payment while adding a note');
+reset role;
+select is((select count(*)::int from public.payment_transactions t join public.payment_requests p on p.id=t.payment_request_id
+  where p.project_id='b515aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'),2,'the deposit and one balance receipt are the only ledger credits');
+
 select * from finish(true);
 rollback;

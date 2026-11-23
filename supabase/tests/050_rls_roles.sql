@@ -921,6 +921,7 @@ insert into expected_function_acl values
   -- Visit outcomes: signed-in CRM users only; every call re-checks the
   -- appointment artist's session/finance capabilities.
   ('public.get_visit_outcome_context(uuid)', false, true, false),
+  ('public.gpt_record_tattoo_visit(uuid,uuid,integer,integer,numeric,numeric,text,text,text)', false, true, false),
   ('public.record_visit_outcome(uuid,uuid,integer,text,jsonb)', false, true, false),
   ('public.defer_visit_outcome(uuid,uuid,integer,timestamptz)', false, true, false),
   ('public.list_visit_outcome_history(uuid)', false, true, false),

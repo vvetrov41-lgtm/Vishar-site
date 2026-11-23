@@ -10,6 +10,7 @@ import { useApi, useOptionalSession, useSession } from '../lib/session';
 import type { Appointment } from '../lib/appointment-api';
 import type { InvoiceDocument } from '../lib/invoice-api';
 import type { PaymentMethod } from '../lib/visit-outcome-api';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 
 const RECEIPT_METHODS: PaymentMethod[] = ['cash', 'studio_direct', 'bank_transfer', 'card', 'other'];
 
@@ -19,6 +20,7 @@ interface CheckoutData {
   invoices: InvoiceDocument[];
   depositPaid: number;
   invoicedPaid: number;
+  paidOutside: number;
   due: number | null;
   warnings: CheckoutWarning[];
   payableInvoiceId: string | null;
@@ -39,7 +41,8 @@ const CHECKOUT_COPY = {
     savePrice: 'Подтвердить цену',
     saving: 'Сохраняю…',
     deposit: 'Оплаченный депозит',
-    paid: 'Оплачено после депозита',
+    paid: 'Оплачено после депозита в CRM',
+    paidOutside: 'Подтверждено вне CRM',
     due: 'Осталось взять с клиента',
     unknown: 'Нельзя безопасно рассчитать сумму. Проверь платежи в проекте.',
     received: 'Фактически получено, GBP',
@@ -87,7 +90,8 @@ const CHECKOUT_COPY = {
     savePrice: 'Confirm session price',
     saving: 'Saving…',
     deposit: 'Deposit received',
-    paid: 'Other payments received',
+    paid: 'Other payments recorded in CRM',
+    paidOutside: 'Confirmed outside CRM',
     due: 'Amount to collect now',
     unknown: 'Cannot safely calculate the balance. Review payments in this project.',
     received: 'Money actually received, GBP',
@@ -185,6 +189,13 @@ function SessionCheckoutDetails({ appointment, onChanged }: { appointment: Appoi
   const canManage = canAccess(profile?.role, 'manageFinance', scopedMemberships);
   const canEditPrice = canManage && !['completed', 'cancelled', 'no_show'].includes(appointment.status);
   const projectId = appointment.project_id;
+  const expectedPaymentInput = data?.due != null && data.due > 0 ? String(data.due) : '';
+  const expectedPriceInput = String(data?.price ?? data?.suggestion ?? '');
+  useAppointmentResponseRefresh(
+    () => setRefresh((value) => value + 1),
+    open && canView && !busy && !method && !depositMethod && !depositInput && !depositDate && !receiptDate
+      && (data === null || (paymentInput === expectedPaymentInput && priceInput === expectedPriceInput)),
+  );
 
   useEffect(() => {
     if (!open || !canView || !projectId) return;
@@ -215,13 +226,16 @@ function SessionCheckoutDetails({ appointment, onChanged }: { appointment: Appoi
         artistPricing,
       });
       if (cancelled) return;
+      const settledOutside = context.outcome?.state === 'confirmed' && context.outcome.outcome === 'attended'
+        && context.outcome.paid_outside_crm && context.finance.warnings.length === 0;
       setData({
         price: storedPrice,
         suggestion: suggestion?.currency === appointment.currency ? suggestion.price : null,
         invoices: documents.filter((document) => document.line_items.some((line) => line.session_id === appointment.id)),
         depositPaid: context.finance.deposit_paid,
         invoicedPaid: context.finance.invoiced_paid,
-        due: context.finance.due,
+        due: settledOutside ? 0 : context.finance.due,
+        paidOutside: settledOutside ? (context.finance.due ?? 0) : 0,
         warnings: context.finance.warnings,
         payableInvoiceId: context.finance.payable_invoice_id,
       });
@@ -398,6 +412,10 @@ function SessionCheckoutDetails({ appointment, onChanged }: { appointment: Appoi
                 <dd style={{ margin: 0 }}>−{formatMoney(data.depositPaid, appointment.currency, language)}</dd>
                 <dt>{copy.paid}</dt>
                 <dd style={{ margin: 0 }}>−{formatMoney(data.invoicedPaid, appointment.currency, language)}</dd>
+                {data.paidOutside > 0 ? <>
+                  <dt>{copy.paidOutside}</dt>
+                  <dd style={{ margin: 0 }}>−{formatMoney(data.paidOutside, appointment.currency, language)}</dd>
+                </> : null}
                 <dt><strong>{copy.due}</strong></dt>
                 <dd style={{ margin: 0 }}><strong>{due == null ? '—' : formatMoney(due, appointment.currency, language)}</strong></dd>
               </dl>

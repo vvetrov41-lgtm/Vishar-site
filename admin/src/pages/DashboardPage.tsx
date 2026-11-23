@@ -34,6 +34,7 @@ import type { ActivityEntry, Enquiry, FollowUp, Project } from '../lib/types';
 import type { AttentionAcknowledgement, AttentionItemRef } from '../lib/attention-api';
 import { operationalLabel } from '../lib/operational-labels';
 import { enquiryTargetsForToday } from '../lib/today-navigation';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 
 interface TodayData {
   appointments: Appointment[];
@@ -212,6 +213,10 @@ export function DashboardPage() {
     pulseState.reload(); scheduleState.reload(); coreState.reload();
     supplementalState.reload(); gmailState.reload();
   };
+  useAppointmentResponseRefresh(() => {
+    pulseState.reload();
+    scheduleState.reload();
+  });
   const coreData = coreState.data;
   const supplementalData = supplementalState.data ?? EMPTY_SUPPLEMENTAL_DATA;
   const data: TodayData = {

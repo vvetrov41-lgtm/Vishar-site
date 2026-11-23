@@ -1,11 +1,11 @@
 {
   "source": "13 current Unified GPT OpenAPI schemas and operator-parity.current.mjs",
   "summary": {
-    "currentGptOperations": 210,
-    "mcpTools": 210,
-    "semanticParityThroughAdapter": 210,
+    "currentGptOperations": 211,
+    "mcpTools": 211,
+    "semanticParityThroughAdapter": 211,
     "directHandlerWithoutAdapter": 0,
-    "requiringActionAdapter": 210,
+    "requiringActionAdapter": 211,
     "requiringSchemaChange": 0,
     "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
@@ -3304,7 +3304,7 @@
       "operationId": "getVisitOutcomeContext",
       "mcpTool": "crm_get_visit_outcome_context",
       "domain": "Projects",
-      "description": "Read the persisted outcome and linked tattoo bookings for an in-person or video consultation in the signed-in artist scope. Does not change any record.",
+      "description": "Read actual worked time, current appointment and outcome version, and permitted finance (price, deposits, previous receipts and balance). For consultations, includes linked bookings. Read before recording or correcting a visit.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -5971,7 +5971,7 @@
       "operationId": "recordSessionReceipt",
       "mcpTool": "crm_record_session_receipt",
       "domain": "Project Finance",
-      "description": "Money action. Use only when the user confirms the exact amount already received, the session, and whether it was a deposit or a session payment. No Monzo confirmation is needed. For money collected by a studio use studio_direct. Reuse the same request ID on an identical retry.",
+      "description": "Money action. Use only when the user confirms the exact amount already received, the session, and whether it was a deposit or a session payment. No Monzo confirmation is needed. Use recordTattooVisit instead when the same instruction confirms actual work and the payment. For money collected by a studio use studio_direct. An unspecified method is recorded as other. Reuse the same request ID on an identical retry.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
@@ -6005,7 +6005,8 @@
               "bank_transfer",
               "card",
               "other"
-            ]
+            ],
+            "default": "other"
           },
           "occurred_at": {
             "type": "string",
@@ -6016,8 +6017,7 @@
           "session_id",
           "request_id",
           "purpose",
-          "amount",
-          "method"
+          "amount"
         ]
       },
       "outputShape": null,
@@ -6038,6 +6038,91 @@
       "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
       "securityConcern": "Verify amount, idempotency and actor capability server-side.",
       "sourceSchema": "openapi.project-finance.yaml"
+    },
+    {
+      "operationId": "recordTattooVisit",
+      "mcpTool": "crm_record_tattoo_visit",
+      "domain": "Projects",
+      "description": "Use the exact appointment and version from getVisitOutcomeContext. On a first visit record the actual worked minutes, never the scheduled slot. If the operator gave only hours and the normal rate applies, omit final_price to use CRM pricing. On corrections, omitted fields keep the saved details. Include received_now only for an exact amount the operator says they have received and that has not already been entered. Deposit received separately uses recordSessionReceipt with purpose deposit. Cash and studio receipts are recorded directly. Unknown method is other. One write records all facts together; reuse request_id on identical retries. Use cancelAppointment for cancellation.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "appointment_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Fresh UUID for this intended action. Reuse it only to retry the identical request."
+          },
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "worked_minutes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1440
+          },
+          "final_price": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 100000
+          },
+          "received_now": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 100000
+          },
+          "payment_method": {
+            "type": "string",
+            "enum": [
+              "cash",
+              "studio_direct",
+              "bank_transfer",
+              "card",
+              "other"
+            ]
+          },
+          "work_result": {
+            "type": "string",
+            "enum": [
+              "work_complete",
+              "next_session_needed",
+              "touch_up_needed"
+            ]
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "appointment_id",
+          "request_id",
+          "expected_version"
+        ]
+      },
+      "outputShape": null,
+      "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
+      "method": "POST",
+      "path": "/v1/appointments/{appointment_id}/tattoo-visit",
+      "readWrite": "write",
+      "destructive": true,
+      "permission": "manage_sessions+manage_finance",
+      "scopes": [
+        "email"
+      ],
+      "handler": [
+        "public.gpt_record_tattoo_visit",
+        "public.record_visit_outcome"
+      ],
+      "compatibility": "existing_action_adapter",
+      "adaptation": "Flatten HTTP path/query/body into MCP arguments; route through the existing GPT Action handler.",
+      "securityConcern": "Verify amount, idempotency and actor capability server-side.",
+      "sourceSchema": "openapi.projects.yaml"
     },
     {
       "operationId": "removeEnquiryFile",

@@ -1,3 +1,4 @@
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelLabelFor, confirmDialog } from '../lib/confirm-dialog';
 import { formatDateTime, formatMoney } from '../lib/format';
@@ -94,6 +95,8 @@ export function VisitOutcomeCard({ sessionId, subject, at, appointmentType, mode
     });
     return () => { cancelled = true; };
   }, [api, sessionId, refresh, copy.loadFailed]);
+
+  useAppointmentResponseRefresh(() => setRefresh((value) => value + 1), !busy && (step === 'saved' || step === 'ask'));
 
   const type = context?.session.appointment_type ?? appointmentType ?? null;
   const isTattoo = type != null && TATTOO_TYPES.includes(type);

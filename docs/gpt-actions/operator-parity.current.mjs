@@ -212,6 +212,7 @@ export const OPERATOR_PARITY = Object.freeze([
   row('sessions.booking_card.status', 'Scheduling', 'view_sessions', 'read', A, 'getSessionBookingCardStatus', ['public.get_session_booking_card_status']),
   row('sessions.consultation_context', 'Scheduling', 'view_sessions', 'read', A, 'getConsultationContext', ['public.gpt_get_consultation_context']),
   row('sessions.visit_outcome.context', 'Projects', 'view_sessions', 'read', A, 'getVisitOutcomeContext', ['public.gpt_get_visit_outcome_context', 'public.get_visit_outcome_context']),
+  row('sessions.visit_outcome.tattoo', 'Projects', 'manage_sessions+manage_finance', 'money', A, 'recordTattooVisit', ['public.gpt_record_tattoo_visit', 'public.record_visit_outcome']),
   row('sessions.visit_outcome.booked', 'Projects', 'manage_sessions', 'write', A, 'recordConsultationBookedOutcome', ['public.gpt_record_consultation_booked_outcome', 'public.record_visit_outcome']),
   // Fill a cancelled slot: read-only candidate list, same data as the CRM panel.
   row('sessions.cancelled_slot.candidates', 'Projects', 'view_sessions', 'read', A, 'listCancelledSlotCandidates', ['public.gpt_list_cancelled_slot_candidates', 'public.list_cancelled_slot_candidates']),

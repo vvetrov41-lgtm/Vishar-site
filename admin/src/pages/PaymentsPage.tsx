@@ -1,6 +1,7 @@
 import { useModalBehaviour } from '../lib/modal-behaviour';
 import { SessionPricingPanel } from '../components/SessionPricingPanel';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useAppointmentResponseRefresh } from '../lib/use-appointment-response-refresh';
 import { LoadingState } from '../components/StateViews';
 import { daysAgoIso } from '../lib/appointment-api';
 import type { Appointment } from '../lib/appointment-api';
@@ -144,6 +145,8 @@ export function PaymentsPage() {
     ? null
     : inferPaymentsArtist(artists, memberships, profile?.id ?? null, readRememberedPaymentsArtist());
   const selectedArtistId = scopedArtistId ?? inferredArtistId;
+  const activeArtistForRefresh = useRef(selectedArtistId);
+  activeArtistForRefresh.current = selectedArtistId;
   const chooseArtist = (artistId: string) => {
     rememberPaymentsArtist(artistId);
     setSelectedArtistId(artistId);
@@ -373,6 +376,24 @@ export function PaymentsPage() {
     }
     void reload(selectedArtistId);
   }, [selectedArtistId, canViewReconciliation, language]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useAppointmentResponseRefresh(() => {
+    const artistId = selectedArtistId;
+    if (!artistId) return;
+    void Promise.all([
+      api.listAppointments({ artistId, appointmentType: 'tattoo_session', from: daysAgoIso(180) }),
+      canViewReconciliation ? api.listMonzoReconciliationCandidates(artistId) : Promise.resolve([]),
+    ]).then(async ([nextAppointments, nextCandidates]) => {
+      if (activeArtistForRefresh.current !== artistId) return;
+      const nextClients = await api.listClientsByIds(nextAppointments.map((entry) => entry.client_id));
+      if (activeArtistForRefresh.current !== artistId) return;
+      setAppointments(nextAppointments);
+      setClientNames(new Map(nextClients.map((entry) => [entry.id, entry.full_name])));
+      setReconciliationCandidates(nextCandidates);
+    }).catch(() => {
+      // Keep the current page and any settings draft when a background read fails.
+    });
+  }, Boolean(selectedArtistId) && !loading);
 
   async function saveSettings(event: FormEvent) {
     event.preventDefault();

@@ -136,6 +136,7 @@ export interface VisitHistoryEntry {
 }
 
 export interface ClientVisitOutcome {
+  worked_minutes?: number | null;
   session_id: string;
   state: 'deferred' | 'confirmed';
   outcome: VisitOutcomeValue | null;
