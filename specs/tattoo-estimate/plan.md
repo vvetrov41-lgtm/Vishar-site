@@ -1,0 +1,1 @@
+Use the static site shell and a small vector map. Share tariff and session rules between the estimator and static FAQ generation. Transfer enumerated project options in a URL fragment, recompute the estimate at booking and send within the existing intake contract. Preview on a separate branch before release.

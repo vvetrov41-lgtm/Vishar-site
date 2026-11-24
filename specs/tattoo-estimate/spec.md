@@ -1,0 +1,1 @@
+Visitors can select placement, scale, coverage, pigment style and existing ink without supplying contact details. Estimates are conditional full-day budgets or individual review. The existing booking form receives editable selections and the original planning range. No new intake endpoint, CRM schema or lead event.

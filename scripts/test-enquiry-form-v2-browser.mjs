@@ -297,6 +297,41 @@ function intake(log) {
 browser = await chromium.launch(process.env.PLAYWRIGHT_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE } : {});
 console.log(`Intake backend: ${backend.name}`);
 
+await test('Calculator mobile layout, accessibility and intake', async () => {
+  const {page,context,log} = await openPage();
+  await page.goto(BASE + '/tattoo-price-calculator/');
+  await page.getByRole('button', {name:'Decline', exact:true}).click();
+  for (const width of [320,390,1024]) {
+    await page.setViewportSize({width,height:844});
+    await noHorizontalScroll(page,'calculator');
+  }
+  await page.setViewportSize({width:390,height:844});
+  await page.addScriptTag({content:axeSource});
+  const audit = await page.evaluate(() => axe.run('main', {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}));
+  assert.deepEqual(audit.violations.map(v => v.id),[]);
+  const bytes = await page.evaluate(() => performance.getEntriesByType('resource')
+    .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
+    .reduce((sum,r) => sum + r.decodedBodySize,0));
+  assert.ok(bytes > 0 && bytes < 40000);
+  await page.locator('#body-map [data-area="upper"]').first().click();
+  assert.equal(await page.locator('#area').inputValue(),'upper');
+  await page.locator('#size').selectOption('large');
+  await page.locator('#cover').selectOption('sleeve');
+  await page.locator('#style').selectOption('colour');
+  await page.locator('#continue').click();
+  await expectSection(page,'Design');
+  await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Colour wildlife sleeve');
+  await next(page); await upload(page,'design',[fixture('design.jpg')]);
+  await next(page); await pick(page,'Instagram'); await next(page);
+  await contactEmail(page,{}); await next(page); await send(page);
+  const details = JSON.parse(finalSubmission(log).fields.projectDetails);
+  assert.deepEqual(details.areas,[{region:'arm',placements:['full_sleeve'],work:['new']}]);
+  assert.deepEqual(details.styles,['colour']);
+  assert.match(details.sizeNotes,/£7,840–£9,800/);
+  console.log('Calculator assets, decoded bytes:',bytes);
+  await context.close();
+});
+
 await test('1 new tattoo with one design reference (iPhone)', async () => {
   const { page, context, log } = await openPage();
   await fillProject(page, { areas: [{ region: 'Arm', placements: ['Forearm'], work: ['No existing tattoo'] }], design: [fixture('design.jpg')] });

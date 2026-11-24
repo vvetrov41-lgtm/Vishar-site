@@ -1124,12 +1124,30 @@
   // ---------------------------------------------------------------------------
 
   var restored = loadDraft();
+  const estimate = window.TattooPricing && window.TattooPricing.fromHash(window.location.hash);
+  function applyEstimate() {
+    const key = estimate.region;
+    state.regions = [key];
+    state.placements = { [key]: [estimate.placement] };
+    state.otherPlacement = estimate.placement === 'other' ? { [key]: estimate.label } : {};
+    state.work = { [key]: [estimate.work] };
+    state.styles = [estimate.style];
+    state.sizeNotes = estimate.notes;
+    current = 'design';
+    saveDraft();
+    history.replaceState(history.state, '', location.pathname + location.search);
+  }
+  if (estimate && !restored) applyEstimate();
   buildShell();
   if (!STEPS.some(function (s) { return s.id === current && s.visible(); })) current = 'placement';
   render(false);
   if (restored) {
     notice.hidden = false;
     notice.appendChild(el('span', { text: 'Your previous answers were restored. ' }));
+    if (estimate) notice.appendChild(el('button', { type: 'button', className: 'ef-link-button',
+      text: 'Use calculator choices for placement, style and size', onclick: function () {
+        applyEstimate(); notice.hidden = true; goTo('design');
+      } }));
     notice.appendChild(el('button', { type: 'button', className: 'ef-link-button', text: 'Start over', onclick: function () {
       clearDraft();
       // A key left by an ambiguous failure belongs to the abandoned enquiry.

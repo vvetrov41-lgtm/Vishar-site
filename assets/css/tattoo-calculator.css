@@ -1,0 +1,234 @@
+body {
+  background: #090a09;
+  color: #f4f2ec;
+  font-family: Inter, Arial, sans-serif;
+}
+.glass {
+  background: #101110f5;
+}
+.calc {
+  --accent: #c9e3ad;
+  max-width: 1100px;
+  padding: 8rem 2rem 3rem;
+  margin: auto;
+}
+.calc-skip {
+  position: fixed;
+  top: -8rem;
+  z-index: 150;
+  background: #fff;
+  color: #111;
+  padding: 1rem;
+}
+.calc-skip:focus {
+  top: 0;
+}
+.calc [hidden] {
+  display: none;
+}
+.intro {
+  max-width: 850px;
+  margin-bottom: 2.2rem;
+}
+.intro h1 {
+  font-size: clamp(2.8rem, 6.4vw, 5.6rem);
+  line-height: 1.06;
+  letter-spacing: -0.065em;
+  font-weight: 500;
+}
+.intro em {
+  font-family: "Playfair Display", Georgia, serif;
+  font-weight: 400;
+  color: #c9e3ad;
+}
+.intro p,
+.detail,
+#reason {
+  color: #c1c3ba;
+  line-height: 1.6;
+}
+.intro p {
+  max-width: 62ch;
+  margin-top: 1.1rem;
+}
+.planner {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.83fr) minmax(280px, 1.17fr);
+  border: 1px solid #42453e;
+  border-radius: 1.4rem;
+  overflow: hidden;
+  background: #171917;
+}
+.atlas,
+.project {
+  padding: clamp(1rem, 3vw, 2.3rem);
+}
+.atlas {
+  background: radial-gradient(ellipse at center, #30372c, #191c19 75%);
+  border-right: 1px solid #42453e;
+}
+.atlas-head,
+.metrics {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  justify-content: space-between;
+}
+.calc h2 {
+  font-size: 1.45rem;
+  letter-spacing: -0.035em;
+  font-weight: 500;
+}
+.atlas-head button {
+  min-height: 44px;
+  padding: 0 0.7rem;
+  color: #ccd1c5;
+  border-radius: 0.6rem;
+}
+.atlas-head [aria-pressed="true"] {
+  background: #384031;
+  color: white;
+}
+.figure {
+  height: 340px;
+  margin: 10px auto;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0 39px,
+    #ffffff0b 40px
+  );
+  display: grid;
+  place-items: center;
+}
+.figure svg {
+  height: 100%;
+  width: 100%;
+  max-width: 245px;
+}
+.figure path {
+  fill: #60695c;
+  stroke: #242b22;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+.figure [data-area] {
+  cursor: pointer;
+  transition: fill 0.18s;
+}
+.figure [data-area]:hover {
+  fill: #9da995;
+}
+.figure [data-area].on {
+  fill: var(--accent);
+  stroke: #f1ffe4;
+  stroke-width: 2;
+}
+.calc label,
+.result h3 {
+  display: block;
+  font-size: 0.91rem;
+  color: #d5d8ce;
+}
+.calc select {
+  display: block;
+  appearance: auto;
+  color-scheme: dark;
+  width: 100%;
+  font: inherit;
+  font-size: 1rem;
+  min-height: 46px;
+  border: 1px solid #585e54;
+  background: #222621;
+  color: #fff;
+  padding: 0.55rem;
+  border-radius: 0.6rem;
+  margin-top: 0.4rem;
+}
+.fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin: 1.4rem 0;
+}
+.result {
+  border-top: 1px solid #41463e;
+  padding-top: 1.4rem;
+}
+.result strong {
+  display: block;
+  font-family: "Playfair Display", Georgia, serif;
+  color: var(--accent);
+  font-size: clamp(2rem, 4vw, 3.3rem);
+  font-weight: 400;
+  line-height: 1.24;
+  margin: 0.35rem 0;
+}
+.metrics {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.metrics span + span {
+  border-left: 1px solid #61685d;
+  padding-left: 0.6rem;
+}
+#reason {
+  font-size: 0.94rem;
+  margin: 0.8rem 0;
+}
+.action {
+  display: inline-block;
+  background: #e3f0d7;
+  color: #182112;
+  border-radius: 2rem;
+  padding: 0.85rem 1.4rem;
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+.detail {
+  margin: 1.5rem 0;
+}
+.detail a,
+.calc noscript a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.calc :focus-visible {
+  outline: 3px solid #d2f6a9;
+  outline-offset: 3px;
+}
+@media (max-width: 700px) {
+  .calc {
+    padding: 6rem 1rem 2rem;
+  }
+  .planner {
+    grid-template-columns: 1fr;
+  }
+  .atlas {
+    border-right: 0;
+    border-bottom: 1px solid #42453e;
+  }
+  .figure {
+    height: 260px;
+  }
+  .intro {
+    margin-bottom: 1.2rem;
+  }
+  .fields {
+    gap: 0.8rem;
+  }
+  .project,
+  .atlas {
+    padding: 1.2rem;
+  }
+}
+@media (max-width: 380px) {
+  .fields {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .figure [data-area] {
+    transition: none;
+  }
+}

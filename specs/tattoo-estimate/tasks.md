@@ -1,0 +1,1 @@
+Validate FAQ bands and unsupported combinations, small-screen layout, keyboard controls, booking handoff, public build and existing booking checks. Production release requires owner review of the branch preview.
