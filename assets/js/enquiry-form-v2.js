@@ -21,36 +21,10 @@
   // Catalogue (mirrors config/enquiry-form-v2.json)
   // ---------------------------------------------------------------------------
 
-  var REGIONS = [
-    { key: 'arm', label: 'Arm', placements: [
-      ['shoulder', 'Shoulder'], ['upper_arm', 'Upper arm'], ['inner_bicep', 'Inner bicep'], ['elbow', 'Elbow'],
-      ['forearm', 'Forearm'], ['wrist', 'Wrist'], ['half_sleeve', 'Half sleeve', 'arm_sleeve', true],
-      ['three_quarter_sleeve', '3/4 sleeve', 'arm_sleeve', true], ['full_sleeve', 'Full sleeve', 'arm_sleeve', true],
-      ['other', 'Other'] ] },
-    { key: 'leg', label: 'Leg', placements: [
-      ['thigh', 'Thigh'], ['knee', 'Knee'], ['calf', 'Calf'], ['shin', 'Shin'], ['ankle', 'Ankle'],
-      ['half_leg_sleeve', 'Half leg sleeve', 'leg_sleeve', true], ['full_leg_sleeve', 'Full leg sleeve', 'leg_sleeve', true],
-      ['other', 'Other'] ] },
-    { key: 'chest_ribs', label: 'Chest & Ribs', placements: [
-      ['sternum', 'Sternum'], ['one_side_chest', 'One side of chest'], ['collarbone', 'Collarbone'], ['ribs', 'Ribs'],
-      ['full_chest', 'Full chest', null, true], ['other', 'Other'] ] },
-    { key: 'back', label: 'Back', placements: [
-      ['upper_back', 'Upper back'], ['shoulder_blade', 'Shoulder blade'], ['spine', 'Spine'], ['lower_back', 'Lower back'],
-      ['full_back', 'Full back', null, true], ['other', 'Other'] ] },
-    { key: 'stomach_sides', label: 'Stomach & Sides', placements: [
-      ['stomach', 'Stomach'], ['side', 'Side'], ['hip', 'Hip'], ['other', 'Other'] ] },
-    { key: 'neck_head', label: 'Neck & Head', placements: [
-      ['front_neck', 'Front of neck'], ['side_neck', 'Side of neck'], ['back_neck', 'Back of neck'],
-      ['behind_ear', 'Behind the ear'], ['head', 'Head'], ['other', 'Other'] ] },
-    { key: 'hand', label: 'Hand', placements: [
-      ['back_of_hand', 'Back of hand'], ['fingers', 'Fingers'], ['side_of_hand', 'Side of hand'], ['other', 'Other'] ] },
-    { key: 'foot', label: 'Foot', placements: [
-      ['top_of_foot', 'Top of foot'], ['side_of_foot', 'Side of foot'], ['toes', 'Toes'], ['other', 'Other'] ] },
-    { key: 'other', label: 'Other', placements: [] }
-  ];
-  var WORK = [['new', 'No existing tattoo'], ['extension', 'Extend existing tattoo'], ['cover_up', 'Cover-up'], ['rework', 'Rework']];
+  var REGIONS = window.TattooPricing.REGIONS;
+  var WORK = window.TattooPricing.WORK;
   var WORK_REVIEW = { new: 'New tattoo', extension: 'Extension', cover_up: 'Cover-up', rework: 'Rework' };
-  var STYLES = [['black_grey', 'Black & Grey realism'], ['colour', 'Colour realism'], ['not_sure', 'Not sure yet']];
+  var STYLES = window.TattooPricing.STYLES;
   var DISCOVERY = [
     ['instagram', 'Instagram'], ['google', 'Google'], ['ai', 'ChatGPT / AI'], ['referral', 'Friend / Recommendation'],
     ['convention', 'Tattoo convention'], ['returning_client', 'Returning client'], ['other', 'Other']
@@ -94,6 +68,7 @@
   }
 
   var state = emptyState();
+  var calculatorGuide = null;
   var files = { design: [], existing: [] };
   var hadImagesBeforeReload = 0;
   var current = 'placement';
@@ -138,6 +113,7 @@
       otherPlacement: state.otherPlacement, work: state.work, styles: state.styles, idea: state.idea,
       sizeNotes: state.sizeNotes, existingDetails: state.existingDetails, discovery: state.discovery,
       discoveryDetail: state.discoveryDetail, timing: state.timing,
+      calculatorGuide: calculatorGuide,
       imageCount: files.design.length + files.existing.length
     };
     var contact = { name: state.name, preferredReply: state.preferredReply, email: state.email, phone: state.phone };
@@ -164,6 +140,7 @@
           ['otherRegionText', 'idea', 'sizeNotes', 'existingDetails', 'discovery', 'discoveryDetail', 'timing'].forEach(function (k) { if (typeof draft[k] === 'string') state[k] = draft[k]; });
           state.regions = state.regions.filter(function (k) { return regionByKey(k); });
           hadImagesBeforeReload = Number(draft.imageCount) || 0;
+          if (draft.calculatorGuide && window.TattooPricing.valid(draft.calculatorGuide.project)) calculatorGuide = draft.calculatorGuide;
           if (typeof draft.step === 'string' && draft.step !== 'review') current = draft.step;
           restored = state.regions.length > 0 || Boolean(state.idea);
         } else if (local) {
@@ -781,6 +758,7 @@
       summaryRow('Contact', contact, 'contact')
     ].filter(Boolean));
     wrap.appendChild(list);
+    if (calculatorGuide) wrap.appendChild(el('p',{className:'ef-note ef-note-visible',text:calculatorSummary() || 'Your project choices changed. The earlier calculator estimate is no longer applicable; Vladimir will confirm the budget.'}));
     if (preflightState.messages && preflightState.messages.length) wrap.appendChild(preflightNotice());
     uid += 1;
     var consentId = 'ef-privacy-' + uid;
@@ -913,6 +891,15 @@
     };
   }
 
+  function calculatorSignature() {
+    return JSON.stringify({areas:projectDetails().areas.map(function(a){return {region:a.region,placements:a.placements.slice().sort(),work:a.work.slice().sort(),other:a.otherPlacement||''};}).sort(function(a,b){return a.region.localeCompare(b.region);}),styles:state.styles.slice().sort(),sizeNotes:state.sizeNotes.trim()});
+  }
+  function calculatorSummary() {
+    if (!calculatorGuide || calculatorGuide.signature !== calculatorSignature()) return '';
+    var result = window.TattooPricing.estimate(calculatorGuide.project);
+    if (!result) return '';
+    return 'Initial calculator guide (not a quote): ' + result.price + (result.numeric ? ' / ' + result.time + ' / ' + result.visits : '');
+  }
   function basePayload(includeFiles) {
     var payload = new FormData();
     var context = shared.attribution();
@@ -924,7 +911,7 @@
       phone: state.phone.trim(),
       preferredReply: state.preferredReply,
       timing: state.timing.trim(),
-      idea: state.idea.trim(),
+      idea: (function(){var idea=state.idea.trim(), guide=calculatorSummary();return guide && idea.length+guide.length+2<=LIMITS.idea ? idea+'\n\n'+guide : idea;})(),
       discoverySource: state.discovery,
       discoverySourceDetail: DISCOVERY_DETAIL[state.discovery] ? state.discoveryDetail.trim() : '',
       website: (q('#ef-website') || {}).value || '',
@@ -1126,15 +1113,16 @@
   var restored = loadDraft();
   const estimate = window.TattooPricing && window.TattooPricing.fromHash(window.location.hash);
   function applyEstimate() {
-    const key = estimate.region;
-    state.regions = [key];
-    state.placements = { [key]: [estimate.placement] };
-    state.otherPlacement = estimate.placement === 'other' ? { [key]: estimate.label } : {};
-    state.work = { [key]: [estimate.work] };
-    state.styles = [estimate.style];
-    state.sizeNotes = estimate.notes;
-    current = 'design';
-    saveDraft();
+    state.regions = estimate.areas.map(function(a){return a.region;});
+    state.placements = {}; state.otherPlacement = {}; state.work = {}; state.otherRegionText = '';
+    estimate.areas.forEach(function(a){
+      state.placements[a.region] = a.placements.slice(); state.work[a.region] = a.work.slice();
+      if(a.region === 'other') state.otherRegionText = a.other;
+      else if(a.placements.indexOf('other') >= 0) state.otherPlacement[a.region] = a.other;
+    });
+    state.styles = estimate.styles.slice(); state.sizeNotes = estimate.notes; state.existingDetails = '';
+    calculatorGuide = {project:estimate.project,signature:calculatorSignature()};
+    current = 'design'; saveDraft();
     history.replaceState(history.state, '', location.pathname + location.search);
   }
   if (estimate && !restored) applyEstimate();
@@ -1145,11 +1133,12 @@
     notice.hidden = false;
     notice.appendChild(el('span', { text: 'Your previous answers were restored. ' }));
     if (estimate) notice.appendChild(el('button', { type: 'button', className: 'ef-link-button',
-      text: 'Use calculator choices for placement, style and size', onclick: function () {
+      text: 'Replace previous project choices with calculator choices', onclick: function () {
         applyEstimate(); notice.hidden = true; goTo('design');
       } }));
     notice.appendChild(el('button', { type: 'button', className: 'ef-link-button', text: 'Start over', onclick: function () {
       clearDraft();
+      calculatorGuide = null;
       // A key left by an ambiguous failure belongs to the abandoned enquiry.
       shared.clearIdempotencyKey();
       preflightState = { stage: 'none', id: '', snapshot: '' };

@@ -355,7 +355,7 @@
   <script src="/components.js" defer></script>
   <script src="/assets/js/tattoo-pricing.js"></script>
   <script src="/assets/js/intake-preflight.js"></script>
-  <script src="/assets/js/enquiry-form-v2.js?v=estimate1" defer></script>
+  <script src="/assets/js/enquiry-form-v2.js?v=estimate2" defer></script>
   <script>
   (function () {
     const canonicalBookingHost = 'vishartattoo.com';
@@ -374,8 +374,8 @@
     const estimate = window.TattooPricing && window.TattooPricing.fromHash(location.hash);
     if (estimate && document.documentElement.getAttribute('data-enquiry-form') !== 'v2') {
       const projectTypes = {black_grey: 'Black and grey realism', colour: 'Colour realism', not_sure: 'Not sure yet'};
-      const values = {placement: estimate.label, size: estimate.notes, projectType: projectTypes[estimate.style],
-        coverUp: estimate.work === 'cover_up' ? 'Yes' : 'No'};
+      const values = {placement: estimate.label, size: estimate.notes.slice(0,120), projectType: estimate.styles.length === 1 ? projectTypes[estimate.styles[0]] : 'Not sure yet',
+        coverUp: estimate.areas.some(a=>a.work.some(w=>w!=='new')) ? 'Yes' : 'No'};
       Object.entries(values).forEach(([key,value]) => { if (!form.elements[key].value) form.elements[key].value = value; });
     }
     const filesInput = document.getElementById('reference-files');

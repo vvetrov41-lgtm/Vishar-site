@@ -1,6 +1,6 @@
-// Shared by the static FAQ build and the two public pages.
-(function (root) {
-  const rules = {
+// Shared catalogue and FAQ-based pricing.
+(function(root){
+const rules = {
     hourly: 140,
     day: 7,
     small: [3, 4],
@@ -11,153 +11,92 @@
     legExtra: 2,
     torso: [6, 12],
   };
-  const areas = {
-    forearm: ["Forearm", "arm", "forearm"],
-    upper: ["Upper arm", "arm", "upper_arm"],
-    thigh: ["Thigh", "leg", "thigh"],
-    shin: ["Shin", "leg", "shin"],
-    calf: ["Calf", "leg", "calf"],
-    chest: ["Chest", "chest_ribs", "full_chest"],
-    back: ["Back", "back", "full_back"],
-    stomach: ["Stomach", "stomach_sides", "stomach"],
-  };
-  const styles = {
-    black_grey: "Black and grey realism",
-    colour: "Colour realism",
-    not_sure: "Not sure yet",
-  };
-  const sizes = {
-    small: "Small piece",
-    medium: "Medium piece",
-    large: "Large project",
-  };
-  function coverage(area, size) {
-    const choices = { panel: "One area" };
-    if (size === "small") return choices;
-    const region = areas[area][1];
-    if (["arm", "leg"].includes(region)) {
-      choices.wrap = "Wraps around";
-      if (size === "large") choices.sleeve = "Full " + region + " sleeve";
-    } else if (size === "large") choices.full = "Whole area";
-    return choices;
-  }
-  function valid(p) {
-    return (
-      p &&
-      Object.hasOwn(areas, p.area) &&
-      Object.hasOwn(sizes, p.size) &&
-      Object.hasOwn(styles, p.style) &&
-      Object.hasOwn(coverage(p.area, p.size), p.cover) &&
-      ["yes", "no"].includes(p.old)
-    );
-  }
-  const gbp = (n) => "£" + n.toLocaleString("en-GB");
-  function estimate(p) {
-    if (!valid(p)) return null;
-    let sessions,
-      hours,
-      open = false;
-    const review = (reason) => ({
-      price: "Photo assessment",
-      time: "To be assessed",
-      visits: "To be assessed",
-      reason,
-    });
-    if (p.old === "yes")
-      return review(
-        "Send a close-up and a wider photo in daylight. The darkness and position of the old ink determine what I can cover.",
-      );
-    if (p.size === "small") {
-      hours = rules.small;
-      sessions = [1, 1];
-    } else if (p.cover === "sleeve") {
-      if (p.style === "not_sure")
-        return review(
-          "Choose colour or black and grey for a sleeve guide, or send your references for advice.",
-        );
-      const extra = areas[p.area][1] === "leg" ? rules.legExtra : 0;
-      sessions = rules[p.style].map((n) => n + extra);
-      open = true;
-    } else if (p.cover === "full") {
-      sessions = rules.torso;
-      open = true;
-    } else if (p.cover === "panel" && ["upper", "forearm"].includes(p.area))
-      sessions = rules[p.area];
-    else
-      return review(
-        "I need to see the scale and references to estimate this placement and coverage.",
-      );
-    hours ||= sessions.map((n) => n * rules.day);
-    const suffix = open ? "+" : "";
-    const range = (values, format = String) =>
-      format(values[0]) +
-      (values[0] === values[1] ? "" : "–" + format(values[1])) +
-      suffix;
-    return {
-      price: range(
-        hours.map((n) => n * rules.hourly),
-        gbp,
-      ),
-      time: range(hours) + " hours",
-      visits: range(sessions) + (sessions[1] === 1 ? " visit" : " visits"),
-      reason:
-        p.size === "small"
-          ? "A shorter sitting may be possible if the design and detail suit this scale."
-          : "Budget assumes full " +
-            rules.day +
-            "-hour sittings. You pay for tattooing time used." +
-            (open ? " Detailed projects may take more sessions." : ""),
-    };
-  }
-  function booking(p) {
-    if (!valid(p)) return null;
-    const [area, region, part] = areas[p.area];
-    const sleeve = p.cover === "sleeve";
-    const partial = p.cover !== "full" && ["back", "chest"].includes(p.area);
-    const placement = sleeve
-      ? region === "arm"
-        ? "full_sleeve"
-        : "full_leg_sleeve"
-      : partial
-        ? "other"
-        : part;
-    const label = sleeve ? coverage(p.area, p.size).sleeve : area;
-    const result = estimate(p);
-    const notes = [
-      sizes[p.size],
-      coverage(p.area, p.size)[p.cover],
-      "Initial guide: " +
-        result.price +
-        (result.price === "Photo assessment"
-          ? ""
-          : " / " + result.time + " / " + result.visits),
-    ].join(" · ");
-    return {
-      region,
-      placement,
-      label,
-      style: p.style,
-      work: p.old === "yes" ? "cover_up" : "new",
-      notes,
-    };
-  }
-  function fromHash(hash) {
-    const params = new URLSearchParams(hash.slice(1));
-    if (params.get("estimate") !== "1") return null;
-    const p = Object.fromEntries(params);
-    return valid(p) ? booking(p) : null;
-  }
-  const api = {
-    rules,
-    areas,
-    sizes,
-    styles,
-    coverage,
-    valid,
-    estimate,
-    booking,
-    fromHash,
-  };
-  if (typeof module === "object" && module.exports) module.exports = api;
-  else root.TattooPricing = api;
+  var REGIONS = [
+    { key: 'arm', label: 'Arm', placements: [
+      ['shoulder', 'Shoulder'], ['upper_arm', 'Upper arm'], ['inner_bicep', 'Inner bicep'], ['elbow', 'Elbow'],
+      ['forearm', 'Forearm'], ['wrist', 'Wrist'], ['half_sleeve', 'Half sleeve', 'arm_sleeve', true],
+      ['three_quarter_sleeve', '3/4 sleeve', 'arm_sleeve', true], ['full_sleeve', 'Full sleeve', 'arm_sleeve', true],
+      ['other', 'Other'] ] },
+    { key: 'leg', label: 'Leg', placements: [
+      ['thigh', 'Thigh'], ['knee', 'Knee'], ['calf', 'Calf'], ['shin', 'Shin'], ['ankle', 'Ankle'],
+      ['half_leg_sleeve', 'Half leg sleeve', 'leg_sleeve', true], ['full_leg_sleeve', 'Full leg sleeve', 'leg_sleeve', true],
+      ['other', 'Other'] ] },
+    { key: 'chest_ribs', label: 'Chest & Ribs', placements: [
+      ['sternum', 'Sternum'], ['one_side_chest', 'One side of chest'], ['collarbone', 'Collarbone'], ['ribs', 'Ribs'],
+      ['full_chest', 'Full chest', null, true], ['other', 'Other'] ] },
+    { key: 'back', label: 'Back', placements: [
+      ['upper_back', 'Upper back'], ['shoulder_blade', 'Shoulder blade'], ['spine', 'Spine'], ['lower_back', 'Lower back'],
+      ['full_back', 'Full back', null, true], ['other', 'Other'] ] },
+    { key: 'stomach_sides', label: 'Stomach & Sides', placements: [
+      ['stomach', 'Stomach'], ['side', 'Side'], ['hip', 'Hip'], ['other', 'Other'] ] },
+    { key: 'neck_head', label: 'Neck & Head', placements: [
+      ['front_neck', 'Front of neck'], ['side_neck', 'Side of neck'], ['back_neck', 'Back of neck'],
+      ['behind_ear', 'Behind the ear'], ['head', 'Head'], ['other', 'Other'] ] },
+    { key: 'hand', label: 'Hand', placements: [
+      ['back_of_hand', 'Back of hand'], ['fingers', 'Fingers'], ['side_of_hand', 'Side of hand'], ['other', 'Other'] ] },
+    { key: 'foot', label: 'Foot', placements: [
+      ['top_of_foot', 'Top of foot'], ['side_of_foot', 'Side of foot'], ['toes', 'Toes'], ['other', 'Other'] ] },
+    { key: 'other', label: 'Other', placements: [] }
+  ];
+  var WORK = [['new', 'No existing tattoo'], ['extension', 'Extend existing tattoo'], ['cover_up', 'Cover-up'], ['rework', 'Rework']];
+  var WORK_REVIEW = { new: 'New tattoo', extension: 'Extension', cover_up: 'Cover-up', rework: 'Rework' };
+  var STYLES = [['black_grey', 'Black & Grey realism'], ['colour', 'Colour realism'], ['not_sure', 'Not sure yet']];
+
+const regionByKey=k=>REGIONS.find(r=>r.key===k);
+const sides={left:"Left",right:"Right",both:"Both sides",unsure:"Not decided"};
+const scales={small:"Small idea (3–4 hours if suitable)",area:"Area-sized design",unsure:"Not decided"};
+const coverage={panel:"One surface",wrap:"Wraps around",unsure:"Not decided"};
+const validList=(list,keys)=>Array.isArray(list)&&list.length>0&&new Set(list).size===list.length&&list.every(k=>keys.includes(k));
+const large=(r,k)=>r.placements.find(x=>x[0]===k)?.[3];
+const limb=r=>["arm","leg"].includes(r);
+const wraps=k=>["forearm","upper_arm","thigh","calf","shin"].includes(k);
+function valid(p){
+ if(!p||!Array.isArray(p.areas)||!p.areas.length||p.areas.length>REGIONS.length||new Set(p.areas.map(a=>a?.region)).size!==p.areas.length||!validList(p.styles,STYLES.map(x=>x[0]))||(p.styles.includes("not_sure")&&p.styles.length>1))return false;
+ return p.areas.every(a=>{
+ const r=regionByKey(a?.region);if(!r||!validList(a.work,WORK.map(x=>x[0]))||(a.work.includes("new")&&a.work.length>1))return false;
+ if(r.key==="other")return Array.isArray(a.placements)&&!a.placements.length&&typeof a.other==="string"&&!!a.other.trim()&&a.other.length<=120;
+ if(!validList(a.placements,r.placements.map(x=>x[0])))return false;
+ if(a.placements.includes("other")&&(typeof a.other!=="string"||!a.other.trim()||a.other.length>120))return false;
+ if(a.placements.filter(k=>r.placements.find(x=>x[0]===k)?.[2]).length>1)return false;
+ if((limb(a.region)||a.placements.includes("one_side_chest"))&&!Object.hasOwn(sides,a.side))return false;
+ return a.placements.length!==1||large(r,a.placements[0])||(Object.hasOwn(scales,a.scale)&&(!wraps(a.placements[0])||a.scale!=="area"||Object.hasOwn(coverage,a.coverage)));
+ });
+}
+const gbp=n=>"£"+n.toLocaleString("en-GB");
+const review=reason=>({price:"Individual estimate",time:"To be confirmed",visits:"To be confirmed",reason,numeric:false});
+function estimate(p){
+ if(!valid(p))return null;
+ if(p.areas.some(a=>a.work.some(w=>w!=="new")))return review("Existing ink needs individual assessment. Send photos of the tattoo and surrounding skin.");
+ if(p.areas.length!==1)return review("Multiple areas need an individual plan to avoid counting overlapping work twice.");
+ const a=p.areas[0],r=regionByKey(a.region),part=a.placements.find(k=>r.placements.find(x=>x[0]===k)?.[2])||a.placements[0];
+ if(limb(a.region)&&a.side==="both")return review("The FAQ ranges refer to one limb. Both limbs need an individual plan.");
+ if(a.placements.length!==1&&!["full_sleeve","full_leg_sleeve","half_sleeve","three_quarter_sleeve","half_leg_sleeve"].includes(part))return review("Combined placements need a personalised estimate.");
+ let hours,sessions,open=false,reason;
+ if(["full_sleeve","full_leg_sleeve"].includes(part)){
+ const extra=part==="full_leg_sleeve"?rules.legExtra:0;
+ const band=p.styles.length===1&&p.styles[0]!=="not_sure"?rules[p.styles[0]]:[rules.black_grey[0],rules.colour[1]];
+ sessions=band.map(n=>n+extra);open=true;reason="Guide for one full sleeve. Mixed or undecided styles use the combined FAQ range. Detailed designs may take longer.";
+ }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
+ else if(["half_sleeve","three_quarter_sleeve","half_leg_sleeve"].includes(part))return review("Partial sleeves vary by coverage and design; the FAQ does not specify a reliable separate range.");
+ else if(a.scale==="small"&&!["neck_head","hand","foot","other"].includes(a.region)&&part!=="other"){hours=rules.small;sessions=[1,1];reason="Possible for a smaller idea if the placement, detail and realism style are suitable.";}
+ else if(a.scale==="area"&&["forearm","upper_arm","shoulder"].includes(part)){
+ if(part!=="shoulder"&&a.coverage!=="panel")return review("Wraparound or uncertain coverage needs individual assessment.");
+ sessions=part==="forearm"?rules.forearm:rules.upper;reason="General FAQ guide. Colour and dense detail can affect the final time; no unverified multiplier is applied.";
+ }else return review("The FAQ does not specify a reliable range for this exact placement and size.");
+ const fullDays=!hours;hours ||= sessions.map(n=>n*rules.day);
+ const range=(arr,fmt=String)=>fmt(arr[0])+(arr[0]===arr[1]?"":"–"+fmt(arr[1]))+(open?"+":"");
+ return {price:range(hours.map(n=>n*rules.hourly),gbp),time:range(hours)+" hours",visits:range(sessions)+(sessions[1]===1?" session":" sessions"),numeric:true,hours,sessions,open,reason:reason+(fullDays?" Budget assumes up to "+rules.day+" hours per full day. You pay for tattooing time used.":"")};
+}
+function booking(p){
+ if(!valid(p))return null;
+ const notes=[],labels=[];
+ for(const a of p.areas){
+ const r=regionByKey(a.region),label=a.region==="other"?a.other:a.placements.map(k=>k==="other"?a.other:r.placements.find(x=>x[0]===k)[1]).join(", ");
+ labels.push(label);notes.push([label,sides[a.side],a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null].filter(Boolean).join(" / "));
+ }
+ return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
+}
+function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
+const api={rules,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,wraps,valid,estimate,booking,fromHash};
+if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);
