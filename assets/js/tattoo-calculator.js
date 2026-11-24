@@ -59,9 +59,10 @@ function updateResult(){
  }
  next.disabled=!ready||adding;
  next.textContent=embedded?"Use estimate in my enquiry":"Continue to enquiry";
+ const mini=$("calc-live-mini");if(mini)mini.textContent=r?r.price:"Select your project";
 }
 function render(focus){
- body.replaceChildren();const layout=node("div","calc-layout"),controls=node("div","calc-controls");atlas(layout);layout.append(controls);body.append(layout);
+ body.replaceChildren();const live=node("div","calc-live-strip"),liveLabel=node("span","calc-label","Estimated budget"),mini=node("strong","","Select your project");mini.id="calc-live-mini";live.append(liveLabel,mini);body.append(live);const layout=node("div","calc-layout"),controls=node("div","calc-controls");atlas(layout);layout.append(controls);body.append(layout);
  const selected=areaFor(active);
  if(p.areas.length){const tabs=node("div","calc-projects");for(const a of p.areas){const b=node("button","",api.regionByKey(a.region).label);b.type="button";b.setAttribute("aria-pressed",String(a.region===active&&!adding));b.onclick=()=>{active=a.region;adding=false;render();};tabs.append(b);}const add=node("button","","＋ Add area");add.type="button";add.disabled=p.areas.length>=api.REGIONS.length;add.onclick=()=>{adding=true;active="";render("Body area");};tabs.append(add);controls.append(tabs);}
  const a=adding?null:selected;

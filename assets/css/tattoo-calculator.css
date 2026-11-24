@@ -44,3 +44,6 @@ html.calc-embedded .calc{padding:0;max-width:none}html.calc-embedded .planner{bo
 .calc.calc-dialog-inner{padding:0;max-width:none;margin:0}
 .calc-dialog-inner .planner{border:0;border-radius:0;max-width:none}
 @media(max-width:700px){#booking-calculator-dialog{width:100%;max-width:none;max-height:100dvh;border-radius:0;margin:auto auto 0}}
+
+.calc-live-strip{display:none}.planner{overflow:visible}.calc-output{border-radius:0 0 1.5rem 1.5rem}.calc-dialog-inner .calc-output{border-radius:0}
+@media(max-width:700px){.calc-live-strip{position:sticky;top:56px;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:.75rem;background:#151515;border-bottom:1px solid #333;padding:.65rem 1rem;border-radius:1.5rem 1.5rem 0 0}.calc-live-strip .calc-label{margin:0}.calc-live-strip strong{font-size:.95rem;text-align:right;font-weight:600}.calc-dialog-inner .calc-live-strip{top:65px;border-radius:0}}

@@ -1120,8 +1120,8 @@
       if(a.region === 'other') state.otherRegionText = a.other;
       else if(a.placements.indexOf('other') >= 0) state.otherPlacement[a.region] = a.other;
     });
-    state.styles = estimate.styles.slice(); state.sizeNotes = estimate.notes; state.existingDetails = '';
-    calculatorGuide = {project:estimate.project,signature:calculatorSignature()};
+    state.styles = estimate.styles.slice(); state.sizeNotes = estimate.notes;
+    calculatorGuide = {project:JSON.parse(JSON.stringify(estimate.project)),signature:calculatorSignature()};
     current = 'design'; saveDraft();
     if (window.location.hash.indexOf('estimate=') >= 0) history.replaceState(history.state, '', location.pathname + location.search);
   }
@@ -1156,7 +1156,7 @@
     var imported = window.TattooPricing.booking(e.detail);
     if (!imported) return;
     var hasProject = state.regions.length || state.styles.length || state.sizeNotes.trim();
-    if (hasProject && !window.confirm('Replace the placement, size, style and existing-work choices with your calculator selections? Your idea, contact details and uploaded images will be kept.')) return;
+    if (hasProject && !window.confirm('Replace the placement, size, style and existing-work choices with your calculator selections? Your idea, contact details and uploaded images will be kept. Please check whether existing tattoo details and photos still match the new placement.')) return;
     applyEstimate(imported); notice.hidden = true; returnToReview = false; goTo('design');
     e.preventDefault();
   });

@@ -359,6 +359,11 @@ await test('Calculator mobile optional booking dialog and live transfer', async 
  await expectSection(page,'Design');
  assert.equal(await dialog.isVisible(),false);
  assert.match(await page.locator('#enquiry-v2').getByLabel(/^Exact placement and approximate size/).inputValue(),/Right/);
+ await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Keep this idea');
+ await page.getByRole('link',{name:'Open calculator',exact:true}).click();
+ await dialog.getByLabel('Style',{exact:true}).selectOption('colour');
+ await page.getByRole('button',{name:'Close calculator',exact:true}).click();
+ assert.equal(await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).inputValue(),'Keep this idea');
  await context.close();
 });
 
