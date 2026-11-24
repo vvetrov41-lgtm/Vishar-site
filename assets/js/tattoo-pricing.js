@@ -49,6 +49,10 @@ const coverage={panel:"One surface",wrap:"Wraps around",unsure:"Not decided"};
 const validList=(list,keys)=>Array.isArray(list)&&list.length>0&&new Set(list).size===list.length&&list.every(k=>keys.includes(k));
 const large=(r,k)=>r.placements.find(x=>x[0]===k)?.[3];
 const limb=r=>["arm","leg"].includes(r);
+const paired=r=>["arm","leg","hand","foot"].includes(r);
+const halves={upper:"Upper half",lower:"Lower half",unsure:"Not decided"};
+const surfaces={inner:"Inner surface",outer:"Outer surface",unsure:"Not decided"};
+const half=k=>["half_sleeve","half_leg_sleeve"].includes(k);
 const wraps=k=>["forearm","upper_arm","thigh","calf","shin"].includes(k);
 function valid(p){
  if(!p||!Array.isArray(p.areas)||!p.areas.length||p.areas.length>REGIONS.length||new Set(p.areas.map(a=>a?.region)).size!==p.areas.length||!validList(p.styles,STYLES.map(x=>x[0]))||(p.styles.includes("not_sure")&&p.styles.length>1))return false;
@@ -58,7 +62,7 @@ function valid(p){
  if(!validList(a.placements,r.placements.map(x=>x[0])))return false;
  if(a.placements.includes("other")&&(typeof a.other!=="string"||!a.other.trim()||a.other.length>120))return false;
  if(a.placements.filter(k=>r.placements.find(x=>x[0]===k)?.[2]).length>1)return false;
- if((limb(a.region)||a.placements.includes("one_side_chest"))&&!Object.hasOwn(sides,a.side))return false;
+ if((paired(a.region)||a.placements.includes("one_side_chest"))&&!Object.hasOwn(sides,a.side))return false;
  return a.placements.length!==1||large(r,a.placements[0])||(Object.hasOwn(scales,a.scale)&&(!wraps(a.placements[0])||a.scale!=="area"||Object.hasOwn(coverage,a.coverage)));
  });
 }
@@ -69,7 +73,7 @@ function estimate(p){
  if(p.areas.some(a=>a.work.some(w=>w!=="new")))return review("Existing ink needs individual assessment. Send photos of the tattoo and surrounding skin.");
  if(p.areas.length!==1)return review("Multiple areas need an individual plan to avoid counting overlapping work twice.");
  const a=p.areas[0],r=regionByKey(a.region),part=a.placements.find(k=>r.placements.find(x=>x[0]===k)?.[2])||a.placements[0];
- if(limb(a.region)&&a.side==="both")return review("The FAQ ranges refer to one limb. Both limbs need an individual plan.");
+ if(paired(a.region)&&a.side==="both"||a.placements.includes("one_side_chest")&&a.side==="both")return review("The FAQ ranges refer to one limb. Both limbs need an individual plan.");
  if(a.placements.length!==1&&!["full_sleeve","full_leg_sleeve","half_sleeve","three_quarter_sleeve","half_leg_sleeve"].includes(part))return review("Combined placements need a personalised estimate.");
  let hours,sessions,open=false,reason;
  if(["full_sleeve","full_leg_sleeve"].includes(part)){
@@ -92,11 +96,11 @@ function booking(p){
  const notes=[],labels=[];
  for(const a of p.areas){
  const r=regionByKey(a.region),label=a.region==="other"?a.other:a.placements.map(k=>k==="other"?a.other:r.placements.find(x=>x[0]===k)[1]).join(", ");
- labels.push(label);notes.push([label,sides[a.side],a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null].filter(Boolean).join(" / "));
+ labels.push(label);notes.push([label,sides[a.side],a.placements.some(half)?halves[a.half]:null,a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null,a.placements.includes("forearm")&&a.coverage==="panel"?surfaces[a.surface]:null].filter(Boolean).join(" / "));
  }
  return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
-const api={rules,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,wraps,valid,estimate,booking,fromHash};
+const api={rules,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,surfaces,valid,estimate,booking,fromHash};
 if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);

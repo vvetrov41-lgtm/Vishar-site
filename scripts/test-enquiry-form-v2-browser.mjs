@@ -313,14 +313,16 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));
   assert.ok(bytes > 0 && bytes < 40000);
-  await page.getByRole('checkbox',{name:'Arm',exact:true}).check();
-  await page.getByRole('checkbox',{name:'Full sleeve',exact:true}).check();
-  await page.getByRole('radio',{name:'Left',exact:true}).check();
+  await pick(page,'Arm',page.locator('.planner'));
+  await pick(page,'Full sleeve',page.locator('.planner'));
+  await pick(page,'Left',page.locator('.planner'));
+  assert.ok(await page.locator('.calc-figure .hit.on[data-side="left"]').count()>0);
+  assert.equal(await page.locator('.calc-figure .hit.on[data-side="right"]').count(),0);
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   await page.getByRole('button',{name:'Continue',exact:true}).click();
-  await page.getByRole('checkbox',{name:'No existing tattoo',exact:true}).check();
+  await pick(page,'No existing tattoo',page.locator('.planner'));
   await page.getByRole('button',{name:'Continue',exact:true}).click();
-  await page.getByRole('checkbox',{name:'Colour realism',exact:true}).check();
+  await pick(page,'Colour realism',page.locator('.planner'));
   await page.getByRole('button',{name:'Continue',exact:true}).click();
   assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
   await page.getByRole('button',{name:'Continue to enquiry',exact:true}).click();
