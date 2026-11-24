@@ -313,18 +313,16 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));
   assert.ok(bytes > 0 && bytes < 40000);
-  await pick(page,'Arm',page.locator('.planner'));
-  await pick(page,'Full sleeve',page.locator('.planner'));
-  await pick(page,'Left',page.locator('.planner'));
+  await page.getByLabel('Body area',{exact:true}).selectOption('arm');
+  await page.getByLabel('Placement',{exact:true}).selectOption('full_sleeve');
+  await page.getByRole('button',{name:'Left',exact:true}).click();
   assert.ok(await page.locator('.calc-figure .hit.on[data-side="left"]').count()>0);
   assert.equal(await page.locator('.calc-figure .hit.on[data-side="right"]').count(),0);
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
-  await pick(page,'No existing tattoo',page.locator('.planner'));
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
-  await pick(page,'Colour realism',page.locator('.planner'));
-  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  await page.getByLabel('Style',{exact:true}).selectOption('colour');
   assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
+  await page.getByLabel('Style',{exact:true}).selectOption('black_grey');
+  assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+  await page.getByLabel('Style',{exact:true}).selectOption('colour');
   await page.getByRole('button',{name:'Continue to enquiry',exact:true}).click();
   await expectSection(page,'Design');
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Colour wildlife sleeve');
