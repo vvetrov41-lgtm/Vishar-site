@@ -339,6 +339,29 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await context.close();
 });
 
+await test('Calculator mobile optional booking dialog and live transfer', async () => {
+ const {page,context}=await openPage();
+ await page.goto(BASE+'/booking/');
+ await page.getByRole('button',{name:'Decline',exact:true}).click();
+ await expectSection(page,'Placement');
+ await page.getByRole('link',{name:'Open calculator',exact:true}).click();
+ const dialog=page.locator('#booking-calculator-dialog');
+ assert.equal(await dialog.isVisible(),true);
+ await dialog.getByLabel('Body area',{exact:true}).selectOption('arm');
+ await dialog.getByLabel('Placement',{exact:true}).selectOption('full_sleeve');
+ await dialog.getByRole('button',{name:'Right',exact:true}).click();
+ await dialog.getByLabel('Style',{exact:true}).selectOption('black_grey');
+ assert.match(await dialog.locator('.calc-result').innerText(),/£5,880–£7,840/);
+ await page.getByRole('button',{name:'Close calculator',exact:true}).click();
+ await expectSection(page,'Placement');
+ await page.getByRole('link',{name:'Open calculator',exact:true}).click();
+ await dialog.getByRole('button',{name:'Use estimate in my enquiry',exact:true}).click();
+ await expectSection(page,'Design');
+ assert.equal(await dialog.isVisible(),false);
+ assert.match(await page.locator('#enquiry-v2').getByLabel(/^Exact placement and approximate size/).inputValue(),/Right/);
+ await context.close();
+});
+
 await test('1 new tattoo with one design reference (iPhone)', async () => {
   const { page, context, log } = await openPage();
   await fillProject(page, { areas: [{ region: 'Arm', placements: ['Forearm'], work: ['No existing tattoo'] }], design: [fixture('design.jpg')] });

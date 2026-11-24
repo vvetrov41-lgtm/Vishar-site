@@ -1112,7 +1112,7 @@
 
   var restored = loadDraft();
   const estimate = window.TattooPricing && window.TattooPricing.fromHash(window.location.hash);
-  function applyEstimate() {
+  function applyEstimate(estimate) {
     state.regions = estimate.areas.map(function(a){return a.region;});
     state.placements = {}; state.otherPlacement = {}; state.work = {}; state.otherRegionText = '';
     estimate.areas.forEach(function(a){
@@ -1123,9 +1123,9 @@
     state.styles = estimate.styles.slice(); state.sizeNotes = estimate.notes; state.existingDetails = '';
     calculatorGuide = {project:estimate.project,signature:calculatorSignature()};
     current = 'design'; saveDraft();
-    history.replaceState(history.state, '', location.pathname + location.search);
+    if (window.location.hash.indexOf('estimate=') >= 0) history.replaceState(history.state, '', location.pathname + location.search);
   }
-  if (estimate && !restored) applyEstimate();
+  if (estimate && !restored) applyEstimate(estimate);
   buildShell();
   if (!STEPS.some(function (s) { return s.id === current && s.visible(); })) current = 'placement';
   render(false);
@@ -1134,7 +1134,7 @@
     notice.appendChild(el('span', { text: 'Your previous answers were restored. ' }));
     if (estimate) notice.appendChild(el('button', { type: 'button', className: 'ef-link-button',
       text: 'Replace previous project choices with calculator choices', onclick: function () {
-        applyEstimate(); notice.hidden = true; goTo('design');
+        applyEstimate(estimate); notice.hidden = true; goTo('design');
       } }));
     notice.appendChild(el('button', { type: 'button', className: 'ef-link-button', text: 'Start over', onclick: function () {
       clearDraft();
@@ -1151,6 +1151,15 @@
       goTo('placement');
     } }));
   }
+  root.addEventListener('vishar-calculator-apply', function(e) {
+    if (submitting || submitted) return;
+    var imported = window.TattooPricing.booking(e.detail);
+    if (!imported) return;
+    var hasProject = state.regions.length || state.styles.length || state.sizeNotes.trim();
+    if (hasProject && !window.confirm('Replace the placement, size, style and existing-work choices with your calculator selections? Your idea, contact details and uploaded images will be kept.')) return;
+    applyEstimate(imported); notice.hidden = true; returnToReview = false; goTo('design');
+    e.preventDefault();
+  });
   window.addEventListener('pagehide', saveDraft);
 
   // Test hook: lets automated checks read the derived requirements.

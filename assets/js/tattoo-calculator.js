@@ -1,7 +1,7 @@
 (() => {
 const api=window.TattooPricing,geo=window.TattooBodyGeometry,$=id=>document.getElementById(id);
 const body=$("calc-body"),next=$("calc-next"),p={areas:[],styles:[]};let view="front",started=false,active="",adding=false;
-const embedded=new URLSearchParams(location.search).get("embed")==="1"&&window.parent!==window;
+const embedded=!!body.closest("dialog");
 const node=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt)e.textContent=txt;return e;};
 function heading(txt,help){body.append(node("h2","ef-question",txt),node("p","ef-help",help));}
 function event(name){try{if(location.hostname==="vishartattoo.com"&&localStorage.getItem("vishar-cookie-consent")==="granted")window.gtag?.("event",name,{calculator_version:2});}catch{}}
@@ -84,7 +84,7 @@ function render(focus){
  if(adding){const cancel=node("button","calc-remove","Cancel adding area");cancel.type="button";cancel.onclick=()=>{adding=false;active=p.areas.at(-1)?.region||"";render();};controls.append(cancel);}
  updateResult();if(focus){const target=Array.from(body.querySelectorAll("select,button[data-focus]")).find(x=>x.getAttribute("aria-label")===focus||x.dataset.focus===focus);target?.focus({preventScroll:true});}
 }
-next.onclick=()=>{if(!complete()||adding)return;event("tattoo_estimate_to_booking");if(embedded){window.parent.postMessage({type:"vishar-calculator-apply",project:p},location.origin);return;}location.href="/booking/#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)});};
+next.onclick=()=>{if(!complete()||adding)return;event("tattoo_estimate_to_booking");if(embedded){const root=document.getElementById("enquiry-v2");if(!root)return;const accepted=!root.dispatchEvent(new CustomEvent("vishar-calculator-apply",{detail:p,cancelable:true}));if(accepted){body.closest("dialog").close();requestAnimationFrame(()=>root.scrollIntoView({block:"start",behavior:"smooth"}));}return;}location.href="/booking/#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)});};
 $("calc-reset").onclick=()=>{p.areas=[];p.styles=[];active="";adding=false;view="front";render();};
-render();document.querySelector(".planner").hidden=false;
+render();body.closest(".planner").hidden=false;
 })();

@@ -91,6 +91,7 @@
   <link rel="stylesheet" href="/assets/css/fonts.css">
   <link rel="stylesheet" href="/assets/css/tailwind.css">
   <link rel="stylesheet" href="/assets/css/enquiry-form-v2.css?v=20261119">
+  <link rel="stylesheet" href="/assets/css/tattoo-calculator.css?v=4">
   <style>
     body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
     ::selection{background:rgba(0,113,227,.35);color:#fff}
@@ -238,6 +239,12 @@
     <section class="px-6 pb-24">
       <div class="max-w-[1200px] mx-auto grid md:grid-cols-2 gap-8 lg:gap-12 items-start">
         <div>
+          <div id="booking-calculator-option" class="rounded-2xl border border-white/10 bg-white/[0.03] p-4 mb-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div><p class="text-sm font-medium">Want to check the price first?</p><p class="text-xs text-white/50 mt-1">Optional · Estimate your budget before sending an enquiry.</p></div>
+              <a id="booking-calculator-open" class="inline-flex items-center justify-center rounded-full border border-white/20 px-4 py-3 text-sm font-medium hover:bg-white/10" href="/tattoo-price-calculator/">Open calculator</a>
+            </div>
+          </div>
           <div id="enquiry-v2" aria-live="off"></div>
           <form id="tattoo-enquiry-form" class="rounded-3xl border border-white/10 bg-white/[0.03] p-6 md:p-10" novalidate>
             <div class="grid md:grid-cols-2 gap-5">
@@ -289,8 +296,16 @@
         </aside>
       </div>
     </section>
-  <p class="text-center px-6 py-8"><a class="underline underline-offset-4" href="/tattoo-price-calculator/">Estimate your tattoo budget and sessions</a></p>
 </main>
+<dialog id="booking-calculator-dialog" aria-labelledby="booking-calculator-title">
+  <div class="booking-calculator-header"><h2 id="booking-calculator-title" class="text-lg font-semibold">Tattoo price calculator</h2><button id="booking-calculator-close" type="button" aria-label="Close calculator">×</button></div>
+  <div class="calc calc-dialog-inner">
+    <section class="planner" aria-label="Tattoo price calculator" hidden>
+      <div id="calc-body"></div>
+      <div class="calc-output"><div id="calc-estimate" role="status" aria-live="polite" aria-atomic="true"></div><div class="calc-actions"><button type="button" id="calc-next" class="calc-cta" disabled>Use estimate in my enquiry</button><button type="button" id="calc-reset" class="calc-reset">Reset</button></div></div>
+    </section>
+  </div>
+</dialog>
   <div id="site-footer">
     <!-- build:footer -->
     <footer class="py-20 border-t border-white/5 px-6">
@@ -355,7 +370,10 @@
   <script src="/components.js" defer></script>
   <script src="/assets/js/tattoo-pricing.js?v=2"></script>
   <script src="/assets/js/intake-preflight.js"></script>
-  <script src="/assets/js/enquiry-form-v2.js?v=estimate2" defer></script>
+  <script src="/assets/js/enquiry-form-v2.js?v=estimate3" defer></script>
+  <script src="/assets/js/tattoo-body-map.js" defer></script>
+  <script src="/assets/js/tattoo-calculator.js?v=4" defer></script>
+  <script src="/assets/js/booking-calculator-dialog.js?v=1" defer></script>
   <script>
   (function () {
     const canonicalBookingHost = 'vishartattoo.com';

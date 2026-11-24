@@ -1,9 +1,9 @@
 /* Reuse enquiry form typography, controls and buttons. */
-body{background:#000;color:#f5f5f7;font-family:Inter,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-::selection{background:rgba(0,113,227,.35);color:#fff}
-:focus-visible{outline:2px solid rgba(0,113,227,.8);outline-offset:3px;border-radius:4px}
-.glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
-.hero-title{letter-spacing:-.025em}.calc{max-width:1000px;padding:6rem 1.5rem 4rem;margin:auto}.calc-intro{text-align:center;margin:1.5rem auto 2rem;max-width:680px}
+body:has(main.calc){background:#000;color:#f5f5f7;font-family:Inter,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+body:has(main.calc) ::selection{background:rgba(0,113,227,.35);color:#fff}
+.calc :focus-visible{outline:2px solid rgba(0,113,227,.8);outline-offset:3px;border-radius:4px}
+body:has(main.calc) .glass{background:rgba(29,29,31,.72);backdrop-filter:saturate(180%) blur(20px);-webkit-backdrop-filter:saturate(180%) blur(20px)}
+.calc .hero-title{letter-spacing:-.025em}.calc{max-width:1000px;padding:6rem 1.5rem 4rem;margin:auto}.calc-intro{text-align:center;margin:1.5rem auto 2rem;max-width:680px}
 .calc [hidden]{display:none!important}.calc-skip{position:fixed;top:-8rem;z-index:150;background:#fff;color:#111;padding:1rem}.calc-skip:focus{top:0}
 .calc .ef-form{max-width:900px;margin:auto}
 .calc-layout{display:grid;grid-template-columns:minmax(200px,.8fr) minmax(0,1.2fr);gap:1.5rem;align-items:start}
@@ -34,3 +34,13 @@ body{background:#000;color:#f5f5f7;font-family:Inter,Arial,sans-serif;-webkit-fo
 html.calc-embedded #site-nav,html.calc-embedded #site-footer,html.calc-embedded .calc-intro,html.calc-embedded .detail,html.calc-embedded .calc-skip{display:none!important}
 html.calc-embedded .calc{padding:0;max-width:none}html.calc-embedded .planner{border:0;border-radius:0;max-width:none}
 @media(max-width:700px){.calc-layout{padding:1rem}.calc-figure{height:270px}.calc-output{padding:1rem}.calc-controls{gap:.75rem}}
+
+/* The same calculator mounts in a native modal without changing the enquiry wizard. */
+#booking-calculator-dialog{color:#f5f5f7;background:#101010;border:1px solid #333;border-radius:1rem;width:min(940px,calc(100% - 24px));max-width:940px;max-height:92dvh;padding:0;margin:auto;overflow:auto;overscroll-behavior:contain}
+#booking-calculator-dialog:not([open]){display:none}
+#booking-calculator-dialog::backdrop{background:rgba(0,0,0,.8)}
+.booking-calculator-header{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;padding:.65rem 1rem;border-bottom:1px solid #333;background:#101010}
+#booking-calculator-close{min-width:44px;min-height:44px;font-size:1.5rem}
+.calc.calc-dialog-inner{padding:0;max-width:none;margin:0}
+.calc-dialog-inner .planner{border:0;border-radius:0;max-width:none}
+@media(max-width:700px){#booking-calculator-dialog{width:100%;max-width:none;max-height:100dvh;border-radius:0;margin:auto auto 0}}
