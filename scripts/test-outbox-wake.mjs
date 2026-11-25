@@ -31,6 +31,16 @@ assert.equal((await receiveWake(request(),env,now,async()=>Response.json([{...pa
 assert.equal((await receiveWake(request(),{...env,OUTBOX_WAKE_RATE_LIMIT:{limit:async()=>({success:false})}},now,upstream)).status,429);
 assert.equal(calls,1);
 assert.equal(sent.length,1);
+// Network runtimes may expose a stream even when Content-Length is zero.
+const streamRequest=(body,headers={})=>new Request(wakeUrl,{method:'POST',body,duplex:'half',headers:{authorization:'Bearer a.b.c',origin:crm,...headers}});
+const emptyStream=()=>new ReadableStream({start(c){c.close();}});
+assert.equal((await receiveWake(streamRequest(emptyStream()),env,now,upstream)).status,202);
+assert.equal((await receiveWake(streamRequest(emptyStream(),{'content-length':'0'}),env,now,upstream)).status,202);
+assert.equal((await receiveWake(streamRequest(emptyStream(),{authorization:''}),env,now,upstream)).status,401);
+assert.equal((await receiveWake(streamRequest(new ReadableStream({start(c){c.enqueue(new Uint8Array([1]));c.close();}})),env,now,upstream)).status,400);
+assert.equal((await receiveWake(streamRequest('x',{'content-length':'1'}),env,now,upstream)).status,400);
+assert.equal(calls,3);
+assert.equal(sent.length,3);
 const preflight=await receiveWake(new Request(wakeUrl,{method:'OPTIONS',headers:{origin:crm,'access-control-request-method':'POST'}}),env,now,upstream);
 assert.equal(preflight.status,204);assert.equal(preflight.headers.get('access-control-allow-origin'),crm);
 const drainCalls=[];let ack=0,retry=0;
