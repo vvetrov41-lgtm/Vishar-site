@@ -118,7 +118,7 @@ select ok(not crm_private.enquiry_v2_region_keys_valid('{arm:forearm:outer}'),'u
 select is(crm_private.enquiry_v2_region_labels('{arm:forearm,leg:half_leg_sleeve:inner}'),'["Arm: Forearm","Leg: Half leg sleeve · Inner side · full length"]'::jsonb,'detailed labels returned to GPT');
 set local role authenticated;
 select pg_temp.claims('{"sub":"98111111-1111-4111-8111-111111111111","role":"authenticated"}');
-select lives_ok(format($select public.set_enquiry_file_classification(%L, 'existing_tattoo', '{arm:forearm,arm:half_sleeve:outer}')$, pg_temp.file(1)), 'staff can persist detailed image zones');
+select lives_ok(format($$select public.set_enquiry_file_classification(%L, 'existing_tattoo', '{arm:forearm,arm:half_sleeve:outer}')$$, pg_temp.file(1)), 'staff can persist detailed image zones');
 reset role;
 select is((select body_areas from public.enquiry_files where id=pg_temp.file(1)),array['arm:forearm','arm:half_sleeve:outer'],'exact tags stored');
 select * from finish(true);
