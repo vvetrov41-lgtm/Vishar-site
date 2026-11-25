@@ -94,3 +94,5 @@ html.calc-embedded .calc{padding:0;max-width:none}html.calc-embedded .planner{bo
 
 /* Approximate footprint overlays do not shrink the interactive hit targets. */
 .calc-figure .calc-patch-small,.calc-figure .calc-patch-partial{display:none;fill:#f5f5f7;fill-opacity:.82;pointer-events:none;stroke:none}.calc-figure .hit.on.small,.calc-figure .hit.on.partial{fill:#f5f5f7;fill-opacity:.12;stroke-opacity:.45}.calc-figure .hit.on.small+.calc-patch-small{display:block}.calc-figure .hit.on.partial+.calc-patch-small+.calc-patch-partial{display:block}
+
+.calc-placement-picker{border:1px solid #3a3a3a;border-radius:.7rem;padding:.2rem .7rem .65rem}.calc-placement-picker summary{cursor:pointer;min-height:44px;display:list-item;padding:.75rem 0;font-size:.82rem;color:#ddd}.calc-placement-picker:not([open]){padding-bottom:.2rem}.calc-placement-picker .calc-label{margin-top:.3rem}.calc-placement-picker select{max-width:100%}.calc-model-switch button:disabled{opacity:.45;cursor:not-allowed}

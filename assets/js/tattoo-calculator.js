@@ -67,7 +67,7 @@ function selectedArea(area,side){
 }
 function coverageAt(area,side){
  const key=map[area],a=key&&areaFor(key[0]);if(!a||!selectedArea(area,side))return null;
- return {region:a.region,part:a.placements[0],side:a.side,scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area"};
+ return {region:a.region,part:a.placements[0],side:a.side,coverage:a.coverage,surface:a.surface,scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area",single:a.placements.length===1};
 }
 function paint2D(path){
  const area=path.dataset.area,side=path.dataset.paired==="true"?path.dataset.side:null,info=coverageAt(area,side);
@@ -90,7 +90,7 @@ function atlas(parent,interactive=true){
  for(const v of ["front","back"]){const b=node("button","",v==="front"?"Front":"Back");b.type="button";b.setAttribute("aria-pressed",String(v===view));b.onclick=()=>{view=v;modelViewer?.view(v);render();};tabs.append(b);}box.append(tabs);
  if(modelMode==="3d"){
  modelHost??=node("div","calc-model-host");box.append(modelHost);
- const tools=node("div","calc-model-switch");for(const [label,f] of [["Zoom in",.8],["Zoom out",1.25]]){const b=node("button","",label);b.type="button";b.onclick=()=>modelViewer?.zoom(f);tools.append(b);}box.append(tools,node("p","calc-map-hint","Drag to rotate · pinch to zoom · tap a zone"));
+ const tools=node("div","calc-model-switch");for(const [label,f] of [["Zoom in",.8],["Zoom out",1.25]]){const b=node("button","",label);b.type="button";b.onclick=()=>modelViewer?.zoom(f);tools.append(b);}const fit=node("button","","Focus area");fit.type="button";fit.disabled=!activeArea();fit.onclick=()=>modelViewer?.focus(activeArea()?.region);tools.append(fit);box.append(tools,node("p","calc-map-hint","Drag to rotate · pinch to zoom · tap a zone. Front / Back resets the view."));
  parent.append(box);load3D();modelViewer?.update();return;
  }
  if(modelFailed)box.append(node("p","calc-map-hint","3D could not load. Tap 3D to retry, or use the 2D map."));
@@ -111,6 +111,21 @@ function atlas(parent,interactive=true){
  box.append(svg,node("p","calc-map-hint","Tap a zone to estimate its cost."));parent.append(box);
 }
 
+function placementPicker(controls){
+ const wrap=node("details","calc-placement-picker"),summary=node("summary","","Choose another body area");
+ wrap.append(summary);
+ const label=node("label","calc-label","Body area"),select=node("select","calc-select");select.id="calc-placement-list";label.htmlFor=select.id;
+ const placeholder=node("option","","Select an area");placeholder.value="";select.append(placeholder);
+ for(const region of api.REGIONS){
+ if(region.key==="other")continue;
+ const group=document.createElement("optgroup");group.label=region.label;
+ for(const [key,name] of region.placements){if(key==="other")continue;const option=node("option","",name);option.value=region.key+"|"+key;group.append(option);}
+ select.append(group);
+ }
+ const a=activeArea();if(a?.placements.length===1&&a.placements[0]!=="other")select.value=a.region+"|"+a.placements[0];
+ select.onchange=()=>{if(!select.value)return;const [region,part]=select.value.split("|");choose(region,part,null);if(region==="back"){view="back";modelViewer?.view(view);}else if(["chest_ribs","stomach_sides"].includes(region)){view="front";modelViewer?.view(view);}render();const el=$("calc-placement-list");if(el){el.closest("details").open=true;el.focus({preventScroll:true});}};
+ wrap.append(label,select);controls.append(wrap);
+}
 function description(a){
  if(!a)return "Choose a tattoo";
  const region=api.regionByKey(a.region),part=a.placements[0];
@@ -175,6 +190,7 @@ function render(focus){
  const layout=node("div","calc-layout"),controls=node("div","calc-controls");atlas(layout);layout.append(controls);body.append(layout);
  const a=activeArea(),part=a?.placements.length===1?a.placements[0]:undefined,activePreset=presets.find(x=>x[2]===a?.region&&x[3]===part)?.[0];
  group(controls,"Quick projects",presets.map(x=>[x[0],x[1]]),activePreset,k=>{const x=presets.find(z=>z[0]===k);choose(x[2],x[3],null);if(k==="back"){view="back";modelViewer?.view(view);}if(k==="chest"){view="front";modelViewer?.view(view);}},"calc-presets");
+ placementPicker(controls);
  if(combine&&p.areas.length){const list=node("div","calc-area-list");list.append(node("span","calc-label","Selected zones"));for(const item of p.areas){const row=node("div","calc-area-row"),edit=node("button","",description(item)),remove=node("button","","×");edit.type="button";edit.setAttribute("aria-pressed",String(item===a));edit.onclick=()=>{activeRegion=item.region;render();};remove.type="button";remove.setAttribute("aria-label","Remove "+description(item));remove.onclick=()=>{p.areas=p.areas.filter(x=>x!==item);activeRegion=p.areas.at(-1)?.region||"";render();};row.append(edit,remove);list.append(row);}controls.append(list);}
  if(a){
  const selection=node("div","calc-selection");selection.append(node("span","calc-label","Selected area"),node("strong","",description(a)));controls.append(selection);
@@ -205,7 +221,7 @@ next.onclick=()=>{
  if(embedded){const root=document.getElementById("enquiry-v2");if(!root)return;const accepted=!root.dispatchEvent(new CustomEvent("vishar-calculator-apply",{detail:p,cancelable:true}));if(accepted){body.closest("dialog").close();requestAnimationFrame(()=>root.scrollIntoView({block:"start",behavior:"smooth"}));}return;}
  location.href="/booking/#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)});
 };
-$("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";mode="project";hours=7;budget=2000;combine=false;activeRegion="";render();};
+$("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";modelViewer?.view(view);mode="project";hours=7;budget=2000;combine=false;activeRegion="";render();};
 body.closest(".planner").hidden=false;render();
 // Standalone calculator loads 3D; booking dialog starts with lightweight 2D.
 window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});

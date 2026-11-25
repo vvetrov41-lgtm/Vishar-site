@@ -311,6 +311,10 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     const model=page.locator('.calc-webgl');
     const fraction=async()=>Number(await model.getAttribute('data-selected-vertices'))/Number(await model.getAttribute('data-vertex-count'));
     const large=await fraction();assert.ok(large>0);
+    await page.getByRole('button',{name:'Focus area',exact:true}).click();
+    assert.equal(await model.getAttribute('data-focused-area'),'arm');
+    await page.getByRole('button',{name:'Front',exact:true}).click();
+    assert.equal(await model.getAttribute('data-focused-area'),null);
     await page.getByRole('button',{name:'Small piece',exact:true}).click();
     const small=await fraction();assert.ok(small>0&&small<large,'small piece should highlight less skin');
     assert.equal(await page.locator('.calc-result').innerText(),'£420–£560');
@@ -337,6 +341,11 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     .reduce((sum,r) => sum + r.decodedBodySize,0));
   assert.ok(bytes > 0 && bytes < 65000);
   assert.equal(await page.locator('#calc-next').isVisible(),false,'no booking prompt before choosing a project');
+  await page.getByText('Choose another body area',{exact:true}).click();
+  await page.getByLabel('Body area',{exact:true}).selectOption('leg|calf');
+  assert.match(await page.locator('.calc-selection').innerText(),/Calf/);
+  assert.equal(await page.locator('.calc-result').innerText(),'By assessment');
+  await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   await page.getByRole('button',{name:'Combine zones: off',exact:true}).click();
   await page.getByRole('button',{name:'Forearm',exact:true}).click();
   await page.getByRole('button',{name:'Full back',exact:true}).click();

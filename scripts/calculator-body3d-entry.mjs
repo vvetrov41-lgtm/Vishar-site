@@ -30,16 +30,18 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  }
  function recolor(){
  if(!geometry||!ids||!worldPoints)return;
- const patches=new Map(),candidates=new Map();
+ const patches=new Map(),candidates=new Map(),panels=new Map();
  const keyFor=(info,side)=>info.region+"|"+(side||"centre");
+ const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm","thigh","calf","shin"].includes(info.part);
  // Choose one anatomical surface for a small design, preferring the last tapped surface.
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
- if(info?.scale!=="small")continue;
- const k=keyFor(info,side),score=(lastPick?.id===region.id&&lastPick.side===side?100:0)+(currentView==="front"?region.normal[2]:-region.normal[2]);
- const before=candidates.get(k);if(!before||score>before.score)candidates.set(k,{region,side,score});
+ if(info?.scale!=="small"&&!onePanel(info))continue;
+ const k=keyFor(info,side),score=(lastPick?.id===region.id&&lastPick.side===side?100:0)+(info.part==="forearm"&&info.surface===region.facet?10:0)+(currentView==="front"?region.normal[2]:-region.normal[2]);
+ const before=candidates.get(k);if(!before||score>before.score)candidates.set(k,{region,side,score,info});
  }
- for(const [k,{region,side}] of candidates){
+ for(const [k,{region,side,info}] of candidates){
+ if(onePanel(info)){panels.set(k,region.id);continue;}
  const center=lastPick?.id===region.id&&lastPick.side===side?lastPick.point:region.center;
  const radius=Math.max(.016,Math.min(.065,region.radius*.43));
  patches.set(k,{id:region.id,center,radius,min:Infinity});
@@ -55,6 +57,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
  let active=!!info&&isSelected(region.area,side);
+ if(active&&onePanel(info))active=panels.get(keyFor(info,side))===region.id;
  if(active&&info.part==="three_quarter_sleeve"&&(region.area==="inner_forearm"||region.area==="outer_forearm")){const b=forearmBounds[region.side];active=!!b&&worldPoints[i*3+1]>=(b[0]+b[1])/2;}
  if(active&&info.scale==="small"){
  const patch=patches.get(keyFor(info,side));
@@ -84,6 +87,10 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();dispose();onError();},{once:true});
  await load("male_lod1.glb");canvas.dataset.ready="true";resize();invalidate();
  if(!navigator.connection?.saveData)load("male_lod0.glb").then(()=>{if(!dead)canvas.dataset.detail="high";}).catch(err=>console.warn("High-detail model unavailable",err));
- return {update:recolor,view(v){currentView=v;camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();recolor();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
+ return {update:recolor,focus(regionKey){
+ if(!mesh||!worldPoints||!regionKey)return;
+ const bounds=new THREE.Box3();for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);if(info?.region===regionKey)bounds.expandByPoint(vec.fromArray(worldPoints,i*3));}
+ if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),radius=Math.max(.16,size.length()/2);const delta=camera.position.clone().sub(controls.target).normalize();const halfFov=THREE.MathUtils.degToRad(camera.fov/2),horizontal=Math.atan(Math.tan(halfFov)*camera.aspect);const distance=Math.max(controls.minDistance,Math.min(controls.maxDistance,1.18*radius/Math.sin(Math.min(halfFov,horizontal))));controls.target.copy(center);camera.position.copy(center).addScaledVector(delta,distance);controls.update();canvas.dataset.focusedArea=regionKey;invalidate();
+ },view(v){delete canvas.dataset.focusedArea;currentView=v;camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();recolor();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
  }catch(err){dispose();throw err;}
 };
