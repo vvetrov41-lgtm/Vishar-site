@@ -56,7 +56,7 @@ import type { ClientConversation } from '../lib/communications-api';
 import { enquiryHeadline } from '../lib/enquiry-summary';
 import { imageGroups } from '../lib/enquiry-images';
 import { EnquiryFileClassification } from '../components/EnquiryFileClassification';
-import { detailsToInput } from '../lib/enquiry-v2-catalogue';
+import { suggestedBodyZones } from '../lib/body-zones';
 import type {
   Client, Enquiry, EnquiryFile, FollowUp, InternalNote, Profile, StatusTransition,
 } from '../lib/types';
@@ -169,7 +169,7 @@ export function EnquiryDetailPage({ enquiryId }: { enquiryId: string }) {
   const readyFiles = files.filter((file) => file.upload_state === 'ready');
   // Body areas the client chose, offered first when classifying an image.
   const suggestedAreas = isStructuredProjectDetails(enquiry.project_details)
-    ? detailsToInput(enquiry.project_details)?.areas.map((area) => area.region) ?? []
+    ? suggestedBodyZones(enquiry.project_details)
     : [];
   const nextAppointment = upcoming(appointments, new Date());
   const conversation = conversations[0] ?? null;
