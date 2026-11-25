@@ -66,10 +66,11 @@ jobs:
       - name: Check calculator rules, mobile layout and booking handoff
         run: |
           node scripts/test-tattoo-pricing.mjs
+          node scripts/prepare-calculator-3d.mjs .
           npm install --prefix "$RUNNER_TEMP/calculator-qa" --no-audit --no-fund playwright@1.58.2 axe-core@4.10.3
           mkdir -p "$RUNNER_TEMP/calculator-fixtures"
           cp assets/og/og-london-2026-nov.jpg "$RUNNER_TEMP/calculator-fixtures/design.jpg"
-          PLAYWRIGHT_MODULE="$RUNNER_TEMP/calculator-qa/node_modules/playwright/index.mjs" \
+          TEST_CALCULATOR_3D=1 PLAYWRIGHT_MODULE="$RUNNER_TEMP/calculator-qa/node_modules/playwright/index.mjs" \
           AXE_PATH="$RUNNER_TEMP/calculator-qa/node_modules/axe-core/axe.min.js" \
           PLAYWRIGHT_EXECUTABLE="$(command -v google-chrome)" \
           node scripts/test-enquiry-form-v2-browser.mjs --only 'Calculator mobile' --fixtures "$RUNNER_TEMP/calculator-fixtures"

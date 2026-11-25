@@ -38,7 +38,7 @@ const axeSource = await readFile(process.env.AXE_PATH || path.join(rootDir, 'nod
 // Static server
 // ---------------------------------------------------------------------------
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json' };
+const TYPES = { '.glb':'model/gltf-binary', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json' };
 // HTTPS, because the Meta handoff is only produced on https:// pages.
 const certDir = mkdtempSync(path.join(os.tmpdir(), 'enquiry-v2-cert-'));
 execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1', '-subj', '/CN=127.0.0.1',
@@ -294,16 +294,27 @@ function intake(log) {
 // Scenarios
 // ---------------------------------------------------------------------------
 
-browser = await chromium.launch(process.env.PLAYWRIGHT_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE } : {});
+browser = await chromium.launch({...(process.env.PLAYWRIGHT_EXECUTABLE?{executablePath:process.env.PLAYWRIGHT_EXECUTABLE}:{}),args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader']});
 console.log(`Intake backend: ${backend.name}`);
 
 await test('Calculator mobile layout, accessibility and intake', async () => {
   const {page,context,log} = await openPage();
   await page.goto(BASE + '/tattoo-price-calculator/');
   await page.getByRole('button', {name:'Decline', exact:true}).click();
+  if(process.env.TEST_CALCULATOR_3D==='1'){
+    await page.locator('.calc-webgl[data-ready="true"]').waitFor({timeout:30000});
+    await page.getByRole('button',{name:'Zoom in',exact:true}).click();
+    await page.getByRole('button',{name:'Back',exact:true}).click();
+    await page.getByRole('button',{name:'Front',exact:true}).click();
+    await page.getByRole('button',{name:'Full sleeve',exact:true}).click();
+    assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+  }
+  await page.getByRole('button',{name:'2D',exact:true}).click();
   for (const width of [320,390,1024]) {
     await page.setViewportSize({width,height:844});
     await noHorizontalScroll(page,'calculator');
+    const overlap=await page.evaluate(()=>{const a=document.querySelector('.calc-output').getBoundingClientRect(),b=document.querySelector('.calc-mode').getBoundingClientRect();return a.bottom>b.top+1;});
+    assert.equal(overlap,false,'price block must not overlap controls');
   }
   await page.setViewportSize({width:390,height:844});
   await page.addScriptTag({content:axeSource});

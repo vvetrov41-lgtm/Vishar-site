@@ -42,8 +42,8 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,onEr
  observer=new ResizeObserver(resize);observer.observe(host);
  visibleObserver=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible){resize();invalidate();}});visibleObserver.observe(host);
  canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();dispose();onError();},{once:true});
- await load("male_lod1.glb");resize();invalidate();
- if(!navigator.connection?.saveData)load("male_lod0.glb").catch(()=>{});
+ await load("male_lod1.glb");canvas.dataset.ready="true";resize();invalidate();
+ if(!navigator.connection?.saveData)load("male_lod0.glb").catch(err=>console.warn("High-detail model unavailable",err));
  return {update:recolor,view(v){camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
  }catch(err){dispose();throw err;}
 };

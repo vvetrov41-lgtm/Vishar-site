@@ -4,7 +4,7 @@ const body=$("calc-body"),next=$("calc-next"),p={areas:[],styles:["black_grey"]}
 const embedded=!!body.closest("dialog");
 let view="front",mode="project",hours=7,started=false;
 const assetBase=new URL("calculator3d/",document.currentScript.src);
-let modelMode="2d",modelHost=null,modelViewer=null,modelLoad=null,modelFailed=false;
+let modelMode=embedded?"2d":"3d",modelHost=null,modelViewer=null,modelLoad=null,modelFailed=false;
 const node=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;};
 const money=n=>"£"+n.toLocaleString("en-GB",{maximumFractionDigits:0});
 function event(name){try{if(location.hostname==="vishartattoo.com"&&localStorage.getItem("vishar-cookie-consent")==="granted")window.gtag?.("event",name,{calculator_version:3});}catch{}}
@@ -42,20 +42,20 @@ function load3D(){
  modelHost??=node("div","calc-model-host");
  modelHost.textContent="Loading 3D model…";
  const script=document.createElement("script");script.src=new URL("viewer.js",assetBase).href;
- modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,onPick(area,side){const key=map[area];if(!key)return;choose(key[0],key[1],side,area==="inner_forearm"?"inner":area==="outer_forearm"?"outer":"unsure",area==="armpit"?"Armpit":area==="glutes"?"Glutes":"");render();},onError(){modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.update();return v;}).catch(()=>{modelFailed=true;modelMode="2d";render();});
+ modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,onPick(area,side){const key=map[area];if(!key)return;choose(key[0],key[1],side,area==="inner_forearm"?"inner":area==="outer_forearm"?"outer":"unsure",area==="armpit"?"Armpit":area==="glutes"?"Glutes":"");render();},onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
  return modelLoad;
 }
 function atlas(parent,interactive=true){
  const box=node("div","calc-atlas"),tabs=node("div","calc-views");
- const switches=node("div","calc-model-switch");for(const m of ["3d","2d"]){const b=node("button","",m.toUpperCase());b.type="button";b.setAttribute("aria-pressed",String(m===modelMode));b.disabled=m==="3d"&&modelFailed;b.onclick=()=>{modelMode=m;if(m==="3d")load3D();render();};switches.append(b);}box.append(switches);
+ const switches=node("div","calc-model-switch");for(const m of ["3d","2d"]){const b=node("button","",m.toUpperCase());b.type="button";b.setAttribute("aria-pressed",String(m===modelMode));b.onclick=()=>{modelMode=m;if(m==="3d"){modelFailed=false;load3D();}render();};switches.append(b);}box.append(switches);
  for(const v of ["front","back"]){const b=node("button","",v==="front"?"Front":"Back");b.type="button";b.setAttribute("aria-pressed",String(v===view));b.onclick=()=>{view=v;modelViewer?.view(v);render();};tabs.append(b);}box.append(tabs);
  if(modelMode==="3d"){
  modelHost??=node("div","calc-model-host");box.append(modelHost);
  const tools=node("div","calc-model-switch");for(const [label,f] of [["Zoom in",.8],["Zoom out",1.25]]){const b=node("button","",label);b.type="button";b.onclick=()=>modelViewer?.zoom(f);tools.append(b);}box.append(tools,node("p","calc-map-hint","Drag to rotate · pinch to zoom · tap a zone"));
  parent.append(box);load3D();modelViewer?.update();return;
  }
- if(modelFailed)box.append(node("p","calc-map-hint","3D unavailable on this device. Use the 2D model."));
- const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");svg.setAttribute("class","calc-figure");svg.setAttribute("viewBox",Object.values(geo.VIEW).join(" "));svg.setAttribute("aria-hidden","true");
+ if(modelFailed)box.append(node("p","calc-map-hint","3D could not load. Tap 3D to retry, or use the 2D map."));
+ const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");svg.setAttribute("class","calc-figure");svg.setAttribute("viewBox","0 0 420 1030");svg.setAttribute("aria-hidden","true");
  function add(tag,attrs,to=svg){const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);to.append(e);return e;}
  const defs=add("defs",{}),trunk=add("clipPath",{id:"calc-trunk"},defs),arm=add("clipPath",{id:"calc-arm"},defs);add("path",{d:geo.TRUNK},trunk);add("path",{d:geo.ARM},arm);
  const mask=add("mask",{id:"calc-mask",maskUnits:"userSpaceOnUse",x:geo.VIEW.x,y:geo.VIEW.y,width:geo.VIEW.w,height:geo.VIEW.h},defs);add("path",{d:geo.TRUNK,fill:"#fff"},mask);add("path",{d:geo.ARM,fill:"#000"},mask);add("path",{d:geo.ARM,fill:"#000",transform:geo.MIRROR_TRANSFORM},mask);
@@ -142,7 +142,7 @@ next.onclick=()=>{
  location.href="/booking/#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)});
 };
 $("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";mode="project";hours=7;render();};
-render();body.closest(".planner").hidden=false;
+body.closest(".planner").hidden=false;render();
 // Keep 2D immediately usable; 3D loads only on explicit selection.
 window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});
 })();
