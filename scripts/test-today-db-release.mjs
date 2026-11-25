@@ -757,3 +757,9 @@ assert.equal(verifyTodayLineage(wakeLineage),'20261125210000');
 assert.throws(()=>verifyTodayLineage(wakeLineage.replaceAll('20261125204000','20261123011000')));
 assert.throws(()=>verifyTodayLineage(wakeLineage+'\n 20261125210001 | | t'));
 assert.equal(deferredTodayMigration(wakeLineage),null);
+
+// Booking calculator and detailed image body zones are one atomic release.
+const calculatorRelease = ' Local | Remote | Time\n 20261125210000 | 20261125210000 | t\n 20261125213000 | | t';
+assert.equal(verifyTodayLineage(calculatorRelease), '20261125213000');
+assert.equal(deferredTodayMigration(calculatorRelease), null);
+for (const invalid of [calculatorRelease+'\n 20261125213100 | | t', calculatorRelease.replace('20261125213000 | |','20261125213100 | |'), calculatorRelease.replaceAll('20261125210000','20261125204000'), calculatorRelease+'\n | 20261125212000 | t']) assert.throws(()=>verifyTodayLineage(invalid));
