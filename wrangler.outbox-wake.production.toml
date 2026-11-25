@@ -1,5 +1,5 @@
 # Dedicated wake-hint service. Cron workers are unchanged as fallback.
-# Provision the queue and secret via the guarded release before enabling.
+# Provision the queue and public Supabase key through the guarded release before enabling.
 name = "vishar-outbox-wake-production"
 main = "workers/outbox-wake.js"
 compatibility_date = "2026-11-25"
@@ -13,6 +13,13 @@ routes = [
 [vars]
 VISHAR_ENVIRONMENT = "production"
 OUTBOX_WAKE_ENABLED = "false"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+# SUPABASE_PUBLISHABLE_KEY is generated from the production environment.
+
+[[ratelimits]]
+name = "OUTBOX_WAKE_RATE_LIMIT"
+namespace_id = "10071"
+simple = { limit = 30, period = 60 }
 
 [observability]
 enabled = true

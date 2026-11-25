@@ -1,88 +1,91 @@
--- Wake hints are an optional acceleration layer, never a replacement for the
--- durable integration_outbox, provider leases or existing cron recovery.
--- pg_net installation is an explicit infrastructure gate, not a side effect
--- of applying CRM migrations. Without it (including the local test shim),
--- the original scheduled processing is unchanged.
+-- Application-driven wake hints; no database networking extension is installed.
+-- Outbox rows, leases, due dates and provider send guards remain authoritative.
 
-create or replace function crm_private.wake_booking_outbox()
+create or replace function crm_private.mark_calendar_outbox_queued()
 returns trigger
 language plpgsql
 security definer
 set search_path=pg_catalog,crm_private
 as $$
-declare
-  v_lane text;
-  v_key text;
-  v_due_ms bigint;
-  v_issued_ms bigint;
-  v_signature text;
 begin
-  if new.status::text <> 'pending' then return new; end if;
-  if new.kind::text in ('calendar_create','calendar_update','calendar_cancel') then
-    v_lane := 'calendar';
-    -- Match the connection-status RPC: only an enabled, exact artist route
-    -- means a new pending job is queued. Truly disconnected artists retain
-    -- not_connected. Preserve newer and terminal states.
-    update public.sessions s
-    set calendar_sync_status='queued'
-    where s.id=new.session_id and s.artist_id=new.artist_id
-      and s.calendar_sync_status='not_connected'
-      and s.calendar_version::text=new.payload->>'calendar_version'
-      and exists (
-        select 1 from public.artist_integrations i
-        join public.artists a on a.id=i.artist_id
-        where i.artist_id=s.artist_id and i.is_enabled and a.is_active
-          and i.integration_type='calendar' and i.provider='google'
-          and i.integration_key='google_calendar_'||a.slug
-      );
-  elsif new.dedupe_key like '%:booking_card:%' then
-    v_lane := case new.kind::text
-      when 'approved_email' then 'email'
-      when 'whatsapp_message' then 'whatsapp'
-      when 'instagram_message' then 'instagram'
-      else null end;
-  end if;
-  if v_lane is null or new.next_attempt_at > now()+interval '5 minutes' then return new; end if;
-  -- Vault secret is provisioned only after the production worker and queue
-  -- pass readback. No secret in migrations, logs, job payload or responses.
-  -- pg_net starts HTTP delivery only after this transaction commits.
-  begin
-    if not exists (select 1 from pg_extension where extname='pg_net') then return new; end if;
-    -- Hosted extension ownership can prevent REVOKE from taking effect.
-    -- Do not activate until effective permissions have been verified.
-    if has_table_privilege('anon','net.http_request_queue','SELECT')
-       or has_table_privilege('authenticated','net.http_request_queue','SELECT')
-       or has_schema_privilege('anon','net','USAGE')
-       or has_schema_privilege('authenticated','net','USAGE') then
-      return new;
-    end if;
-    select decrypted_secret into v_key from vault.decrypted_secrets
-      where name='crm_outbox_wake_secret' limit 1;
-    if v_key is null or v_key !~ '^[a-f0-9]{64}$' then return new; end if;
-    v_due_ms := floor(extract(epoch from new.next_attempt_at)*1000)::bigint;
-    v_issued_ms := floor(extract(epoch from clock_timestamp())*1000)::bigint;
-    -- Never store the long-lived secret in pg_net's request queue. The
-    -- signature is short-lived and bound to a specific lane/due time.
-    v_signature := encode(extensions.hmac(
-      convert_to('v1:'||v_lane||':'||v_due_ms||':'||v_issued_ms,'UTF8'),
-      decode(v_key,'hex'),'sha256'),'hex');
-    -- Keep optional extension references out of static function resolution:
-    -- local CI and inactive installations do not require pg_net.
-    execute 'select net.http_post(url := $1, body := $2, headers := $3, timeout_milliseconds := 5000)'
-      using 'https://outbox-wake.vishartattoo.com/internal/outbox/wake'::text,
-        jsonb_build_object('lane',v_lane,'due_ms',v_due_ms,'issued_ms',v_issued_ms),
-        jsonb_build_object('Content-Type','application/json','x-outbox-wake-signature',v_signature);
-  exception when others then
-    -- An optional wake cannot roll back a real booking. The scheduled drain
-    -- will process the unchanged outbox row even on extension or network failure.
-    raise warning 'outbox wake enqueue failed, sqlstate=%', sqlstate;
-  end;
+  if new.status::text <> 'pending' or new.kind::text not in
+      ('calendar_create','calendar_update','calendar_cancel') then return new; end if;
+  update public.sessions s
+  set calendar_sync_status='queued'
+  where s.id=new.session_id and s.artist_id=new.artist_id
+    and s.calendar_sync_status='not_connected'
+    and s.calendar_version::text=new.payload->>'calendar_version'
+    and exists (
+      select 1 from public.artist_integrations i
+      join public.artists a on a.id=i.artist_id
+      where i.artist_id=s.artist_id and i.is_enabled and a.is_active
+        and i.integration_type='calendar' and i.provider='google'
+        and i.integration_key='google_calendar_'||a.slug
+    );
   return new;
 end
 $$;
-revoke all on function crm_private.wake_booking_outbox() from public,anon,authenticated,service_role;
+revoke all on function crm_private.mark_calendar_outbox_queued() from public,anon,authenticated,service_role;
+
+create or replace function public.get_booking_outbox_wake_hints()
+returns table(lane text, due_ms bigint)
+language plpgsql
+stable
+security definer
+set search_path=pg_catalog,crm_private
+as $$
+declare
+  v_gpt boolean := nullif(btrim(auth.jwt()->>'client_id'),'') is not null;
+  v_artist uuid;
+  v_sessions boolean := true;
+  v_finance boolean := true;
+begin
+  if auth.uid() is null then
+    raise exception 'CRM authentication required' using errcode='42501';
+  end if;
+  -- The browser uses ordinary MFA-aware memberships; OAuth clients must also
+  -- satisfy the active artist selector and their own independent ceilings.
+  if v_gpt then
+    select c.artist_id, coalesce(g.can_manage_appointments,false), coalesce(g.can_manage_finance,false)
+      into v_artist,v_sessions,v_finance
+    from crm_private.require_gpt_client_context() c
+    join crm_private.gpt_action_clients g on g.id=c.gpt_client_id;
+    if not found or v_artist is null then
+      raise exception 'CRM artist context required' using errcode='42501';
+    end if;
+  end if;
+  return query
+  with eligible as (
+    select case o.kind::text
+      when 'calendar_create' then 'calendar'
+      when 'calendar_update' then 'calendar'
+      when 'calendar_cancel' then 'calendar'
+      when 'approved_email' then 'email'
+      when 'whatsapp_message' then 'whatsapp'
+      when 'instagram_message' then 'instagram' end as lane,
+      floor(extract(epoch from greatest(o.next_attempt_at,now()))*1000)::bigint as due_ms
+    from public.integration_outbox o
+    where o.status::text='pending'
+      and o.created_at>=now()-interval '10 minutes'
+      and o.next_attempt_at<=now()+interval '5 minutes'
+      and (not v_gpt or o.artist_id=v_artist)
+      and (
+        (o.kind::text in ('calendar_create','calendar_update','calendar_cancel')
+          and v_sessions and public.can_manage_artist_sessions(o.artist_id))
+        or (o.dedupe_key like '%:booking_card:%'
+          and o.kind::text in ('approved_email','whatsapp_message','instagram_message')
+          and ((v_sessions and public.can_manage_artist_sessions(o.artist_id))
+            or (v_finance and public.can_manage_artist_finance(o.artist_id))))
+      )
+  )
+  select distinct e.lane,e.due_ms from eligible e
+  order by e.due_ms,e.lane limit 32;
+end
+$$;
+revoke all on function public.get_booking_outbox_wake_hints() from public,anon,authenticated,service_role;
+grant execute on function public.get_booking_outbox_wake_hints() to authenticated;
 
 drop trigger if exists integration_outbox_wake_booking on public.integration_outbox;
 create trigger integration_outbox_wake_booking
 after insert on public.integration_outbox
-for each row execute function crm_private.wake_booking_outbox();
+for each row execute function crm_private.mark_calendar_outbox_queued();

@@ -1,59 +1,49 @@
-// Wake hints are not jobs: the existing database leases, due times, version
-// checks and send-intent guards remain authoritative. No client data leaves DB.
+// Wake hints are not jobs. Database leases, version and send-intent guards own
+// all effects. The public ingress takes the caller's existing CRM bearer and
+// obtains bounded, artist-scoped hints from a read-only RPC; no DB webhooks.
 const HOST = 'outbox-wake.vishartattoo.com';
 const PATH = '/internal/outbox/wake';
+const CRM_ORIGIN = 'https://crm.vishartattoo.com';
+const DB_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const LANES = new Set(['calendar','whatsapp','email','instagram']);
-const MAX_DELAY_SECONDS = 300;
-const MAX_BODY = 256;
-const KEY = /^[a-f0-9]{64}$/;
-const json = (status, body) => Response.json(body, {status, headers:{'cache-control':'no-store'}});
+const MAX_HINTS = 32;
+const BEARER = /^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 function enabled(env) { return env.VISHAR_ENVIRONMENT === 'production' && env.OUTBOX_WAKE_ENABLED === 'true'; }
-async function authenticated(request, env, value) {
-  const key = env.OUTBOX_WAKE_SECRET;
-  const signature = request.headers.get('x-outbox-wake-signature') || '';
-  if (!KEY.test(key || '') || !KEY.test(signature)) return false;
-  const bytes = hex => Uint8Array.from(hex.match(/../g), part => parseInt(part,16));
-  const cryptoKey = await crypto.subtle.importKey('raw',bytes(key),{name:'HMAC',hash:'SHA-256'},false,['verify']);
-  return crypto.subtle.verify('HMAC',cryptoKey,bytes(signature),new TextEncoder().encode(`v1:${value.lane}:${value.due_ms}:${value.issued_ms}`));
+const json = (status,body,origin) => Response.json(body,{status,headers:{'cache-control':'no-store',...(origin===CRM_ORIGIN?{'access-control-allow-origin':CRM_ORIGIN,'vary':'Origin'}:{})}});
+export function parseWake(value,now=Date.now()){
+  if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).sort().join(',')!=='due_ms,lane'
+    ||!LANES.has(value.lane)||!Number.isSafeInteger(value.due_ms)||value.due_ms<now-600000||value.due_ms>now+300000)return null;
+  return {lane:value.lane,delaySeconds:value.due_ms<=now?0:Math.ceil((value.due_ms-now)/1000)+1};
 }
-export function parseWake(value, now = Date.now()) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).sort().join(',') !== 'due_ms,issued_ms,lane'
-      || !LANES.has(value.lane) || !Number.isSafeInteger(value.due_ms) || !Number.isSafeInteger(value.issued_ms)
-      || value.issued_ms < now-60000 || value.issued_ms > now+15000) return null;
-  const due = value.due_ms;
-  if (!Number.isFinite(due) || due < now-600000 || due > now+MAX_DELAY_SECONDS*1000) return null;
-  return {lane:value.lane, delaySeconds:due <= now ? 0 : Math.ceil((due-now)/1000)+1};
-}
-export async function receiveWake(request, env, now = Date.now()) {
-  const url = new URL(request.url);
-  if (url.hostname !== HOST || url.pathname !== PATH || url.search || url.hash || request.method !== 'POST' || !enabled(env)) return json(404,{ok:false});
-  if (!KEY.test(env.OUTBOX_WAKE_SECRET || '') || !KEY.test(request.headers.get('x-outbox-wake-signature') || '')) return json(401,{ok:false});
-  if (!request.headers.get('content-type')?.startsWith('application/json')) return json(415,{ok:false});
-  const reader = request.body?.getReader();
-  if (!reader) return json(400,{ok:false});
-  const chunks=[]; let length=0;
+export async function receiveWake(request,env,now=Date.now(),fetchImpl=fetch){
+  const url=new URL(request.url);
+  const origin=request.headers.get('origin');
+  if(url.protocol!=='https:'||url.hostname!==HOST||url.pathname!==PATH||url.search||url.hash||!enabled(env))return json(404,{ok:false},origin);
+  if(origin&&origin!==CRM_ORIGIN)return json(403,{ok:false});
+  if(request.method==='OPTIONS'){
+    if(origin!==CRM_ORIGIN||request.headers.get('access-control-request-method')!=='POST')return json(403,{ok:false},origin);
+    return new Response(null,{status:204,headers:{'access-control-allow-origin':CRM_ORIGIN,'access-control-allow-methods':'POST','access-control-allow-headers':'authorization','access-control-max-age':'600','vary':'Origin','cache-control':'no-store'}});
+  }
+  if(request.method!=='POST'||request.body!==null)return json(400,{ok:false},origin);
+  const authorization=request.headers.get('authorization')||'';
+  if(authorization.length>8192||!BEARER.test(authorization))return json(401,{ok:false},origin);
+  if(env.SUPABASE_URL!==DB_ORIGIN||!/^sb_publishable_[A-Za-z0-9_-]+$/.test(env.SUPABASE_PUBLISHABLE_KEY||'')
+    ||typeof env.OUTBOX_WAKE_RATE_LIMIT?.limit!=='function'||typeof env.OUTBOX_WAKE_QUEUE?.send!=='function')return json(503,{ok:false},origin);
   try {
-    while (true) {
-      const {done,value}=await reader.read();
-      if (done) break;
-      length+=value.byteLength;
-      if (length>MAX_BODY) { await reader.cancel(); return json(413,{ok:false}); }
-      chunks.push(value);
-    }
-  } catch {return json(400,{ok:false});}
-  const bytes=new Uint8Array(length); let offset=0;
-  for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
-  let value;
-  try{value=JSON.parse(new TextDecoder().decode(bytes));}catch{return json(400,{ok:false});}
-  const wake=parseWake(value,now);
-  if(!wake)return json(400,{ok:false});
-  if(!await authenticated(request,env,value))return json(401,{ok:false});
-  if(typeof env.OUTBOX_WAKE_QUEUE?.send!=='function')return json(503,{ok:false});
-  try{
-    await env.OUTBOX_WAKE_QUEUE.send({lane:wake.lane},{delaySeconds:wake.delaySeconds});
-    return json(202,{ok:true});
-  }catch{return json(503,{ok:false});}
+    const limit=await env.OUTBOX_WAKE_RATE_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
+    if(!limit.success)return json(429,{ok:false},origin);
+    const response=await fetchImpl(DB_ORIGIN+'/rest/v1/rpc/get_booking_outbox_wake_hints',{
+      method:'POST',headers:{authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'content-type':'application/json'},body:'{}',redirect:'manual'
+    });
+    if(response.status===401||response.status===403)return json(403,{ok:false},origin);
+    if(!response.ok)return json(503,{ok:false},origin);
+    const values=await response.json();
+    if(!Array.isArray(values)||values.length>MAX_HINTS)return json(503,{ok:false},origin);
+    const hints=values.map(value=>parseWake(value,now));
+    if(hints.some(hint=>!hint))return json(503,{ok:false},origin);
+    await Promise.all(hints.map(hint=>env.OUTBOX_WAKE_QUEUE.send({lane:hint.lane},{delaySeconds:hint.delaySeconds})));
+    return json(202,{ok:true},origin);
+  }catch{return json(503,{ok:false},origin);}
 }
 const routes={
   calendar:['CALENDAR_SERVICE','https://calendar.internal/internal/calendar/wake'],

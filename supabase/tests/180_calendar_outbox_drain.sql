@@ -129,14 +129,23 @@ select is(
   'an enabled Calendar integration reports queued before the provider runs'
 );
 select ok(not has_function_privilege(
-  'authenticated','crm_private.wake_booking_outbox()','EXECUTE'),
+  'authenticated','crm_private.mark_calendar_outbox_queued()','EXECUTE'),
   'a browser cannot invoke the private wake trigger function'
 );
 select ok(not has_function_privilege(
-  'service_role','crm_private.wake_booking_outbox()','EXECUTE'),
+  'service_role','crm_private.mark_calendar_outbox_queued()','EXECUTE'),
   'even service-role callers cannot invoke the private wake trigger directly'
 );
 
+select is(
+  (select count(*)::int from public.get_booking_outbox_wake_hints() where lane='calendar'),
+  1,
+  'authorized appointment owner can request the pending calendar wake hint'
+);
+select ok(not has_function_privilege('anon','public.get_booking_outbox_wake_hints()','EXECUTE'),
+  'anonymous requests cannot obtain wake hints');
+select ok(not has_function_privilege('service_role','public.get_booking_outbox_wake_hints()','EXECUTE'),
+  'backend service role does not expose an unscoped wake hint RPC');
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 create temporary table first_claim as

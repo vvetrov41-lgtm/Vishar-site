@@ -103,7 +103,7 @@ export function omitNullFields(value) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const publicResponse = publicRoute(request);
     if (publicResponse) return publicResponse;
 
@@ -114,6 +114,7 @@ export default {
       request,
       normalizedActionEnv(env),
       noFollowFetch,
+      ctx,
     );
     const contentType = response.headers.get('content-type') || '';
     if (response.status < 200 || response.status >= 300 || !contentType.includes('application/json')) {
