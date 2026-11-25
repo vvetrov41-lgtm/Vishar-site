@@ -169,6 +169,10 @@ export interface Enquiry {
 }
 
 /** Structured booking form v2 answers, stored with English catalogue labels. */
+export interface TattooCoverage {
+  side?: string; half?: string; scale?: string; coverage?: string; surface?: string;
+}
+export interface TattooAreaSelection extends TattooCoverage { region: string; placements: string[] }
 export interface EnquiryProjectDetails {
   schema: string;
   areas: Array<{ region: string; placements: string[]; otherPlacement?: string; work: string[] }>;
@@ -176,10 +180,13 @@ export interface EnquiryProjectDetails {
   sizeNotes?: string;
   existingDetails?: string;
   imageRequirements?: { designReference: boolean; existingTattooPhoto: boolean };
+  calculator_selection?: TattooAreaSelection[];
+  calculator_estimate_superseded?: boolean;
   calculator_estimate?: {
     schema: 'tattoo-estimate-v1'; rules_version: string; non_binding: true; currency: 'GBP';
     project: {styles: string[]; areas: Array<{region:string;placements:string[];work:string[];other?:string;side?:string;scale?:string;coverage?:string;half?:string;surface?:string}>};
     result: {numeric:boolean;price:string;time:string;visits:string;hours:number[]|null;sessions:number[]|null;cost_gbp:number[]|null;open:boolean;provisional:boolean;cover_up:boolean};
+    breakdown?: Array<{region:string;result:NonNullable<EnquiryProjectDetails['calculator_estimate']>['result']|null}>;
   };
 }
 

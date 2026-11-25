@@ -13,6 +13,8 @@ import { can } from '../lib/permissions';
 import type { RecordEditApi } from '../lib/record-edit-api';
 import type { CrmRole, Enquiry, EnquiryProjectDetails } from '../lib/types';
 import {
+  COVERAGE_KEYS,
+  COVERAGE_OPTIONS,
   V2_LIMITS,
   V2_REGIONS,
   V2_STYLES,
@@ -28,6 +30,7 @@ import {
   type ProjectInput,
 } from '../lib/enquiry-v2-catalogue';
 import { catalogueLabel } from './EnquiryProjectDetails';
+import { coverageLabel, coverageValue } from './TattooSelection';
 
 const COPY = {
   en: {
@@ -137,7 +140,7 @@ export function EnquiryStructuredEditPanel({
   const problem = firstProblem(current);
 
   function updateArea(index: number, change: Partial<AreaInput>) {
-    setInput({ ...current, areas: current.areas.map((area, i) => (i === index ? { ...area, ...change } : area)) });
+    setInput({ ...current, ...(change.selection!==undefined ? {calculator_selection:[]} : {}), areas: current.areas.map((area, i) => (i === index ? { ...area, ...change } : area)) });
   }
 
   async function save() {
@@ -173,7 +176,7 @@ export function EnquiryStructuredEditPanel({
                     <input
                       type="checkbox"
                       checked={area.placements.includes(placement.key)}
-                      onChange={() => updateArea(index, { placements: togglePlacement(region, area.placements, placement.key) })}
+                      onChange={() => updateArea(index, { placements: togglePlacement(region, area.placements, placement.key), selection: {} })}
                     />
                     {catalogueLabel(placement.label, language)}
                   </label>
@@ -190,6 +193,23 @@ export function EnquiryStructuredEditPanel({
                 />
               </label>
             ) : null}
+            {area.placements.length>0 && region.key!=='other' ? <div className="tattoo-selection-editor">
+              <div className="meta">{language==='ru'?'Покрытие и сторона':'Coverage and side'}</div>
+              {COVERAGE_KEYS.filter(k=>{
+                const part=area.placements.length===1?area.placements[0]:'';
+                const half=['half_sleeve','half_leg_sleeve'].includes(part);
+                if(k==='side')return ['arm','leg','hand','foot'].includes(region.key)||['one_side_chest','collarbone','ribs','shoulder_blade','side','hip','side_neck','behind_ear'].includes(part);
+                if(k==='half')return half;
+                if(k==='scale')return !!part&&!region.placements.find(p=>p.key===part)?.large;
+                if(k==='coverage')return !half&&['forearm','upper_arm','thigh','calf','shin'].includes(part);
+                return !half&&['forearm','upper_arm','thigh'].includes(part)&&area.selection?.coverage==='panel';
+              }).map(k=><label key={k}>{coverageLabel(k,language)}<select aria-label={coverageLabel(k,language)} value={area.selection?.[k]??''} onChange={event=>{
+                const selection={...area.selection,[k]:event.target.value||undefined};
+                if(k==='half'){selection.coverage=['outer','inner'].includes(event.target.value)?'panel':event.target.value?'wrap':undefined;selection.surface=['outer','inner'].includes(event.target.value)?event.target.value:undefined;}
+                if(k==='coverage'&&event.target.value!=='panel')selection.surface=undefined;
+                updateArea(index,{selection});
+              }}><option value="">{language==='ru'?'Не указано':'Not specified'}</option>{COVERAGE_OPTIONS[k].map(v=><option key={v} value={v}>{coverageValue(k,v,language)}</option>)}</select></label>)}
+            </div>:null}
             <div role="group" aria-label={copy.work}>
               <div className="meta">{copy.work}</div>
               {V2_WORK.map((work) => (
@@ -272,6 +292,7 @@ export function EnquiryStructuredEditPanel({
         <input value={timing} maxLength={160} onChange={(event) => setTiming(event.target.value)} />
       </label>
 
+      {details.calculator_estimate?<p className="meta">{language==='ru'?'Если изменить параметры проекта, исходная оценка клиента сохранится для истории, но потребует пересмотра.':'Changing project details keeps the original estimate for reference but marks it for review.'}</p>:null}
       <p className="meta" style={{ marginBottom: 0 }}>{copy.note}</p>
       {problem ? <p className="meta" role="status">{copy.problems[problem]}</p> : null}
       <div className="actions">
