@@ -465,6 +465,10 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   const details=JSON.parse(submission.projectDetails);
   assert.deepEqual(details.areas,[{region:'arm',placements:['full_sleeve'],work:['new']}]);
   assert.deepEqual(details.styles,['colour']);
+  assert.equal(details.calculator_estimate.schema,'tattoo-estimate-v1');
+  assert.equal(details.calculator_estimate.rules_version,'2026-11-25.1');
+  assert.equal(details.calculator_estimate.project.areas[0].placements[0],'full_sleeve');
+  assert.deepEqual(details.calculator_estimate.project.styles,['colour']);
   assert.doesNotMatch(details.sizeNotes,/£/);
   assert.match(submission.idea,/£7,840–£9,800/);
   assert.match(submission.idea,/Placement and coverage: Full sleeve/);

@@ -931,12 +931,17 @@
     return 'Initial calculator guide (not a quote)' + (result.provisional ? ' — provisional' : '') + ': ' + result.price + (result.numeric ? ' / ' + result.time + ' / ' + result.visits : '') + (result.coverUp ? '. Colour-realism timing used; possible touch-up after full healing excluded. Existing tattoo photos required for confirmation.' : '') + '\nPlacement and coverage: ' + selection.notesFull;
   }
   function ideaLimit() { var guide=calculatorSummary(); return LIMITS.idea-(guide?guide.length+2:0); }
+  function submissionProjectDetails() {
+    var details=projectDetails(),guide=activeCalculatorGuide();
+    if(guide) details.calculator_estimate={schema:'tattoo-estimate-v1',rules_version:window.TattooPricing.rulesVersion,project:guide.project};
+    return details;
+  }
   function basePayload(includeFiles) {
     var payload = new FormData();
     var context = shared.attribution();
     var fields = {
       formSchema: 'enquiry-v2',
-      projectDetails: JSON.stringify(projectDetails()),
+      projectDetails: JSON.stringify(submissionProjectDetails()),
       name: state.name.trim(),
       email: state.email.trim(),
       phone: state.phone.trim(),

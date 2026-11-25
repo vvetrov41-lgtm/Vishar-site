@@ -167,6 +167,6 @@ function booking(p){
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
 function budgetPlan(amount){if(!Number.isFinite(amount)||amount<0)return null;const hours=Math.floor(amount/rules.hourly*4)/4;return {hours,fullDays:Math.floor(hours/rules.day),remainderHours:hours%rules.day,unused:Math.round((amount-hours*rules.hourly)*100)/100};}
-const api={rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,sided,sidedPlacement,wraps,half,halves,longitudinal,surfaces,valid,estimate,booking,fromHash};
+const api={rulesVersion:'2026-11-25.1',rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,sided,sidedPlacement,wraps,half,halves,longitudinal,surfaces,valid,estimate,booking,fromHash};
 if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);
