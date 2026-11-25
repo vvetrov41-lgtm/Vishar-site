@@ -1,4 +1,5 @@
 import { drainWhatsappOutbox } from './lib/whatsapp-drain.js';
+import {isWakeRequest,handleDrainWake} from './lib/outbox-wake.js';
 import { drainWhatsappTemplateSmokeTest } from './lib/whatsapp-template-smoke.js';
 import { drainWhatsappAudioTranscriptions } from './lib/whatsapp-audio.js';
 import { maintainWhatsappBookingTemplates } from './lib/whatsapp-booking-templates.js';
@@ -209,6 +210,7 @@ export async function handleInternalDrain(
 
 export default {
   fetch(request, env) {
+    if (isWakeRequest(request,'whatsapp.internal','/internal/whatsapp/wake')) return handleDrainWake(env,'WHATSAPP_DRAIN_ENABLED',drainWhatsappOutbox);
     if (!isInternalDrainRequest(request)) return new Response('Not found', { status: 404 });
     return handleInternalDrain(env);
   },

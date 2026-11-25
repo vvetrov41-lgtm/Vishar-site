@@ -1,4 +1,5 @@
 import { drainCalendarOutbox } from './lib/calendar-drain.js';
+import {isWakeRequest,handleDrainWake} from './lib/outbox-wake.js';
 import { drainCalendarAvailabilityOutbox } from './lib/calendar-availability-drain.js';
 import { drainGoogleContactsOutbox } from './lib/google-contacts-drain.js';
 import {
@@ -546,6 +547,7 @@ function errorResponse(error) {
 
 export default {
   async fetch(request, env) {
+    if (isWakeRequest(request,'calendar.internal','/internal/calendar/wake')) return handleDrainWake(env,'CALENDAR_DRAIN_ENABLED',drainCalendarOutbox);
     try {
       const url = new URL(request.url);
       const limited = await enforceRateLimit(request, url, env);

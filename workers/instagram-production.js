@@ -56,6 +56,7 @@ import {
   handleInstagramWebhook,
 } from './lib/instagram-webhook.js';
 import { drainCommunicationOutbox, randomWorkerId } from './lib/communications-drain.js';
+import {isWakeRequest,handleDrainWake} from './lib/outbox-wake.js';
 
 const PRODUCTION_SUPABASE_ORIGIN = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co';
 const INSTAGRAM_PUBLIC_HOST = 'instagram.vishartattoo.com';
@@ -894,6 +895,7 @@ async function enforceRateLimit(request, env, route) {
 
 export default {
   async fetch(request, env, ctx) {
+    if (isWakeRequest(request,'instagram.internal','/internal/instagram/wake')) return handleDrainWake(env,'INSTAGRAM_DRAIN_ENABLED',runInstagramDrain);
     if (!configured(env)) return json(404, { error: 'not_found' });
     const url = new URL(request.url);
 

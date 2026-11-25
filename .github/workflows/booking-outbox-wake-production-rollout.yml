@@ -1,0 +1,88 @@
+name: Booking outbox wake production rollout
+
+on:
+  push:
+    branches:
+      - 'release/private-crm-rc*-backend-auth-outbox-wake-prepare'
+      - 'release/private-crm-rc*-backend-auth-outbox-wake-activate'
+
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: booking-outbox-wake-production
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.actor == github.repository_owner && github.run_attempt == 1
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      DEPLOY_ENABLED: ${{ vars.CRM_PRODUCTION_DEPLOY_ENABLED }}
+      WAKE_DEPLOY_CONFIG: .wrangler/outbox-wake-release.toml
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Exact canonical source and CI admission
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_NAME" =~ ^release/private-crm-rc[0-9]+-backend-auth-outbox-wake-(prepare|activate)$ ]]
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$DEPLOY_ENABLED" = true ]
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1{print $1}')" = "$GITHUB_SHA" ]
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha,head_branch}' | jq -s . > "$RUNNER_TEMP/wake-ci.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'Gmail production validation' 'Booking host validation' 'WhatsApp production onboarding validation'; do
+            jq -e --arg name "$workflow" --arg sha "$GITHUB_SHA" 'any(.[]; .name==$name and .head_sha==$sha and .head_branch=="agent/platform-telegram-self-service" and .status=="completed" and .conclusion=="success")' "$RUNNER_TEMP/wake-ci.json" >/dev/null
+          done
+          echo "WAKE_MODE=${GITHUB_REF_NAME##*-}" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validate exact Worker source
+        run: |
+          npm ci
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
+          node scripts/test-outbox-wake.mjs
+          npm run scan:secrets
+          npx wrangler deploy --config wrangler.outbox-wake.production.toml --dry-run --outdir .wrangler/outbox-wake-dry-run
+      - name: Production target and provider preflight
+        id: preflight
+        run: |
+          mkdir -p .wrangler
+          node scripts/outbox-wake-production-release.mjs "$WAKE_MODE" preflight
+          npx wrangler deploy --config "$WAKE_DEPLOY_CONFIG" --name vishar-outbox-wake-production --dry-run --outdir .wrangler/outbox-wake-active-dry-run
+      - name: Deploy only the booking wake Worker
+        id: deploy
+        run: |
+          set -euo pipefail
+          [ "$(git ls-remote origin refs/heads/agent/platform-telegram-self-service | awk 'NR==1{print $1}')" = "$GITHUB_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1{print $1}')" = "$GITHUB_SHA" ]
+          npx wrangler deploy --config "$WAKE_DEPLOY_CONFIG" --name vishar-outbox-wake-production --strict --message "Booking wake $WAKE_MODE $GITHUB_SHA"
+      - name: Verify live source, bindings, queue and denied unauthenticated ingress
+        id: readback
+        run: node scripts/outbox-wake-production-release.mjs "$WAKE_MODE" readback
+      - name: Restore disabled version if activation fails
+        if: failure() && (steps.deploy.outcome == 'failure' || steps.readback.outcome == 'failure') && steps.preflight.outputs.previous_version != ''
+        env:
+          PREVIOUS_VERSION: ${{ steps.preflight.outputs.previous_version }}
+        run: |
+          set -euo pipefail
+          npx wrangler rollback "$PREVIOUS_VERSION" --name vishar-outbox-wake-production --config "$WAKE_DEPLOY_CONFIG" --message "Automatic booking wake rollback"
+          node scripts/outbox-wake-production-release.mjs prepare readback
+      - name: Remove ephemeral configuration
+        if: always()
+        run: rm -f "$WAKE_DEPLOY_CONFIG"

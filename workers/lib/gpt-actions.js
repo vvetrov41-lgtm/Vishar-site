@@ -1,3 +1,4 @@
+import {wakeAfterBookingRpc} from './booking-wake-dispatch.js';
 // Artist-scoped GPT Actions proxy.
 //
 // This proxy never holds a Supabase service key. It forwards the caller's
@@ -294,7 +295,7 @@ function safeRpcError(status, text) {
   return json(mapped, { error: code, message });
 }
 
-export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
+export async function handleGptActionsRequest(request, env, fetchImpl = fetch, ctx) {
   if (!configured(env)) return json(404, { error: 'not_found' });
 
   const url = new URL(request.url);
@@ -340,6 +341,7 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
     } catch {
       return json(502, { error: 'invalid_upstream_response' });
     }
+    wakeAfterBookingRpc(route.rpc,token,env,ctx,fetchImpl);
     if (route.responseKind === 'single-row') {
       if (!Array.isArray(parsed) || parsed.length === 0) {
         return json(404, { error: route.notFoundError || 'record_not_found' });
