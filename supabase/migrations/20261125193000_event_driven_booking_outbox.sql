@@ -1,13 +1,8 @@
 -- Wake hints are an optional acceleration layer, never a replacement for the
 -- durable integration_outbox, provider leases or existing cron recovery.
--- The vanilla PostgreSQL test harness lacks pg_net; leave it inert there.
-do $$
-begin
-  if exists (select 1 from pg_available_extensions where name='pg_net') then
-    create extension if not exists pg_net;
-  end if;
-end
-$$;
+-- pg_net installation is an explicit infrastructure gate, not a side effect
+-- of applying CRM migrations. Without it (including the local test shim),
+-- the original scheduled processing is unchanged.
 
 create or replace function crm_private.wake_booking_outbox()
 returns trigger
@@ -18,6 +13,9 @@ as $$
 declare
   v_lane text;
   v_key text;
+  v_due_ms bigint;
+  v_issued_ms bigint;
+  v_signature text;
 begin
   if new.status::text <> 'pending' then return new; end if;
   if new.kind::text in ('calendar_create','calendar_update','calendar_cancel') then
@@ -41,13 +39,29 @@ begin
   -- pass readback. No secret in migrations, logs, job payload or responses.
   -- pg_net starts HTTP delivery only after this transaction commits.
   begin
+    if not exists (select 1 from pg_extension where extname='pg_net') then return new; end if;
+    -- Hosted extension ownership can prevent REVOKE from taking effect.
+    -- Do not activate until effective permissions have been verified.
+    if has_table_privilege('anon','net.http_request_queue','SELECT')
+       or has_table_privilege('authenticated','net.http_request_queue','SELECT')
+       or has_schema_privilege('anon','net','USAGE')
+       or has_schema_privilege('authenticated','net','USAGE') then
+      return new;
+    end if;
     select decrypted_secret into v_key from vault.decrypted_secrets
       where name='crm_outbox_wake_secret' limit 1;
     if v_key is null or v_key !~ '^[a-f0-9]{64}$' then return new; end if;
+    v_due_ms := floor(extract(epoch from new.next_attempt_at)*1000)::bigint;
+    v_issued_ms := floor(extract(epoch from clock_timestamp())*1000)::bigint;
+    -- Never store the long-lived secret in pg_net's request queue. The
+    -- signature is short-lived and bound to a specific lane/due time.
+    v_signature := encode(extensions.hmac(
+      convert_to('v1:'||v_lane||':'||v_due_ms||':'||v_issued_ms,'UTF8'),
+      decode(v_key,'hex'),'sha256'),'hex');
     perform net.http_post(
       url := 'https://outbox-wake.vishartattoo.com/internal/outbox/wake',
-      body := jsonb_build_object('lane',v_lane,'due_at',new.next_attempt_at),
-      headers := jsonb_build_object('Content-Type','application/json','x-outbox-wake-key',v_key),
+      body := jsonb_build_object('lane',v_lane,'due_ms',v_due_ms,'issued_ms',v_issued_ms),
+      headers := jsonb_build_object('Content-Type','application/json','x-outbox-wake-signature',v_signature),
       timeout_milliseconds := 5000
     );
   exception when others then

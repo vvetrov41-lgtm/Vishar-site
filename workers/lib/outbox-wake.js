@@ -8,28 +8,27 @@ const MAX_BODY = 256;
 const KEY = /^[a-f0-9]{64}$/;
 const json = (status, body) => Response.json(body, {status, headers:{'cache-control':'no-store'}});
 function enabled(env) { return env.VISHAR_ENVIRONMENT === 'production' && env.OUTBOX_WAKE_ENABLED === 'true'; }
-async function authenticated(request, env) {
-  const expected = env.OUTBOX_WAKE_SECRET;
-  const supplied = request.headers.get('x-outbox-wake-key') || '';
-  if (!KEY.test(expected || '') || !KEY.test(supplied)) return false;
-  const digest = async value => new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)));
-  const [a,b] = await Promise.all([digest(expected),digest(supplied)]);
-  let diff = 0;
-  for (let i=0;i<a.length;i++) diff |= a[i]^b[i];
-  return diff === 0;
+async function authenticated(request, env, value) {
+  const key = env.OUTBOX_WAKE_SECRET;
+  const signature = request.headers.get('x-outbox-wake-signature') || '';
+  if (!KEY.test(key || '') || !KEY.test(signature)) return false;
+  const bytes = hex => Uint8Array.from(hex.match(/../g), part => parseInt(part,16));
+  const cryptoKey = await crypto.subtle.importKey('raw',bytes(key),{name:'HMAC',hash:'SHA-256'},false,['verify']);
+  return crypto.subtle.verify('HMAC',cryptoKey,bytes(signature),new TextEncoder().encode(`v1:${value.lane}:${value.due_ms}:${value.issued_ms}`));
 }
 export function parseWake(value, now = Date.now()) {
   if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).sort().join(',') !== 'due_at,lane'
-      || !LANES.has(value.lane) || typeof value.due_at !== 'string') return null;
-  const due = Date.parse(value.due_at);
+      || Object.keys(value).sort().join(',') !== 'due_ms,issued_ms,lane'
+      || !LANES.has(value.lane) || !Number.isSafeInteger(value.due_ms) || !Number.isSafeInteger(value.issued_ms)
+      || value.issued_ms < now-60000 || value.issued_ms > now+15000) return null;
+  const due = value.due_ms;
   if (!Number.isFinite(due) || due < now-600000 || due > now+MAX_DELAY_SECONDS*1000) return null;
   return {lane:value.lane, delaySeconds:due <= now ? 0 : Math.ceil((due-now)/1000)+1};
 }
 export async function receiveWake(request, env, now = Date.now()) {
   const url = new URL(request.url);
   if (url.hostname !== HOST || url.pathname !== PATH || url.search || url.hash || request.method !== 'POST' || !enabled(env)) return json(404,{ok:false});
-  if (!await authenticated(request,env)) return json(401,{ok:false});
+  if (!KEY.test(env.OUTBOX_WAKE_SECRET || '') || !KEY.test(request.headers.get('x-outbox-wake-signature') || '')) return json(401,{ok:false});
   if (!request.headers.get('content-type')?.startsWith('application/json')) return json(415,{ok:false});
   const reader = request.body?.getReader();
   if (!reader) return json(400,{ok:false});
@@ -49,6 +48,7 @@ export async function receiveWake(request, env, now = Date.now()) {
   try{value=JSON.parse(new TextDecoder().decode(bytes));}catch{return json(400,{ok:false});}
   const wake=parseWake(value,now);
   if(!wake)return json(400,{ok:false});
+  if(!await authenticated(request,env,value))return json(401,{ok:false});
   if(typeof env.OUTBOX_WAKE_QUEUE?.send!=='function')return json(503,{ok:false});
   try{
     await env.OUTBOX_WAKE_QUEUE.send({lane:wake.lane},{delaySeconds:wake.delaySeconds});
