@@ -196,6 +196,14 @@ async function handleEnquiryIntakeInternal(
       return jsonResponse({ ok: true }, 200, responseCors);
     }
 
+    // The redesigned Vladimir website requires a design reference for every
+    // structured project, even a small cover-up or rework. Keep the original
+    // requirements on the other artist's existing form and hosted forms.
+    if (!hostedMode && project && bookingConfig.sourceKey === 'vladimir-website' && origin === 'https://vishartattoo.com') {
+      project.requiresDesignReference = true;
+      project.details.imageRequirements.designReference = true;
+    }
+
     // Semantic preflight: same source resolution and deterministic validation
     // as a real submit, then a clarity check on four free-text fields. Nothing
     // is persisted except metadata telemetry, no files are read, and every
