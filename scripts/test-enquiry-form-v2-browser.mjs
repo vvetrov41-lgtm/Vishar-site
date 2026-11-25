@@ -433,6 +433,12 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
   await page.getByRole('button',{name:'Black & Grey',exact:true}).click();
   assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+  await page.getByRole('button',{name:/Existing tattoo \/ cover-up/}).click();
+  assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
+  assert.match(await page.locator('.calc-output').innerText(),/touch-up may be needed after full healing/);
+  assert.equal(await page.getByRole('button',{name:'Black & Grey',exact:true}).getAttribute('aria-pressed'),'true');
+  await page.getByRole('button',{name:/Cover-up · photos needed/}).click();
+  assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
   await page.getByRole('button',{name:'By budget',exact:true}).click();
   await page.getByLabel('Your budget (£)',{exact:true}).fill('2000');
   assert.equal(await page.locator('.calc-result').innerText(),'£2,000');

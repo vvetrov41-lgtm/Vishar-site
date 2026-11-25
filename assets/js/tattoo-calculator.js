@@ -242,7 +242,7 @@ function render(focus){
  }
  }
  group(controls,"Style",[["black_grey","Black & Grey"],["colour","Colour"],["mixed","Mixed"]],styleKey(),setStyle);
- if(a){const ink=node("button","calc-ink",a.work[0]==="new"?"＋ Existing tattoo / cover-up":"✓ Existing tattoo · assessment needed");ink.type="button";ink.setAttribute("aria-pressed",String(a.work[0]!=="new"));ink.onclick=()=>{a.work=a.work[0]==="new"?["cover_up"]:["new"];render();};controls.append(ink);}
+ if(a){const ink=node("button","calc-ink",a.work[0]==="new"?"＋ Existing tattoo / cover-up":"✓ Cover-up · photos needed");ink.type="button";ink.setAttribute("aria-pressed",String(a.work[0]!=="new"));ink.onclick=()=>{a.work=a.work[0]==="new"?["cover_up"]:["new"];render();};controls.append(ink);}
  }
  updateResult();if(focus)Array.from(body.querySelectorAll("button[data-key]")).find(x=>x.dataset.key===focus)?.focus({preventScroll:true});
 }

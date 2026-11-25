@@ -91,8 +91,15 @@ const gbp=n=>"£"+n.toLocaleString("en-GB");
 const review=reason=>({price:"Individual estimate",time:"To be confirmed",visits:"To be confirmed",reason,numeric:false});
 function estimateSingle(p){
  if(!valid(p))return null;
- if(p.areas.some(a=>a.work.some(w=>w!=="new")))return review("Existing ink needs individual assessment. Send photos of the tattoo and surrounding skin.");
  if(p.areas.length!==1)return review("Multiple areas need an individual plan to avoid counting overlapping work twice.");
+ const existing=p.areas[0].work;
+ if(existing.length===1&&existing[0]==="cover_up"){
+  const base=estimateSingle({areas:[{...p.areas[0],work:["new"]}],styles:["colour"]});
+  const advice="Cover-ups usually take a similar amount of time to colour realism, even in black and grey. A touch-up may be needed after full healing; its time and cost are not included. Photos of the existing tattoo are needed to confirm suitability and the estimate.";
+  if(!base?.numeric)return {...review(advice),coverUp:true};
+  return {...base,provisional:true,coverUp:true,reason:advice+(base.provisional?" The underlying area range is also provisional.":"")};
+ }
+ if(existing.some(w=>w!=="new"))return review("Existing ink needs individual assessment. Send photos of the tattoo and surrounding skin.");
  const a=p.areas[0],r=regionByKey(a.region),part=a.placements.find(k=>r.placements.find(x=>x[0]===k)?.[2])||a.placements[0];
  if(sided(a)&&a.side==="both")return review("This range is for one side. Both sides need an individual plan.");
  if(a.placements.length!==1)return review("Combined placements need a personalised estimate.");

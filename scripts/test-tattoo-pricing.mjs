@@ -24,7 +24,12 @@ const draftMix={...armLeg,areas:[make("three_quarter_sleeve").areas[0],armLeg.ar
 assert.equal(api.estimate(draftMix).numeric,false);
 const oldInk={...armLeg,areas:[{...armLeg.areas[0],work:["cover_up"]},armLeg.areas[1]]};
 assert.equal(api.estimate(oldInk).numeric,false);
-assert.equal(api.breakdown(oldInk)[0].result.numeric,false);
+assert.equal(api.breakdown(oldInk)[0].result.numeric,true);
+assert.equal(api.breakdown(oldInk)[0].result.price,"£3,920–£4,900");
+for(const region of api.REGIONS)for(const [part] of region.placements){if(part==="other")continue;for(const half of api.half(part)?["upper","lower","inner","outer"]:[undefined]){
+ const fresh=make(part,["colour"],{region:region.key,half});
+ for(const styles of [["black_grey"],["colour"],["black_grey","colour"],["not_sure"]]){const cover=make(part,styles,{region:region.key,half,work:["cover_up"]});const e=api.estimate(cover),b=api.estimate(fresh);assert.equal(e.price,b.price);assert.deepEqual(e.hours,b.hours);assert.deepEqual(e.sessions,b.sessions);assert.equal(e.coverUp,true);assert.equal(e.provisional,true);assert.match(e.reason,/touch-up may be needed after full healing/);assert.deepEqual(api.booking(cover).styles,styles);assert.deepEqual(api.booking(cover).areas[0].work,["cover_up"]);}
+ }}
 assert.match(api.booking(make("forearm",["black_grey"],{surface:"front"})).notes,/Front surface/);
 assert.match(api.booking(make("upper_arm",["black_grey"],{surface:"back"})).notes,/Back surface/);
 for(const [region,part] of [["arm","half_sleeve"],["leg","half_leg_sleeve"]])for(const half of ["inner","outer"]){const p=make(part,["black_grey"],{region,half});assert.equal(api.estimate(p).numeric,true);assert.equal(api.estimate(p).provisional,true);assert.match(api.booking(p).notes,new RegExp("Full-length "+half+" side"));assert.deepEqual(api.fromHash("#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)})).project,p);}
