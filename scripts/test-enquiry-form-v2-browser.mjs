@@ -332,6 +332,12 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByRole('button',{name:'Full back',exact:true}).click();
   assert.equal(await page.locator('.calc-area-row').count(),2);
   assert.equal(await page.locator('.calc-result').innerText(),'By assessment');
+  assert.equal(await page.locator('.calc-breakdown-row').count(),2);
+  assert.match(await page.locator('.calc-breakdown').innerText(),/£980–£1,960/);
+  await page.getByRole('button',{name:/Remove Full back/}).click();
+  await page.getByRole('button',{name:'Full leg',exact:true}).click();
+  assert.equal(await page.locator('.calc-result').innerText(),'£8,820–£11,760+');
+  assert.match(await page.locator('#calc-estimate').innerText(),/tattooed independently/);
   await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   await page.getByRole('button',{name:'Forearm',exact:true}).click();
   await page.getByRole('button',{name:'Wraparound',exact:true}).click();

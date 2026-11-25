@@ -71,7 +71,7 @@ function valid(p){
 }
 const gbp=n=>"£"+n.toLocaleString("en-GB");
 const review=reason=>({price:"Individual estimate",time:"To be confirmed",visits:"To be confirmed",reason,numeric:false});
-function estimate(p){
+function estimateSingle(p){
  if(!valid(p))return null;
  if(p.areas.some(a=>a.work.some(w=>w!=="new")))return review("Existing ink needs individual assessment. Send photos of the tattoo and surrounding skin.");
  if(p.areas.length!==1)return review("Multiple areas need an individual plan to avoid counting overlapping work twice.");
@@ -99,6 +99,24 @@ function estimate(p){
  const range=(arr,fmt=String)=>fmt(arr[0])+(arr[0]===arr[1]?"":"–"+fmt(arr[1]))+(open?"+":"");
  return {price:range(hours.map(n=>n*rules.hourly),gbp),time:range(hours)+" hours",visits:range(sessions)+(sessions[1]===1?" session":" sessions"),numeric:true,hours,sessions,open,provisional,reason:reason+(fullDays?" Budget assumes up to "+rules.day+" hours per full day. You pay for tattooing time used.":"")};
 }
+// Only add independent arm/leg estimates with established pricing.
+function breakdown(p){
+ if(!valid(p))return [];
+ return p.areas.map(a=>({region:a.region,result:estimateSingle({areas:[a],styles:p.styles})}));
+}
+function estimate(p){
+ if(!valid(p))return null;
+ if(p.areas.length===1)return estimateSingle(p);
+ const parts=breakdown(p);
+ if(p.areas.every(a=>limb(a.region))&&parts.every(x=>x.result?.numeric&&!x.result.provisional)){
+  const hours=[0,0],sessions=[0,0];
+  for(const {result} of parts){for(let i=0;i<2;i++){hours[i]+=result.hours[i];sessions[i]+=result.sessions[i];}}
+  const open=parts.some(x=>x.result.open);
+  const range=(arr,fmt=String)=>fmt(arr[0])+(arr[0]===arr[1]?"":"–"+fmt(arr[1]))+(open?"+":"");
+  return {price:range(hours.map(n=>n*rules.hourly),gbp),time:range(hours)+" hours",visits:range(sessions)+" sessions",numeric:true,hours,sessions,open,provisional:true,combined:true,reason:"Planning total for separate arm and leg projects, assuming they are tattooed independently. The actual design and scheduling may change the total."};
+ }
+ return {...review("A combined project needs an individual assessment. The separate area guides below are not a total and should not be added together."),combined:true};
+}
 function booking(p){
  if(!valid(p))return null;
  const notes=[],labels=[];
@@ -110,6 +128,6 @@ function booking(p){
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
 function budgetPlan(amount){if(!Number.isFinite(amount)||amount<0)return null;const hours=Math.floor(amount/rules.hourly*4)/4;return {hours,fullDays:Math.floor(hours/rules.day),remainderHours:hours%rules.day,unused:Math.round((amount-hours*rules.hourly)*100)/100};}
-const api={rules,budgetPlan,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,surfaces,valid,estimate,booking,fromHash};
+const api={rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,surfaces,valid,estimate,booking,fromHash};
 if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);
