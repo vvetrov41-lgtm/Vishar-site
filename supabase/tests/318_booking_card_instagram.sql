@@ -118,6 +118,9 @@ select ok(
           and p.message_text like '%I''ll be there: https://%'
           and p.message_text like '%Need another time: https://%'
           and p.message_text not like '%Deposit%'
+          and p.message_text like '%York House%'
+          and p.message_text like '%https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic%'
+          and p.message_text not like '%Exhibition House%'
           and char_length(p.message_text) <= 1000
           and p.confirm_payload ~ '^booking_action:[0-9a-f]{64}$'
           and p.reschedule_payload ~ '^booking_action:[0-9a-f]{64}$'

@@ -171,6 +171,7 @@ export function verifyTodayLineage(source) {
     // Google review request, phase 2b: show the reply, ask for a review or close.
     ['20261119120000', '20261119130000'],
     ['20261123011000', '20261125204000'],
+    ['20261125204000', '20261125215000'],
     // Booking wake migration follows the already admitted review-channel release.
     ['20261125204000', '20261125210000'],
   ]);

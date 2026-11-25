@@ -83,9 +83,10 @@ WITH payload AS (
 )
 SELECT ok(html LIKE '%Confirm consultation%'
   AND html LIKE '%Need another time%'
-  AND html LIKE '%16 Exhibition House%'
+  AND html LIKE '%York House%'
   AND html LIKE '%Get directions%'
-  AND html NOT LIKE '%York House%'
+  AND html LIKE '%https://maps.app.goo.gl/zfTRAJ4MXEHcHf3S6?g_st=ic%'
+  AND html NOT LIKE '%16 Exhibition House%'
   AND html NOT LIKE '%Cancel appointment%', 'in-person consultation reminder has correct studio and only two actions') FROM payload;
 
 WITH payload AS (
@@ -97,6 +98,7 @@ WITH payload AS (
 )
 SELECT ok(html LIKE '%video call you on WhatsApp%'
   AND html NOT LIKE '%16 Exhibition House%'
+  AND html NOT LIKE '%York House%'
   AND html NOT LIKE '%Get directions%'
   AND html LIKE '%Confirm consultation%', 'video consultation reminder has WhatsApp call and no street address') FROM payload;
 
