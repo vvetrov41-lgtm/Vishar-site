@@ -12,6 +12,9 @@
 import { ApiError, friendlyMessage, type CrmClient } from './api';
 import type { ApiOperation } from './api-errors';
 
+export type ReviewChannel = 'whatsapp' | 'instagram' | 'email';
+export interface ReviewChannelOption { channel: ReviewChannel; available: boolean; reason: string | null }
+
 export interface HealingSuggestion {
   client_id: string;
   client_name: string;
@@ -21,6 +24,7 @@ export interface HealingSuggestion {
   last_session_at: string;
   days_since: number;
   draft_message: string;
+  channels?: ReviewChannelOption[];
 }
 
 export interface ReviewFollowup {
@@ -37,6 +41,8 @@ export interface ReviewFollowup {
   reply_text: string | null;
   reply_attachment_count: number;
   draft_message: string | null;
+  channels?: ReviewChannelOption[];
+  healing_channel?: ReviewChannel;
 }
 
 export interface ReviewSuggestions {
@@ -62,6 +68,7 @@ export type ReviewRefusal =
   | 'no_review_link'
   | 'no_reply'
   | 'window_closed'
+  | 'channel_unavailable'
   | 'invalid'
   | 'permission'
   | 'unavailable'
@@ -87,6 +94,7 @@ export function classifyReviewError(error: unknown): ReviewRefusal {
   if (message.includes('first name is not usable')) return 'name_unusable';
   if (message.includes('no google review link')) return 'no_review_link';
   if (message.includes('has not replied')) return 'no_reply';
+  if (message.includes('selected channel is unavailable')) return 'channel_unavailable';
   if (message.includes('free-form window is closed')) return 'window_closed';
   if (code === '22023' || code === '23514') return 'invalid';
   return 'unknown';
@@ -131,11 +139,12 @@ export function createReviewRequestsApi(client: CrmClient) {
     },
 
     /** "Ask": queues the approved healing-question template on WhatsApp. */
-    async sendHealingQuestion(artistId: string, anchorSessionId: string, operationId: string): Promise<void> {
-      await call('send_healing_question', {
+    async sendHealingQuestion(artistId: string, anchorSessionId: string, operationId: string, channel?: ReviewChannel): Promise<void> {
+      await call(channel ? 'send_healing_question_v2' : 'send_healing_question', {
         p_artist_id: artistId,
         p_anchor_session_id: anchorSessionId,
         p_operation_id: operationId,
+        ...(channel ? { p_channel: channel } : {}),
       }, 'send that healing question');
     },
 
@@ -157,12 +166,13 @@ export function createReviewRequestsApi(client: CrmClient) {
     },
 
     /** Sends the artist's edited review request inside the WhatsApp window. */
-    async askForReview(artistId: string, reviewRequestId: string, body: string, operationId: string): Promise<void> {
-      await call('ask_for_review', {
+    async askForReview(artistId: string, reviewRequestId: string, body: string, operationId: string, channel?: ReviewChannel): Promise<void> {
+      await call(channel ? 'ask_for_review_v2' : 'ask_for_review', {
         p_artist_id: artistId,
         p_review_request_id: reviewRequestId,
         p_operation_id: operationId,
         p_body: body,
+        ...(channel ? { p_channel: channel } : {}),
       }, 'ask for that review');
     },
 

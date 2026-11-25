@@ -170,6 +170,7 @@ export function verifyTodayLineage(source) {
     ['20261119100000', '20261119120000'],
     // Google review request, phase 2b: show the reply, ask for a review or close.
     ['20261119120000', '20261119130000'],
+    ['20261123011000', '20261125204000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
