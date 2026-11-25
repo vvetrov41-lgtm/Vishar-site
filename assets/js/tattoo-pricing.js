@@ -77,7 +77,7 @@ function estimate(p){
  if(p.areas.length!==1)return review("Multiple areas need an individual plan to avoid counting overlapping work twice.");
  const a=p.areas[0],r=regionByKey(a.region),part=a.placements.find(k=>r.placements.find(x=>x[0]===k)?.[2])||a.placements[0];
  if(paired(a.region)&&a.side==="both"||a.placements.includes("one_side_chest")&&a.side==="both")return review("The FAQ ranges refer to one limb. Both limbs need an individual plan.");
- if(a.placements.length!==1&&!["full_sleeve","full_leg_sleeve","half_sleeve","three_quarter_sleeve","half_leg_sleeve"].includes(part))return review("Combined placements need a personalised estimate.");
+ if(a.placements.length!==1)return review("Combined placements need a personalised estimate.");
  let hours,sessions,open=false,reason,provisional=false;
  if(["full_sleeve","full_leg_sleeve"].includes(part)){
  const extra=part==="full_leg_sleeve"?rules.legExtra:0;

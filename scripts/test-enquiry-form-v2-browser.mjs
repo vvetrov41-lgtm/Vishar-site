@@ -325,9 +325,23 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   const bytes = await page.evaluate(() => performance.getEntriesByType('resource')
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));
-  assert.ok(bytes > 0 && bytes < 55000);
+  assert.ok(bytes > 0 && bytes < 65000);
   assert.equal(await page.locator('#calc-next').isVisible(),false,'no booking prompt before choosing a project');
+  await page.getByRole('button',{name:'Combine zones: off',exact:true}).click();
+  await page.getByRole('button',{name:'Forearm',exact:true}).click();
+  await page.getByRole('button',{name:'Full back',exact:true}).click();
+  assert.equal(await page.locator('.calc-area-row').count(),2);
+  assert.equal(await page.locator('.calc-result').innerText(),'By assessment');
+  await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
+  await page.getByRole('button',{name:'Forearm',exact:true}).click();
+  await page.getByRole('button',{name:'Wraparound',exact:true}).click();
+  await page.getByRole('button',{name:'Estimate a lower half sleeve instead (elbow to wrist)',exact:true}).click();
+  assert.equal(await page.locator('.calc-result').innerText(),'£2,940–£3,920');
+  await page.getByRole('button',{name:'Colour',exact:true}).click();
+  assert.equal(await page.locator('.calc-result').innerText(),'£3,920–£4,900');
+  await page.getByRole('button',{name:'Black & Grey',exact:true}).click();
   await page.getByRole('button',{name:'Full sleeve',exact:true}).click();
+  await page.getByRole('button',{name:'Front',exact:true}).click();
   await page.getByRole('button',{name:'Left',exact:true}).click();
   assert.ok(await page.locator('.calc-figure .hit.on[data-side="left"]').count()>0);
   assert.equal(await page.locator('.calc-figure .hit.on[data-side="right"]').count(),0);

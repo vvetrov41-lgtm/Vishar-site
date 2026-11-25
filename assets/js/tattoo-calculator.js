@@ -2,7 +2,7 @@
 const api=window.TattooPricing,geo=window.TattooBodyGeometry,$=id=>document.getElementById(id);
 const body=$("calc-body"),next=$("calc-next"),p={areas:[],styles:["black_grey"]};
 const embedded=!!body.closest("dialog");
-let view="front",mode="project",hours=7,budget=2000,started=false;
+let view="front",mode="project",hours=7,budget=2000,started=false,combine=false,activeRegion="";
 const assetBase=new URL("calculator3d/",document.currentScript.src);
 let modelMode=embedded?"2d":"3d",modelHost=null,modelViewer=null,modelLoad=null,modelFailed=false;
 const node=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;};
@@ -10,12 +10,38 @@ const money=n=>"£"+n.toLocaleString("en-GB",{maximumFractionDigits:0});
 function event(name){try{if(location.hostname==="vishartattoo.com"&&localStorage.getItem("vishar-cookie-consent")==="granted")window.gtag?.("event",name,{calculator_version:3});}catch{}}
 function start(){if(!started){started=true;event("tattoo_estimate_start");}}
 const areaFor=k=>p.areas.find(a=>a.region===k);
+const activeArea=()=>areaFor(activeRegion)||p.areas[0];
 const lengthSteps=[["forearm","Forearm panel"],["half_sleeve","Half sleeve"],["three_quarter_sleeve","¾ sleeve"],["full_sleeve","Full sleeve"]];
 function choose(region,part,side,surface="unsure",other=""){
- const prev=p.areas[0],same=prev?.region===region;
- const a={region,placements:region==="other"?[]:[part],work:same?prev.work.slice():["new"],side:side||(same&&prev.side)||"left",scale:"area",coverage:"panel",half:api.half(part)?"upper":"",surface,other:other||(region==="other"||part==="other"?"Other placement":"")};
- p.areas=[a];mode="project";start();return a;
+ const prev=activeArea(),same=prev?.region===region;
+ const a={region,placements:region==="other"?[]:[part],work:same?prev.work.slice():["new"],side:side||(same&&prev.side)||"left",scale:"area",coverage:"panel",half:api.half(part)?(same&&prev.half&&prev.half!=="unsure"?prev.half:same&&prev.placements.includes("forearm")?"lower":"upper"):"",surface,other:other||(region==="other"||part==="other"?"Other placement":"")};
+ if(combine){p.areas=p.areas.filter(x=>x.region!==region);p.areas.push(a);}else p.areas=[a];activeRegion=region;mode="project";start();return a;
 }
+function pickZone(area,side){
+ const key=map[area];if(!key)return;
+ const [region,part]=key,existing=areaFor(region),surface=area==="inner_forearm"?"inner":area==="outer_forearm"?"outer":"unsure",other=area==="armpit"?"Armpit":area==="glutes"?"Glutes":"";
+ if(!combine||!existing){choose(region,part,side,surface,other);render();return;}
+ activeRegion=region;
+ const isPaired=api.paired(region)||part==="one_side_chest"||existing.placements.includes("one_side_chest");
+ // The enquiry schema has one side per region. Never silently merge different placements on opposite sides.
+ if(isPaired&&side&&existing.side!==side&&existing.side!=="both"){
+  if(existing.placements.length===1&&existing.placements[0]===part){existing.side="both";render();return;}
+  modelMessage="Choose the same side or start a separate calculation for the opposite limb.";render();return;
+ }
+ if(region==="other"||part==="other"||existing.placements.includes("other")){
+  modelMessage="This placement needs a separate calculation.";render();return;
+ }
+ const old=existing.placements;
+ if(old.some(k=>api.large(api.regionByKey(region),k))){modelMessage="A full or partial sleeve already covers its component zones. Use the coverage controls to change it.";render();return;}
+ if(old.includes(part)){
+  if(part==="forearm"&&existing.surface!==surface&&surface!=="unsure"&&existing.coverage!=="wrap"){existing.coverage="wrap";existing.surface="unsure";render();return;}
+  existing.placements=old.filter(k=>k!==part);
+ }else existing.placements=[...old,part];
+ if(!existing.placements.length){p.areas=p.areas.filter(x=>x!==existing);activeRegion=p.areas.at(-1)?.region||"";}
+ else if(existing.placements.length>1){existing.scale="area";existing.coverage="unsure";existing.surface="unsure";}
+ render();
+}
+let modelMessage="";
 function group(parent,label,entries,selected,change,cls=""){
  const wrap=node("fieldset","calc-keys "+cls),row=node("div","calc-key-row");wrap.append(node("legend","calc-label",label),row);
  for(const [k,v] of entries){const b=node("button","calc-key",v);b.type="button";b.dataset.key=label+"|"+k;b.setAttribute("aria-pressed",String(selected===k));b.onclick=()=>{start();change(k);render(b.dataset.key);};row.append(b);}parent.append(wrap);
@@ -28,14 +54,14 @@ function selectedArea(area,side){
  const key=map[area],a=key&&areaFor(key[0]);if(!a)return false;
  if((api.paired(a.region)||a.placements.includes("one_side_chest"))&&side&&a.side!==side&&a.side!=="both")return false;
  const part=a.placements[0];
- if(part==="full_sleeve")return key[0]==="arm";
+ if(part==="full_sleeve")return key[0]==="arm"&&key[1]!=="other";
  if(part==="full_leg_sleeve")return key[0]==="leg";
  if(part==="half_sleeve")return key[0]==="arm"&&(a.half==="upper"?["shoulder","upper_arm","inner_bicep","elbow"]:["elbow","forearm","wrist"]).includes(key[1]);
  if(part==="three_quarter_sleeve")return key[0]==="arm"&&["shoulder","upper_arm","inner_bicep","elbow","forearm"].includes(key[1]);
  if(part==="half_leg_sleeve")return key[0]==="leg"&&(a.half==="upper"?["thigh","knee"]:["knee","shin","calf","ankle"]).includes(key[1]);
  if(part==="full_back")return key[0]==="back";
  if(part==="full_chest")return ["chest","sternum","areola","collarbone"].includes(area);
- if(part==="forearm"&&a.coverage==="panel"&&a.surface!=="unsure")return key[1]==="forearm"&&area===(a.surface==="inner"?"inner_forearm":"outer_forearm");
+ if(a.placements.length===1&&part==="forearm"&&a.coverage==="panel"&&a.surface!=="unsure")return key[1]==="forearm"&&area===(a.surface==="inner"?"inner_forearm":"outer_forearm");
  return a.placements.includes(key[1])||(key[0]==="other"&&a.other==="Glutes");
 }
 function load3D(){
@@ -43,11 +69,12 @@ function load3D(){
  modelHost??=node("div","calc-model-host");
  modelHost.textContent="Loading 3D model…";
  const script=document.createElement("script");script.src=new URL("viewer.js",assetBase).href;
- modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,coverage(){const a=p.areas[0];return a?{part:a.placements[0],side:a.side,scale:a.scale}:null;},onPick(area,side){const key=map[area];if(!key)return;choose(key[0],key[1],side,area==="inner_forearm"?"inner":area==="outer_forearm"?"outer":"unsure",area==="armpit"?"Armpit":area==="glutes"?"Glutes":"");render();},onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
+ modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,coverage(){const a=activeArea();return a?{part:a.placements[0],side:a.side,scale:a.scale}:null;},onPick:pickZone,onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
  return modelLoad;
 }
 function atlas(parent,interactive=true){
  const box=node("div","calc-atlas"),tabs=node("div","calc-views");
+ const combineButton=node("button","calc-combine",combine?"Combine zones: on":"Combine zones: off");combineButton.type="button";combineButton.setAttribute("aria-pressed",String(combine));combineButton.onclick=()=>{combine=!combine;if(!combine&&p.areas.length>1){const a=activeArea();p.areas=a?[a]:[];}if(!combine&&activeArea()?.placements.length>1)activeArea().placements=activeArea().placements.slice(0,1);render();};box.append(combineButton);if(modelMessage){const msg=node("p","calc-map-hint",modelMessage);msg.setAttribute("role","status");box.append(msg);modelMessage="";}
  const switches=node("div","calc-model-switch");for(const m of ["3d","2d"]){const b=node("button","",m.toUpperCase());b.type="button";b.setAttribute("aria-pressed",String(m===modelMode));b.onclick=()=>{modelMode=m;if(m==="3d"){modelFailed=false;load3D();}render();};switches.append(b);}box.append(switches);
  for(const v of ["front","back"]){const b=node("button","",v==="front"?"Front":"Back");b.type="button";b.setAttribute("aria-pressed",String(v===view));b.onclick=()=>{view=v;modelViewer?.view(v);render();};tabs.append(b);}box.append(tabs);
  if(modelMode==="3d"){
@@ -65,7 +92,7 @@ function atlas(parent,interactive=true){
  for(const z of geo.REGIONS[view]){const key=map[z.id];if(!key)continue;for(const mirror of z.paired?[false,true]:[false]){
  const side=view==="front"?(mirror?"left":"right"):(mirror?"right":"left"),outer=add("g",z.part==="trunk"?{mask:"url(#calc-mask)"}:{}),g=add("g",{...(mirror?{transform:geo.MIRROR_TRANSFORM}:{}),"clip-path":"url(#calc-"+z.part+")"},outer);
  const path=add("path",{d:z.d,class:"hit"+(selected(z,side)?" on":""),"data-area":z.id,"data-side":side,"data-paired":String(z.paired)},g);
- if(interactive)path.onclick=()=>{start();choose(key[0],key[1],side,z.id==="inner_forearm"?"inner":z.id==="outer_forearm"?"outer":"unsure",z.id==="armpit"?"Armpit":z.id==="glutes"?"Glutes":"");render();};
+ if(interactive)path.onclick=()=>{start();pickZone(z.id,side);};
  }}
  const d=geo.FIGURE_DETAIL[view];for(const line of d.centre)add("path",{d:line,class:"figure-line"});for(const mirror of [false,true])for(const part of ["trunk","arm"]){const g=add("g",{...(mirror?{transform:geo.MIRROR_TRANSFORM}:{}),"clip-path":"url(#calc-"+part+")"});for(const line of d[part])add("path",{d:line,class:"figure-line"},g);}
  box.append(svg,node("p","calc-map-hint","Tap a zone to estimate its cost."));parent.append(box);
@@ -74,7 +101,7 @@ function atlas(parent,interactive=true){
 function description(a){
  if(!a)return "Choose a tattoo";
  const region=api.regionByKey(a.region),part=a.placements[0];
- const label=region.key==="other"?a.other:part==="other"?a.other:region.placements.find(x=>x[0]===part)?.[1]||region.label;
+ const label=region.key==="other"?a.other:a.placements.map(k=>k==="other"?a.other:region.placements.find(x=>x[0]===k)?.[1]||region.label).join(" + ");
  return label+(api.paired(a.region)||part==="one_side_chest"?" · "+api.sides[a.side]:"");
 }
 function actualProject(){return api.valid(p)?api.estimate(p):null;}
@@ -116,7 +143,7 @@ function render(focus){
  amount.oninput=()=>{if(amount.value==="")return;budget=Math.min(20000,Math.max(0,Number(amount.value)||0));range.value=String(Math.min(12000,budget));start();updateResult();updateSuggestions();};amount.onblur=()=>{amount.value=String(budget);};range.oninput=()=>{budget=Number(range.value);amount.value=String(budget);start();updateResult();updateSuggestions();};
  panel.append(label,amount,range);group(panel,"Quick budget",[[500,"£500"],[1000,"£1,000"],[2000,"£2,000"],[4000,"£4,000"],[8000,"£8,000"]],budget,k=>budget=k);
  const suggestions=node("div","calc-budget-suggestions");panel.append(suggestions);body.append(panel);
- function updateSuggestions(){suggestions.replaceChildren(node("h3","calc-label","FAQ projects to compare"));const options=[["Small piece",api.rules.small.map(h=>h*api.rules.hourly)],["Forearm",api.rules.forearm.map(d=>d*api.rules.day*api.rules.hourly)],["Upper arm",api.rules.upper.map(d=>d*api.rules.day*api.rules.hourly)],["Full arm · Black & Grey",api.rules.black_grey.map(d=>d*api.rules.day*api.rules.hourly)],["Full arm · Colour",api.rules.colour.map(d=>d*api.rules.day*api.rules.hourly)]];for(const [label,band] of options){const item=node("div","calc-budget-item"),status=budget<band[0]?"Below typical range":budget<band[1]?"Within typical range":"Covers typical range";item.append(node("strong","",label),node("span","",money(band[0])+"–"+money(band[1])+(label.startsWith("Full arm")?"+":"")),node("span","calc-budget-status",status));suggestions.append(item);}suggestions.append(node("p","calc-help","Compare guide ranges only. Detailed designs can cost more."));}updateSuggestions();
+ function updateSuggestions(){suggestions.replaceChildren(node("h3","calc-label","Typical projects to compare"));const options=[["Small piece",api.rules.small.map(h=>h*api.rules.hourly)],["Forearm",api.rules.forearm.map(d=>d*api.rules.day*api.rules.hourly)],["Upper arm",api.rules.upper.map(d=>d*api.rules.day*api.rules.hourly)],["Lower half sleeve · Black & Grey",api.rules.lowerHalf.black_grey.map(d=>d*api.rules.day*api.rules.hourly)],["Lower half sleeve · Colour",api.rules.lowerHalf.colour.map(d=>d*api.rules.day*api.rules.hourly)],["Full arm · Black & Grey",api.rules.black_grey.map(d=>d*api.rules.day*api.rules.hourly)],["Full arm · Colour",api.rules.colour.map(d=>d*api.rules.day*api.rules.hourly)]];for(const [label,band] of options){const item=node("div","calc-budget-item"),status=budget<band[0]?"Below typical range":budget<band[1]?"Within typical range":"Covers typical range";item.append(node("strong","",label),node("span","",money(band[0])+"–"+money(band[1])+(label.startsWith("Full arm")?"+":"")),node("span","calc-budget-status",status));suggestions.append(item);}suggestions.append(node("p","calc-help","Compare guide ranges only. Detailed designs can cost more."));}updateSuggestions();
  }else if(mode==="hours"){
  const panel=node("div","calc-time-panel"),label=node("label","calc-label","Planned tattooing time"),range=node("input","calc-range");
  range.type="range";range.min="1";range.max="84";range.step="1";range.value=String(hours);range.id="calc-hours";label.htmlFor=range.id;range.setAttribute("aria-label","Tattooing hours");
@@ -125,20 +152,22 @@ function render(focus){
  panel.append(node("p","calc-help","Adjust the slider to explore your budget at the studio's hourly rate."));body.append(panel);
  }else{
  const layout=node("div","calc-layout"),controls=node("div","calc-controls");atlas(layout);layout.append(controls);body.append(layout);
- const a=p.areas[0],part=a?.placements[0],activePreset=presets.find(x=>x[2]===a?.region&&x[3]===part)?.[0];
- group(controls,"Quick projects",presets.map(x=>[x[0],x[1]]),activePreset,k=>{const x=presets.find(z=>z[0]===k);choose(x[2],x[3],null);if(k==="back")view="back";if(k==="chest")view="front";},"calc-presets");
+ const a=activeArea(),part=a?.placements.length===1?a.placements[0]:undefined,activePreset=presets.find(x=>x[2]===a?.region&&x[3]===part)?.[0];
+ group(controls,"Quick projects",presets.map(x=>[x[0],x[1]]),activePreset,k=>{const x=presets.find(z=>z[0]===k);choose(x[2],x[3],null);if(k==="back"){view="back";modelViewer?.view(view);}if(k==="chest"){view="front";modelViewer?.view(view);}},"calc-presets");
+ if(combine&&p.areas.length){const list=node("div","calc-area-list");list.append(node("span","calc-label","Selected zones"));for(const item of p.areas){const row=node("div","calc-area-row"),edit=node("button","",description(item)),remove=node("button","","×");edit.type="button";edit.setAttribute("aria-pressed",String(item===a));edit.onclick=()=>{activeRegion=item.region;render();};remove.type="button";remove.setAttribute("aria-label","Remove "+description(item));remove.onclick=()=>{p.areas=p.areas.filter(x=>x!==item);activeRegion=p.areas.at(-1)?.region||"";render();};row.append(edit,remove);list.append(row);}controls.append(list);}
  if(a){
  const selection=node("div","calc-selection");selection.append(node("span","calc-label","Selected area"),node("strong","",description(a)));controls.append(selection);
  if(api.paired(a.region)||part==="one_side_chest")group(controls,"Side",[["left","Left"],["right","Right"],["both","Both"]],a.side,k=>a.side=k);
  if(a.region==="arm"&&lengthSteps.some(x=>x[0]===part)){
  const length=node("div","calc-length"),label=node("label","calc-label","Arm coverage"),track=node("input","calc-range");track.type="range";track.min="0";track.max="3";track.step="1";track.value=String(lengthSteps.findIndex(x=>x[0]===part));track.id="calc-arm-length";label.htmlFor=track.id;track.setAttribute("aria-valuetext",lengthSteps[Number(track.value)][1]);
- const labels=node("div","calc-length-labels");for(const [key,name] of lengthSteps){const b=node("button","",name);b.type="button";b.setAttribute("aria-pressed",String(key===part));b.onclick=()=>{choose("arm",key,a.side,a.surface);render();};labels.append(b);}
- track.oninput=()=>{const [key,name]=lengthSteps[Number(track.value)];track.setAttribute("aria-valuetext",name);choose("arm",key,a.side,a.surface);modelViewer?.update();body.querySelectorAll(".calc-figure .hit").forEach(el=>el.classList.toggle("on",selectedArea(el.dataset.area,el.dataset.paired==="true"?el.dataset.side:null)));updateResult();};track.onchange=()=>{render();$("calc-arm-length")?.focus({preventScroll:true});};length.append(label,track,labels);controls.append(length);
+ const labels=node("div","calc-length-labels");for(const [key,name] of lengthSteps){const b=node("span","",name);b.dataset.active=String(key===part);labels.append(b);}
+ track.oninput=()=>{const [key,name]=lengthSteps[Number(track.value)];track.setAttribute("aria-valuetext",name);Array.from(labels.children).forEach((el,i)=>el.dataset.active=String(i===Number(track.value)));choose("arm",key,a.side,a.surface);modelViewer?.update();body.querySelectorAll(".calc-figure .hit").forEach(el=>el.classList.toggle("on",selectedArea(el.dataset.area,el.dataset.paired==="true"?el.dataset.side:null)));updateResult();};track.onchange=()=>{render();$("calc-arm-length")?.focus({preventScroll:true});};length.append(label,track,labels);controls.append(length);
  }
  if(api.half(part))group(controls,"Half sleeve",[["upper","Upper half"],["lower","Lower half"]],a.half,k=>a.half=k);
  if(part&&!api.large(api.regionByKey(a.region),part)){
  group(controls,"Size",[["small","Small piece"],["area","Area-sized"]],a.scale,k=>{a.scale=k;a.coverage="panel";});
  if(a.scale==="area"&&api.wraps(part))group(controls,"Coverage",[["panel","One side"],["wrap","Wraparound"]],a.coverage,k=>a.coverage=k);
+ if(part==="forearm"&&a.scale==="area"&&a.coverage==="wrap"){const lower=node("button","calc-ink","Estimate a lower half sleeve instead (elbow to wrist)");lower.type="button";lower.onclick=()=>{const s=choose("arm","half_sleeve",a.side);s.half="lower";render();};controls.append(lower);}
  }
  }
  group(controls,"Style",[["black_grey","Black & Grey"],["colour","Colour"],["mixed","Mixed"]],styleKey(),setStyle);
@@ -153,7 +182,7 @@ next.onclick=()=>{
  if(embedded){const root=document.getElementById("enquiry-v2");if(!root)return;const accepted=!root.dispatchEvent(new CustomEvent("vishar-calculator-apply",{detail:p,cancelable:true}));if(accepted){body.closest("dialog").close();requestAnimationFrame(()=>root.scrollIntoView({block:"start",behavior:"smooth"}));}return;}
  location.href="/booking/#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)});
 };
-$("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";mode="project";hours=7;budget=2000;render();};
+$("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";mode="project";hours=7;budget=2000;combine=false;activeRegion="";render();};
 body.closest(".planner").hidden=false;render();
 // Standalone calculator loads 3D; booking dialog starts with lightweight 2D.
 window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});

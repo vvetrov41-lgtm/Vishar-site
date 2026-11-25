@@ -11,6 +11,7 @@ assert.equal(api.estimate(make("half_sleeve",["black_grey"],{half:"upper"})).pro
 assert.equal(api.estimate(make("full_sleeve")).provisional,false);
 assert.deepEqual(api.budgetPlan(2000),{hours:14.25,fullDays:2,remainderHours:.25,unused:5});assert.equal(api.budgetPlan(-1),null);
 assert.equal(api.estimate(make("half_sleeve",["black_grey"],{half:"lower"})).provisional,false);
+assert.equal(api.estimate(make("full_sleeve",["black_grey"],{placements:["full_sleeve","forearm"]})).numeric,false);
 let combinations=16;
 // Mutate all bands together to catch stale visible FAQ answers and JSON-LD.
 const change = {
