@@ -15,6 +15,26 @@ export function parseWake(value,now=Date.now()){
     ||!LANES.has(value.lane)||!Number.isSafeInteger(value.due_ms)||value.due_ms<now-600000||value.due_ms>now+300000)return null;
   return {lane:value.lane,delaySeconds:value.due_ms<=now?0:Math.ceil((value.due_ms-now)/1000)+1};
 }
+// A network POST with no body may still have a non-null, empty stream in workerd.
+// Inspect at most four chunks, and fail closed on a stalled or non-empty body.
+async function hasWakeBody(request){
+ const length=request.headers.get('content-length');
+ if(length!==null&&length!=='0')return true;
+ if(!request.body)return false;
+ const reader=request.body.getReader();
+ let timer;
+ try{
+  const deadline=new Promise(resolve=>{timer=setTimeout(()=>resolve(null),1000);});
+  for(let i=0;i<4;i++){
+   const chunk=await Promise.race([reader.read(),deadline]);
+   if(!chunk)return true;
+   if(chunk.done)return false;
+   if(chunk.value?.byteLength!==0)return true;
+  }
+  return true;
+ }catch{return true;}
+ finally{clearTimeout(timer);void reader.cancel().catch(()=>{});}
+}
 export async function receiveWake(request,env,now=Date.now(),fetchImpl=fetch){
   const url=new URL(request.url);
   const origin=request.headers.get('origin');
@@ -24,7 +44,7 @@ export async function receiveWake(request,env,now=Date.now(),fetchImpl=fetch){
     if(origin!==CRM_ORIGIN||request.headers.get('access-control-request-method')!=='POST')return json(403,{ok:false},origin);
     return new Response(null,{status:204,headers:{'access-control-allow-origin':CRM_ORIGIN,'access-control-allow-methods':'POST','access-control-allow-headers':'authorization','access-control-max-age':'600','vary':'Origin','cache-control':'no-store'}});
   }
-  if(request.method!=='POST'||request.body!==null)return json(400,{ok:false},origin);
+  if(request.method!=='POST')return json(400,{ok:false},origin);
   const authorization=request.headers.get('authorization')||'';
   if(authorization.length>8192||!BEARER.test(authorization))return json(401,{ok:false},origin);
   if(env.SUPABASE_URL!==DB_ORIGIN||!/^sb_publishable_[A-Za-z0-9_-]+$/.test(env.SUPABASE_PUBLISHABLE_KEY||'')
@@ -32,6 +52,7 @@ export async function receiveWake(request,env,now=Date.now(),fetchImpl=fetch){
   try {
     const limit=await env.OUTBOX_WAKE_RATE_LIMIT.limit({key:request.headers.get('cf-connecting-ip')||'unknown'});
     if(!limit.success)return json(429,{ok:false},origin);
+    if(await hasWakeBody(request))return json(400,{ok:false},origin);
     const response=await fetchImpl(DB_ORIGIN+'/rest/v1/rpc/get_booking_outbox_wake_hints',{
       method:'POST',headers:{authorization,apikey:env.SUPABASE_PUBLISHABLE_KEY,'content-type':'application/json'},body:'{}',redirect:'manual'
     });

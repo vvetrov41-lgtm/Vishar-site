@@ -30,8 +30,14 @@ async function worker(n,missing=false){
  const d=await api(workerPath(n)+'/deployments');
  const versions=(d.deployments?.[0]||d[0])?.versions;
  if(!Array.isArray(versions)||versions.length!==1||versions[0].percentage!==100||!versions[0].version_id)fail('Unexpected active deployment for '+n);
- const bindings=new Map((s.bindings||[]).map(x=>[x.name,x]));
- return {version:versions[0].version_id,bindings};
+ const id=versions[0].version_id;
+ const active=await api(workerPath(n)+'/versions/'+id);
+ if(active?.id!==id||!Array.isArray(active.resources?.bindings))fail('Active version bindings unavailable for '+n);
+ const list=await api(workerPath(n)+'/versions?per_page=1');
+ const latest=list?.items?.[0]?.id;
+ if(!latest)fail('Latest version unavailable for '+n);
+ const bindings=new Map(active.resources.bindings.map(x=>[x.name,x]));
+ return {version:id,latest,bindings};
 }
 function flag(w,n,value){if(w?.bindings.get(n)?.text!==value)fail('Unexpected live flag: '+n);}
 async function inventory(){
@@ -52,6 +58,7 @@ async function providers(){
   const w=await worker(name);flag(w,'VISHAR_ENVIRONMENT','production');
   if(activating){
    flag(w,enabled,'true');
+   if(w.version!==w.latest)fail('Provider active source is not latest: '+name);
    const src=await api(workerPath(name)+'/content/v2',{raw:true});
    if(!src.includes(marker))fail('Provider wake entrypoint has not been deployed: '+name);
   }
@@ -65,10 +72,24 @@ async function verifyWake(state,enabled){
  if(q?.type!=='queue'||q.queue_name!==NAME)fail('Incorrect queue producer binding');
  if(!state.wake.bindings.has('OUTBOX_WAKE_RATE_LIMIT'))fail('Missing wake rate limit');
  if(!queueOwnedBy(state.queue,NAME,true))fail('Queue producer/consumer readback failed');
- const src=await api(workerPath(NAME)+'/content/v2',{raw:true});
- if(!src.includes('get_booking_outbox_wake_hints')||!src.includes('/internal/outbox/wake'))fail('Wrong deployed wake source');
+ // content/v2 exposes latest uploaded code, not necessarily the active
+ // deployment. Require latest=active for enabled readback; after rollback
+ // verify active bindings and the live disabled HTTP boundary instead.
+ if(enabled&&state.wake.version!==state.wake.latest)fail('Enabled wake source is not latest');
+ if(state.wake.version===state.wake.latest){
+  const src=await api(workerPath(NAME)+'/content/v2',{raw:true});
+  if(!src.includes('get_booking_outbox_wake_hints')||!src.includes('/internal/outbox/wake'))fail('Wrong deployed wake source');
+ }
  const unauthorized=await fetch('https://'+HOST+'/internal/outbox/wake',{method:'POST',redirect:'manual'});
  if(unauthorized.status!==(enabled?401:404))fail('Public ingress did not fail closed: '+unauthorized.status);
+ if(enabled){
+  const preflight=await fetch('https://'+HOST+'/internal/outbox/wake',{method:'OPTIONS',headers:{origin:'https://crm.vishartattoo.com','access-control-request-method':'POST','access-control-request-headers':'authorization'},redirect:'manual'});
+  if(preflight.status!==204||preflight.headers.get('access-control-allow-origin')!=='https://crm.vishartattoo.com')fail('CRM wake CORS preflight failed');
+  // Syntactically valid but deliberately invalid JWT: no privileged credential
+  // and no real booking. Confirms an empty network POST reaches the RPC gate.
+  const denied=await fetch('https://'+HOST+'/internal/outbox/wake',{method:'POST',headers:{authorization:'Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJub25lIn0.invalid'},redirect:'manual'});
+  if(denied.status!==403)fail('Invalid-token network POST did not reach the authentication gate: '+denied.status);
+ }
 }
 try{
  const state=await inventory();
