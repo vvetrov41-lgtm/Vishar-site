@@ -3,7 +3,7 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 // TattooBodyMap canonical surface taxonomy, from src/lib/body3d/regionAreas.ts.
-const BASES={"head":{"label":"Head","sides":"c","facets":["all"],"area":"head"},"neck":{"label":"Neck","sides":"c","facets":["front","back"],"area":{"front":"throat","back":"nape"}},"chest":{"label":"Chest","sides":"c","facets":["all"],"area":"chest"},"abdomen":{"label":"Stomach","sides":"c","facets":["all"],"area":"stomach"},"pelvis":{"label":"Pelvis","sides":"c","facets":["all"],"area":"pelvis"},"upper_back":{"label":"Upper back","sides":"c","facets":["all"],"area":"shoulder_blade"},"lower_back":{"label":"Lower back","sides":"c","facets":["all"],"area":"lower_back"},"ribs":{"label":"Ribs","sides":"lr","facets":["all"],"area":"ribs"},"hip":{"label":"Hip","sides":"lr","facets":["all"],"area":"pelvis"},"glutes":{"label":"Glute","sides":"lr","facets":["all"],"area":"glutes"},"shoulder":{"label":"Shoulder","sides":"lr","facets":["front","back"],"area":"shoulder"},"armpit":{"label":"Armpit","sides":"lr","facets":["all"],"area":"armpit"},"upper_arm":{"label":"Upper arm","sides":"lr","facets":["front","back","inner","outer"],"area":{"inner":"inner_bicep","back":"triceps","*":"outer_upper_arm"}},"elbow":{"label":"Elbow","sides":"lr","facets":["front","back","inner","outer"],"area":"elbow"},"forearm":{"label":"Forearm","sides":"lr","facets":["front","back","inner","outer"],"area":{"inner":"inner_forearm","*":"outer_forearm"}},"hand":{"label":"Hand","sides":"lr","facets":["palm","back","fingers"],"area":{"fingers":"fingers","*":"hand"}},"thigh":{"label":"Thigh","sides":"lr","facets":["front","back","inner","outer"],"area":{"inner":"inner_thigh","back":"hamstring","*":"outer_thigh"}},"knee":{"label":"Knee","sides":"lr","facets":["front","back","inner","outer"],"area":"knee"},"calf":{"label":"Lower leg","sides":"lr","facets":["front","back","inner","outer"],"area":{"front":"shin","inner":"inner_lower_leg","*":"calf"}},"foot":{"label":"Foot","sides":"lr","facets":["top","sole"],"area":"foot"},"nipple":{"label":"Nipple / areola","sides":"lr","facets":["all"],"area":"areola"},"collarbone":{"label":"Collarbone","sides":"lr","facets":["all"],"area":"collarbone"},"sternum":{"label":"Sternum","sides":"c","facets":["all"],"area":"sternum"},"spine":{"label":"Spine","sides":"c","facets":["all"],"area":"spine"},"wrist":{"label":"Wrist","sides":"lr","facets":["front","back","inner","outer"],"area":"wrist"},"ankle":{"label":"Ankle","sides":"lr","facets":["front","back","inner","outer"],"area":"ankle"}};
+const BASES={"head":{"label":"Head","sides":"c","facets":["all"],"area":"head"},"neck":{"label":"Neck","sides":"c","facets":["front","back"],"area":{"front":"throat","back":"nape"}},"chest":{"label":"Chest","sides":"c","facets":["all"],"area":"chest"},"abdomen":{"label":"Stomach","sides":"c","facets":["all"],"area":"stomach"},"pelvis":{"label":"Pelvis","sides":"c","facets":["all"],"area":"pelvis"},"upper_back":{"label":"Upper back","sides":"c","facets":["all"],"area":"shoulder_blade"},"lower_back":{"label":"Lower back","sides":"c","facets":["all"],"area":"lower_back"},"ribs":{"label":"Ribs","sides":"lr","facets":["all"],"area":"ribs"},"hip":{"label":"Hip","sides":"lr","facets":["all"],"area":"hip"},"glutes":{"label":"Glute","sides":"lr","facets":["all"],"area":"glutes"},"shoulder":{"label":"Shoulder","sides":"lr","facets":["front","back"],"area":"shoulder"},"armpit":{"label":"Armpit","sides":"lr","facets":["all"],"area":"armpit"},"upper_arm":{"label":"Upper arm","sides":"lr","facets":["front","back","inner","outer"],"area":{"inner":"inner_bicep","back":"triceps","*":"outer_upper_arm"}},"elbow":{"label":"Elbow","sides":"lr","facets":["front","back","inner","outer"],"area":"elbow"},"forearm":{"label":"Forearm","sides":"lr","facets":["front","back","inner","outer"],"area":{"inner":"inner_forearm","*":"outer_forearm"}},"hand":{"label":"Hand","sides":"lr","facets":["palm","back","fingers"],"area":{"fingers":"fingers","*":"hand"}},"thigh":{"label":"Thigh","sides":"lr","facets":["front","back","inner","outer"],"area":{"inner":"inner_thigh","back":"hamstring","*":"outer_thigh"}},"knee":{"label":"Knee","sides":"lr","facets":["front","back","inner","outer"],"area":"knee"},"calf":{"label":"Lower leg","sides":"lr","facets":["front","back","inner","outer"],"area":{"front":"shin","inner":"inner_lower_leg","*":"calf"}},"foot":{"label":"Foot","sides":"lr","facets":["top","sole"],"area":"foot"},"nipple":{"label":"Nipple / areola","sides":"lr","facets":["all"],"area":"areola"},"collarbone":{"label":"Collarbone","sides":"lr","facets":["all"],"area":"collarbone"},"sternum":{"label":"Sternum","sides":"c","facets":["all"],"area":"sternum"},"spine":{"label":"Spine","sides":"c","facets":["all"],"area":"spine"},"wrist":{"label":"Wrist","sides":"lr","facets":["front","back","inner","outer"],"area":"wrist"},"ankle":{"label":"Ankle","sides":"lr","facets":["front","back","inner","outer"],"area":"ankle"}};
 window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,coverage,onError}){
  let renderer,controls,observer,visibleObserver,mesh,geometry,material,dead=false,frame=0,visible=true;
  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(34,1,.05,30);
@@ -20,15 +20,15 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const groups=new Map(manifest.groups.map(g=>[g.id,g]));
  const regions=new Map(manifest.regions.map(v=>{const g=groups.get(v.group),def=BASES[g.base];if(!def)throw Error("Unmapped model region: "+v.key);const area=typeof def.area==="string"?def.area:(def.area[v.facet]||def.area["*"]);if(!area)throw Error("Unmapped model facet: "+v.key);return [v.id,{...v,area,base:g.base,side:g.side==="l"?"left":g.side==="r"?"right":null}];}));
  const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
- let color,ids,positions,world,worldPoints,worldNormals,forearmBounds={},armSections={},legSections={};let currentView="front",lastPick=null;
+ let color,ids,positions,world,worldPoints,worldNormals,selectedMask,backBounds={},forearmBounds={},armSections={},legSections={};let currentView="front",lastPick=null;
  const dark=new THREE.Color("#303030"),light=new THREE.Color("#eeeeee"),vec=new THREE.Vector3();
- function sideFor(region,i){if(region.side)return region.side;if(region.area==="chest")return worldPoints[i*3]>0?"left":"right";return null;}
+ function sideFor(region,i){if(region.side)return region.side;if(["chest","upper_back","neck","head","abdomen","pelvis"].includes(region.base))return worldPoints[i*3]>0?"left":"right";return null;}
  function cacheGeometry(){
- worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);forearmBounds={};armSections={};legSections={};
+ worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);selectedMask=new Uint8Array(ids.count);backBounds={};forearmBounds={};armSections={};legSections={};
  const normal=geometry.attributes.normal,normalMatrix=new THREE.Matrix3().getNormalMatrix(world),n=new THREE.Vector3();
  if(!normal)throw Error("Model normals unavailable");
  for(let i=0;i<ids.count;i++){vec.fromBufferAttribute(positions,i).applyMatrix4(world);worldPoints.set([vec.x,vec.y,vec.z],i*3);n.fromBufferAttribute(normal,i).applyNormalMatrix(normalMatrix);worldNormals.set([n.x,n.y,n.z],i*3);
- const region=regions.get(Math.round(ids.getX(i)));if(region.area==="inner_forearm"||region.area==="outer_forearm"){const b=forearmBounds[region.side]??=[Infinity,-Infinity];b[0]=Math.min(b[0],vec.y);b[1]=Math.max(b[1],vec.y);}}
+ const region=regions.get(Math.round(ids.getX(i)));if(["upper_back","lower_back"].includes(region.base)){const b=backBounds[region.base]??=[Infinity,-Infinity];b[0]=Math.min(b[0],vec.y);b[1]=Math.max(b[1],vec.y);}if(region.area==="inner_forearm"||region.area==="outer_forearm"){const b=forearmBounds[region.side]??=[Infinity,-Infinity];b[0]=Math.min(b[0],vec.y);b[1]=Math.max(b[1],vec.y);}}
  // A smoothed centreline from horizontal cross-sections of the actual limb mesh.
  // The selected hemisphere is a spatial half-plane, not a single mesh facet
  // or a normal-based patch that changes with local muscle curvature.
@@ -51,8 +51,8 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  if(!geometry||!ids||!worldPoints)return;
  const patches=new Map(),candidates=new Map(),panels=new Map();
  const keyFor=(info,side)=>info.region+"|"+(side||"centre");
- const broadPanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm"].includes(info.part);
- const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["thigh","calf","shin"].includes(info.part);
+ const broadPanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm","inner_bicep","thigh"].includes(info.part);
+ const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["calf","shin"].includes(info.part);
  function panelFacing(info,side,i){
  const face=info.half==="inner"||info.half==="outer"?info.half:info.surface==="unsure"?"front":info.surface||"front",s=(info.region==="leg"?legSections:armSections)[side],j=i*3,outer=side==="left"?1:-1;
  let x=worldNormals[j],z=worldNormals[j+2];
@@ -86,14 +86,15 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  if(active&&info.scale==="area"){
  const j=i*3,x=Math.abs(worldPoints[j]),y=worldPoints[j+1],z=worldPoints[j+2],g=groups.get(region.group);
  switch(info.part){
- case "upper_back": if(region.base==="spine")active=y>=1.19;break;
+ case "upper_back": if(region.base==="spine")active=y>=(backBounds.upper_back?.[0]??1.14);break;
+ case "lower_back": if(region.base==="spine")active=y<=(backBounds.lower_back?.[1]??1.12);break;
  case "shoulder_blade": if(region.base==="upper_back")active=x>=.055&&y>=1.18;break;
  case "side_neck": active=region.base==="neck"&&x>=.025;break;
  case "behind_ear": active=region.base==="head"&&x>=.055&&y>=1.51&&y<=1.62&&z<=.02;break;
  case "back_of_hand": active=region.base==="hand"&&region.facet==="back";break;
- case "side_of_hand": active=region.base==="hand"&&g&&Math.abs(x-Math.abs(g.center[0]))>=.018;break;
+ case "side_of_hand": active=region.base==="hand"&&g&&x>=Math.abs(g.center[0])+.012;break;
  case "top_of_foot": active=region.base==="foot"&&region.facet==="top";break;
- case "side_of_foot": active=region.base==="foot"&&g&&Math.abs(x-Math.abs(g.center[0]))>=.035;break;
+ case "side_of_foot": active=region.base==="foot"&&g&&x>=Math.abs(g.center[0])+.014&&y<g.center[1]+.045;break;
  case "toes": active=region.base==="foot"&&region.facet==="top"&&g&&z>g.center[2]+.055;break;
  case "side": if(region.base==="abdomen")active=x>=.09;break;
  }
@@ -106,7 +107,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  if(active&&info.part==="half_leg_sleeve"&&region.base==="knee"){const cut=legSections[side]?.elbowY;if(Number.isFinite(cut)){if(info.half==="upper")active=worldPoints[i*3+1]>=cut;else if(info.half==="lower")active=worldPoints[i*3+1]<cut;}}
  // Arm projects stop at the deltoid cap. The source shoulder label also
  // contains medial/top vertices on the trapezius; keep those out of arm coverage.
- if(active&&info.scale==="area"&&region.base==="shoulder"&&["upper_arm","half_sleeve","three_quarter_sleeve","full_sleeve"].includes(info.part)){
+ if(active&&info.scale==="area"&&region.base==="shoulder"&&["shoulder","upper_arm","half_sleeve","three_quarter_sleeve","full_sleeve"].includes(info.part)){
  const shoulder=armSections[side]?.shoulder;
  if(shoulder){const y=worldPoints[i*3+1],lateral=Math.abs(worldPoints[i*3]),rise=Math.max(0,y-shoulder.center[1]);
  const medialLimit=Math.abs(shoulder.center[0])-shoulder.radius*.30+.85*rise;
@@ -119,7 +120,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const patch=patches.get(keyFor(info,side));
  active=!!patch&&patch.id===region.id&&Math.hypot(worldPoints[i*3]-patch.center[0],worldPoints[i*3+1]-patch.center[1],worldPoints[i*3+2]-patch.center[2])<=Math.max(patch.radius,patch.min+.008);
  }
- if(active){count++;const key=region.base+"|"+(side||"centre");highlighted[key]=(highlighted[key]||0)+1;}
+ selectedMask[i]=active?1:0;if(active){count++;const key=region.base+"|"+(side||"centre");highlighted[key]=(highlighted[key]||0)+1;}
  const c=active?light:dark;color.setXYZ(i,c.r,c.g,c.b);
  }
  canvas.dataset.shoulderTrimmed=String(shoulderTrimmed);canvas.dataset.highlightedRegions=JSON.stringify(highlighted);canvas.dataset.selectedVertices=String(count);canvas.dataset.vertexCount=String(ids.count);color.needsUpdate=true;invalidate();
@@ -143,10 +144,10 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();dispose();onError();},{once:true});
  await load("male_lod1.glb");canvas.dataset.ready="true";resize();invalidate();
  if(!navigator.connection?.saveData)load("male_lod0.glb").then(()=>{if(!dead)canvas.dataset.detail="high";}).catch(err=>console.warn("High-detail model unavailable",err));
- return {update:recolor,focus(regionKey){
+ return {update:recolor,focus(regionKey,part,side,half){
  if(!mesh||!worldPoints||!regionKey)return;
- const bounds=new THREE.Box3();for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);if(info?.region===regionKey)bounds.expandByPoint(vec.fromArray(worldPoints,i*3));}
- if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),radius=Math.max(.22,size.length()/2);const delta=camera.position.clone().sub(controls.target).normalize();const halfFov=THREE.MathUtils.degToRad(camera.fov/2),horizontal=Math.atan(Math.tan(halfFov)*camera.aspect);const distance=Math.max(controls.minDistance,Math.min(controls.maxDistance,1.35*radius/Math.sin(Math.min(halfFov,horizontal))));controls.target.copy(center);camera.position.copy(center).addScaledVector(delta,distance);controls.update();canvas.dataset.focusedArea=regionKey;invalidate();
+ const bounds=new THREE.Box3();for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);if(info?.region===regionKey&&selectedMask?.[i])bounds.expandByPoint(vec.fromArray(worldPoints,i*3));}
+ if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),radius=Math.max(["hand","foot","neck_head"].includes(regionKey)?.11:.19,size.length()/2);const delta=camera.position.clone().sub(controls.target).normalize();const sign=side==="right"?-1:1;if(regionKey==="foot")delta.set(part==="side_of_foot"?sign:.25*sign,.65,.8).normalize();else if(["side_neck","behind_ear","side","ribs","hip","side_of_hand"].includes(part))delta.set(sign,.12,part==="behind_ear"?-.45:.45).normalize();else if(half==="outer")delta.set(sign,.08,.45).normalize();else if(half==="inner")delta.set(-sign*.45,.08,.9).normalize();const halfFov=THREE.MathUtils.degToRad(camera.fov/2),horizontal=Math.atan(Math.tan(halfFov)*camera.aspect);const distance=Math.max(controls.minDistance,Math.min(controls.maxDistance,1.35*radius/Math.sin(Math.min(halfFov,horizontal))));controls.target.copy(center);camera.position.copy(center).addScaledVector(delta,distance);controls.update();canvas.dataset.focusedArea=regionKey;invalidate();
  },view(v){delete canvas.dataset.focusedArea;currentView=v;camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();recolor();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
  }catch(err){dispose();throw err;}
 };

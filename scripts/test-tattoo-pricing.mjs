@@ -30,7 +30,8 @@ assert.match(api.booking(make("upper_arm",["black_grey"],{surface:"back"})).note
 for(const [region,part] of [["arm","half_sleeve"],["leg","half_leg_sleeve"]])for(const half of ["inner","outer"]){const p=make(part,["black_grey"],{region,half});assert.equal(api.estimate(p).numeric,true);assert.equal(api.estimate(p).provisional,true);assert.match(api.booking(p).notes,new RegExp("Full-length "+half+" side"));assert.deepEqual(api.fromHash("#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)})).project,p);}
 assert.equal(api.estimate(make("half_sleeve",["black_grey"],{half:"invalid"})),null);
 for(const region of api.REGIONS)for(const [part] of region.placements){if(part==="other")continue;for(const style of ["black_grey","colour"]){const p=make(part,[style],{region:region.key,half:api.half(part)?"lower":undefined});const result=api.estimate(p);assert.ok(result?.numeric,region.key+"|"+part+"|"+style);assert.ok(result.hours[0]>0&&result.hours[1]>=result.hours[0]);}}
-let combinations=24;
+for(const [region,part] of [["chest_ribs","ribs"],["chest_ribs","collarbone"],["back","shoulder_blade"],["stomach_sides","side"],["stomach_sides","hip"],["neck_head","side_neck"],["neck_head","behind_ear"]]){const p=make(part,["black_grey"],{region,side:"left"});assert.ok(api.sided(p.areas[0]));assert.ok(api.estimate(p).numeric);assert.equal(api.estimate(make(part,["black_grey"],{region,side:"both"})).numeric,false);}
+let combinations=31;
 // Mutate all bands together to catch stale visible FAQ answers and JSON-LD.
 const change = {
   hourly: 170,

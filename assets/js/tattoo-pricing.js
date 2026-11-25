@@ -71,6 +71,8 @@ const halves={upper:"Upper half · wraparound",lower:"Lower half · wraparound",
 const longitudinal=h=>h==="outer"||h==="inner";
 const surfaces={front:"Front surface",back:"Back surface",inner:"Inner surface",outer:"Outer surface",unsure:"Not decided"};
 const half=k=>["half_sleeve","half_leg_sleeve"].includes(k);
+const sidedPlacement=k=>["one_side_chest","collarbone","ribs","shoulder_blade","side","hip","side_neck","behind_ear"].includes(k);
+const sided=a=>paired(a.region)||a.placements.some(sidedPlacement);
 const wraps=k=>["forearm","upper_arm","thigh","calf","shin"].includes(k);
 function valid(p){
  if(!p||!Array.isArray(p.areas)||!p.areas.length||p.areas.length>REGIONS.length||new Set(p.areas.map(a=>a?.region)).size!==p.areas.length||!validList(p.styles,STYLES.map(x=>x[0]))||(p.styles.includes("not_sure")&&p.styles.length>1))return false;
@@ -80,7 +82,7 @@ function valid(p){
  if(!validList(a.placements,r.placements.map(x=>x[0])))return false;
  if(a.placements.includes("other")&&(typeof a.other!=="string"||!a.other.trim()||a.other.length>120))return false;
  if(a.placements.filter(k=>r.placements.find(x=>x[0]===k)?.[2]).length>1)return false;
- if((paired(a.region)||a.placements.includes("one_side_chest"))&&!Object.hasOwn(sides,a.side))return false;
+ if(sided(a)&&!Object.hasOwn(sides,a.side))return false;
  if(a.placements.some(half)&&a.half!==undefined&&!Object.hasOwn(halves,a.half))return false;
  return a.placements.length!==1||large(r,a.placements[0])||(Object.hasOwn(scales,a.scale)&&(!wraps(a.placements[0])||a.scale!=="area"||Object.hasOwn(coverage,a.coverage)));
  });
@@ -92,7 +94,7 @@ function estimateSingle(p){
  if(p.areas.some(a=>a.work.some(w=>w!=="new")))return review("Existing ink needs individual assessment. Send photos of the tattoo and surrounding skin.");
  if(p.areas.length!==1)return review("Multiple areas need an individual plan to avoid counting overlapping work twice.");
  const a=p.areas[0],r=regionByKey(a.region),part=a.placements.find(k=>r.placements.find(x=>x[0]===k)?.[2])||a.placements[0];
- if(paired(a.region)&&a.side==="both"||a.placements.includes("one_side_chest")&&a.side==="both")return review("The FAQ ranges refer to one limb. Both limbs need an individual plan.");
+ if(sided(a)&&a.side==="both")return review("This range is for one side. Both sides need an individual plan.");
  if(a.placements.length!==1)return review("Combined placements need a personalised estimate.");
  let hours,sessions,open=false,reason,provisional=false;
  if(["full_sleeve","full_leg_sleeve"].includes(part)){
@@ -152,6 +154,6 @@ function booking(p){
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
 function budgetPlan(amount){if(!Number.isFinite(amount)||amount<0)return null;const hours=Math.floor(amount/rules.hourly*4)/4;return {hours,fullDays:Math.floor(hours/rules.day),remainderHours:hours%rules.day,unused:Math.round((amount-hours*rules.hourly)*100)/100};}
-const api={rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,longitudinal,surfaces,valid,estimate,booking,fromHash};
+const api={rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,sided,sidedPlacement,wraps,half,halves,longitudinal,surfaces,valid,estimate,booking,fromHash};
 if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);

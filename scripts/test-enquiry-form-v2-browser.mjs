@@ -368,6 +368,8 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     }
     console.log('ALL ZONE AUDIT '+JSON.stringify(audit));
     assert.ok(audit.every(x=>x.vertices>0&&x.price.includes('£')),JSON.stringify(audit.filter(x=>!x.vertices||!x.price.includes('£'))));
+    for(const key of ['chest_ribs|ribs','chest_ribs|collarbone','back|shoulder_blade','stomach_sides|side','stomach_sides|hip','neck_head|side_neck','neck_head|behind_ear']){const item=audit.find(x=>x.placement===key);assert.ok(item.regions.every(x=>!x.endsWith('|right')),key+' must highlight one side');}
+    assert.ok(audit.find(x=>x.placement==='back|lower_back').regions.includes('spine|centre'),'lower back includes the lower spine');
     await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   }
   await page.getByRole('button',{name:'2D',exact:true}).click();
