@@ -307,8 +307,18 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     await page.getByRole('button',{name:'Zoom in',exact:true}).click();
     await page.getByRole('button',{name:'Back',exact:true}).click();
     await page.getByRole('button',{name:'Front',exact:true}).click();
+    await page.getByRole('button',{name:'Forearm',exact:true}).click();
+    const model=page.locator('.calc-webgl');
+    const fraction=async()=>Number(await model.getAttribute('data-selected-vertices'))/Number(await model.getAttribute('data-vertex-count'));
+    const large=await fraction();assert.ok(large>0);
+    await page.getByRole('button',{name:'Small piece',exact:true}).click();
+    const small=await fraction();assert.ok(small>0&&small<large,'small piece should highlight less skin');
+    assert.equal(await page.locator('.calc-result').innerText(),'£420–£560');
     await page.getByRole('button',{name:'Full sleeve',exact:true}).click();
     assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+    const full=await fraction();
+    await page.locator('#calc-arm-length').fill('2');
+    const partial=await fraction();assert.ok(partial>0&&partial<full,'3/4 sleeve must highlight less skin than full sleeve');
     await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   }
   await page.getByRole('button',{name:'2D',exact:true}).click();
@@ -340,6 +350,11 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   assert.match(await page.locator('#calc-estimate').innerText(),/tattooed independently/);
   await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   await page.getByRole('button',{name:'Forearm',exact:true}).click();
+  await page.getByRole('button',{name:'Small piece',exact:true}).click();
+  assert.ok(await page.locator('.calc-figure .hit.on.small').count()>0);
+  assert.equal(await page.locator('.calc-result').innerText(),'£420–£560');
+  await page.getByRole('button',{name:'Area-sized',exact:true}).click();
+  assert.equal(await page.locator('.calc-figure .hit.on.small').count(),0);
   await page.getByRole('button',{name:'Wraparound',exact:true}).click();
   await page.getByRole('button',{name:'Estimate a lower half sleeve instead (elbow to wrist)',exact:true}).click();
   assert.equal(await page.locator('.calc-result').innerText(),'£2,940–£3,920');

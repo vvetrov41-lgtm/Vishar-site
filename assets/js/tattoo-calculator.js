@@ -65,12 +65,22 @@ function selectedArea(area,side){
  if(a.placements.length===1&&part==="forearm"&&a.coverage==="panel"&&a.surface!=="unsure")return key[1]==="forearm"&&area===(a.surface==="inner"?"inner_forearm":"outer_forearm");
  return a.placements.includes(key[1])||(key[0]==="other"&&a.other==="Glutes");
 }
+function coverageAt(area,side){
+ const key=map[area],a=key&&areaFor(key[0]);if(!a||!selectedArea(area,side))return null;
+ return {region:a.region,part:a.placements[0],side:a.side,scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area"};
+}
+function paint2D(path){
+ const area=path.dataset.area,side=path.dataset.paired==="true"?path.dataset.side:null,info=coverageAt(area,side);
+ path.classList.toggle("on",!!info);
+ path.classList.toggle("small",info?.scale==="small");
+ path.classList.toggle("partial",info?.part==="three_quarter_sleeve"&&["inner_forearm","outer_forearm"].includes(area));
+}
 function load3D(){
  if(modelLoad)return modelLoad;
  modelHost??=node("div","calc-model-host");
  modelHost.textContent="Loading 3D model…";
  const script=document.createElement("script");script.src=new URL("viewer.js",assetBase).href;
- modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,coverage(){const a=areaFor("arm");return a?{part:a.placements[0],side:a.side,scale:a.scale}:null;},onPick:pickZone,onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
+ modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,coverage:coverageAt,onPick:pickZone,onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
  return modelLoad;
 }
 function atlas(parent,interactive=true){
@@ -86,13 +96,15 @@ function atlas(parent,interactive=true){
  if(modelFailed)box.append(node("p","calc-map-hint","3D could not load. Tap 3D to retry, or use the 2D map."));
  const ns="http://www.w3.org/2000/svg",svg=document.createElementNS(ns,"svg");svg.setAttribute("class","calc-figure");svg.setAttribute("viewBox","0 0 420 1030");svg.setAttribute("aria-hidden","true");
  function add(tag,attrs,to=svg){const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);to.append(e);return e;}
- const defs=add("defs",{}),trunk=add("clipPath",{id:"calc-trunk"},defs),arm=add("clipPath",{id:"calc-arm"},defs);add("path",{d:geo.TRUNK},trunk);add("path",{d:geo.ARM},arm);
+ const defs=add("defs",{}),trunk=add("clipPath",{id:"calc-trunk"},defs),arm=add("clipPath",{id:"calc-arm"},defs);
+ const patch=add("clipPath",{id:"calc-small-patch",clipPathUnits:"objectBoundingBox"},defs);add("ellipse",{cx:.5,cy:.5,rx:.32,ry:.26},patch);
+ const half=add("clipPath",{id:"calc-partial-patch",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:0,y:0,width:1,height:.5},half);add("path",{d:geo.TRUNK},trunk);add("path",{d:geo.ARM},arm);
  const mask=add("mask",{id:"calc-mask",maskUnits:"userSpaceOnUse",x:geo.VIEW.x,y:geo.VIEW.y,width:geo.VIEW.w,height:geo.VIEW.h},defs);add("path",{d:geo.TRUNK,fill:"#fff"},mask);add("path",{d:geo.ARM,fill:"#000"},mask);add("path",{d:geo.ARM,fill:"#000",transform:geo.MIRROR_TRANSFORM},mask);
  add("path",{d:geo.TRUNK,class:"figure-fill"});for(const mirror of [false,true])add("path",{d:geo.ARM,class:"figure-fill",...(mirror?{transform:geo.MIRROR_TRANSFORM}:{})});
- function selected(z,side){return selectedArea(z.id,z.paired?side:null);}
  for(const z of geo.REGIONS[view]){const key=map[z.id];if(!key)continue;for(const mirror of z.paired?[false,true]:[false]){
  const side=view==="front"?(mirror?"left":"right"):(mirror?"right":"left"),outer=add("g",z.part==="trunk"?{mask:"url(#calc-mask)"}:{}),g=add("g",{...(mirror?{transform:geo.MIRROR_TRANSFORM}:{}),"clip-path":"url(#calc-"+z.part+")"},outer);
- const path=add("path",{d:z.d,class:"hit"+(selected(z,side)?" on":""),"data-area":z.id,"data-side":side,"data-paired":String(z.paired)},g);
+ const path=add("path",{d:z.d,class:"hit","data-area":z.id,"data-side":side,"data-paired":String(z.paired)},g);paint2D(path);
+ add("path",{d:z.d,class:"calc-patch-small","clip-path":"url(#calc-small-patch)"},g);add("path",{d:z.d,class:"calc-patch-partial","clip-path":"url(#calc-partial-patch)"},g);
  if(interactive)path.onclick=()=>{start();pickZone(z.id,side);};
  }}
  const d=geo.FIGURE_DETAIL[view];for(const line of d.centre)add("path",{d:line,class:"figure-line"});for(const mirror of [false,true])for(const part of ["trunk","arm"]){const g=add("g",{...(mirror?{transform:geo.MIRROR_TRANSFORM}:{}),"clip-path":"url(#calc-"+part+")"});for(const line of d[part])add("path",{d:line,class:"figure-line"},g);}
@@ -170,12 +182,14 @@ function render(focus){
  if(a.region==="arm"&&lengthSteps.some(x=>x[0]===part)){
  const length=node("div","calc-length"),label=node("label","calc-label","Arm coverage"),track=node("input","calc-range");track.type="range";track.min="0";track.max="3";track.step="1";track.value=String(lengthSteps.findIndex(x=>x[0]===part));track.id="calc-arm-length";label.htmlFor=track.id;track.setAttribute("aria-valuetext",lengthSteps[Number(track.value)][1]);
  const labels=node("div","calc-length-labels");for(const [key,name] of lengthSteps){const b=node("span","",name);b.dataset.active=String(key===part);labels.append(b);}
- track.oninput=()=>{const [key,name]=lengthSteps[Number(track.value)];track.setAttribute("aria-valuetext",name);Array.from(labels.children).forEach((el,i)=>el.dataset.active=String(i===Number(track.value)));choose("arm",key,a.side,a.surface);modelViewer?.update();body.querySelectorAll(".calc-figure .hit").forEach(el=>el.classList.toggle("on",selectedArea(el.dataset.area,el.dataset.paired==="true"?el.dataset.side:null)));updateResult();};track.onchange=()=>{render();$("calc-arm-length")?.focus({preventScroll:true});};length.append(label,track,labels);controls.append(length);
+ track.oninput=()=>{const [key,name]=lengthSteps[Number(track.value)];track.setAttribute("aria-valuetext",name);Array.from(labels.children).forEach((el,i)=>el.dataset.active=String(i===Number(track.value)));choose("arm",key,a.side,a.surface);modelViewer?.update();body.querySelectorAll(".calc-figure .hit").forEach(paint2D);updateResult();};track.onchange=()=>{render();$("calc-arm-length")?.focus({preventScroll:true});};length.append(label,track,labels);controls.append(length);
  }
  if(api.half(part))group(controls,"Half sleeve",[["upper","Upper half"],["lower","Lower half"]],a.half,k=>a.half=k);
  if(part&&!api.large(api.regionByKey(a.region),part)){
  group(controls,"Size",[["small","Small piece"],["area","Area-sized"]],a.scale,k=>{a.scale=k;a.coverage="panel";});
+ if(a.scale==="small")controls.append(node("p","calc-help","Highlighted patch is illustrative, not a measurement or a fixed tattoo size."));
  if(a.scale==="area"&&api.wraps(part))group(controls,"Coverage",[["panel","One side"],["wrap","Wraparound"]],a.coverage,k=>a.coverage=k);
+ if(part==="forearm"&&a.scale==="area"&&a.coverage==="panel")group(controls,"Surface",[["outer","Outer"],["inner","Inner"],["unsure","Not sure"]],a.surface,k=>a.surface=k);
  if(part==="forearm"&&a.scale==="area"&&a.coverage==="wrap"){const lower=node("button","calc-ink","Estimate a lower half sleeve instead (elbow to wrist)");lower.type="button";lower.onclick=()=>{const s=choose("arm","half_sleeve",a.side);s.half="lower";render();};controls.append(lower);}
  }
  }

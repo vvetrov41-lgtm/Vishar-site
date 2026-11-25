@@ -20,11 +20,51 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const groups=new Map(manifest.groups.map(g=>[g.id,g]));
  const regions=new Map(manifest.regions.map(v=>{const g=groups.get(v.group),def=BASES[g.base];if(!def)throw Error("Unmapped model region: "+v.key);const area=typeof def.area==="string"?def.area:(def.area[v.facet]||def.area["*"]);if(!area)throw Error("Unmapped model facet: "+v.key);return [v.id,{...v,area,side:g.side==="l"?"left":g.side==="r"?"right":null}];}));
  const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
- let color,ids,positions,world;
+ let color,ids,positions,world,worldPoints,forearmBounds={};let currentView="front",lastPick=null;
  const dark=new THREE.Color("#454545"),light=new THREE.Color("#f1f1f1"),vec=new THREE.Vector3();
- function recolor(){if(!geometry||!ids)return;for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i)));let side=region?.side;
- if(region&&!side&&region.area==="chest"){vec.fromBufferAttribute(positions,i).applyMatrix4(world);side=vec.x>0?"left":"right";}
- let active=region&&isSelected(region.area,side);const selection=coverage?.();if(active&&selection?.part==="three_quarter_sleeve"&&(region.area==="inner_forearm"||region.area==="outer_forearm")){vec.fromBufferAttribute(positions,i).applyMatrix4(world);active=vec.y>0.77;}const c=active?light:dark;color.setXYZ(i,c.r,c.g,c.b);}color.needsUpdate=true;invalidate();}
+ function sideFor(region,i){if(region.side)return region.side;if(region.area==="chest")return worldPoints[i*3]>0?"left":"right";return null;}
+ function cacheGeometry(){
+ worldPoints=new Float32Array(ids.count*3);forearmBounds={};
+ for(let i=0;i<ids.count;i++){vec.fromBufferAttribute(positions,i).applyMatrix4(world);worldPoints.set([vec.x,vec.y,vec.z],i*3);
+ const region=regions.get(Math.round(ids.getX(i)));if(region.area==="inner_forearm"||region.area==="outer_forearm"){const b=forearmBounds[region.side]??=[Infinity,-Infinity];b[0]=Math.min(b[0],vec.y);b[1]=Math.max(b[1],vec.y);}}
+ }
+ function recolor(){
+ if(!geometry||!ids||!worldPoints)return;
+ const patches=new Map(),candidates=new Map();
+ const keyFor=(info,side)=>info.region+"|"+(side||"centre");
+ // Choose one anatomical surface for a small design, preferring the last tapped surface.
+ for(let i=0;i<ids.count;i++){
+ const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
+ if(info?.scale!=="small")continue;
+ const k=keyFor(info,side),score=(lastPick?.id===region.id&&lastPick.side===side?100:0)+(currentView==="front"?region.normal[2]:-region.normal[2]);
+ const before=candidates.get(k);if(!before||score>before.score)candidates.set(k,{region,side,score});
+ }
+ for(const [k,{region,side}] of candidates){
+ const center=lastPick?.id===region.id&&lastPick.side===side?lastPick.point:region.center;
+ const radius=Math.max(.016,Math.min(.065,region.radius*.43));
+ patches.set(k,{id:region.id,center,radius,min:Infinity});
+ }
+ for(let i=0;i<ids.count;i++){
+ const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
+ if(info?.scale!=="small")continue;
+ const patch=patches.get(keyFor(info,side));if(!patch||patch.id!==region.id)continue;
+ const d=Math.hypot(worldPoints[i*3]-patch.center[0],worldPoints[i*3+1]-patch.center[1],worldPoints[i*3+2]-patch.center[2]);
+ patch.min=Math.min(patch.min,d);
+ }
+ let count=0;
+ for(let i=0;i<ids.count;i++){
+ const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
+ let active=!!info&&isSelected(region.area,side);
+ if(active&&info.part==="three_quarter_sleeve"&&(region.area==="inner_forearm"||region.area==="outer_forearm")){const b=forearmBounds[region.side];active=!!b&&worldPoints[i*3+1]>=(b[0]+b[1])/2;}
+ if(active&&info.scale==="small"){
+ const patch=patches.get(keyFor(info,side));
+ active=!!patch&&patch.id===region.id&&Math.hypot(worldPoints[i*3]-patch.center[0],worldPoints[i*3+1]-patch.center[1],worldPoints[i*3+2]-patch.center[2])<=Math.max(patch.radius,patch.min+.008);
+ }
+ if(active)count++;
+ const c=active?light:dark;color.setXYZ(i,c.r,c.g,c.b);
+ }
+ canvas.dataset.selectedVertices=String(count);canvas.dataset.vertexCount=String(ids.count);color.needsUpdate=true;invalidate();
+ }
  async function load(file){const gltf=await loader.loadAsync(new URL(file,base).href);if(dead){gltf.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});return;}
  let src;gltf.scene.traverse(o=>{if(o.isMesh&&!src)src=o;});if(!src||!src.geometry.attributes._data)throw Error("Missing region-labelled mesh");src.updateWorldMatrix(true,false);const next=src.geometry,nextIds=next.attributes._data;
  for(let i=0;i<nextIds.count;i++)if(!regions.has(Math.round(nextIds.getX(i))))throw Error("Invalid GLB region id");
@@ -32,18 +72,18 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  geometry=next;ids=nextIds;positions=geometry.attributes.position;world=src.matrixWorld.clone();src.material.dispose();
  color=new THREE.BufferAttribute(new Float32Array(ids.count*3),3);geometry.setAttribute("color",color);
  material??=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.78,metalness:0});
- mesh=new THREE.Mesh(geometry,material);mesh.matrixAutoUpdate=false;mesh.matrix.copy(world);scene.add(mesh);mesh.updateMatrixWorld(true);recolor();invalidate();
+ mesh=new THREE.Mesh(geometry,material);mesh.matrixAutoUpdate=false;mesh.matrix.copy(world);scene.add(mesh);mesh.updateMatrixWorld(true);cacheGeometry();recolor();invalidate();
  }
  const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();let down=null,multi=false;
  canvas.addEventListener("pointerdown",e=>{if(!e.isPrimary){multi=true;down=null;return;}multi=false;down={id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now()};});
  canvas.addEventListener("pointercancel",()=>{down=null;multi=true;});
- canvas.addEventListener("pointerup",e=>{const d=down;down=null;if(!d||multi||d.id!==e.pointerId||Math.hypot(e.clientX-d.x,e.clientY-d.y)>8||performance.now()-d.t>500||!mesh)return;const b=canvas.getBoundingClientRect();ndc.set((e.clientX-b.left)/b.width*2-1,-((e.clientY-b.top)/b.height)*2+1);ray.setFromCamera(ndc,camera);const hit=ray.intersectObject(mesh,false)[0];if(!hit)return;const region=regions.get(Math.round(ids.getX(hit.face.a)));if(region)onPick(region.area,region.side||(hit.point.x>0?"left":"right"));});
+ canvas.addEventListener("pointerup",e=>{const d=down;down=null;if(!d||multi||d.id!==e.pointerId||Math.hypot(e.clientX-d.x,e.clientY-d.y)>8||performance.now()-d.t>500||!mesh)return;const b=canvas.getBoundingClientRect();ndc.set((e.clientX-b.left)/b.width*2-1,-((e.clientY-b.top)/b.height)*2+1);ray.setFromCamera(ndc,camera);const hit=ray.intersectObject(mesh,false)[0];if(!hit)return;const region=regions.get(Math.round(ids.getX(hit.face.a)));if(region){const side=region.side||(region.area==="chest"?(hit.point.x>0?"left":"right"):null);lastPick={id:region.id,side,point:hit.point.toArray()};onPick(region.area,side||(hit.point.x>0?"left":"right"));}});
  function resize(){const w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);invalidate();}
  observer=new ResizeObserver(resize);observer.observe(host);
  visibleObserver=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible){resize();invalidate();}});visibleObserver.observe(host);
  canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();dispose();onError();},{once:true});
  await load("male_lod1.glb");canvas.dataset.ready="true";resize();invalidate();
- if(!navigator.connection?.saveData)load("male_lod0.glb").catch(err=>console.warn("High-detail model unavailable",err));
- return {update:recolor,view(v){camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
+ if(!navigator.connection?.saveData)load("male_lod0.glb").then(()=>{if(!dead)canvas.dataset.detail="high";}).catch(err=>console.warn("High-detail model unavailable",err));
+ return {update:recolor,view(v){currentView=v;camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();recolor();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
  }catch(err){dispose();throw err;}
 };
