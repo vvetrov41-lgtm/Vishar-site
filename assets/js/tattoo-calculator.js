@@ -68,8 +68,9 @@ function selectedArea(area,side){
 }
 function coverageAt(area,side,model=false){
  const key=map[area],a=key&&areaFor(key[0]);if(!a)return null;
- const panel=model&&a.placements.length===1&&a.coverage==="panel"&&a.scale==="area"&&(!side||a.side===side||a.side==="both")&&((a.placements[0]==="forearm"&&key[1]==="forearm")||(a.placements[0]==="upper_arm"&&["upper_arm","inner_bicep"].includes(key[1])));
+ const panel=model&&a.placements.length===1&&["panel","wrap"].includes(a.coverage)&&a.scale==="area"&&(!side||a.side===side||a.side==="both")&&((a.placements[0]==="forearm"&&key[1]==="forearm")||(a.placements[0]==="upper_arm"&&["upper_arm","inner_bicep"].includes(key[1])));
  if(!panel&&!selectedArea(area,side))return null;
+ if(!model&&a.placements.length===1&&a.coverage==="panel"&&["forearm","upper_arm"].includes(a.placements[0])&&["front","back"].includes(a.surface)&&a.surface!==view)return null;
  return {region:a.region,part:a.placements[0],side:a.side,coverage:a.coverage,surface:a.surface,scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area",single:a.placements.length===1};
 }
 function paint2D(path){
