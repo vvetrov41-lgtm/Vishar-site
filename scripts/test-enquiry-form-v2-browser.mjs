@@ -467,6 +467,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   assert.deepEqual(details.styles,['colour']);
   assert.doesNotMatch(details.sizeNotes,/£/);
   assert.match(submission.idea,/£7,840–£9,800/);
+  assert.match(submission.idea,/Placement and coverage: Full sleeve/);
   console.log('Calculator assets, decoded bytes:',bytes);
   await context.close();
 });
@@ -495,9 +496,17 @@ await test('Calculator mobile optional booking dialog and live transfer', async 
  assert.equal(await dialog.isVisible(),false);
  assert.match(await page.locator('#enquiry-v2').getByLabel(/^Exact placement and approximate size/).inputValue(),/Right/);
  await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Keep this idea');
- await page.getByRole('link',{name:'Open calculator',exact:true}).click();
+ assert.match(await page.locator('.ef-calculator-price').innerText(),/£5,880–£7,840/);
+ await page.getByRole('link',{name:'Edit selection',exact:true}).click();
  await dialog.getByRole('button',{name:'Colour',exact:true}).click();
  await page.getByRole('button',{name:'Close calculator',exact:true}).click();
+ assert.equal(await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).inputValue(),'Keep this idea');
+ assert.match(await page.locator('.ef-calculator-price').innerText(),/£5,880–£7,840/);
+ await page.getByRole('link',{name:'Edit selection',exact:true}).click();
+ assert.match(await dialog.locator('.calc-result').innerText(),/£5,880–£7,840/);
+ await dialog.getByRole('button',{name:'Colour',exact:true}).click();
+ await dialog.getByRole('button',{name:'Apply selection to enquiry (optional)',exact:true}).click();
+ assert.match(await page.locator('.ef-calculator-price').innerText(),/£7,840–£9,800/);
  assert.equal(await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).inputValue(),'Keep this idea');
  await context.close();
 });

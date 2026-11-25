@@ -225,8 +225,8 @@
 
   var STEPS = [
     { id: 'placement', title: 'Placement', visible: function () { return true; } },
-    { id: 'specific', title: 'Details', visible: function () { return state.regions.some(function (k) { return k !== 'other'; }); } },
-    { id: 'existing', title: 'Existing work', visible: function () { return true; } },
+    { id: 'specific', title: 'Details', visible: function () { return !activeCalculatorGuide() && state.regions.some(function (k) { return k !== 'other'; }); } },
+    { id: 'existing', title: 'Existing work', visible: function () { return !activeCalculatorGuide(); } },
     { id: 'design', title: 'Design', visible: function () { return true; } },
     { id: 'images', title: 'Images', visible: function () { return true; } },
     { id: 'discovery', title: 'Discovery', visible: function () { return true; } },
@@ -349,6 +349,13 @@
 
   function renderPlacement() {
     var wrap = el('div');
+    var guide = activeCalculatorGuide();
+    if (guide) {
+      wrap.appendChild(calculatorCard(guide));
+      wrap.appendChild(el('button',{type:'button',className:'ef-link-button ef-manual-placement',text:'Choose from the list instead',onclick:function(){calculatorGuide=null;render(false);}}));
+      return wrap;
+    }
+    if (window.TattooPricing) wrap.appendChild(calculatorCard(null));
     var choices = REGIONS.map(function (region) {
       return choice('checkbox', 'region', region.key, region.label, state.regions.indexOf(region.key) >= 0, function (checked) {
         if (checked) { if (state.regions.indexOf(region.key) < 0) state.regions.push(region.key); }
@@ -492,8 +499,9 @@
       });
     });
     styleGroup = fieldset('Style', 'Black & Grey and Colour can be combined.', choices);
-    wrap.appendChild(styleGroup);
-    wrap.appendChild(textField({ name: 'idea', label: 'Your tattoo idea', multiline: true, max: LIMITS.idea, value: state.idea, required: true, autocapitalize: 'sentences', placeholder: 'Subject, mood, composition and anything personal that matters.', onInput: function (v) { state.idea = v; } }));
+    if (activeCalculatorGuide()) wrap.appendChild(calculatorCard(activeCalculatorGuide()));
+    else wrap.appendChild(styleGroup);
+    wrap.appendChild(textField({ name: 'idea', label: 'Your tattoo idea', multiline: true, max: ideaLimit(), value: state.idea, required: true, autocapitalize: 'sentences', placeholder: 'Subject, mood, composition and anything personal that matters.', onInput: function (v) { state.idea = v; } }));
     wrap.appendChild(textField({ name: 'sizeNotes', label: 'Exact placement and approximate size', max: LIMITS.sizeNotes, value: state.sizeNotes, placeholder: 'For example: outer forearm, about 20 cm', onInput: function (v) { state.sizeNotes = v; } }));
     if (hasExistingWork()) {
       wrap.appendChild(textField({ name: 'existingDetails', label: 'Existing tattoo details', multiline: true, max: LIMITS.existingDetails, value: state.existingDetails, placeholder: 'Age, size, how dark it is, what should change.', onInput: function (v) { state.existingDetails = v; } }));
@@ -748,7 +756,7 @@
       : 'Email ' + state.email.trim() + (state.phone.trim() ? '\nWhatsApp ' + state.phone.trim() : ''));
     var list = el('dl', { className: 'ef-summary' }, [
       summaryRow('Body areas', areaLines(), 'placement'),
-      summaryRow('Existing work', workLines(), 'existing'),
+      summaryRow('Existing work', workLines(), activeCalculatorGuide() ? 'placement' : 'existing'),
       summaryRow('Style', state.styles.map(function (s) { return labelOf(STYLES, s); }).join(', '), 'design'),
       summaryRow('Idea', state.idea.trim(), 'design'),
       state.sizeNotes.trim() ? summaryRow('Placement and size', state.sizeNotes.trim(), 'design') : null,
@@ -758,7 +766,8 @@
       summaryRow('Contact', contact, 'contact')
     ].filter(Boolean));
     wrap.appendChild(list);
-    if (calculatorGuide) wrap.appendChild(el('p',{className:'ef-note ef-note-visible',text:calculatorSummary() || 'Your project choices changed. The earlier calculator estimate is no longer applicable; Vladimir will confirm the budget.'}));
+    if (activeCalculatorGuide()) wrap.appendChild(calculatorCard(activeCalculatorGuide()));
+    else if (calculatorGuide) wrap.appendChild(el('p',{className:'ef-note ef-note-visible',text:'Your project choices changed. The earlier calculator estimate is no longer applicable; Vladimir will confirm the budget.'}));
     if (preflightState.messages && preflightState.messages.length) wrap.appendChild(preflightNotice());
     uid += 1;
     var consentId = 'ef-privacy-' + uid;
@@ -836,6 +845,7 @@
     design: function () {
       if (!state.styles.length) return problem('Please choose a style or Not sure yet.', 'input[name="style"]');
       if (!state.idea.trim()) return problem('Please describe your tattoo idea.', 'textarea[name="idea"]');
+      if (state.idea.trim().length > ideaLimit()) return problem('Please shorten your idea slightly so the full calculator selection can be included.', 'textarea[name="idea"]');
       return null;
     },
     images: function () {
@@ -894,12 +904,33 @@
   function calculatorSignature() {
     return JSON.stringify({areas:projectDetails().areas.map(function(a){return {region:a.region,placements:a.placements.slice().sort(),work:a.work.slice().sort(),other:a.otherPlacement||''};}).sort(function(a,b){return a.region.localeCompare(b.region);}),styles:state.styles.slice().sort(),sizeNotes:state.sizeNotes.trim()});
   }
-  function calculatorSummary() {
-    if (!calculatorGuide || calculatorGuide.signature !== calculatorSignature()) return '';
-    var result = window.TattooPricing.estimate(calculatorGuide.project);
-    if (!result) return '';
-    return 'Initial calculator guide (not a quote)' + (result.provisional ? ' — provisional' : '') + ': ' + result.price + (result.numeric ? ' / ' + result.time + ' / ' + result.visits : '') + (result.coverUp ? '. Colour-realism timing used; possible touch-up after full healing excluded. Existing tattoo photos required for confirmation.' : '');
+  function activeCalculatorGuide() {
+    return calculatorGuide && window.TattooPricing && window.TattooPricing.valid(calculatorGuide.project) && calculatorGuide.signature === calculatorSignature() ? calculatorGuide : null;
   }
+  function calculatorCard(guide) {
+    var card = el('section',{className:'ef-calculator-card','aria-label':'Tattoo placement and estimate'});
+    if (guide) {
+      var selection=window.TattooPricing.booking(guide.project),result=selection.result;
+      card.appendChild(el('p',{className:'ef-calculator-label',text:'Your tattoo selection'}));
+      card.appendChild(el('strong',{className:'ef-calculator-price',text:result.numeric?result.price:'Individual estimate'}));
+      if(result.numeric) card.appendChild(el('p',{className:'ef-calculator-metrics',text:result.time+' · '+result.visits}));
+      card.appendChild(el('p',{className:'ef-calculator-details',text:selection.notesFull+' · '+state.styles.map(function(s){return labelOf(STYLES,s);}).join(', ')}));
+      card.appendChild(el('p',{className:'ef-help',text:result.coverUp?'A touch-up may be needed after full healing; not included.':'Final cost may vary depending on the design, size and placement.'}));
+    } else {
+      card.appendChild(el('h2',{className:'ef-calculator-title',text:'Choose on the body map'}));
+      card.appendChild(el('p',{className:'ef-help',text:'Select a placement, coverage and style. You can also use the list below if you are not sure.'}));
+    }
+    card.appendChild(el('a',{href:'/tattoo-price-calculator/',className:'ef-btn ef-btn-secondary ef-calculator-open','data-calculator-open':true,text:guide?'Edit selection':'Open calculator'}));
+    return card;
+  }
+  function calculatorSummary() {
+    var guide=activeCalculatorGuide(); if(!guide)return '';
+    var selection=window.TattooPricing.booking(guide.project);
+    var result=selection.result;
+    if (!result) return '';
+    return 'Initial calculator guide (not a quote)' + (result.provisional ? ' — provisional' : '') + ': ' + result.price + (result.numeric ? ' / ' + result.time + ' / ' + result.visits : '') + (result.coverUp ? '. Colour-realism timing used; possible touch-up after full healing excluded. Existing tattoo photos required for confirmation.' : '') + '\nPlacement and coverage: ' + selection.notesFull;
+  }
+  function ideaLimit() { var guide=calculatorSummary(); return LIMITS.idea-(guide?guide.length+2:0); }
   function basePayload(includeFiles) {
     var payload = new FormData();
     var context = shared.attribution();
@@ -911,7 +942,7 @@
       phone: state.phone.trim(),
       preferredReply: state.preferredReply,
       timing: state.timing.trim(),
-      idea: (function(){var idea=state.idea.trim(), guide=calculatorSummary();return guide && idea.length+guide.length+2<=LIMITS.idea ? idea+'\n\n'+guide : idea;})(),
+      idea: (function(){var idea=state.idea.trim(), guide=calculatorSummary();return guide ? idea+'\n\n'+guide : idea;})(),
       discoverySource: state.discovery,
       discoverySourceDetail: DISCOVERY_DETAIL[state.discovery] ? state.discoveryDetail.trim() : '',
       website: (q('#ef-website') || {}).value || '',
@@ -1129,6 +1160,8 @@
   buildShell();
   if (!STEPS.some(function (s) { return s.id === current && s.visible(); })) current = 'placement';
   render(false);
+  var calculatorOption = document.getElementById('booking-calculator-option');
+  if (calculatorOption && document.getElementById('booking-calculator-dialog') && typeof document.getElementById('booking-calculator-dialog').showModal==='function') calculatorOption.hidden=true;
   if (restored) {
     notice.hidden = false;
     notice.appendChild(el('span', { text: 'Your previous answers were restored. ' }));
@@ -1156,12 +1189,13 @@
     var imported = window.TattooPricing.booking(e.detail);
     if (!imported) return;
     var hasProject = state.regions.length || state.styles.length || state.sizeNotes.trim();
-    if (hasProject && !window.confirm('Replace the placement, size, style and existing-work choices with your calculator selections? Your idea, contact details and uploaded images will be kept. Please check whether existing tattoo details and photos still match the new placement.')) return;
-    applyEstimate(imported); notice.hidden = true; returnToReview = false; goTo('design');
+    if (hasProject && !activeCalculatorGuide() && !window.confirm('Replace the placement, size, style and existing-work choices with your calculator selections? Your idea, contact details and uploaded images will be kept. Please check whether existing tattoo details and photos still match the new placement.')) return;
+    var wasReview = current === 'review';
+    applyEstimate(imported); notice.hidden = true; returnToReview = wasReview; goTo('design');
     e.preventDefault();
   });
   window.addEventListener('pagehide', saveDraft);
 
   // Test hook: lets automated checks read the derived requirements.
-  root.visharEnquiryV2 = { needsDesign: needsDesign, needsExisting: needsExisting, state: function () { return state; } };
+  root.visharEnquiryV2 = { needsDesign: needsDesign, needsExisting: needsExisting, state: function () { return state; }, calculatorProject:function(){var g=activeCalculatorGuide();return g?JSON.parse(JSON.stringify(g.project)):null;} };
 })();

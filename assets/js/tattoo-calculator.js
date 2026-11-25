@@ -262,7 +262,7 @@ function stickySize(){const headerHeight=stickyHeader?.getBoundingClientRect().h
 stickySize();
 if("ResizeObserver" in window){const sizeObserver=new ResizeObserver(stickySize);sizeObserver.observe(stickyOutput);if(stickyHeader)sizeObserver.observe(stickyHeader);}
 if(embedded)scrollRoot.addEventListener("vishar-calculator-open",stickySize);
-if(embedded)body.closest("dialog").addEventListener("vishar-calculator-open",()=>{if(modelMode==="3d")load3D();});
+if(embedded)body.closest("dialog").addEventListener("vishar-calculator-open",e=>{const incoming=e.detail?.project;if(api.valid(incoming)){p.areas=JSON.parse(JSON.stringify(incoming.areas));p.styles=incoming.styles.slice();activeRegion=p.areas[0]?.region||"";combine=p.areas.length>1||p.areas.some(a=>a.placements.length>1);mode="project";view=activeRegion==="back"?"back":"front";modelViewer?.view(view);render();}if(modelMode==="3d")load3D();});
 // The embedded calculator loads WebGL only when its dialog is opened.
 window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});
 })();

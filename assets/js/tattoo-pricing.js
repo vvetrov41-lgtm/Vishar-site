@@ -163,7 +163,7 @@ function booking(p){
  const r=regionByKey(a.region),label=a.region==="other"?a.other:a.placements.map(k=>k==="other"?a.other:r.placements.find(x=>x[0]===k)[1]).join(", ");
  labels.push(label);notes.push([label,sides[a.side],a.placements.some(half)?halves[a.half]:null,a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null,a.placements.some(k=>["forearm","upper_arm","thigh"].includes(k))&&a.coverage==="panel"?surfaces[a.surface]:null].filter(Boolean).join(" / "));
  }
- return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
+ return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),notesFull:notes.join("; "),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
 function budgetPlan(amount){if(!Number.isFinite(amount)||amount<0)return null;const hours=Math.floor(amount/rules.hourly*4)/4;return {hours,fullDays:Math.floor(hours/rules.day),remainderHours:hours%rules.day,unused:Math.round((amount-hours*rules.hourly)*100)/100};}
