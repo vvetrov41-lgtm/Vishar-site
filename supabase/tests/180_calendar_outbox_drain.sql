@@ -122,6 +122,21 @@ select (public.schedule_appointment(
   'Synthetic calendar drain test'
 ) ->> 'appointment_id')::uuid as id;
 
+select is(
+  (select calendar_sync_status::text from public.sessions
+   where id = (select id from drain_appointment)),
+  'queued',
+  'an enabled Calendar integration reports queued before the provider runs'
+);
+select ok(not has_function_privilege(
+  'authenticated','crm_private.wake_booking_outbox()','EXECUTE'),
+  'a browser cannot invoke the private wake trigger function'
+);
+select ok(not has_function_privilege(
+  'service_role','crm_private.wake_booking_outbox()','EXECUTE'),
+  'even service-role callers cannot invoke the private wake trigger directly'
+);
+
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 
 create temporary table first_claim as

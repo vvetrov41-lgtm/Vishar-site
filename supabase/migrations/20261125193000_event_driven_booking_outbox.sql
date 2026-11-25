@@ -20,13 +20,21 @@ begin
   if new.status::text <> 'pending' then return new; end if;
   if new.kind::text in ('calendar_create','calendar_update','calendar_cancel') then
     v_lane := 'calendar';
-    -- The presence of a durable job means queued, not a disconnected account.
-    -- Preserve newer and terminal states; no provider identifiers are modified.
+    -- Match the connection-status RPC: only an enabled, exact artist route
+    -- means a new pending job is queued. Truly disconnected artists retain
+    -- not_connected. Preserve newer and terminal states.
     update public.sessions s
     set calendar_sync_status='queued'
     where s.id=new.session_id and s.artist_id=new.artist_id
       and s.calendar_sync_status='not_connected'
-      and s.calendar_version::text=new.payload->>'calendar_version';
+      and s.calendar_version::text=new.payload->>'calendar_version'
+      and exists (
+        select 1 from public.artist_integrations i
+        join public.artists a on a.id=i.artist_id
+        where i.artist_id=s.artist_id and i.is_enabled and a.is_active
+          and i.integration_type='calendar' and i.provider='google'
+          and i.integration_key='google_calendar_'||a.slug
+      );
   elsif new.dedupe_key like '%:booking_card:%' then
     v_lane := case new.kind::text
       when 'approved_email' then 'email'
@@ -58,12 +66,12 @@ begin
     v_signature := encode(extensions.hmac(
       convert_to('v1:'||v_lane||':'||v_due_ms||':'||v_issued_ms,'UTF8'),
       decode(v_key,'hex'),'sha256'),'hex');
-    perform net.http_post(
-      url := 'https://outbox-wake.vishartattoo.com/internal/outbox/wake',
-      body := jsonb_build_object('lane',v_lane,'due_ms',v_due_ms,'issued_ms',v_issued_ms),
-      headers := jsonb_build_object('Content-Type','application/json','x-outbox-wake-signature',v_signature),
-      timeout_milliseconds := 5000
-    );
+    -- Keep optional extension references out of static function resolution:
+    -- local CI and inactive installations do not require pg_net.
+    execute 'select net.http_post(url := $1, body := $2, headers := $3, timeout_milliseconds := 5000)'
+      using 'https://outbox-wake.vishartattoo.com/internal/outbox/wake'::text,
+        jsonb_build_object('lane',v_lane,'due_ms',v_due_ms,'issued_ms',v_issued_ms),
+        jsonb_build_object('Content-Type','application/json','x-outbox-wake-signature',v_signature);
   exception when others then
     -- An optional wake cannot roll back a real booking. The scheduled drain
     -- will process the unchanged outbox row even on extension or network failure.
