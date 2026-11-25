@@ -100,3 +100,15 @@ html:not([data-enquiry-form="v2"]) #enquiry-v2 { display: none !important; }
 .ef-calculator-card{display:grid;gap:.45rem;border:1px solid rgba(255,255,255,.16);border-radius:1rem;background:rgba(255,255,255,.035);padding:1rem;margin:0 0 1rem;min-width:0}.ef-calculator-title{font-size:1.1rem;font-weight:600;margin:0}.ef-calculator-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:#b5b5b5;margin:0}.ef-calculator-price{font-size:clamp(1.25rem,5vw,1.8rem);line-height:1.15;overflow-wrap:anywhere}.ef-calculator-metrics,.ef-calculator-details{font-size:.88rem;color:#ddd;line-height:1.45;margin:0;overflow-wrap:anywhere}.ef-calculator-card .ef-help{margin:0}.ef-calculator-open{display:flex;justify-content:center;align-items:center;min-height:44px;margin-top:.25rem;text-decoration:none}.ef-manual-placement{min-height:44px;margin-bottom:.75rem}#booking-calculator-option[hidden]{display:none!important}
 
 .ef-placement-options{border:1px solid rgba(255,255,255,.15);border-radius:1rem;padding:.7rem .85rem;margin:1rem 0}.ef-placement-options>summary{min-height:44px;cursor:pointer;align-content:center;font-weight:500}.ef-placement-options[open]>summary{margin-bottom:.7rem}.ef-placement-options .ef-question{font-size:1rem;margin-top:1rem}.ef-placement-options .ef-help{font-size:.85rem}.ef-body .ef-calculator-card{margin-top:.8rem}
+
+/* Keep the first mandatory choice above the fold on small phones. */
+@media (max-width: 420px) {
+  html[data-enquiry-form="v2"] #main-content > div:first-child { padding-top: 4.25rem; }
+  html[data-enquiry-form="v2"] #main-content > header { padding-top: .75rem; padding-bottom: 1rem; }
+  html[data-enquiry-form="v2"] #main-content > header .hero-title { font-size: 1.5rem; line-height: 1.2; margin-bottom: .4rem; }
+  #enquiry-v2 .ef-form { padding-top: .85rem; }
+  #enquiry-v2 .ef-progress { margin-bottom: .65rem; }
+  #enquiry-v2 .ef-section { margin-bottom: .6rem; }
+  #enquiry-v2 .ef-question { font-size: 1.15rem; }
+  #enquiry-v2 .ef-help { margin-bottom: .65rem; }
+}
