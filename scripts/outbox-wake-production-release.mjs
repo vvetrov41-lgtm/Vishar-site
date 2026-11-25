@@ -1,3 +1,4 @@
+import {queueOwnedBy} from './outbox-wake-queue-inventory.mjs';
 import {readFileSync,writeFileSync} from 'node:fs';
 const NAME='vishar-outbox-wake-production';
 const HOST='outbox-wake.vishartattoo.com';
@@ -43,7 +44,7 @@ async function inventory(){
  const matches=queues.filter(x=>x.queue_name===NAME);
  if(matches.length>1)fail('Duplicate queue name');
  const queue=matches[0]||null;
- if(queue&&((queue.producers||[]).some(x=>x.type!=='worker'||x.script!==NAME)||(queue.consumers||[]).some(x=>x.type!=='worker'||x.script_name!==NAME)))fail('Queue belongs to another service');
+ if(queue&&!queueOwnedBy(queue,NAME))fail('Queue belongs to another service or its inventory is incomplete');
  return {domain:domains.find(x=>x.hostname===HOST)||null,queue,wake:await worker(NAME,true)};
 }
 async function providers(){
@@ -63,7 +64,7 @@ async function verifyWake(state,enabled){
  const q=state.wake.bindings.get('OUTBOX_WAKE_QUEUE');
  if(q?.type!=='queue'||q.queue_name!==NAME)fail('Incorrect queue producer binding');
  if(!state.wake.bindings.has('OUTBOX_WAKE_RATE_LIMIT'))fail('Missing wake rate limit');
- if((state.queue.consumers||[]).length!==1||state.queue.consumers[0].script_name!==NAME)fail('Queue consumer readback failed');
+ if(!queueOwnedBy(state.queue,NAME,true))fail('Queue producer/consumer readback failed');
  const src=await api(workerPath(NAME)+'/content/v2',{raw:true});
  if(!src.includes('get_booking_outbox_wake_hints')||!src.includes('/internal/outbox/wake'))fail('Wrong deployed wake source');
  const unauthorized=await fetch('https://'+HOST+'/internal/outbox/wake',{method:'POST',redirect:'manual'});
