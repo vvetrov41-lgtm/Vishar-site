@@ -17,3 +17,5 @@ Rollback: set OUTBOX_WAKE_ENABLED=false via the approved config gate. All existi
 ## Coordinated schema release
 
 The review-channel migration 20261125204000 is already on the canonical branch. The wake migration is still unapplied, so its source version is now 20261125210000. Wait for the review database rollout and verify its exact applied head before merging this PR. The existing single-migration production gate admits only 20261125204000 -> 20261125210000; do not use out-of-order migration flags or release both migrations together.
+
+The bounded booking wake release uses two isolated backend-auth refs: `release/private-crm-rc<number>-backend-auth-outbox-wake-prepare` and `release/private-crm-rc<number>-backend-auth-outbox-wake-activate`. Both require current canonical SHA, the five canonical CI runs and the existing production deploy kill switch. Prepare creates only the dedicated empty queue and disabled Worker; activation requires provider code and flags, the installed private-hints RPC, exact queue/binding readback and denial of unauthenticated access. Activation readback failure restores the previous disabled Worker version.
