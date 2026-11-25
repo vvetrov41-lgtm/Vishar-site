@@ -69,12 +69,13 @@ function updateResult(){
  price="By assessment";caption="Project needs a personal estimate";metrics=[[money(api.rules.hourly)+"/h","Hourly rate"],[money(api.rules.hourly*api.rules.day),"Full day"]];
  help=r.reason+" You can still plan a budget with the hours calculator.";
  }else{
- price=money(api.rules.hourly)+"/h";caption="Tattooing rate";metrics=[[money(api.rules.hourly*api.rules.day),"Full day"],[api.rules.day+" h","Full-day duration"]];help="Tap the body or a quick project below to see the estimated range.";
+ price=money(api.rules.hourly)+"/h";caption="Tattooing rate";metrics=[[money(api.rules.hourly*api.rules.day),"Full day"],[api.rules.day+" h","Full-day duration"]];help="Tap the body or choose a quick project to calculate its estimated cost. No enquiry needed.";
  }
  root.append(node("p","calc-label",caption),node("p","calc-result",price));
  const row=node("div","calc-stat-row");for(const [value,label] of metrics){const card=node("div","calc-stat");card.append(node("strong","",value),node("span","",label));row.append(card);}root.append(row,node("p","calc-help",help));
- next.disabled=mode==="project"&&!r;
- next.textContent=mode==="hours"?"Continue to enquiry":embedded?"Use project in enquiry":"Continue to enquiry";
+ next.hidden=mode!=="project"||!r;
+ next.disabled=next.hidden;
+ next.textContent=embedded?"Apply selection to enquiry (optional)":"Use this selection in an enquiry (optional)";
 }
 function render(focus){
  body.replaceChildren();
@@ -104,7 +105,7 @@ function render(focus){
  updateResult();if(focus)Array.from(body.querySelectorAll("button[data-key]")).find(x=>x.dataset.key===focus)?.focus({preventScroll:true});
 }
 next.onclick=()=>{
- if(mode==="hours"){event("tattoo_estimate_to_booking");if(embedded){body.closest("dialog").close();return;}location.href="/booking/";return;}
+ if(mode!=="project")return;
  if(!actualProject())return;event("tattoo_estimate_to_booking");
  if(embedded){const root=document.getElementById("enquiry-v2");if(!root)return;const accepted=!root.dispatchEvent(new CustomEvent("vishar-calculator-apply",{detail:p,cancelable:true}));if(accepted){body.closest("dialog").close();requestAnimationFrame(()=>root.scrollIntoView({block:"start",behavior:"smooth"}));}return;}
  location.href="/booking/#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)});

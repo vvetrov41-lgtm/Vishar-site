@@ -72,3 +72,9 @@ html.calc-embedded .calc{padding:0;max-width:none}html.calc-embedded .planner{bo
 .calc-time-value{font-size:2.4rem;font-variant-numeric:tabular-nums;font-weight:600}.calc-range{width:100%;accent-color:#f5f5f7;min-height:44px}
 .calc-range-bounds{display:flex;justify-content:space-between;font-size:.75rem;color:#b4b4b4}
 @media(max-width:700px){.calc-output{padding:1rem;position:sticky;top:56px;z-index:2}.calc-dialog-inner .calc-output{top:65px}.calc-output .calc-help{font-size:.74rem;max-height:3.4em;overflow:auto}.calc-stat{padding:.45rem .65rem}.calc-result{font-size:clamp(1.65rem,6vw,2.5rem);margin:.15rem 0 .55rem}.calc-layout{grid-template-columns:1fr;padding:1rem}.calc-mode{margin:1rem 1rem 0}.calc-figure{height:245px}.calc-actions{padding:0 1rem 1rem}.calc-time-panel{padding:1rem}.calc-controls{gap:.8rem}}
+
+/* A calculation never requires a booking. Keep optional handoff visually secondary. */
+.calc-actions{border-top:1px solid #282828;padding: .55rem 1.5rem;justify-content:space-between;flex-wrap:wrap;gap:.3rem 1rem}
+.calc-optional{min-height:44px;color:#b4b4b4;font-size:.8rem;text-align:left;text-decoration:underline;text-underline-offset:3px;background:none;border:0;padding:.25rem 0}
+.calc-optional:hover{color:#fff}.calc-optional[hidden]{display:none!important}
+@media(max-width:700px){.calc-actions{padding:.55rem 1rem}.calc-optional{font-size:.78rem}}

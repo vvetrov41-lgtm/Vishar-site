@@ -313,6 +313,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));
   assert.ok(bytes > 0 && bytes < 40000);
+  assert.equal(await page.locator('#calc-next').isVisible(),false,'no booking prompt before choosing a project');
   await page.getByRole('button',{name:'Full sleeve',exact:true}).click();
   await page.getByRole('button',{name:'Left',exact:true}).click();
   assert.ok(await page.locator('.calc-figure .hit.on[data-side="left"]').count()>0);
@@ -324,9 +325,10 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByRole('button',{name:'By time',exact:true}).click();
   await page.getByRole('button',{name:'2 days',exact:true}).click();
   assert.equal(await page.locator('.calc-result').innerText(),'£1,960');
+  assert.equal(await page.locator('#calc-next').isVisible(),false,'time calculation does not offer an enquiry');
   await page.getByRole('button',{name:'By tattoo',exact:true}).click();
   await page.getByRole('button',{name:'Colour',exact:true}).click();
-  await page.getByRole('button',{name:'Continue to enquiry',exact:true}).click();
+  await page.getByRole('button',{name:'Use this selection in an enquiry (optional)',exact:true}).click();
   await expectSection(page,'Design');
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Colour wildlife sleeve');
   await next(page); await upload(page,'design',[fixture('design.jpg')]);
@@ -357,7 +359,7 @@ await test('Calculator mobile optional booking dialog and live transfer', async 
  await page.getByRole('button',{name:'Close calculator',exact:true}).click();
  await expectSection(page,'Placement');
  await page.getByRole('link',{name:'Open calculator',exact:true}).click();
- await dialog.getByRole('button',{name:'Use project in enquiry',exact:true}).click();
+ await dialog.getByRole('button',{name:'Apply selection to enquiry (optional)',exact:true}).click();
  await expectSection(page,'Design');
  assert.equal(await dialog.isVisible(),false);
  assert.match(await page.locator('#enquiry-v2').getByLabel(/^Exact placement and approximate size/).inputValue(),/Right/);
