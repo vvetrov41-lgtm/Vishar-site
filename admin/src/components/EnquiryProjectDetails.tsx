@@ -115,6 +115,7 @@ export function EnquiryProjectDetails({ details, language }: { details: Details;
       <dd>{details.styles.map((style) => catalogueLabel(style, language)).join(', ') || copy.notGiven}</dd>
       {details.sizeNotes ? (<><dt>{copy.size}</dt><dd>{details.sizeNotes}</dd></>) : null}
       {details.existingDetails ? (<><dt>{copy.existing}</dt><dd style={{ whiteSpace: 'pre-wrap' }}>{details.existingDetails}</dd></>) : null}
+      {details.calculator_estimate?.schema === 'tattoo-estimate-v1' && details.calculator_estimate.result ? (<><dt>{language === 'ru' ? 'Оценка калькулятора' : 'Calculator estimate'}</dt><dd><strong>{details.calculator_estimate.result.price}</strong>{details.calculator_estimate.result.numeric ? ` · ${details.calculator_estimate.result.time} · ${details.calculator_estimate.result.visits}` : ''}<p>{language === 'ru' ? 'Предварительная оценка, не согласованная стоимость.' : 'Planning guide, not a confirmed quote.'}</p>{details.calculator_estimate.result.cover_up ? <p>{language === 'ru' ? 'Коррекция после заживления не включена.' : 'Healed touch-up excluded.'}</p> : null}<ul>{details.calculator_estimate.project.areas.map(a => <li key={a.region}>{[a.region, a.placements.join(', '),a.side,a.half,a.scale,a.coverage,a.surface].filter(Boolean).join(' · ')}</li>)}</ul></dd></>) : null}
     </dl>
   );
 }

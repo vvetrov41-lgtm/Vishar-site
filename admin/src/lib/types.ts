@@ -176,6 +176,11 @@ export interface EnquiryProjectDetails {
   sizeNotes?: string;
   existingDetails?: string;
   imageRequirements?: { designReference: boolean; existingTattooPhoto: boolean };
+  calculator_estimate?: {
+    schema: 'tattoo-estimate-v1'; rules_version: string; non_binding: true; currency: 'GBP';
+    project: {styles: string[]; areas: Array<{region:string;placements:string[];work:string[];other?:string;side?:string;scale?:string;coverage?:string;half?:string;surface?:string}>};
+    result: {numeric:boolean;price:string;time:string;visits:string;hours:number[]|null;sessions:number[]|null;cost_gbp:number[]|null;open:boolean;provisional:boolean;cover_up:boolean};
+  };
 }
 
 export type EnquiryFileIntakeRole = 'design_reference' | 'existing_tattoo';
