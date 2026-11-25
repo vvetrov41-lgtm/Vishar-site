@@ -278,7 +278,6 @@ jobs:
           # Local Supabase stack's well-known development login, not a secret.
           PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
             -X -A -t -v ON_ERROR_STOP=1 -f scripts/function-manifest.sql > "$RUNNER_TEMP/function-manifest.tsv"
-          grep -E '^crm_private\.(decorate_consultation_reminder_email|render_approved_lifecycle_email_html|queue_lifecycle_instagram_job|create_booking_card_instagram)\(' "$RUNNER_TEMP/function-manifest.tsv"
           node scripts/check-function-manifest.mjs --compare "$RUNNER_TEMP/function-manifest.tsv"
 
       # Same pinned pg_prove 3.36 image, official Docker Hub mirror.
