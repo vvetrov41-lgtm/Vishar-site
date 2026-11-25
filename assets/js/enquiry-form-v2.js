@@ -77,22 +77,15 @@
   var submitted = false; // once saved, nothing is persisted again
   var preflightState = { stage: 'none', id: '', snapshot: '' };
 
+  var UNDECIDED_PLACEMENT = 'Placement not decided yet';
+  var UNDECIDED_PART = 'Exact placement not decided yet';
+  function workKeys() { return state.regions.length ? state.regions : ['unassigned']; }
   function hasExistingWork() {
-    return state.regions.some(function (key) {
+    return workKeys().some(function (key) {
       return (state.work[key] || []).some(function (w) { return w !== 'new'; });
     });
   }
-  function regionIsLarge(key) {
-    var region = regionByKey(key);
-    return (state.placements[key] || []).some(function (p) { var meta = region && placementMeta(region, p); return meta && meta[3]; });
-  }
-  function needsDesign() {
-    return state.regions.some(function (key) {
-      var work = state.work[key] || [];
-      return work.indexOf('new') >= 0 || work.indexOf('extension') >= 0
-        || (regionIsLarge(key) && (work.indexOf('cover_up') >= 0 || work.indexOf('rework') >= 0));
-    });
-  }
+  function needsDesign() { return true; }
   function needsExisting() { return hasExistingWork(); }
 
   // ---------------------------------------------------------------------------
@@ -142,7 +135,9 @@
           hadImagesBeforeReload = Number(draft.imageCount) || 0;
           if (draft.calculatorGuide && window.TattooPricing.valid(draft.calculatorGuide.project)) calculatorGuide = draft.calculatorGuide;
           if (typeof draft.step === 'string' && draft.step !== 'review') current = draft.step;
-          restored = state.regions.length > 0 || Boolean(state.idea);
+          if (['specific','existing'].indexOf(current) >= 0) current = 'placement';
+          if (current === 'images') current = 'design';
+          restored = state.regions.length > 0 || Boolean(state.idea) || workKeys().some(function(k){return (state.work[k]||[]).length;});
         } else if (local) {
           local.removeItem(DRAFT_KEY);
         }
@@ -225,10 +220,7 @@
 
   var STEPS = [
     { id: 'placement', title: 'Placement', visible: function () { return true; } },
-    { id: 'specific', title: 'Details', visible: function () { return !activeCalculatorGuide() && state.regions.some(function (k) { return k !== 'other'; }); } },
-    { id: 'existing', title: 'Existing work', visible: function () { return !activeCalculatorGuide(); } },
     { id: 'design', title: 'Design', visible: function () { return true; } },
-    { id: 'images', title: 'Images', visible: function () { return true; } },
     { id: 'discovery', title: 'Discovery', visible: function () { return true; } },
     { id: 'contact', title: 'Contact', visible: function () { return true; } },
     { id: 'review', title: 'Review', visible: function () { return true; } }
@@ -352,30 +344,37 @@
     var guide = activeCalculatorGuide();
     if (guide) {
       wrap.appendChild(calculatorCard(guide));
+      wrap.appendChild(el('p',{className:'ef-help',text:'Existing tattoo: '+workLines()}));
       wrap.appendChild(el('button',{type:'button',className:'ef-link-button ef-manual-placement',text:'Choose from the list instead',onclick:function(){calculatorGuide=null;render(false);}}));
       return wrap;
     }
-    if (window.TattooPricing) wrap.appendChild(calculatorCard(null));
+    var optional=el('details',{className:'ef-placement-options',open:state.regions.length>0});
+    optional.appendChild(el('summary',{text:'Choose body area (optional)'}));
+    var detailsWrap=el('div'),workWrap=el('div');
+    function refreshChoices(){detailsWrap.textContent='';if(state.regions.some(function(k){return k!=='other';}))detailsWrap.appendChild(renderSpecific());workWrap.textContent='';workWrap.appendChild(renderExisting());}
     var choices = REGIONS.map(function (region) {
       return choice('checkbox', 'region', region.key, region.label, state.regions.indexOf(region.key) >= 0, function (checked) {
-        if (checked) { if (state.regions.indexOf(region.key) < 0) state.regions.push(region.key); }
+        if (checked) { if (state.regions.indexOf(region.key) < 0) {if(!state.regions.length&&state.work.unassigned)state.work[region.key]=state.work.unassigned.slice();state.regions.push(region.key);} }
         else {
           state.regions = state.regions.filter(function (k) { return k !== region.key; });
+          if(!state.regions.length)state.work.unassigned=(state.work[region.key]||[]).slice();
           delete state.placements[region.key]; delete state.otherPlacement[region.key]; delete state.work[region.key];
         }
         sortRegions();
         clearError();
         var other = wrap.querySelector('[data-other-region]');
         if (other) other.hidden = state.regions.indexOf('other') < 0;
-        saveSoon();
+        refreshChoices();saveSoon();
       });
     });
-    wrap.appendChild(fieldset('Where would you like your tattoo?', 'Choose every area that is part of this project.', choices));
+    optional.appendChild(fieldset('Where would you like your tattoo?', 'Choose areas if you know them, or leave blank.', choices));
     var other = textField({ name: 'otherRegion', label: 'Where else?', max: LIMITS.otherText, value: state.otherRegionText, required: true, onInput: function (v) { state.otherRegionText = v; } });
     other.setAttribute('data-other-region', '');
     other.hidden = state.regions.indexOf('other') < 0;
-    wrap.appendChild(other);
-    return wrap;
+    optional.appendChild(other);optional.appendChild(detailsWrap);
+    wrap.appendChild(workWrap);wrap.appendChild(optional);
+    if(window.TattooPricing)wrap.appendChild(calculatorCard(null));
+    refreshChoices();return wrap;
   }
   function sortRegions() {
     state.regions.sort(function (a, b) { return REGIONS.indexOf(regionByKey(a)) - REGIONS.indexOf(regionByKey(b)); });
@@ -387,8 +386,8 @@
     var wrap = el('div');
     var regions = state.regions.filter(function (k) { return k !== 'other'; });
     var multiple = regions.length > 1;
-    if (!multiple) wrap.appendChild(el('h2', { className: 'ef-question', text: 'Which part of the ' + regionByKey(regions[0]).label.toLowerCase() + '?' }));
-    else wrap.appendChild(el('h2', { className: 'ef-question', text: 'Which parts exactly?' }));
+    if (!multiple) wrap.appendChild(el('h2', { className: 'ef-question', text: 'Which part of the ' + regionByKey(regions[0]).label.toLowerCase() + '? (optional)' }));
+    else wrap.appendChild(el('h2', { className: 'ef-question', text: 'Which parts exactly? (optional)' }));
     var hasSleeves = regions.some(function (k) { return k === 'arm' || k === 'leg'; });
     wrap.appendChild(el('p', { className: 'ef-help', text: hasSleeves ? 'Choose all that apply. A sleeve together with a part of the same limb is treated as one project.' : 'Choose all that apply.' }));
     regions.forEach(function (key) {
@@ -444,9 +443,9 @@
   function renderExisting() {
     var wrap = el('div');
     var multiple = state.regions.length > 1;
-    wrap.appendChild(el('h2', { className: 'ef-question', text: 'Is there existing tattoo work?' }));
+    wrap.appendChild(el('h2', { className: 'ef-question', text: 'Do you have an existing tattoo in the area you want to work on?' }));
     wrap.appendChild(el('p', { className: 'ef-help', text: multiple ? 'Answer for each area. You can choose more than one, for example a rework with an extension.' : 'You can choose more than one, for example a rework with an extension.' }));
-    state.regions.forEach(function (key) {
+    workKeys().forEach(function (key) {
       var region = regionByKey(key);
       var selected = state.work[key] || (state.work[key] = []);
       var group;
@@ -470,7 +469,7 @@
           clearError(); saveSoon();
         });
       });
-      group = fieldset(region.label === 'Other' ? (state.otherRegionText || 'Other') : region.label, null, choices, { small: true });
+      group = fieldset(!region ? 'Existing tattoo' : region.label === 'Other' ? (state.otherRegionText || 'Other') : region.label, null, choices, { small: true });
       if (!multiple) group.querySelector('legend').className = 'ef-sr-only';
       wrap.appendChild(group);
     });
@@ -506,10 +505,10 @@
     if (hasExistingWork()) {
       wrap.appendChild(textField({ name: 'existingDetails', label: 'Existing tattoo details', multiline: true, max: LIMITS.existingDetails, value: state.existingDetails, placeholder: 'Age, size, how dark it is, what should change.', onInput: function (v) { state.existingDetails = v; } }));
     }
-    return wrap;
+    wrap.appendChild(renderImages());return wrap;
   }
 
-  // --- Screen 5: images ----------------------------------------------------
+  // --- Images in the design step ----------------------------------------------------
 
   function renderImages() {
     var wrap = el('div');
@@ -524,8 +523,7 @@
       wrap.appendChild(imageSection('existing', 'Existing tattoo photos', true,
         'Add a close-up and a wider photo showing the whole area if you can.'));
     }
-    wrap.appendChild(imageSection('design', existing && !design ? 'Design references' : 'Design references', design,
-      design ? 'References for the subject, composition or mood.' : 'Optional inspiration for the new design.'));
+    wrap.appendChild(imageSection('design', 'Design references', true, 'References for the subject, composition or mood.'));
     return wrap;
   }
 
@@ -729,6 +727,7 @@
   }
 
   function areaLines() {
+    if(!state.regions.length)return UNDECIDED_PLACEMENT;
     return state.regions.map(function (key) {
       var region = regionByKey(key);
       var parts = (state.placements[key] || []).filter(function (p) { return p !== 'other'; }).map(function (p) { return labelOf(region.placements, p); });
@@ -738,8 +737,8 @@
     }).join('\n');
   }
   function workLines() {
-    return state.regions.map(function (key) {
-      var label = key === 'other' ? (state.otherRegionText.trim() || 'Other') : regionByKey(key).label;
+    return workKeys().map(function (key) {
+      var label = key === 'unassigned' ? 'Project' : key === 'other' ? (state.otherRegionText.trim() || 'Other') : regionByKey(key).label;
       return label + ': ' + (state.work[key] || []).map(function (w) { return WORK_REVIEW[w]; }).join(', ');
     }).join('\n');
   }
@@ -756,11 +755,11 @@
       : 'Email ' + state.email.trim() + (state.phone.trim() ? '\nWhatsApp ' + state.phone.trim() : ''));
     var list = el('dl', { className: 'ef-summary' }, [
       summaryRow('Body areas', areaLines(), 'placement'),
-      summaryRow('Existing work', workLines(), activeCalculatorGuide() ? 'placement' : 'existing'),
+      summaryRow('Existing work', workLines(), 'placement'),
       summaryRow('Style', state.styles.map(function (s) { return labelOf(STYLES, s); }).join(', '), 'design'),
       summaryRow('Idea', state.idea.trim(), 'design'),
       state.sizeNotes.trim() ? summaryRow('Placement and size', state.sizeNotes.trim(), 'design') : null,
-      summaryRow('Photos', photos.join(', '), 'images'),
+      summaryRow('Photos', photos.join(', '), 'design'),
       summaryRow('Start', state.timing.trim() || 'Not specified', 'contact'),
       summaryRow('Found via', source, 'discovery'),
       summaryRow('Contact', contact, 'contact')
@@ -818,25 +817,24 @@
 
   var VALIDATE = {
     placement: function () {
-      if (!state.regions.length) return problem('Please choose at least one area.', 'input[name="region"]');
       if (state.regions.indexOf('other') >= 0 && !state.otherRegionText.trim()) return problem('Please describe where else.', 'input[name="otherRegion"]');
-      return null;
+      return VALIDATE.specific() || VALIDATE.existing();
     },
     specific: function () {
       for (var i = 0; i < state.regions.length; i += 1) {
         var key = state.regions[i];
         if (key === 'other') continue;
         var selected = state.placements[key] || [];
-        if (!selected.length) return problem('Please choose a placement for ' + regionByKey(key).label + '.', 'input[name="placement-' + key + '"]');
         if (selected.indexOf('other') >= 0 && !(state.otherPlacement[key] || '').trim()) return problem('Please describe the placement.', 'input[name="otherPlacement-' + key + '"]');
       }
       return null;
     },
     existing: function () {
-      for (var i = 0; i < state.regions.length; i += 1) {
-        var key = state.regions[i];
+      var keys=workKeys();
+      for (var i=0;i<keys.length;i+=1){
+        var key=keys[i];
         if (!(state.work[key] || []).length) {
-          var label = key === 'other' ? 'the other area' : regionByKey(key).label;
+          var label = key === 'unassigned' ? 'your project' : key === 'other' ? 'the other area' : regionByKey(key).label;
           return problem('Please answer for ' + label + '.', 'input[name="work-' + key + '"]');
         }
       }
@@ -846,7 +844,7 @@
       if (!state.styles.length) return problem('Please choose a style or Not sure yet.', 'input[name="style"]');
       if (!state.idea.trim()) return problem('Please describe your tattoo idea.', 'textarea[name="idea"]');
       if (state.idea.trim().length > ideaLimit()) return problem('Please shorten your idea slightly so the full calculator selection can be included.', 'textarea[name="idea"]');
-      return null;
+      return VALIDATE.images();
     },
     images: function () {
       if (needsExisting() && !files.existing.length) return problem('Please add at least one photo of your existing tattoo.', '[data-image-role="existing"] .ef-add');
@@ -889,9 +887,10 @@
 
   function projectDetails() {
     return {
-      areas: state.regions.map(function (key) {
+      areas: !state.regions.length ? [{region:'other',placements:[],otherPlacement:UNDECIDED_PLACEMENT,work:(state.work.unassigned||[]).slice()}] : state.regions.map(function (key) {
         var area = { region: key, placements: key === 'other' ? [] : (state.placements[key] || []).slice(), work: (state.work[key] || []).slice() };
         if (key === 'other') area.otherPlacement = state.otherRegionText.trim();
+        else if(!area.placements.length){area.placements=['other'];area.otherPlacement=UNDECIDED_PART;}
         else if (area.placements.indexOf('other') >= 0) area.otherPlacement = (state.otherPlacement[key] || '').trim();
         return area;
       }),
@@ -1117,10 +1116,10 @@
   }
 
   var CODE_STEP = {
-    missing_body_area: 'placement', missing_placement: 'specific', missing_existing_work: 'existing',
-    missing_style: 'design', missing_design_reference: 'images', missing_existing_tattoo_photo: 'images',
-    invalid_file_count: 'images', file_too_large: 'images', invalid_file_type: 'images', unrecognised_file_content: 'images',
-    request_too_large: 'images', invalid_email: 'contact', invalid_whatsapp_number: 'contact', missing_whatsapp_number: 'contact',
+    missing_body_area: 'placement', missing_placement: 'placement', missing_existing_work: 'placement',
+    missing_style: 'design', missing_design_reference: 'design', missing_existing_tattoo_photo: 'design',
+    invalid_file_count: 'design', file_too_large: 'design', invalid_file_type: 'design', unrecognised_file_content: 'design',
+    request_too_large: 'design', invalid_email: 'contact', invalid_whatsapp_number: 'contact', missing_whatsapp_number: 'contact',
     missing_discovery_source_detail: 'discovery'
   };
   function routeServerError(code, message) {
@@ -1147,6 +1146,7 @@
   // ---------------------------------------------------------------------------
 
   var restored = loadDraft();
+  if(restored&&VALIDATE.placement())current='placement';
   const estimate = window.TattooPricing && window.TattooPricing.fromHash(window.location.hash);
   function applyEstimate(estimate) {
     state.regions = estimate.areas.map(function(a){return a.region;});
@@ -1193,7 +1193,7 @@
     if (submitting || submitted) return;
     var imported = window.TattooPricing.booking(e.detail);
     if (!imported) return;
-    var hasProject = state.regions.length || state.styles.length || state.sizeNotes.trim();
+    var hasProject = state.regions.length || (state.work.unassigned||[]).length || state.styles.length || state.sizeNotes.trim();
     if (hasProject && !activeCalculatorGuide() && !window.confirm('Replace the placement, size, style and existing-work choices with your calculator selections? Your idea, contact details and uploaded images will be kept. Please check whether existing tattoo details and photos still match the new placement.')) return;
     var wasReview = current === 'review';
     applyEstimate(imported); notice.hidden = true; returnToReview = wasReview; goTo('design');
