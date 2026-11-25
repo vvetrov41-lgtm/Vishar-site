@@ -57,6 +57,7 @@ jobs:
           npm ci
           node scripts/audit-root-dependencies.mjs --audit-level=moderate
           node scripts/test-outbox-wake.mjs
+          node scripts/test-outbox-wake-queue-inventory.mjs
           npm run scan:secrets
           npx wrangler deploy --config wrangler.outbox-wake.production.toml --dry-run --outdir .wrangler/outbox-wake-dry-run
       - name: Production target and provider preflight

@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {queueOwnedBy} from './outbox-wake-queue-inventory.mjs';
+const n='vishar-outbox-wake-production';
+const p={type:'worker',script:n},c={type:'worker',script:n};
+const q={queue_name:n,producers:[p],consumers:[c],producers_total_count:1,consumers_total_count:1};
+assert.equal(queueOwnedBy(q,n,true),true);
+assert.equal(queueOwnedBy({...q,consumers:[{type:'worker',script_name:n}]},n,true),true);
+assert.equal(queueOwnedBy({...q,consumers:[{...c,script_name:'other-worker'}]},n,true),false);
+assert.equal(queueOwnedBy({...q,consumers:[{type:'http_pull',script:n}]},n,true),false);
+assert.equal(queueOwnedBy({...q,consumers_total_count:2},n,true),false);
+assert.equal(queueOwnedBy({...q,producers:[{type:'worker',script:'other-worker'}]},n,true),false);
+const empty={...q,producers:[],consumers:[],producers_total_count:0,consumers_total_count:0};
+assert.equal(queueOwnedBy(empty,n),true);
+assert.equal(queueOwnedBy(empty,n,true),false);
+console.log('Queue inventory ownership tests passed');
