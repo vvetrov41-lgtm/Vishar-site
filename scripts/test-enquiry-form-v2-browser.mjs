@@ -382,6 +382,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     assert.equal(overlap,false,'price block must not overlap controls');
     assert.equal(await page.locator('.calc-output .calc-stat').count(),2);
     assert.equal(await page.locator('.calc-output .calc-help').count(),1);
+    assert.equal(await page.locator('.calc-output .calc-help').innerText(),'Final cost may vary depending on design complexity, size and placement.');
   }
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>window.scrollTo(0,document.querySelector('.calc-atlas').getBoundingClientRect().top+window.scrollY+100));

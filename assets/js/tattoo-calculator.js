@@ -179,10 +179,10 @@ function updateResult(){
  metrics=[[hours+" h","Tattooing time"],[String(sessions),"Visits if full days"]];
  help="Based on the time you enter, not an assessment of your tattoo. Final duration may differ.";
  }else if(r?.numeric){
- price=r.price;caption=r.combined?"Combined planning estimate":r.provisional?"Provisional project estimate":"Estimated project cost";metrics=[[r.time,"Tattooing time"],[r.visits,"Sessions"]];help=r.reason;
+ price=r.price;caption=r.combined?"Combined planning estimate":r.provisional?"Provisional project estimate":"Estimated project cost";metrics=[[r.time,"Tattooing time"],[r.visits,"Sessions"]];help=r.combined?r.reason:"Final cost may vary depending on design complexity, size and placement.";if(r.coverUp)help+=" A touch-up may be needed after full healing. Its time and cost are not included. Photos are needed to confirm the estimate.";
  }else if(r){
  price="By assessment";caption="Project needs a personal estimate";metrics=[[money(api.rules.hourly)+"/h","Hourly rate"],[money(api.rules.hourly*api.rules.day),"Full day"]];
- help=r.reason+" You can still plan a budget with the hours calculator.";
+ help=r.coverUp?"Photos of the existing tattoo are needed to confirm the estimate. A touch-up may be needed after full healing.":r.combined?"Separate area estimates are not a combined total.":r.reason;if(r.combined&&p.areas.some(a=>a.work.includes("cover_up")))help+=" A cover-up may need a touch-up after full healing; this is not included.";
  }else{
  price=money(api.rules.hourly)+"/h";caption="Tattooing rate";metrics=[[money(api.rules.hourly*api.rules.day),"Full day"],[api.rules.day+" h","Full-day duration"]];help="Tap the body or choose a quick project to calculate its estimated cost. No enquiry needed.";
  }
