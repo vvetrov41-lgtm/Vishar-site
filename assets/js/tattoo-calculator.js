@@ -145,7 +145,7 @@ function description(a){
 }
 function actualProject(){return api.valid(p)?api.estimate(p):null;}
 function updateResult(){
- const root=$("calc-estimate");root.replaceChildren();
+ const root=$("calc-estimate"),details=$("calc-result-details");root.replaceChildren();details.replaceChildren();
  const a=p.areas[0],r=actualProject();
  let price,caption,metrics,help;
  if(mode==="budget"){
@@ -166,16 +166,15 @@ function updateResult(){
  price=money(api.rules.hourly)+"/h";caption="Tattooing rate";metrics=[[money(api.rules.hourly*api.rules.day),"Full day"],[api.rules.day+" h","Full-day duration"]];help="Tap the body or choose a quick project to calculate its estimated cost. No enquiry needed.";
  }
  root.append(node("p","calc-label",caption),node("p","calc-result",price));
- const row=node("div","calc-stat-row");for(const [value,label] of metrics){const card=node("div","calc-stat");card.append(node("strong","",value),node("span","",label));row.append(card);}root.append(row,node("p","calc-help",help));
+ const row=node("div","calc-stat-row");for(const [value,label] of metrics){const card=node("div","calc-stat");card.append(node("strong","",value),node("span","",label));row.append(card);}details.append(row,node("p","calc-help",help));
  if(mode==="project"&&r?.combined){
  const detail=node("div","calc-breakdown");detail.append(node("p","calc-label","Separate area guides"));
  for(const item of api.breakdown(p)){
  const a=areaFor(item.region),result=item.result,line=node("div","calc-breakdown-row");
  line.append(node("span","",description(a)),node("strong","",result?.numeric?result.price+(result.provisional?" (draft)":""):"By assessment"));detail.append(line);
  }
- root.append(detail);
+ details.append(detail);
  }
- const small=$("calc-current-price");if(small)small.textContent=price;
  next.hidden=mode!=="project"||!r;
  next.disabled=next.hidden;
  next.textContent=embedded?"Apply selection to enquiry (optional)":"Use this selection in an enquiry (optional)";
@@ -223,7 +222,6 @@ function render(focus){
  group(controls,"Style",[["black_grey","Black & Grey"],["colour","Colour"],["mixed","Mixed"]],styleKey(),setStyle);
  if(a){const ink=node("button","calc-ink",a.work[0]==="new"?"＋ Existing tattoo / cover-up":"✓ Existing tattoo · assessment needed");ink.type="button";ink.setAttribute("aria-pressed",String(a.work[0]!=="new"));ink.onclick=()=>{a.work=a.work[0]==="new"?["cover_up"]:["new"];render();};controls.append(ink);}
  }
- const strip=node("div","calc-current");strip.append(node("span","calc-label",mode==="project"?"Estimated cost":mode==="hours"?"Calculated cost":"Your budget"));const current=node("strong","","");current.id="calc-current-price";strip.append(current);body.append(strip);
  updateResult();if(focus)Array.from(body.querySelectorAll("button[data-key]")).find(x=>x.dataset.key===focus)?.focus({preventScroll:true});
 }
 next.onclick=()=>{
@@ -234,6 +232,14 @@ next.onclick=()=>{
 };
 $("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";modelViewer?.view(view);mode="project";hours=7;budget=2000;combine=false;activeRegion="";render();};
 body.closest(".planner").hidden=false;render();
+// Measure the actual header and the compact price row, including text wrapping.
+const stickyOutput=$("calc-estimate").parentElement;
+const scrollRoot=embedded?body.closest("dialog"):document.documentElement;
+const stickyHeader=embedded?scrollRoot.querySelector(".booking-calculator-header"):document.querySelector("#site-nav nav");
+function stickySize(){const headerHeight=stickyHeader?.getBoundingClientRect().height||56;scrollRoot.style.setProperty("--calc-sticky-top",headerHeight+"px");scrollRoot.style.setProperty("--calc-sticky-height",stickyOutput.getBoundingClientRect().height+"px");}
+stickySize();
+if("ResizeObserver" in window){const sizeObserver=new ResizeObserver(stickySize);sizeObserver.observe(stickyOutput);if(stickyHeader)sizeObserver.observe(stickyHeader);}
+if(embedded)scrollRoot.addEventListener("vishar-calculator-open",stickySize);
 if(embedded)body.closest("dialog").addEventListener("vishar-calculator-open",()=>{if(modelMode==="3d")load3D();});
 // The embedded calculator loads WebGL only when its dialog is opened.
 window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});
