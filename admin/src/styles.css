@@ -1418,3 +1418,8 @@ section.card[id] { scroll-margin-top: 56px; }
 }
 .healing-review-edit { margin-top: 8px; }
 .healing-review-edit textarea { width: 100%; font-size: 16px; }
+
+/* Healing channel selector: the native select works with the iPhone picker. */
+.healing-channel-choice { display: grid; gap: .4rem; min-width: 0; }
+.healing-channel-choice select { width: 100%; min-width: 0; max-width: 100%; font-size: 16px; }
+.healing-channel-choice .meta { margin: 0; }

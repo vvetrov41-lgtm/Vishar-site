@@ -193,6 +193,10 @@ export const OPERATOR_PARITY = Object.freeze([
   available("communications.client.create", "Communications", "Clients", "manage_clients", "write", "createClientFromCommunication", ["public.gpt_create_client_from_communication"], "Cross-domain: starts in the inbox but creates a CRM record, so it requires the CRM ceiling as well as the communications one."),
   available("communications.enquiry.create", "Communications", "Enquiries", "manage_enquiries", "write", "createEnquiryFromCommunication", ["public.gpt_create_enquiry_from_communication"], "Cross-domain: creates a client and an enquiry through manual intake, so it requires the CRM ceiling as well as the communications one."),
 
+  gap("communications.healing_reviews.list", "Communications", "Communications", "view_communications", "read", ["public.list_review_suggestions","public.list_review_followups"]),
+  gap("communications.healing_question.send", "Communications", "Communications", "manage_communications", "provider_send", ["public.send_healing_question_v2"]),
+  gap("communications.review_request.send", "Communications", "Communications", "manage_communications", "provider_send", ["public.ask_for_review_v2"]),
+
   // Notifications
   available("followups.list", "Notifications", "Notifications", "view_notifications", "read", "listFollowUps", ["public.gpt_list_follow_ups"]),
   available("followups.create", "Notifications", "Notifications", "manage_notifications", "write", "createFollowUp", ["public.gpt_create_follow_up"]),

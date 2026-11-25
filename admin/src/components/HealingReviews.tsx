@@ -21,6 +21,8 @@ import {
   type HealingSuggestion,
   type ReviewFollowup,
   type ReviewRefusal,
+  type ReviewChannel,
+  type ReviewChannelOption,
 } from '../lib/review-requests-api';
 
 const SNOOZE_DAYS = 14;
@@ -34,16 +36,41 @@ interface ArtistLists {
 }
 
 type Open =
-  | { kind: 'ask'; id: string }
-  | { kind: 'review'; id: string; body: string }
+  | { kind: 'ask'; id: string; channel?: ReviewChannel }
+  | { kind: 'review'; id: string; body: string; channel?: ReviewChannel }
   | null;
 
 /** Refusals that mean the list on screen is out of date. */
-const STALE: ReviewRefusal[] = ['not_suggested', 'already_decided', 'no_reply'];
+const STALE: ReviewRefusal[] = ['not_suggested', 'already_decided', 'no_reply', 'channel_unavailable'];
 const EXPLAINED: ReviewRefusal[] = [
   'not_suggested', 'already_decided', 'template_not_ready', 'no_whatsapp', 'not_reachable',
-  'name_unusable', 'no_review_link', 'no_reply', 'window_closed', 'invalid',
+  'name_unusable', 'no_review_link', 'no_reply', 'window_closed', 'channel_unavailable', 'invalid',
 ];
+
+const CHANNEL_LABEL: Record<ReviewChannel, string> = { whatsapp: 'WhatsApp', instagram: 'Instagram', email: 'Email' };
+const preferredChannel = (options?: ReviewChannelOption[]) => options?.find(option => option.available)?.channel;
+const canSend = (options: ReviewChannelOption[] | undefined, channel: ReviewChannel | undefined) =>
+  options === undefined || options.some(option => option.available && option.channel === channel);
+
+function ChannelChoice({ id, options, value, onChange, disabled, stage }: {
+  id: string; options?: ReviewChannelOption[]; value?: ReviewChannel;
+  onChange: (value: ReviewChannel) => void; disabled: boolean; stage: 'healing' | 'review';
+}) {
+  const { t, language } = useLanguage();
+  if (!options) return null; // compatible with the old database until DB-first rollout
+  return <div className="healing-channel-choice">
+    <label className="meta" htmlFor={id}>{t('today.healing.channel')}</label>
+    <select id={id} value={value ?? ''} disabled={disabled || !options.some(option => option.available)}
+      onChange={event => onChange(event.target.value as ReviewChannel)}>
+      {!value ? <option value="" disabled>{t('today.healing.noChannel')}</option> : null}
+      {options.map(option => <option key={option.channel} value={option.channel} disabled={!option.available}>
+        {CHANNEL_LABEL[option.channel]}{option.available ? '' : ' · ' + t('today.healing.reason.' + (option.reason ?? 'unknown'))}
+      </option>)}
+    </select>
+    {value === 'email' ? <p className="meta">{language === 'ru' ? 'Тема: ' : 'Subject: '}{stage === 'healing' ? 'How has your tattoo healed?' : 'A quick favour'}</p> : null}
+    {!options.some(option => option.available) ? <p className="meta" role="status">{t('today.healing.noChannel')}</p> : null}
+  </div>;
+}
 
 export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; canDecide: boolean }) {
   const api = useApi();
@@ -54,6 +81,9 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // After an ambiguous send result, do not allow changing the channel/body.
+  // The original operation id must be reused until the server confirms it.
+  const [uncertain, setUncertain] = useState<string | null>(null);
   const keys = useRef(new OperationKeys());
   // Only the newest load may write: an older one, or one for a scope that
   // has since changed, must not put another artist's buttons on screen.
@@ -101,6 +131,8 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
     setOpen(null);
     setNotice(null);
     setError(null);
+    setUncertain(null);
+    keys.current.reset();
     void load();
   }, [load]);
 
@@ -121,6 +153,7 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
     try {
       await run(keys.current.keyFor(scopeKey));
       keys.current.reset();
+      setUncertain(null);
       setOpen(null);
       setNotice(done);
       await load();
@@ -128,11 +161,13 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
       const refusal = cause instanceof ReviewRequestError ? cause.refusal : 'unknown';
       if (EXPLAINED.includes(refusal)) {
         setError(t(`today.healing.refusal.${refusal}`));
+        setUncertain(null);
         keys.current.reset();
       } else {
         // An unknown failure may have landed: the retry reuses the same
         // operation id, so the database records the decision at most once.
         setError(cause instanceof Error ? cause.message : t('today.healing.failed'));
+        if (Array.isArray(scopeKey) && (scopeKey[0] === 'ask' || scopeKey[0] === 'review')) setUncertain(id);
       }
       if (STALE.includes(refusal)) {
         setOpen(null);
@@ -169,6 +204,7 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
                 <>
                   <div className="meta">
                     {item.replied_at ? t('today.healing.replied', { date: formatDate(item.replied_at, language) }) : null}
+                    {item.healing_channel ? <> · {CHANNEL_LABEL[item.healing_channel]}</> : null}
                     {item.reply_attachment_count > 0
                       ? <>{' · '}{t('today.healing.attachments', { count: item.reply_attachment_count })}</>
                       : null}
@@ -180,28 +216,32 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
                   {canDecide ? (
                     editing ? (
                       <div className="healing-review-edit">
+                        <ChannelChoice id={`${id}-channel`} options={item.channels} value={editing.channel}
+                          disabled={busy !== null || uncertain === id} stage="review"
+                          onChange={channel => setOpen({ ...editing, channel })} />
                         <label className="meta" htmlFor={`${id}-body`}>{t('today.healing.reviewEdit')}</label>
                         <textarea
                           id={`${id}-body`}
                           value={editing.body}
                           maxLength={REVIEW_MAX}
-                          onChange={(event) => setOpen({ kind: 'review', id, body: event.target.value })}
+                          disabled={busy !== null || uncertain === id}
+                          onChange={(event) => setOpen({ ...editing, body: event.target.value })}
                         />
                         <div className="actions">
                           <button
                             type="button"
                             className="badge ok"
-                            disabled={busy === id || editing.body.trim().length === 0}
+                            disabled={busy !== null || editing.body.trim().length === 0 || !canSend(item.channels, editing.channel)}
                             onClick={() => {
                               const body = editing.body.trim();
-                              void act(id, ['review', item.review_request_id, body],
-                                (op) => api.askForReview(artistId, item.review_request_id, body, op),
-                                t('today.healing.reviewSent', { name: item.client_name }));
+                              void act(id, ['review', item.review_request_id, body, editing.channel],
+                                (op) => api.askForReview(artistId, item.review_request_id, body, op, editing.channel),
+                                t(editing.channel ? 'today.healing.reviewQueued' : 'today.healing.reviewSent', { name: item.client_name }));
                             }}
                           >
                             {t('today.healing.send')}
                           </button>
-                          <button type="button" className="badge" disabled={busy === id} onClick={() => setOpen(null)}>
+                          <button type="button" className="badge" disabled={busy !== null || uncertain === id} onClick={() => setOpen(null)}>
                             {t('today.healing.cancel')}
                           </button>
                         </div>
@@ -211,15 +251,15 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
                         <button
                           type="button"
                           className="badge"
-                          disabled={busy === id || !reviewUrlConfigured}
-                          onClick={() => setOpen({ kind: 'review', id, body: item.draft_message ?? '' })}
+                          disabled={busy !== null || uncertain !== null || !reviewUrlConfigured}
+                          onClick={() => setOpen({ kind: 'review', id, body: item.draft_message ?? '', channel: preferredChannel(item.channels) })}
                         >
                           {t('today.healing.askReview')}
                         </button>
                         <button
                           type="button"
                           className="badge"
-                          disabled={busy === id}
+                          disabled={busy !== null || uncertain !== null}
                           onClick={() => {
                             void act(id, ['close', item.review_request_id],
                               (op) => api.closeReviewRequest(artistId, item.review_request_id, op),
@@ -236,7 +276,8 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
               ) : (
                 <div className="meta">
                   {t('today.healing.awaiting', { date: formatDate(item.healing_asked_at, language) })}
-                  {item.healing_message_status === 'failed'
+                  {item.healing_channel ? <> · {CHANNEL_LABEL[item.healing_channel]}</> : null}
+                  {['failed', 'cancelled'].includes(item.healing_message_status ?? '')
                     ? <>{' · '}<span className="badge warn">{t('today.healing.notDelivered')}</span></>
                     : null}
                 </div>
@@ -247,7 +288,7 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
 
         {suggestions.map(({ artistId, item }) => {
           const id = `suggestion-${item.anchor_session_id}`;
-          const asking = open?.kind === 'ask' && open.id === id;
+          const asking = open?.kind === 'ask' && open.id === id ? open : null;
           return (
             <div key={id} className="row healing-review-row">
               <Link to={`/clients/${item.client_id}`} className="title">{item.client_name}</Link>
@@ -260,35 +301,38 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
               {canDecide ? (
                 asking ? (
                   <div className="healing-review-edit">
-                    <p className="meta">{t('today.healing.preview')}</p>
+                    <ChannelChoice id={`${id}-channel`} options={item.channels} value={asking.channel}
+                      disabled={busy !== null || uncertain === id} stage="healing"
+                      onChange={channel => setOpen({ ...asking, channel })} />
+                    <p className="meta">{t(item.channels ? 'today.healing.previewGeneric' : 'today.healing.preview')}</p>
                     <blockquote className="healing-reply">{item.draft_message}</blockquote>
                     <div className="actions">
                       <button
                         type="button"
                         className="badge ok"
-                        disabled={busy === id}
+                        disabled={busy !== null || !canSend(item.channels, asking.channel)}
                         onClick={() => {
-                          void act(id, ['ask', item.anchor_session_id],
-                            (op) => api.sendHealingQuestion(artistId, item.anchor_session_id, op),
-                            t('today.healing.sent', { name: item.client_name }));
+                          void act(id, ['ask', item.anchor_session_id, asking.channel],
+                            (op) => api.sendHealingQuestion(artistId, item.anchor_session_id, op, asking.channel),
+                            t(asking.channel ? 'today.healing.queued' : 'today.healing.sent', { name: item.client_name }));
                         }}
                       >
                         {t('today.healing.send')}
                       </button>
-                      <button type="button" className="badge" disabled={busy === id} onClick={() => setOpen(null)}>
+                      <button type="button" className="badge" disabled={busy !== null || uncertain === id} onClick={() => setOpen(null)}>
                         {t('today.healing.cancel')}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="actions">
-                    <button type="button" className="badge" disabled={busy === id} onClick={() => setOpen({ kind: 'ask', id })}>
+                    <button type="button" className="badge" disabled={busy !== null || uncertain !== null} onClick={() => setOpen({ kind: 'ask', id, channel: preferredChannel(item.channels) })}>
                       {t('today.healing.ask')}
                     </button>
                     <button
                       type="button"
                       className="badge"
-                      disabled={busy === id}
+                      disabled={busy !== null || uncertain !== null}
                       onClick={() => {
                         void act(id, ['snooze', item.anchor_session_id],
                           (op) => api.decideHealingSuggestion(artistId, item.anchor_session_id, 'snooze', op, SNOOZE_DAYS),
@@ -300,7 +344,7 @@ export function HealingReviews({ artistIds, canDecide }: { artistIds: string[]; 
                     <button
                       type="button"
                       className="badge"
-                      disabled={busy === id}
+                      disabled={busy !== null || uncertain !== null}
                       onClick={() => {
                         void act(id, ['dismiss', item.anchor_session_id],
                           (op) => api.decideHealingSuggestion(artistId, item.anchor_session_id, 'dismiss', op),

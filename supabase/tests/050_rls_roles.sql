@@ -934,6 +934,11 @@ insert into expected_function_acl values
   ('public.send_healing_question(uuid,uuid,uuid)', false, true, false),
   ('public.list_review_followups(uuid)', false, true, false),
   ('public.ask_for_review(uuid,uuid,uuid,text)', false, true, false),
+  ('public.send_healing_question_v2(uuid,uuid,uuid,text)', false, true, false),
+  ('public.ask_for_review_v2(uuid,uuid,uuid,text,text)', false, true, false),
+  ('public.service_record_review_email_sent(uuid,text,text,text,text)', false, false, true),
+  ('public.service_list_review_email_checks(uuid,text,text)', false, false, true),
+  ('public.service_record_review_email_check(uuid,text,uuid,text,text,timestamptz,text)', false, false, true),
   ('public.close_review_request(uuid,uuid,uuid)', false, true, false),
 
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.

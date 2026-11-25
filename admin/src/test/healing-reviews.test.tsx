@@ -94,6 +94,69 @@ describe('Healing & reviews on Today', () => {
     expect(within(block).queryByRole('button', { name: 'Ask' })).toBeNull();
   });
 
+  it('offers Email when WhatsApp is missing, and sends only the explicitly chosen channel', async () => {
+    const sent: Args[] = [];
+    renderWithSession(<App />, { role: 'owner', path: '/', rpcHandlers: {
+      ...lists({ suggestions: [{ ...suggestion(), channels: [
+        { channel: 'email', available: true, reason: null },
+        { channel: 'instagram', available: true, reason: null },
+        { channel: 'whatsapp', available: false, reason: 'no_conversation' },
+      ] }] }),
+      send_healing_question_v2: (args: Args) => { sent.push(args); return { data: {}, error: null }; },
+    } });
+    const block = await section();
+    fireEvent.click(within(block).getByRole('button', { name: 'Ask' }));
+    const choice = within(block).getByLabelText('Send via') as HTMLSelectElement;
+    expect(choice.value).toBe('email');
+    expect(within(block).getByText('Subject: How has your tattoo healed?')).toBeVisible();
+    expect(within(choice).getByRole('option', { name: /WhatsApp/ })).toBeDisabled();
+    expect(sent).toHaveLength(0);
+    fireEvent.change(choice, { target: { value: 'instagram' } });
+    fireEvent.click(within(block).getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ p_artist_id: VLADIMIR_ARTIST_ID, p_anchor_session_id: ANCHOR, p_channel: 'instagram' });
+  });
+
+  it('sends a review via Email after the Meta window closes', async () => {
+    const sent: Args[] = [];
+    renderWithSession(<App />, { role: 'owner', path: '/', rpcHandlers: {
+      ...lists({ items: [replied({ healing_channel: 'whatsapp', channels: [
+        { channel: 'email', available: true, reason: null },
+        { channel: 'whatsapp', available: false, reason: 'window_closed' },
+        { channel: 'instagram', available: false, reason: 'window_closed' },
+      ] })] }),
+      ask_for_review_v2: (args: Args) => { sent.push(args); return { data: {}, error: null }; },
+    } });
+    const block = await section();
+    fireEvent.click(within(block).getByRole('button', { name: 'Ask for a review' }));
+    expect((within(block).getByLabelText('Send via') as HTMLSelectElement).value).toBe('email');
+    fireEvent.click(within(block).getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ p_review_request_id: REQUEST, p_channel: 'email' });
+  });
+
+  it('locks channel selection after an uncertain send and retries with the same operation', async () => {
+    const sent: Args[] = [];
+    renderWithSession(<App />, { role: 'owner', path: '/', rpcHandlers: {
+      ...lists({ suggestions: [{ ...suggestion(), channels: [
+        { channel: 'email', available: true, reason: null },
+        { channel: 'instagram', available: true, reason: null },
+      ] }] }),
+      send_healing_question_v2: (args: Args) => {
+        sent.push(args);
+        return sent.length === 1 ? { data: null, error: { code: 'PGRST000', message: 'network' } } : { data: {}, error: null };
+      },
+    } });
+    const block = await section();
+    fireEvent.click(within(block).getByRole('button', { name: 'Ask' }));
+    fireEvent.click(within(block).getByRole('button', { name: 'Send' }));
+    await within(block).findByRole('alert');
+    expect(within(block).getByLabelText('Send via')).toBeDisabled();
+    fireEvent.click(within(block).getByRole('button', { name: 'Send' }));
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]).toEqual(sent[0]);
+  });
+
   it('postpones for two weeks or stops suggesting the visit', async () => {
     const decisions: Args[] = [];
     renderWithSession(<App />, {
