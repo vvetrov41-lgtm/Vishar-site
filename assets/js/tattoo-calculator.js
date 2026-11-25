@@ -4,7 +4,7 @@ const body=$("calc-body"),next=$("calc-next"),p={areas:[],styles:["black_grey"]}
 const embedded=!!body.closest("dialog");
 let view="front",mode="project",hours=7,budget=2000,started=false,combine=false,activeRegion="";
 const assetBase=new URL("calculator3d/",document.currentScript.src);
-const HAS_3D=true; // build-public disables this when the model is not authorised for deployment.
+const HAS_3D=true; // Static checks may run without downloaded model assets.
 let modelMode=HAS_3D?"3d":"2d",modelHost=null,modelViewer=null,modelLoad=null,modelFailed=false;
 const node=(tag,cls,txt)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(txt!==undefined)e.textContent=txt;return e;};
 const money=n=>"£"+n.toLocaleString("en-GB",{maximumFractionDigits:0});
@@ -117,12 +117,12 @@ function load3D(){
 }
 function atlas(parent,interactive=true){
  const box=node("div","calc-atlas"),tabs=node("div","calc-views"),toolbar=node("div","calc-toolbar");
- const combineButton=node("button","calc-combine",combine?"Combine zones: on":"Combine zones: off");combineButton.type="button";combineButton.setAttribute("aria-pressed",String(combine));combineButton.onclick=()=>{combine=!combine;if(!combine&&p.areas.length>1){const a=activeArea();p.areas=a?[a]:[];}if(!combine&&activeArea()?.placements.length>1){const a=activeArea();a.placements=a.placements.slice(0,1);a.coverage="panel";a.surface="unsure";}render();};if(modelMessage){const msg=node("p","calc-map-hint",modelMessage);msg.setAttribute("role","status");box.append(msg);modelMessage="";}
+ const combineButton=node("button","calc-combine",combine?"Multiple areas: on":"Add another area");combineButton.type="button";combineButton.setAttribute("aria-pressed",String(combine));combineButton.onclick=()=>{combine=!combine;if(!combine&&p.areas.length>1){const a=activeArea();p.areas=a?[a]:[];}if(!combine&&activeArea()?.placements.length>1){const a=activeArea();a.placements=a.placements.slice(0,1);a.coverage="panel";a.surface="unsure";}render();};if(modelMessage){const msg=node("p","calc-map-hint",modelMessage);msg.setAttribute("role","status");box.append(msg);modelMessage="";}
  const switches=node("div","calc-model-switch");for(const m of ["3d","2d"]){const b=node("button","",m.toUpperCase());b.type="button";b.setAttribute("aria-pressed",String(m===modelMode));b.onclick=()=>{modelMode=m;if(m==="3d"){modelFailed=false;load3D();}render();};switches.append(b);}if(HAS_3D)toolbar.append(switches);
  for(const v of ["front","back"]){const b=node("button","",v==="front"?"Front":"Back");b.type="button";b.setAttribute("aria-pressed",String(v===view));b.onclick=()=>{view=v;modelViewer?.view(v);render();};tabs.append(b);}toolbar.append(tabs);box.append(toolbar);
  if(modelMode==="3d"){
  modelHost??=node("div","calc-model-host");box.append(modelHost);
- const tools=node("div","calc-model-switch");for(const [label,f] of [["Zoom in",.8],["Zoom out",1.25]]){const b=node("button","",label);b.type="button";b.onclick=()=>modelViewer?.zoom(f);tools.append(b);}const fit=node("button","","Focus area");fit.type="button";fit.disabled=!activeArea();fit.onclick=()=>{const a=activeArea();modelViewer?.focus(a?.region,a?.placements[0],a?.side,a?.half||a?.surface);};tools.append(fit);box.append(tools,combineButton,node("p","calc-map-hint","Rotate · pinch to zoom · tap to select"));
+ const tools=node("div","calc-model-switch calc-camera-tools");for(const [label,f,symbol] of [["Zoom in",.8,"+"],["Zoom out",1.25,"−"]]){const b=node("button","",symbol);b.type="button";b.setAttribute("aria-label",label);b.title=label;b.onclick=()=>modelViewer?.zoom(f);tools.append(b);}const fit=node("button","","⌖");fit.setAttribute("aria-label","Focus area");fit.title="Focus area";fit.type="button";fit.disabled=!activeArea();fit.onclick=()=>{const a=activeArea();modelViewer?.focus(a?.region,a?.placements[0],a?.side,a?.half||a?.surface);};tools.append(fit);modelHost.after(tools);box.append(combineButton,node("p","calc-map-hint","Rotate · pinch to zoom · tap to select"));
  parent.append(box);if(!embedded||body.closest("dialog").open)load3D();modelViewer?.update();return;
  }
  if(modelFailed)box.append(node("p","calc-map-hint","3D could not load. Tap 3D to retry, or use the 2D map."));
@@ -179,7 +179,7 @@ function updateResult(){
  metrics=[[hours+" h","Tattooing time"],[String(sessions),"Visits if full days"]];
  help="Based on the time you enter, not an assessment of your tattoo. Final duration may differ.";
  }else if(r?.numeric){
- price=r.price;caption=r.combined?"Combined planning estimate":r.provisional?"Provisional project estimate":"Estimated project cost";metrics=[[r.time,"Tattooing time"],[r.visits,"Sessions"]];help=r.combined?r.reason:"Final cost may vary depending on design complexity, size and placement.";if(r.coverUp)help+=" A touch-up may be needed after full healing. Its time and cost are not included. Photos are needed to confirm the estimate.";
+ price=r.price;caption=r.combined?"Combined planning estimate":r.provisional?"Approximate cost":"Estimated project cost";metrics=[[r.time,"Tattooing time"],[r.visits,"Sessions"]];help=r.combined?r.reason:"Final cost may vary depending on design complexity, size and placement.";if(r.coverUp)help+=" A touch-up may be needed after full healing. Its time and cost are not included. Photos are needed to confirm the estimate.";
  }else if(r){
  price="By assessment";caption="Project needs a personal estimate";metrics=[[money(api.rules.hourly)+"/h","Hourly rate"],[money(api.rules.hourly*api.rules.day),"Full day"]];
  help=r.coverUp?"Photos of the existing tattoo are needed to confirm the estimate. A touch-up may be needed after full healing.":r.combined?"Separate area estimates are not a combined total.":r.reason;if(r.combined&&p.areas.some(a=>a.work.includes("cover_up")))help+=" A cover-up may need a touch-up after full healing; this is not included.";
@@ -234,7 +234,7 @@ function render(focus){
  }
  if(api.half(part))group(controls,"Half-sleeve coverage",[["upper","Upper half · wraparound"],["lower","Lower half · wraparound"],["outer","Outer side · full length"],["inner","Inner side · full length"]],a.half,k=>{a.half=k;a.coverage=api.longitudinal(k)?"panel":"wrap";a.surface=api.longitudinal(k)?k:"unsure";});
  if(part&&!api.large(api.regionByKey(a.region),part)){
- group(controls,"Size",[["small","Small piece"],["area","Area-sized"]],a.scale,k=>{a.scale=k;a.coverage="panel";});
+ group(controls,"Size",[["small","Small piece"],["area","Full area"]],a.scale,k=>{a.scale=k;a.coverage="panel";});
  if(a.scale==="small")controls.append(node("p","calc-help","Highlighted patch is illustrative, not a measurement or a fixed tattoo size."));
  if(a.scale==="area"&&api.wraps(part))group(controls,"Coverage",[["panel","One side"],["wrap","Wraparound"]],a.coverage,k=>a.coverage=k);
  if(["forearm","upper_arm","thigh"].includes(part)&&a.scale==="area"&&a.coverage==="panel")group(controls,"Surface",[["front","Front side"],["back","Back side"],["outer","Outer"],["inner","Inner"]],a.surface==="unsure"?"front":a.surface,k=>{a.surface=k;});

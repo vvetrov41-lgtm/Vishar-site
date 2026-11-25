@@ -382,7 +382,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     assert.equal(overlap,false,'price block must not overlap controls');
     assert.equal(await page.locator('.calc-output .calc-stat').count(),2);
     assert.equal(await page.locator('.calc-output .calc-help').count(),1);
-    assert.equal(await page.locator('.calc-output .calc-help').innerText(),'Final cost may vary depending on design complexity, size and placement.');
+    assert.match(await page.locator('.calc-output .calc-help').innerText(),/Tap the body or choose a quick project/);
   }
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>window.scrollTo(0,document.querySelector('.calc-atlas').getBoundingClientRect().top+window.scrollY+100));
@@ -401,7 +401,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   assert.match(await page.locator('.calc-selection').innerText(),/Calf/);
   assert.equal(await page.locator('.calc-result').innerText(),'£980–£2,940');
   await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
-  await page.getByRole('button',{name:'Combine zones: off',exact:true}).click();
+  await page.getByRole('button',{name:'Add another area',exact:true}).click();
   await page.getByRole('button',{name:'Forearm',exact:true}).click();
   await page.getByRole('button',{name:'Full back',exact:true}).click();
   assert.equal(await page.locator('.calc-area-row').count(),2);
@@ -417,7 +417,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByRole('button',{name:'Small piece',exact:true}).click();
   assert.ok(await page.locator('.calc-figure .hit.on.small').count()>0);
   assert.equal(await page.locator('.calc-result').innerText(),'£420–£560');
-  await page.getByRole('button',{name:'Area-sized',exact:true}).click();
+  await page.getByRole('button',{name:'Full area',exact:true}).click();
   assert.equal(await page.locator('.calc-figure .hit.on.small').count(),0);
   await page.getByRole('button',{name:'Wraparound',exact:true}).click();
   await page.getByRole('button',{name:'Estimate a lower half sleeve instead (elbow to wrist)',exact:true}).click();
@@ -434,6 +434,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
   await page.getByRole('button',{name:'Black & Grey',exact:true}).click();
   assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+  assert.equal(await page.locator('.calc-output .calc-help').innerText(),'Final cost may vary depending on design complexity, size and placement.');
   await page.getByRole('button',{name:/Existing tattoo \/ cover-up/}).click();
   assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
   assert.match(await page.locator('.calc-output').innerText(),/touch-up may be needed after full healing/);

@@ -9,6 +9,9 @@ for(const [p,price] of [
 assert.equal(api.fromHash("#estimate=2&project=bad"),null);assert.equal(api.estimate(make("forearm",["black_grey"],{side:""})),null);assert.equal(api.estimate(make("forearm",["black_grey"],{work:["new","cover_up"]})),null);assert.equal(api.estimate(make("forearm",["not_sure","colour"])),null);
 assert.equal(api.estimate(make("half_sleeve",["black_grey"],{half:"upper"})).provisional,true);
 assert.equal(api.estimate(make("full_sleeve")).provisional,false);
+assert.equal(api.estimate(make("full_chest",["black_grey"],{region:"chest_ribs"})).price,"£2,940–£4,900+");
+assert.equal(api.estimate(make("full_chest",["colour"],{region:"chest_ribs"})).price,"£3,920–£5,880+");
+assert.match(api.booking(make("thigh",["black_grey"],{region:"leg",surface:"outer"})).notes,/Outer surface/);
 assert.deepEqual(api.budgetPlan(2000),{hours:14.25,fullDays:2,remainderHours:.25,unused:5});assert.equal(api.budgetPlan(-1),null);
 assert.equal(api.estimate(make("half_sleeve",["black_grey"],{half:"lower"})).provisional,false);
 assert.equal(api.estimate(make("full_sleeve",["black_grey"],{placements:["full_sleeve","forearm"]})).numeric,false);

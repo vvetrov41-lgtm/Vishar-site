@@ -1,6 +1,6 @@
 // Shared catalogue and FAQ-based pricing.
 (function(root){
-const SHOW_DRAFT_RANGES=true; // preview and tests only; false in a public build.
+const SHOW_DRAFT_RANGES=true; // Artist authorised indicative estimates in public; provisional estimates remain labelled.
 const rules = {
     hourly: 140,
     day: 7,
@@ -11,6 +11,9 @@ const rules = {
     colour: [8, 10],
     legExtra: 2,
     torso: [6, 12],
+    // Indicative, not a fixed quote. Colour may take longer because of layering and saturation.
+    colourPlanningFactor: 1.25,
+    chest: {black_grey:[3,5],colour:[4,6]},
     // Artist-approved lower half sleeve; remaining partial sleeve bands are draft estimates.
     lowerHalf: {black_grey:[3,4],colour:[4,5]},
     draftPartial: {
@@ -108,7 +111,8 @@ function estimateSingle(p){
  const extra=part==="full_leg_sleeve"?rules.legExtra:0;
  const band=p.styles.length===1&&p.styles[0]!=="not_sure"?rules[p.styles[0]]:[rules.black_grey[0],rules.colour[1]];
  sessions=band.map(n=>n+extra);open=true;reason="Guide for one full sleeve. Mixed or undecided styles use the combined FAQ range. Detailed designs may take longer.";
- }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
+ }else if(part==="full_back"){sessions=p.styles.includes("colour")&&p.styles.length===1?[8,12]:rules.torso;open=true;reason="Broad FAQ range for major back projects.";}
+ else if(part==="full_chest"){const b=rules.chest;sessions=p.styles.length===1&&b[p.styles[0]]?b[p.styles[0]]:[b.black_grey[0],b.colour[1]];open=true;provisional=true;reason="Indicative chest-specific planning range.";}
  else if(["half_sleeve","half_leg_sleeve","three_quarter_sleeve"].includes(part)){
  const approved=part==="half_sleeve"&&a.half==="lower";
  if(!approved&&!SHOW_DRAFT_RANGES)return review("This coverage needs a personal estimate.");
@@ -122,10 +126,12 @@ function estimateSingle(p){
  const band=approved?rules.lowerHalf:rules.draftPartial.half_sleeve.upper;
  sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=!approved;provisional=!approved;reason=approved?"Artist-approved lower half sleeve guide.":"Provisional upper half sleeve guide.";
  }else{if(part!=="shoulder"&&a.coverage!=="panel")return review("Uncertain coverage needs individual assessment.");
- sessions=part==="forearm"?rules.forearm:rules.upper;reason="General FAQ guide. Colour and dense detail can affect the final time; no unverified multiplier is applied.";}
+ sessions=part==="forearm"?rules.forearm:rules.upper;if(p.styles.length===1&&p.styles[0]==="colour"){hours=part==="forearm"?[10,14]:[18,21];sessions=hours.map(h=>Math.ceil(h/rules.day));provisional=true;}reason="General FAQ guide; colour may need more time.";}
  }else if(SHOW_DRAFT_RANGES&&rules.draftHours[part]){
  const band=a.coverage==="wrap"&&rules.draftWrap[part]?rules.draftWrap[part]:rules.draftHours[part];
  hours=band.slice();if(a.scale==="small")hours=[Math.min(3,band[0]),Math.min(4,band[1])];
+ // A conservative preliminary allowance, rounded to whole hours rather than false minute precision.
+ if(p.styles.includes("colour")||p.styles.includes("not_sure")){const longer=hours.map(h=>Math.ceil(h*rules.colourPlanningFactor));hours=p.styles.length===1&&p.styles[0]==="colour"?longer:[hours[0],longer[1]];}
  sessions=hours.map(h=>Math.ceil(h/rules.day));provisional=true;reason="Preliminary planning range, not a published FAQ or artist-confirmed quote. Suitability, colour, skin and detail can change the duration.";
  }else return review("The FAQ does not specify a reliable range for this exact placement and size.");
  const fullDays=!hours;hours ||= sessions.map(n=>n*rules.day);
@@ -155,7 +161,7 @@ function booking(p){
  const notes=[],labels=[];
  for(const a of p.areas){
  const r=regionByKey(a.region),label=a.region==="other"?a.other:a.placements.map(k=>k==="other"?a.other:r.placements.find(x=>x[0]===k)[1]).join(", ");
- labels.push(label);notes.push([label,sides[a.side],a.placements.some(half)?halves[a.half]:null,a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null,a.placements.some(k=>["forearm","upper_arm"].includes(k))&&a.coverage==="panel"?surfaces[a.surface]:null].filter(Boolean).join(" / "));
+ labels.push(label);notes.push([label,sides[a.side],a.placements.some(half)?halves[a.half]:null,a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null,a.placements.some(k=>["forearm","upper_arm","thigh"].includes(k))&&a.coverage==="panel"?surfaces[a.surface]:null].filter(Boolean).join(" / "));
  }
  return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
 }

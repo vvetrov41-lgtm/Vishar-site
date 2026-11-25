@@ -287,17 +287,12 @@ async function main() {
       const page=path.join(outDir,file,'index.html');
       await fs.writeFile(page,renderPricingCopy(await fs.readFile(page,'utf8'),id));
     }
-    const isCalculatorPreview=process.env.CF_PAGES_BRANCH==='tattoo-calculator-preview';
-    const modelApproved=process.env.CALCULATOR_MODEL_LICENSE_CONFIRMED==='1';
-    if (!check && (isCalculatorPreview || modelApproved)) {
+    // TattooBodyMap's owner confirmed authorship and use on this site on 2026-11-25.
+    // Public and preview use the same pricing catalogue and model.
+    if (!check) {
       const {prepareCalculator3D} = await import('./prepare-calculator-3d.mjs');
       await prepareCalculator3D(outDir);
-    }
-    if(!isCalculatorPreview){
-      const file=path.join(outDir,'assets/js/tattoo-pricing.js');
-      await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const SHOW_DRAFT_RANGES=true','const SHOW_DRAFT_RANGES=false'));
-    }
-    if(check || (!isCalculatorPreview&&!modelApproved)){
+    } else {
       const file=path.join(outDir,'assets/js/tattoo-calculator.js');
       await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const HAS_3D=true','const HAS_3D=false'));
     }
