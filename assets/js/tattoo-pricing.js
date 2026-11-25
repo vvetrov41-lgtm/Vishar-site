@@ -13,7 +13,20 @@ const rules = {
     torso: [6, 12],
     // Artist-approved lower half sleeve; remaining partial sleeve bands are draft estimates.
     lowerHalf: {black_grey:[3,4],colour:[4,5]},
-    draftPartial: {half_sleeve:{upper:{black_grey:[3,5],colour:[4,6]}},three_quarter_sleeve:{black_grey:[4,7],colour:[5,9]}}
+    draftPartial: {
+ half_sleeve:{upper:{black_grey:[3,5],colour:[4,6]},outer:{black_grey:[3,5],colour:[4,6]},inner:{black_grey:[3,5],colour:[4,6]}},
+ half_leg_sleeve:{upper:{black_grey:[4,6],colour:[5,7]},lower:{black_grey:[4,5],colour:[5,6]},outer:{black_grey:[4,6],colour:[5,7]},inner:{black_grey:[4,6],colour:[5,7]}},
+ three_quarter_sleeve:{black_grey:[4,7],colour:[5,9]}
+ },
+ // Draft hours for one new area-sized realism project. No centimetre-based
+ // pricing and no claim these are measured historical session averages.
+ draftHours:{
+ inner_bicep:[7,14],elbow:[4,7],wrist:[3,6],thigh:[14,28],knee:[4,7],calf:[7,21],shin:[7,21],ankle:[3,7],
+ sternum:[7,14],one_side_chest:[7,21],collarbone:[3,7],ribs:[14,28],upper_back:[21,42],shoulder_blade:[14,28],spine:[7,14],lower_back:[14,28],
+ stomach:[14,35],side:[14,28],hip:[7,21],front_neck:[7,14],side_neck:[4,10],back_neck:[4,10],behind_ear:[2,4],head:[14,35],
+ back_of_hand:[4,7],fingers:[1,3],side_of_hand:[2,5],top_of_foot:[4,10],side_of_foot:[2,5],toes:[1,3]
+ },
+ draftWrap:{thigh:[28,42],calf:[21,35],shin:[21,35]}
   };
   var REGIONS = [
     { key: 'arm', label: 'Arm', placements: [
@@ -87,18 +100,24 @@ function estimateSingle(p){
  const band=p.styles.length===1&&p.styles[0]!=="not_sure"?rules[p.styles[0]]:[rules.black_grey[0],rules.colour[1]];
  sessions=band.map(n=>n+extra);open=true;reason="Guide for one full sleeve. Mixed or undecided styles use the combined FAQ range. Detailed designs may take longer.";
  }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
- else if(["half_sleeve","three_quarter_sleeve"].includes(part)){
- if(part==="half_sleeve"&&longitudinal(a.half))return review("A full-length one-sided arm project needs its own session guide; the wraparound half-sleeve ranges do not apply automatically.");
+ else if(["half_sleeve","half_leg_sleeve","three_quarter_sleeve"].includes(part)){
  const approved=part==="half_sleeve"&&a.half==="lower";
  if(!approved&&!SHOW_DRAFT_RANGES)return review("This coverage needs a personal estimate.");
- const band=approved?rules.lowerHalf:part==="half_sleeve"?rules.draftPartial[part][a.half]:rules.draftPartial[part];
- if(!band||!band.black_grey)return review("Choose the upper or lower half of the arm for a planning range.");
+ const band=approved?rules.lowerHalf:half(part)?rules.draftPartial[part][a.half]:rules.draftPartial[part];
+ if(!band||!band.black_grey)return review("Choose a half-sleeve coverage pattern for a planning range.");
  sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=!approved;provisional=!approved;reason=approved?"Artist-approved guide for a lower half sleeve. Actual time depends on the composition and wraparound coverage.":"Provisional planning range for partial sleeves; not an established FAQ estimate. Actual time depends on the composition and wraparound coverage.";
- }else if(part==="half_leg_sleeve")return review("Partial leg sleeves need an individual estimate.");
- else if(a.scale==="small"&&!["neck_head","hand","foot","other"].includes(a.region)&&part!=="other"){hours=rules.small;sessions=[1,1];reason="Possible for a smaller idea if the placement, detail and realism style are suitable.";}
+ }else if(a.scale==="small"&&!["neck_head","hand","foot","other"].includes(a.region)&&part!=="other"){hours=rules.small;sessions=[1,1];reason="Possible for a smaller idea if the placement, detail and realism style are suitable.";}
  else if(a.scale==="area"&&["forearm","upper_arm","shoulder"].includes(part)){
- if(part!=="shoulder"&&a.coverage!=="panel")return review("Wraparound or uncertain coverage needs individual assessment.");
- sessions=part==="forearm"?rules.forearm:rules.upper;reason="General FAQ guide. Colour and dense detail can affect the final time; no unverified multiplier is applied.";
+ if(part!=="shoulder"&&a.coverage==="wrap"){
+ const approved=part==="forearm";if(!approved&&!SHOW_DRAFT_RANGES)return review("Wraparound coverage needs a personal estimate.");
+ const band=approved?rules.lowerHalf:rules.draftPartial.half_sleeve.upper;
+ sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=!approved;provisional=!approved;reason=approved?"Artist-approved lower half sleeve guide.":"Provisional upper half sleeve guide.";
+ }else{if(part!=="shoulder"&&a.coverage!=="panel")return review("Uncertain coverage needs individual assessment.");
+ sessions=part==="forearm"?rules.forearm:rules.upper;reason="General FAQ guide. Colour and dense detail can affect the final time; no unverified multiplier is applied.";}
+ }else if(SHOW_DRAFT_RANGES&&rules.draftHours[part]){
+ const band=a.coverage==="wrap"&&rules.draftWrap[part]?rules.draftWrap[part]:rules.draftHours[part];
+ hours=band.slice();if(a.scale==="small")hours=[Math.min(3,band[0]),Math.min(4,band[1])];
+ sessions=hours.map(h=>Math.ceil(h/rules.day));provisional=true;reason="Preliminary planning range, not a published FAQ or artist-confirmed quote. Suitability, colour, skin and detail can change the duration.";
  }else return review("The FAQ does not specify a reliable range for this exact placement and size.");
  const fullDays=!hours;hours ||= sessions.map(n=>n*rules.day);
  const range=(arr,fmt=String)=>fmt(arr[0])+(arr[0]===arr[1]?"":"–"+fmt(arr[1]))+(open?"+":"");

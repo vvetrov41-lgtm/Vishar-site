@@ -54,7 +54,7 @@ const styleKey=()=>p.styles.length===2?"mixed":p.styles[0];
 function setStyle(k){p.styles=k==="mixed"?["black_grey","colour"]:[k];}
 const map={head:["neck_head","head"],throat:["neck_head","front_neck"],nape:["neck_head","back_neck"],collarbone:["chest_ribs","collarbone"],ribs:["chest_ribs","ribs"],chest:["chest_ribs","one_side_chest"],sternum:["chest_ribs","sternum"],areola:["chest_ribs","one_side_chest"],stomach:["stomach_sides","stomach"],pelvis:["stomach_sides","hip"],armpit:["arm","other"],shoulder:["arm","shoulder"],outer_upper_arm:["arm","upper_arm"],inner_bicep:["arm","inner_bicep"],triceps:["arm","upper_arm"],inner_forearm:["arm","forearm"],outer_forearm:["arm","forearm"],elbow:["arm","elbow"],wrist:["arm","wrist"],hand:["hand","back_of_hand"],fingers:["hand","fingers"],outer_thigh:["leg","thigh"],inner_thigh:["leg","thigh"],hamstring:["leg","thigh"],knee:["leg","knee"],shin:["leg","shin"],inner_lower_leg:["leg","shin"],calf:["leg","calf"],ankle:["leg","ankle"],foot:["foot","top_of_foot"],shoulder_blade:["back","shoulder_blade"],spine:["back","spine"],lower_back:["back","lower_back"],glutes:["other","other"]};
 function selectedArea(area,side){
- const key=map[area],a=key&&areaFor(key[0]);if(!a)return false;
+ const key=map[area],a=key&&(areaFor(key[0])||(area==="ribs"&&areaFor("stomach_sides")));if(!a)return false;
  if((api.paired(a.region)||a.placements.includes("one_side_chest"))&&side&&a.side!==side&&a.side!=="both")return false;
  const part=a.placements[0];
  if(part==="full_sleeve")return key[0]==="arm"&&key[1]!=="other";
@@ -65,6 +65,12 @@ function selectedArea(area,side){
  if(part==="half_leg_sleeve"&&api.longitudinal(a.half))return key[0]==="leg";
  if(part==="half_leg_sleeve")return key[0]==="leg"&&(a.half==="upper"?["thigh","knee"]:["knee","shin","calf","ankle"]).includes(key[1]);
  if(part==="full_back")return key[0]==="back";
+ if(part==="upper_back")return ["shoulder_blade","spine"].includes(area);
+ if(part==="side_neck")return ["throat","nape"].includes(area);
+ if(part==="behind_ear")return area==="head";
+ if(part==="side_of_hand")return area==="hand";
+ if(part==="toes"||part==="side_of_foot")return area==="foot";
+ if(part==="side")return area==="ribs"||area==="stomach";
  if(part==="full_chest")return ["chest","sternum","areola","collarbone"].includes(area);
  if(a.placements.length===1&&a.scale==="area"&&part==="upper_arm")return key[0]==="arm"&&["shoulder","upper_arm","inner_bicep","elbow"].includes(key[1]);
  if(a.placements.length===1&&a.scale==="area"&&part==="forearm"){
@@ -74,11 +80,11 @@ function selectedArea(area,side){
  return a.placements.includes(key[1])||(key[0]==="other"&&a.other==="Glutes");
 }
 function coverageAt(area,side,model=false){
- const key=map[area],a=key&&areaFor(key[0]);if(!a)return null;
+ const key=map[area],a=key&&(areaFor(key[0])||(area==="ribs"&&areaFor("stomach_sides")));if(!a)return null;
  const panel=model&&a.placements.length===1&&["panel","wrap"].includes(a.coverage)&&a.scale==="area"&&(!side||a.side===side||a.side==="both")&&((a.placements[0]==="forearm"&&["elbow","forearm","wrist"].includes(key[1]))||(a.placements[0]==="upper_arm"&&["shoulder","upper_arm","inner_bicep","elbow"].includes(key[1])));
  if(!panel&&!selectedArea(area,side))return null;
  if(!model&&a.placements.length===1&&a.coverage==="panel"&&["forearm","upper_arm"].includes(a.placements[0])&&["front","back"].includes(a.surface)&&a.surface!==view)return null;
- return {region:a.region,part:a.placements[0],half:a.half,side:a.side,coverage:a.coverage,surface:a.surface,scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area",single:a.placements.length===1};
+ return {region:a.region,part:a.placements[0],half:a.half,side:a.side,coverage:a.coverage,surface:a.surface,approximate:["behind_ear","side_neck","side_of_hand","toes","side_of_foot","side","shoulder_blade"].includes(a.placements[0]),scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area",single:a.placements.length===1};
 }
 function paint2D(path){
  const area=path.dataset.area,side=path.dataset.paired==="true"?path.dataset.side:null,info=coverageAt(area,side);
@@ -206,6 +212,7 @@ function render(focus){
  const a=activeArea(),part=a?.placements.length===1?a.placements[0]:undefined,activePreset=presets.find(x=>x[2]===a?.region&&x[3]===part)?.[0];
  group(controls,"Quick projects",presets.map(x=>[x[0],x[1]]),activePreset,k=>{const x=presets.find(z=>z[0]===k);choose(x[2],x[3],null);if(k==="back"){view="back";modelViewer?.view(view);}if(k==="chest"){view="front";modelViewer?.view(view);}},"calc-presets");
  placementPicker(controls);
+ if(["behind_ear","side_neck","side_of_hand","toes","side_of_foot","side","shoulder_blade"].includes(part))controls.append(node("p","calc-help","Approximate placement: the anatomical model does not have a separate precise outline for this area."));
  if(combine&&p.areas.length){const list=node("div","calc-area-list");list.append(node("span","calc-label","Selected zones"));for(const item of p.areas){const row=node("div","calc-area-row"),edit=node("button","",description(item)),remove=node("button","","×");edit.type="button";edit.setAttribute("aria-pressed",String(item===a));edit.onclick=()=>{activeRegion=item.region;render();};remove.type="button";remove.setAttribute("aria-label","Remove "+description(item));remove.onclick=()=>{p.areas=p.areas.filter(x=>x!==item);activeRegion=p.areas.at(-1)?.region||"";render();};row.append(edit,remove);list.append(row);}controls.append(list);}
  if(a){
  const selection=node("div","calc-selection");selection.append(node("span","calc-label","Selected area"),node("strong","",description(a)));controls.append(selection);

@@ -83,6 +83,21 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
  let active=!!info;
+ if(active&&info.scale==="area"){
+ const j=i*3,x=Math.abs(worldPoints[j]),y=worldPoints[j+1],z=worldPoints[j+2],g=groups.get(region.group);
+ switch(info.part){
+ case "upper_back": if(region.base==="spine")active=y>=1.19;break;
+ case "shoulder_blade": if(region.base==="upper_back")active=x>=.055&&y>=1.18;break;
+ case "side_neck": active=region.base==="neck"&&x>=.025;break;
+ case "behind_ear": active=region.base==="head"&&x>=.055&&y>=1.51&&y<=1.62&&z<=.02;break;
+ case "back_of_hand": active=region.base==="hand"&&region.facet==="back";break;
+ case "side_of_hand": active=region.base==="hand"&&g&&Math.abs(x-Math.abs(g.center[0]))>=.018;break;
+ case "top_of_foot": active=region.base==="foot"&&region.facet==="top";break;
+ case "side_of_foot": active=region.base==="foot"&&g&&Math.abs(x-Math.abs(g.center[0]))>=.035;break;
+ case "toes": active=region.base==="foot"&&region.facet==="top"&&g&&z>g.center[2]+.055;break;
+ case "side": if(region.base==="abdomen")active=x>=.09;break;
+ }
+ }
  if(active&&info.scale==="area"&&region.base==="elbow"){
  const upper=info.part==="upper_arm"||info.part==="half_sleeve"&&info.half==="upper",lower=info.part==="forearm"||info.part==="half_sleeve"&&info.half==="lower",cut=armSections[side]?.elbowY;
  if(Number.isFinite(cut)){if(upper)active=worldPoints[i*3+1]>=cut;else if(lower)active=worldPoints[i*3+1]<cut;}

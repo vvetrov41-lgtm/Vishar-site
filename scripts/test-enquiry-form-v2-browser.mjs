@@ -346,7 +346,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     await page.getByRole('button',{name:'Outer side · full length',exact:true}).click();
     const outerArm=JSON.parse(await model.getAttribute('data-highlighted-regions'));
     assert.ok(outerArm['shoulder|left']>0&&outerArm['forearm|left']>0&&outerArm['wrist|left']>0);
-    assert.equal(await page.locator('.calc-result').innerText(),'By assessment');
+    assert.match(await page.locator('.calc-result').innerText(),/£2,940–£4,900/);
     await page.getByRole('button',{name:'Inner side · full length',exact:true}).click();
     assert.ok(await fraction()>0);
     await page.getByRole('button',{name:'Half leg sleeve',exact:true}).click();
@@ -355,6 +355,19 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     assert.ok(outerLeg['thigh|left']>0&&outerLeg['calf|left']>0&&outerLeg['ankle|left']>0);
     await page.getByRole('button',{name:'Inner side · full length',exact:true}).click();
     assert.ok(await fraction()>0);
+    await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
+    await page.getByText('Choose another body area',{exact:true}).click();
+    const placements=await page.locator('#calc-placement-list option').evaluateAll(os=>os.map(o=>o.value).filter(Boolean));
+    const audit=[];
+    for(const placement of placements){
+      await page.locator('#calc-placement-list').selectOption(placement);
+      const n=Number(await model.getAttribute('data-selected-vertices'));
+      const regions=JSON.parse(await model.getAttribute('data-highlighted-regions')||'{}');
+      const price=await page.locator('.calc-result').innerText();
+      audit.push({placement,vertices:n,regions:Object.keys(regions),price});
+    }
+    console.log('ALL ZONE AUDIT '+JSON.stringify(audit));
+    assert.ok(audit.every(x=>x.vertices>0&&x.price.includes('£')),JSON.stringify(audit.filter(x=>!x.vertices||!x.price.includes('£'))));
     await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   }
   await page.getByRole('button',{name:'2D',exact:true}).click();
@@ -383,7 +396,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByText('Choose another body area',{exact:true}).click();
   await page.getByLabel('Body area',{exact:true}).selectOption('leg|calf');
   assert.match(await page.locator('.calc-selection').innerText(),/Calf/);
-  assert.equal(await page.locator('.calc-result').innerText(),'By assessment');
+  assert.equal(await page.locator('.calc-result').innerText(),'£980–£2,940');
   await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   await page.getByRole('button',{name:'Combine zones: off',exact:true}).click();
   await page.getByRole('button',{name:'Forearm',exact:true}).click();
@@ -395,7 +408,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByRole('button',{name:/Remove Full back/}).click();
   await page.getByRole('button',{name:'Full leg',exact:true}).click();
   assert.equal(await page.locator('.calc-result').innerText(),'£8,820–£11,760+');
-  assert.match(await page.locator('#calc-result-details').innerText(),/tattooed independently/);
+  assert.match(await page.locator('#calc-estimate').innerText(),/tattooed independently/);
   await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   await page.getByRole('button',{name:'Forearm',exact:true}).click();
   await page.getByRole('button',{name:'Small piece',exact:true}).click();
