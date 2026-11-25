@@ -176,7 +176,7 @@ export function EnquiryStructuredEditPanel({
                     <input
                       type="checkbox"
                       checked={area.placements.includes(placement.key)}
-                      onChange={() => updateArea(index, { placements: togglePlacement(region, area.placements, placement.key), selection: {} })}
+                      onChange={() => updateArea(index, { placements: togglePlacement(region, area.placements, placement.key), ...(area.selection ? {selection:{}} : {}) })}
                     />
                     {catalogueLabel(placement.label, language)}
                   </label>

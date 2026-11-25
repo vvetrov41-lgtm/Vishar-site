@@ -20,7 +20,7 @@ export function coverageValue(key:keyof TattooCoverage,value:string,language:Lan
 export function TattooSelection({details,language}:{details:EnquiryProjectDetails;language:Language}){
  const copy=labels[language], selection=currentCalculatorSelection(details), estimate=details.calculator_estimate, result=estimate?.result;
  if(!selection.length&&!result)return null;
- const range=(numbers:number[]|null,unit:string,open:boolean)=>numbers?.length?numbers.join('–')+(open?'+':'')+' '+unit:'—';
+ const range=(numbers:number[]|null,unit:string,open:boolean)=>numbers?.length?(numbers[0]===numbers[numbers.length-1]?String(numbers[0]):numbers.join('–'))+(open?'+':'')+(unit?' '+unit:''):'—';
  return <div className="tattoo-selection" data-testid="tattoo-selection">
  {selection.length>0?<section aria-label={copy.areas}><h3>{copy.areas}</h3>{selection.map(a=>{
  const region=V2_REGIONS.find(r=>r.key===a.region);

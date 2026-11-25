@@ -6,3 +6,5 @@ Source pricing file is copied byte-for-byte from the public preview commit to th
 
 ## CRM operator interface
 Current coverage uses calculator_selection; the immutable client snapshot stays under calculator_estimate and is marked calculator_estimate_superseded on changes. The existing authenticated edit RPC retains its artist access and conflict checks. The project page already reads the source enquiry and uses the same component. Neither field writes agreed finance or payment records. Legacy and Kristina enquiries remain supported; no Vladimir rate is applied to them. The database migration must precede CRM UI deployment.
+
+Intake routing also restricts Vladimir's price metadata to the registry-resolved Vladimir website and exact production origin; other artist sources retain ordinary enquiry intake without this calculator estimate.
