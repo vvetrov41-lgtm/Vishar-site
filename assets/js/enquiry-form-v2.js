@@ -898,7 +898,7 @@
     if (!calculatorGuide || calculatorGuide.signature !== calculatorSignature()) return '';
     var result = window.TattooPricing.estimate(calculatorGuide.project);
     if (!result) return '';
-    return 'Initial calculator guide (not a quote): ' + result.price + (result.numeric ? ' / ' + result.time + ' / ' + result.visits : '');
+    return 'Initial calculator guide (not a quote)' + (result.provisional ? ' — provisional' : '') + ': ' + result.price + (result.numeric ? ' / ' + result.time + ' / ' + result.visits : '');
   }
   function basePayload(includeFiles) {
     var payload = new FormData();

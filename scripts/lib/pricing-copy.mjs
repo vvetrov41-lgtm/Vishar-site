@@ -31,5 +31,7 @@ export function renderPricingCopy(html, page, r = pricing.rules) {
   );
   after("or (?=\\d+(?:–|-|\\\\u2013)\\d+\\+ (?:for |colour))", "colour");
   after("projects:? often ", "torso");
+  const lower = r.lowerHalf || pricing.rules.lowerHalf;
+  html = html.replace(/(lower half sleeve \(elbow to wrist, wraparound\):? usually )\d+[–-]\d+( sessions in black and grey or )\d+[–-]\d+( sessions in colour)/gi, (_,a,b,c)=>a+lower.black_grey.join("–")+b+lower.colour.join("–")+c);
   return html;
 }

@@ -23,6 +23,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderPricingCopy } from './lib/pricing-copy.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -282,9 +283,23 @@ async function main() {
   const outDir = check ? await fs.mkdtemp(path.join(os.tmpdir(), 'public-check-')) : OUT_DIR;
   try {
     const bytes = await copyFiles(files, outDir);
-    if (!check && process.env.CF_PAGES_BRANCH === 'tattoo-calculator-preview') {
+    for (const [file,id] of [['faq','faq'],['colour-realism-tattoo-london','colour-realism'],['black-and-grey-realism-london','black-grey']]) {
+      const page=path.join(outDir,file,'index.html');
+      await fs.writeFile(page,renderPricingCopy(await fs.readFile(page,'utf8'),id));
+    }
+    const isCalculatorPreview=process.env.CF_PAGES_BRANCH==='tattoo-calculator-preview';
+    const modelApproved=process.env.CALCULATOR_MODEL_LICENSE_CONFIRMED==='1';
+    if (!check && (isCalculatorPreview || modelApproved)) {
       const {prepareCalculator3D} = await import('./prepare-calculator-3d.mjs');
       await prepareCalculator3D(outDir);
+    }
+    if(!isCalculatorPreview){
+      const file=path.join(outDir,'assets/js/tattoo-pricing.js');
+      await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const SHOW_DRAFT_RANGES=true','const SHOW_DRAFT_RANGES=false'));
+    }
+    if(check || (!isCalculatorPreview&&!modelApproved)){
+      const file=path.join(outDir,'assets/js/tattoo-calculator.js');
+      await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const HAS_3D=true','const HAS_3D=false'));
     }
     const refs = await verifyReferences(outDir, files);
     if (refs.problems.length) {

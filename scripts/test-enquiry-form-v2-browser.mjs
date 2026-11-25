@@ -329,6 +329,8 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   for (const width of [320,390,1024]) {
     await page.setViewportSize({width,height:844});
     await noHorizontalScroll(page,'calculator');
+    assert.ok(await page.locator('.calc-toolbar').isVisible());
+    assert.ok(await page.locator('.calc-toolbar').evaluate(e=>e.getBoundingClientRect().height)<90,'single-row model toolbar');
     const overlap=await page.evaluate(()=>{const a=document.querySelector('.calc-output').getBoundingClientRect(),b=document.querySelector('.calc-mode').getBoundingClientRect();return a.bottom>b.top+1;});
     assert.equal(overlap,false,'price block must not overlap controls');
   }
@@ -339,7 +341,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   const bytes = await page.evaluate(() => performance.getEntriesByType('resource')
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));
-  assert.ok(bytes > 0 && bytes < 65000);
+  assert.ok(bytes > 0 && bytes < 75000);
   assert.equal(await page.locator('#calc-next').isVisible(),false,'no booking prompt before choosing a project');
   await page.getByText('Choose another body area',{exact:true}).click();
   await page.getByLabel('Body area',{exact:true}).selectOption('leg|calf');
@@ -417,6 +419,7 @@ await test('Calculator mobile optional booking dialog and live transfer', async 
  await page.getByRole('link',{name:'Open calculator',exact:true}).click();
  const dialog=page.locator('#booking-calculator-dialog');
  assert.equal(await dialog.isVisible(),true);
+ if(process.env.TEST_CALCULATOR_3D==='1')await dialog.locator('.calc-webgl[data-ready="true"]').waitFor({timeout:30000});
  await dialog.getByRole('button',{name:'Full sleeve',exact:true}).click();
  await dialog.getByRole('button',{name:'Right',exact:true}).click();
  await dialog.getByRole('button',{name:'Black & Grey',exact:true}).click();

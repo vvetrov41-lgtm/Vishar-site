@@ -37,6 +37,7 @@ const change = {
   colour: [19, 20],
   torso: [21, 22],
   legExtra: 5,
+  lowerHalf: {black_grey:[23,24],colour:[25,26]},
 };
 for (const [file, id] of [
   ["faq", "faq"],
@@ -52,6 +53,7 @@ for (const [file, id] of [
     copy,
     /£140|(?:1–2|2–3) full-day|(?:6–8|8–10|6–12)\+|3–4 hour projects|up to 7 hours|around \+2 sessions/,
   );
+  if(id==="faq"){assert.match(copy,/23–24 sessions in black and grey or 25–26 sessions in colour/);assert.equal((copy.match(/23–24 sessions in black and grey or 25–26 sessions in colour/g)||[]).length,2);}
   assert.ok(
     copy.includes("£170") && copy.includes("11–12") && copy.includes("15–16"),
   );

@@ -1,5 +1,6 @@
 // Shared catalogue and FAQ-based pricing.
 (function(root){
+const SHOW_DRAFT_RANGES=true; // preview and tests only; false in a public build.
 const rules = {
     hourly: 140,
     day: 7,
@@ -86,6 +87,7 @@ function estimateSingle(p){
  }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
  else if(["half_sleeve","three_quarter_sleeve"].includes(part)){
  const approved=part==="half_sleeve"&&a.half==="lower";
+ if(!approved&&!SHOW_DRAFT_RANGES)return review("This coverage needs a personal estimate.");
  const band=approved?rules.lowerHalf:part==="half_sleeve"?rules.draftPartial[part][a.half]:rules.draftPartial[part];
  if(!band||!band.black_grey)return review("Choose the upper or lower half of the arm for a planning range.");
  sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=!approved;provisional=!approved;reason=approved?"Artist-approved guide for a lower half sleeve. Actual time depends on the composition and wraparound coverage.":"Provisional planning range for partial sleeves; not an established FAQ estimate. Actual time depends on the composition and wraparound coverage.";
