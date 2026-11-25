@@ -34,7 +34,10 @@ insert into gmail_acl_expectations values
   ('public.service_upsert_gmail_thread_context(uuid,uuid,uuid,text,text,text,text)', false, false, true),
   ('public.service_get_gmail_thread_context(uuid,uuid,uuid,uuid)', false, false, true),
   ('public.claim_email_outbox(text,integer,integer)', false, false, true),
-  ('public.record_email_outbox_result(uuid,text,boolean,text,text)', false, false, true);
+  ('public.record_email_outbox_result(uuid,text,boolean,text,text)', false, false, true),
+  ('public.service_record_review_email_sent(uuid,text,text,text,text)', false, false, true),
+  ('public.service_list_review_email_checks(uuid,text,text)', false, false, true),
+  ('public.service_record_review_email_check(uuid,text,uuid,text,text,timestamptz,text)', false, false, true);
 
 select is(
   has_function_privilege('anon', signature, 'EXECUTE'),

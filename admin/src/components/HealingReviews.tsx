@@ -41,7 +41,7 @@ type Open =
   | null;
 
 /** Refusals that mean the list on screen is out of date. */
-const STALE: ReviewRefusal[] = ['not_suggested', 'already_decided', 'no_reply'];
+const STALE: ReviewRefusal[] = ['not_suggested', 'already_decided', 'no_reply', 'channel_unavailable'];
 const EXPLAINED: ReviewRefusal[] = [
   'not_suggested', 'already_decided', 'template_not_ready', 'no_whatsapp', 'not_reachable',
   'name_unusable', 'no_review_link', 'no_reply', 'window_closed', 'channel_unavailable', 'invalid',

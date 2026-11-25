@@ -236,6 +236,11 @@ begin
   else
     v_message:=(public.queue_communication_message(v_route.conversation_id,v_body,p_operation_id)->>'message_id')::uuid;
   end if;
+  if p_channel<>'email' and not exists(select 1 from public.communication_messages m
+    where m.id=v_message and m.artist_id=p_artist_id and m.conversation_id=v_route.conversation_id
+      and m.direction='outbound' and m.body=v_body and m.channel::text=p_channel) then
+    raise exception 'operation id was used for another message' using errcode='22023';
+  end if;
   update public.review_requests set healing_message_id=v_message,healing_email_message_id=v_email
     where id=v_row.id returning * into v_row;
   v_result:=(to_jsonb(v_row)-'created_by'-'updated_by')||jsonb_build_object('channel',p_channel);
@@ -335,6 +340,11 @@ begin
     v_message:=(public.queue_whatsapp_message(v_route.conversation_id,btrim(p_body),p_operation_id)->>'message_id')::uuid;
   else
     v_message:=(public.queue_communication_message(v_route.conversation_id,btrim(p_body),p_operation_id)->>'message_id')::uuid;
+  end if;
+  if p_channel<>'email' and not exists(select 1 from public.communication_messages m
+    where m.id=v_message and m.artist_id=p_artist_id and m.conversation_id=v_route.conversation_id
+      and m.direction='outbound' and m.body=btrim(p_body) and m.channel::text=p_channel) then
+    raise exception 'operation id was used for another message' using errcode='22023';
   end if;
   update public.review_requests set state='review_asked',replied_at=v_reply.replied_at,reply_message_id=v_reply.message_id,
     review_asked_at=clock_timestamp(),review_message_id=v_message,review_email_message_id=v_email,
@@ -500,3 +510,65 @@ end;
 $fn$;
 revoke all on function public.service_record_review_email_check(uuid,text,uuid,text,text,timestamptz,text) from public,anon,authenticated;
 grant execute on function public.service_record_review_email_check(uuid,text,uuid,text,text,timestamptz,text) to service_role;
+
+create or replace function public.close_review_request(p_artist_id uuid,p_review_request_id uuid,p_operation_id uuid)
+returns jsonb language plpgsql volatile security definer
+set search_path=pg_catalog,public,crm_private
+as $fn$
+declare v_begin record; v_row public.review_requests%rowtype; v_reply record; v_now timestamptz:=clock_timestamp(); v_result jsonb;
+begin
+  select * into v_begin from crm_private.review_followup_begin(p_artist_id,p_review_request_id,p_operation_id,'close');
+  if v_begin.p_replay is not null then return v_begin.p_replay; end if;
+  v_row:=v_begin.p_row;
+  select * into v_reply from crm_private.review_reply_evidence(v_row.id);
+  update public.review_requests set state='closed',replied_at=v_reply.replied_at,reply_message_id=v_reply.message_id,
+    closed_at=v_now,last_operation_id=p_operation_id,version=version+1,updated_by=auth.uid(),updated_at=v_now
+    where id=v_row.id returning * into v_row;
+  v_result:=to_jsonb(v_row)-'created_by'-'updated_by';
+  insert into crm_private.review_request_operations(operation_id,review_request_id,action,result) values(p_operation_id,v_row.id,'close',v_result);
+  return v_result;
+end;
+$fn$;
+
+-- Generic Meta outboxes are shared with the inbox. For review-linked
+-- messages only, revalidate the exact conversation, client and window at
+-- the last durable send-intent step. No alternate recipient or fallback.
+create function crm_private.review_meta_delivery_allowed(p_message_id uuid)
+returns boolean language sql stable security definer
+set search_path=pg_catalog,public,crm_private
+as $fn$
+  select not exists (
+    select 1 from public.review_requests rr
+    where p_message_id in (rr.healing_message_id,rr.review_message_id)
+  ) or exists (
+    select 1 from public.review_requests rr
+    join public.communication_messages m on m.id=p_message_id and m.artist_id=rr.artist_id
+    join public.communication_conversations c on c.id=m.conversation_id and c.artist_id=rr.artist_id
+      and c.client_id=rr.client_id and c.channel=m.channel and c.link_state='linked' and c.state='open'
+    join crm_private.artist_state st on st.artist_id=rr.artist_id and st.is_active
+    join public.clients cl on cl.id=rr.client_id and cl.archived_at is null
+    where ((rr.healing_message_id=m.id and rr.state='healing_asked')
+        or (rr.review_message_id=m.id and rr.state='review_asked'))
+      and crm_private.client_send_block_reason(rr.client_id,m.channel::text::public.message_template_channel,'service') is null
+      and not exists(select 1 from public.communication_suppressions s where s.client_id=rr.client_id and s.is_active
+        and s.reason in ('unsubscribed','complained','blocked','manual'))
+      and (select count(*) from public.artist_integrations i where i.artist_id=rr.artist_id and i.is_enabled and i.integration_key=c.integration_key
+        and ((m.channel='whatsapp' and i.integration_type='whatsapp' and i.provider='meta_cloud_api')
+          or (m.channel='instagram' and i.integration_type='instagram' and i.provider='instagram_login')))=1
+      and ((m.channel='whatsapp' and m.message_type='template' and rr.healing_message_id=m.id)
+        or (m.message_type='text' and c.last_inbound_at>now()-interval '24 hours'+interval '10 minutes'))
+  );
+$fn$;
+revoke all on function crm_private.review_meta_delivery_allowed(uuid) from public,anon,authenticated,service_role;
+
+do $patch$
+declare v_def text:=pg_get_functiondef('public.service_begin_communication_send(uuid,text)'::regprocedure);
+  v_anchor text:=' if v_job.dedupe_key like ''instagram:welcome:%'' then';
+begin
+  if (length(v_def)-length(replace(v_def,v_anchor,'')))<>length(v_anchor) then
+    raise exception 'review Meta send-intent anchor drift' using errcode='23514';
+  end if;
+  execute replace(v_def,v_anchor,
+    E' if not crm_private.review_meta_delivery_allowed(v_job.communication_message_id) then return jsonb_build_object(''proceed'',false,''reason'',''review_request_ineligible''); end if;\n'||v_anchor);
+end;
+$patch$;
