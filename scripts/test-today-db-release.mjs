@@ -750,3 +750,10 @@ const reviewFollowups = [
 assert.equal(verifyTodayLineage(reviewFollowups), '20261119130000');
 assert.equal(deferredTodayMigration(reviewFollowups), null);
 assert.throws(() => verifyTodayLineage(reviewFollowups + '\n 20261119130100 | | t'));
+
+// Never apply the wake migration before the in-flight review-channel release.
+const wakeLineage = ' Local | Remote | Time\n 20261125204000 | 20261125204000 | t\n 20261125210000 | | t';
+assert.equal(verifyTodayLineage(wakeLineage),'20261125210000');
+assert.throws(()=>verifyTodayLineage(wakeLineage.replaceAll('20261125204000','20261123011000')));
+assert.throws(()=>verifyTodayLineage(wakeLineage+'\n 20261125210001 | | t'));
+assert.equal(deferredTodayMigration(wakeLineage),null);

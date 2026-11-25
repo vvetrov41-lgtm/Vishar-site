@@ -13,3 +13,7 @@ The browser and GPT gateway send a best-effort wake after a successful allowlist
 5. Verify natural real bookings on both artists. Measure calendar sync and provider acceptance from job creation; tattoo card debounce remains 120 seconds until atomic price/deposit readiness is verified. Consultation debounce remains 10 seconds. Do not claim final delivery time from provider acceptance alone.
 
 Rollback: set OUTBOX_WAKE_ENABLED=false via the approved config gate. All existing five-minute cron triggers and outbox work remain unchanged; no messages or events need to be replayed.
+
+## Coordinated schema release
+
+The review-channel migration 20261125204000 is already on the canonical branch. The wake migration is still unapplied, so its source version is now 20261125210000. Wait for the review database rollout and verify its exact applied head before merging this PR. The existing single-migration production gate admits only 20261125204000 -> 20261125210000; do not use out-of-order migration flags or release both migrations together.
