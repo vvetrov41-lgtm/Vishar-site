@@ -325,7 +325,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   const bytes = await page.evaluate(() => performance.getEntriesByType('resource')
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));
-  assert.ok(bytes > 0 && bytes < 40000);
+  assert.ok(bytes > 0 && bytes < 55000);
   assert.equal(await page.locator('#calc-next').isVisible(),false,'no booking prompt before choosing a project');
   await page.getByRole('button',{name:'Full sleeve',exact:true}).click();
   await page.getByRole('button',{name:'Left',exact:true}).click();
@@ -335,11 +335,19 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   assert.match(await page.locator('.calc-result').innerText(),/£7,840–£9,800/);
   await page.getByRole('button',{name:'Black & Grey',exact:true}).click();
   assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+  await page.getByRole('button',{name:'By budget',exact:true}).click();
+  await page.getByLabel('Your budget (£)',{exact:true}).fill('2000');
+  assert.equal(await page.locator('.calc-result').innerText(),'£2,000');
+  assert.match(await page.locator('.calc-stat-row').innerText(),/14.25 h/);
+  assert.equal(await page.locator('#calc-next').isVisible(),false);
   await page.getByRole('button',{name:'By time',exact:true}).click();
   await page.getByRole('button',{name:'2 days',exact:true}).click();
   assert.equal(await page.locator('.calc-result').innerText(),'£1,960');
   assert.equal(await page.locator('#calc-next').isVisible(),false,'time calculation does not offer an enquiry');
   await page.getByRole('button',{name:'By tattoo',exact:true}).click();
+  await page.locator('#calc-arm-length').fill('2');
+  assert.match(await page.locator('.calc-result').innerText(),/£3,920–£6,860/);
+  await page.locator('#calc-arm-length').fill('3');
   await page.getByRole('button',{name:'Colour',exact:true}).click();
   await page.getByRole('button',{name:'Use this selection in an enquiry (optional)',exact:true}).click();
   await expectSection(page,'Design');

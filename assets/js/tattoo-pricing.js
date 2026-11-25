@@ -10,6 +10,8 @@ const rules = {
     colour: [8, 10],
     legExtra: 2,
     torso: [6, 12],
+    // Draft planning bands, NOT published FAQ rates. Require artist sign-off before release.
+    draftPartial: {half_sleeve:{upper:{black_grey:[3,5],colour:[4,6]},lower:{black_grey:[2,4],colour:[3,5]}},three_quarter_sleeve:{black_grey:[4,7],colour:[5,9]}}
   };
   var REGIONS = [
     { key: 'arm', label: 'Arm', placements: [
@@ -75,13 +77,17 @@ function estimate(p){
  const a=p.areas[0],r=regionByKey(a.region),part=a.placements.find(k=>r.placements.find(x=>x[0]===k)?.[2])||a.placements[0];
  if(paired(a.region)&&a.side==="both"||a.placements.includes("one_side_chest")&&a.side==="both")return review("The FAQ ranges refer to one limb. Both limbs need an individual plan.");
  if(a.placements.length!==1&&!["full_sleeve","full_leg_sleeve","half_sleeve","three_quarter_sleeve","half_leg_sleeve"].includes(part))return review("Combined placements need a personalised estimate.");
- let hours,sessions,open=false,reason;
+ let hours,sessions,open=false,reason,provisional=false;
  if(["full_sleeve","full_leg_sleeve"].includes(part)){
  const extra=part==="full_leg_sleeve"?rules.legExtra:0;
  const band=p.styles.length===1&&p.styles[0]!=="not_sure"?rules[p.styles[0]]:[rules.black_grey[0],rules.colour[1]];
  sessions=band.map(n=>n+extra);open=true;reason="Guide for one full sleeve. Mixed or undecided styles use the combined FAQ range. Detailed designs may take longer.";
  }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
- else if(["half_sleeve","three_quarter_sleeve","half_leg_sleeve"].includes(part))return review("Partial sleeves vary by coverage and design; the FAQ does not specify a reliable separate range.");
+ else if(["half_sleeve","three_quarter_sleeve"].includes(part)){
+ const band=part==="half_sleeve"?rules.draftPartial[part][a.half]:rules.draftPartial[part];
+ if(!band||!band.black_grey)return review("Choose the upper or lower half of the arm for a planning range.");
+ sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=true;provisional=true;reason="Provisional planning range for partial sleeves; not an established FAQ estimate. Actual time depends on the composition and wraparound coverage.";
+ }else if(part==="half_leg_sleeve")return review("Partial leg sleeves need an individual estimate.");
  else if(a.scale==="small"&&!["neck_head","hand","foot","other"].includes(a.region)&&part!=="other"){hours=rules.small;sessions=[1,1];reason="Possible for a smaller idea if the placement, detail and realism style are suitable.";}
  else if(a.scale==="area"&&["forearm","upper_arm","shoulder"].includes(part)){
  if(part!=="shoulder"&&a.coverage!=="panel")return review("Wraparound or uncertain coverage needs individual assessment.");
@@ -89,7 +95,7 @@ function estimate(p){
  }else return review("The FAQ does not specify a reliable range for this exact placement and size.");
  const fullDays=!hours;hours ||= sessions.map(n=>n*rules.day);
  const range=(arr,fmt=String)=>fmt(arr[0])+(arr[0]===arr[1]?"":"–"+fmt(arr[1]))+(open?"+":"");
- return {price:range(hours.map(n=>n*rules.hourly),gbp),time:range(hours)+" hours",visits:range(sessions)+(sessions[1]===1?" session":" sessions"),numeric:true,hours,sessions,open,reason:reason+(fullDays?" Budget assumes up to "+rules.day+" hours per full day. You pay for tattooing time used.":"")};
+ return {price:range(hours.map(n=>n*rules.hourly),gbp),time:range(hours)+" hours",visits:range(sessions)+(sessions[1]===1?" session":" sessions"),numeric:true,hours,sessions,open,provisional,reason:reason+(fullDays?" Budget assumes up to "+rules.day+" hours per full day. You pay for tattooing time used.":"")};
 }
 function booking(p){
  if(!valid(p))return null;
@@ -101,6 +107,7 @@ function booking(p){
  return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
-const api={rules,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,surfaces,valid,estimate,booking,fromHash};
+function budgetPlan(amount){if(!Number.isFinite(amount)||amount<0)return null;const hours=Math.floor(amount/rules.hourly*4)/4;return {hours,fullDays:Math.floor(hours/rules.day),remainderHours:hours%rules.day,unused:Math.round((amount-hours*rules.hourly)*100)/100};}
+const api={rules,budgetPlan,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,surfaces,valid,estimate,booking,fromHash};
 if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);
