@@ -63,14 +63,25 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/.geo-topic-agent-runtime
         run: python -m pytest tests -q
 
-      - name: Check calculator rules, mobile layout and booking handoff
+      - name: Check calculator rules and complete enquiry browser suite
         run: |
           node scripts/test-tattoo-pricing.mjs
           node scripts/prepare-calculator-3d.mjs .
           npm install --prefix "$RUNNER_TEMP/calculator-qa" --no-audit --no-fund playwright@1.58.2 axe-core@4.10.3
           mkdir -p "$RUNNER_TEMP/calculator-fixtures"
-          cp assets/og/og-london-2026-nov.jpg "$RUNNER_TEMP/calculator-fixtures/design.jpg"
+          python -m pip install pillow==11.3.0
+          python - <<'PY'
+          import os, random
+          from pathlib import Path
+          from PIL import Image
+          fixtures = Path(os.environ["RUNNER_TEMP"]) / "calculator-fixtures"
+          Image.new("RGB", (640, 480), "#888888").save(fixtures / "design.jpg")
+          Image.new("RGB", (640, 480), "#777777").save(fixtures / "existing.png")
+          Image.new("RGB", (640, 480), "#666666").save(fixtures / "existing2.webp")
+          Image.frombytes("RGB", (4000, 3000), random.Random(42).randbytes(4000 * 3000 * 3)).save(fixtures / "iphone-large.jpg", quality=98)
+          (fixtures / "not-image.jpg").write_text("Not an image")
+          PY
           TEST_CALCULATOR_3D=1 PLAYWRIGHT_MODULE="$RUNNER_TEMP/calculator-qa/node_modules/playwright/index.mjs" \
           AXE_PATH="$RUNNER_TEMP/calculator-qa/node_modules/axe-core/axe.min.js" \
           PLAYWRIGHT_EXECUTABLE="$(command -v google-chrome)" \
-          node scripts/test-enquiry-form-v2-browser.mjs --only 'Calculator mobile' --fixtures "$RUNNER_TEMP/calculator-fixtures"
+          node scripts/test-enquiry-form-v2-browser.mjs --fixtures "$RUNNER_TEMP/calculator-fixtures"
