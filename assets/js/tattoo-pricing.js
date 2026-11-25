@@ -54,7 +54,8 @@ const validList=(list,keys)=>Array.isArray(list)&&list.length>0&&new Set(list).s
 const large=(r,k)=>r.placements.find(x=>x[0]===k)?.[3];
 const limb=r=>["arm","leg"].includes(r);
 const paired=r=>["arm","leg","hand","foot"].includes(r);
-const halves={upper:"Upper half",lower:"Lower half",unsure:"Not decided"};
+const halves={upper:"Upper half · wraparound",lower:"Lower half · wraparound",outer:"Full-length outer side",inner:"Full-length inner side",unsure:"Not decided"};
+const longitudinal=h=>h==="outer"||h==="inner";
 const surfaces={front:"Front surface",back:"Back surface",inner:"Inner surface",outer:"Outer surface",unsure:"Not decided"};
 const half=k=>["half_sleeve","half_leg_sleeve"].includes(k);
 const wraps=k=>["forearm","upper_arm","thigh","calf","shin"].includes(k);
@@ -67,6 +68,7 @@ function valid(p){
  if(a.placements.includes("other")&&(typeof a.other!=="string"||!a.other.trim()||a.other.length>120))return false;
  if(a.placements.filter(k=>r.placements.find(x=>x[0]===k)?.[2]).length>1)return false;
  if((paired(a.region)||a.placements.includes("one_side_chest"))&&!Object.hasOwn(sides,a.side))return false;
+ if(a.placements.some(half)&&a.half!==undefined&&!Object.hasOwn(halves,a.half))return false;
  return a.placements.length!==1||large(r,a.placements[0])||(Object.hasOwn(scales,a.scale)&&(!wraps(a.placements[0])||a.scale!=="area"||Object.hasOwn(coverage,a.coverage)));
  });
 }
@@ -86,6 +88,7 @@ function estimateSingle(p){
  sessions=band.map(n=>n+extra);open=true;reason="Guide for one full sleeve. Mixed or undecided styles use the combined FAQ range. Detailed designs may take longer.";
  }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
  else if(["half_sleeve","three_quarter_sleeve"].includes(part)){
+ if(part==="half_sleeve"&&longitudinal(a.half))return review("A full-length one-sided arm project needs its own session guide; the wraparound half-sleeve ranges do not apply automatically.");
  const approved=part==="half_sleeve"&&a.half==="lower";
  if(!approved&&!SHOW_DRAFT_RANGES)return review("This coverage needs a personal estimate.");
  const band=approved?rules.lowerHalf:part==="half_sleeve"?rules.draftPartial[part][a.half]:rules.draftPartial[part];
@@ -130,6 +133,6 @@ function booking(p){
 }
 function fromHash(hash){const q=new URLSearchParams(hash.slice(1));if(q.get("estimate")!=="2")return null;try{const raw=q.get("project");return raw&&raw.length<=6000?booking(JSON.parse(raw)):null;}catch{return null;}}
 function budgetPlan(amount){if(!Number.isFinite(amount)||amount<0)return null;const hours=Math.floor(amount/rules.hourly*4)/4;return {hours,fullDays:Math.floor(hours/rules.day),remainderHours:hours%rules.day,unused:Math.round((amount-hours*rules.hourly)*100)/100};}
-const api={rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,surfaces,valid,estimate,booking,fromHash};
+const api={rules,budgetPlan,breakdown,REGIONS,WORK,STYLES,sides,scales,coverage,regionByKey,large,limb,paired,wraps,half,halves,longitudinal,surfaces,valid,estimate,booking,fromHash};
 if(typeof module==="object"&&module.exports)module.exports=api;else root.TattooPricing=api;
 })(globalThis);

@@ -16,6 +16,7 @@ const lengthSteps=[["forearm","Forearm panel"],["half_sleeve","Half sleeve"],["t
 function choose(region,part,side,surface="unsure",other=""){
  const prev=areaFor(region),same=!!prev;
  const a={region,placements:region==="other"?[]:[part],work:same?prev.work.slice():["new"],side:side||(same&&prev.side)||"left",scale:"area",coverage:"panel",half:api.half(part)?(same&&prev.half&&prev.half!=="unsure"?prev.half:same&&prev.placements.includes("forearm")?"lower":"upper"):"",surface:surface==="unsure"&&["forearm","upper_arm"].includes(part)?(part==="upper_arm"?"outer":"front"):surface,other:other||(region==="other"||part==="other"?"Other placement":"")};
+ if(api.half(part)){a.coverage=api.longitudinal(a.half)?"panel":"wrap";a.surface=api.longitudinal(a.half)?a.half:"unsure";}
  if(combine){p.areas=p.areas.filter(x=>x.region!==region);p.areas.push(a);}else p.areas=[a];activeRegion=region;mode="project";start();return a;
 }
 function pickZone(area,side,facet){
@@ -48,7 +49,7 @@ function group(parent,label,entries,selected,change,cls=""){
  const wrap=node("fieldset","calc-keys "+cls),row=node("div","calc-key-row");wrap.append(node("legend","calc-label",label),row);
  for(const [k,v] of entries){const b=node("button","calc-key",v);b.type="button";b.dataset.key=label+"|"+k;b.setAttribute("aria-pressed",String(selected===k));b.onclick=()=>{start();change(k);render(b.dataset.key);};row.append(b);}parent.append(wrap);
 }
-const presets=[["forearm","Forearm","arm","forearm"],["upper","Upper arm","arm","upper_arm"],["half","Half sleeve","arm","half_sleeve"],["three","¾ sleeve","arm","three_quarter_sleeve"],["sleeve","Full sleeve","arm","full_sleeve"],["leg","Full leg","leg","full_leg_sleeve"],["back","Full back","back","full_back"],["chest","Full chest","chest_ribs","full_chest"]];
+const presets=[["forearm","Forearm","arm","forearm"],["upper","Upper arm","arm","upper_arm"],["half","Half sleeve","arm","half_sleeve"],["three","¾ sleeve","arm","three_quarter_sleeve"],["sleeve","Full sleeve","arm","full_sleeve"],["half-leg","Half leg sleeve","leg","half_leg_sleeve"],["leg","Full leg","leg","full_leg_sleeve"],["back","Full back","back","full_back"],["chest","Full chest","chest_ribs","full_chest"]];
 const styleKey=()=>p.styles.length===2?"mixed":p.styles[0];
 function setStyle(k){p.styles=k==="mixed"?["black_grey","colour"]:[k];}
 const map={head:["neck_head","head"],throat:["neck_head","front_neck"],nape:["neck_head","back_neck"],collarbone:["chest_ribs","collarbone"],ribs:["chest_ribs","ribs"],chest:["chest_ribs","one_side_chest"],sternum:["chest_ribs","sternum"],areola:["chest_ribs","one_side_chest"],stomach:["stomach_sides","stomach"],pelvis:["stomach_sides","hip"],armpit:["arm","other"],shoulder:["arm","shoulder"],outer_upper_arm:["arm","upper_arm"],inner_bicep:["arm","inner_bicep"],triceps:["arm","upper_arm"],inner_forearm:["arm","forearm"],outer_forearm:["arm","forearm"],elbow:["arm","elbow"],wrist:["arm","wrist"],hand:["hand","back_of_hand"],fingers:["hand","fingers"],outer_thigh:["leg","thigh"],inner_thigh:["leg","thigh"],hamstring:["leg","thigh"],knee:["leg","knee"],shin:["leg","shin"],inner_lower_leg:["leg","shin"],calf:["leg","calf"],ankle:["leg","ankle"],foot:["foot","top_of_foot"],shoulder_blade:["back","shoulder_blade"],spine:["back","spine"],lower_back:["back","lower_back"],glutes:["other","other"]};
@@ -58,8 +59,10 @@ function selectedArea(area,side){
  const part=a.placements[0];
  if(part==="full_sleeve")return key[0]==="arm"&&key[1]!=="other";
  if(part==="full_leg_sleeve")return key[0]==="leg";
+ if(part==="half_sleeve"&&api.longitudinal(a.half))return key[0]==="arm"&&key[1]!=="other";
  if(part==="half_sleeve")return key[0]==="arm"&&(a.half==="upper"?["shoulder","upper_arm","inner_bicep","elbow"]:["elbow","forearm","wrist"]).includes(key[1]);
  if(part==="three_quarter_sleeve")return key[0]==="arm"&&["shoulder","upper_arm","inner_bicep","elbow","forearm"].includes(key[1]);
+ if(part==="half_leg_sleeve"&&api.longitudinal(a.half))return key[0]==="leg";
  if(part==="half_leg_sleeve")return key[0]==="leg"&&(a.half==="upper"?["thigh","knee"]:["knee","shin","calf","ankle"]).includes(key[1]);
  if(part==="full_back")return key[0]==="back";
  if(part==="full_chest")return ["chest","sternum","areola","collarbone"].includes(area);
@@ -85,6 +88,8 @@ function paint2D(path){
  const lowerElbow=area==="elbow"&&info?.scale==="area"&&(info.part==="forearm"||info.part==="half_sleeve"&&info.half==="lower");
  path.classList.toggle("partial",!!upperElbow||info?.part==="three_quarter_sleeve"&&["inner_forearm","outer_forearm"].includes(area));
  path.classList.toggle("lower-partial",!!lowerElbow);
+ path.classList.toggle("longitudinal-outer",!!info&&api.half(info.part)&&info.half==="outer");
+ path.classList.toggle("longitudinal-inner",!!info&&api.half(info.part)&&info.half==="inner");
 }
 function load3D(){
  if(modelLoad)return modelLoad;
@@ -109,13 +114,13 @@ function atlas(parent,interactive=true){
  function add(tag,attrs,to=svg){const e=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))e.setAttribute(k,v);to.append(e);return e;}
  const defs=add("defs",{}),trunk=add("clipPath",{id:"calc-trunk"},defs),arm=add("clipPath",{id:"calc-arm"},defs);
  const patch=add("clipPath",{id:"calc-small-patch",clipPathUnits:"objectBoundingBox"},defs);add("ellipse",{cx:.5,cy:.5,rx:.32,ry:.26},patch);
- const half=add("clipPath",{id:"calc-partial-patch",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:0,y:0,width:1,height:.5},half);const lower=add("clipPath",{id:"calc-lower-patch",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:0,y:.5,width:1,height:.5},lower);add("path",{d:geo.TRUNK},trunk);add("path",{d:geo.ARM},arm);
+ const half=add("clipPath",{id:"calc-partial-patch",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:0,y:0,width:1,height:.5},half);const lower=add("clipPath",{id:"calc-lower-patch",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:0,y:.5,width:1,height:.5},lower);const outside=add("clipPath",{id:"calc-outer-half",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:0,y:0,width:.5,height:1},outside);const inside=add("clipPath",{id:"calc-inner-half",clipPathUnits:"objectBoundingBox"},defs);add("rect",{x:.5,y:0,width:.5,height:1},inside);add("path",{d:geo.TRUNK},trunk);add("path",{d:geo.ARM},arm);
  const mask=add("mask",{id:"calc-mask",maskUnits:"userSpaceOnUse",x:geo.VIEW.x,y:geo.VIEW.y,width:geo.VIEW.w,height:geo.VIEW.h},defs);add("path",{d:geo.TRUNK,fill:"#fff"},mask);add("path",{d:geo.ARM,fill:"#000"},mask);add("path",{d:geo.ARM,fill:"#000",transform:geo.MIRROR_TRANSFORM},mask);
  add("path",{d:geo.TRUNK,class:"figure-fill"});for(const mirror of [false,true])add("path",{d:geo.ARM,class:"figure-fill",...(mirror?{transform:geo.MIRROR_TRANSFORM}:{})});
  for(const z of geo.REGIONS[view]){const key=map[z.id];if(!key)continue;for(const mirror of z.paired?[false,true]:[false]){
  const side=view==="front"?(mirror?"left":"right"):(mirror?"right":"left"),outer=add("g",z.part==="trunk"?{mask:"url(#calc-mask)"}:{}),g=add("g",{...(mirror?{transform:geo.MIRROR_TRANSFORM}:{}),"clip-path":"url(#calc-"+z.part+")"},outer);
  const path=add("path",{d:z.d,class:"hit","data-area":z.id,"data-side":side,"data-paired":String(z.paired)},g);paint2D(path);
- add("path",{d:z.d,class:"calc-patch-small","clip-path":"url(#calc-small-patch)"},g);add("path",{d:z.d,class:"calc-patch-partial","clip-path":"url(#calc-partial-patch)"},g);add("path",{d:z.d,class:"calc-patch-lower","clip-path":"url(#calc-lower-patch)"},g);
+ add("path",{d:z.d,class:"calc-patch-small","clip-path":"url(#calc-small-patch)"},g);add("path",{d:z.d,class:"calc-patch-partial","clip-path":"url(#calc-partial-patch)"},g);add("path",{d:z.d,class:"calc-patch-lower","clip-path":"url(#calc-lower-patch)"},g);add("path",{d:z.d,class:"calc-patch-outer","clip-path":"url(#calc-outer-half)"},g);add("path",{d:z.d,class:"calc-patch-inner","clip-path":"url(#calc-inner-half)"},g);
  if(interactive)path.onclick=()=>{start();pickZone(z.id,side);};
  }}
  const d=geo.FIGURE_DETAIL[view];for(const line of d.centre)add("path",{d:line,class:"figure-line"});for(const mirror of [false,true])for(const part of ["trunk","arm"]){const g=add("g",{...(mirror?{transform:geo.MIRROR_TRANSFORM}:{}),"clip-path":"url(#calc-"+part+")"});for(const line of d[part])add("path",{d:line,class:"figure-line"},g);}
@@ -140,7 +145,7 @@ function placementPicker(controls){
 function description(a){
  if(!a)return "Choose a tattoo";
  const region=api.regionByKey(a.region),part=a.placements[0];
- const label=region.key==="other"?a.other:a.placements.map(k=>k==="other"?a.other:api.half(k)&&a.half&&a.half!=="unsure"?(a.half==="lower"?"Lower ":"Upper ")+(k==="half_sleeve"?"half sleeve":"half leg sleeve"):region.placements.find(x=>x[0]===k)?.[1]||region.label).join(" + ");
+ const label=region.key==="other"?a.other:a.placements.map(k=>k==="other"?a.other:api.half(k)&&a.half&&a.half!=="unsure"?(api.longitudinal(a.half)?(a.half==="outer"?"Outer":"Inner")+" "+(k==="half_sleeve"?"arm":"leg")+" · full length":(a.half==="lower"?"Lower ":"Upper ")+(k==="half_sleeve"?"half sleeve":"half leg sleeve")+" · wraparound"):region.placements.find(x=>x[0]===k)?.[1]||region.label).join(" + ");
  return label+(api.paired(a.region)||part==="one_side_chest"?" · "+api.sides[a.side]:"");
 }
 function actualProject(){return api.valid(p)?api.estimate(p):null;}
@@ -210,13 +215,13 @@ function render(focus){
  const labels=node("div","calc-length-labels");for(const [key,name] of lengthSteps){const b=node("span","",name);b.dataset.active=String(key===part);labels.append(b);}
  track.oninput=()=>{const [key,name]=lengthSteps[Number(track.value)];track.setAttribute("aria-valuetext",name);Array.from(labels.children).forEach((el,i)=>el.dataset.active=String(i===Number(track.value)));choose("arm",key,a.side,a.surface);modelViewer?.update();body.querySelectorAll(".calc-figure .hit").forEach(paint2D);updateResult();};track.onchange=()=>{render();$("calc-arm-length")?.focus({preventScroll:true});};length.append(label,track,labels);controls.append(length);
  }
- if(api.half(part))group(controls,"Half sleeve",[["upper","Upper half"],["lower","Lower half"]],a.half,k=>a.half=k);
+ if(api.half(part))group(controls,"Half-sleeve coverage",[["upper","Upper half · wraparound"],["lower","Lower half · wraparound"],["outer","Outer side · full length"],["inner","Inner side · full length"]],a.half,k=>{a.half=k;a.coverage=api.longitudinal(k)?"panel":"wrap";a.surface=api.longitudinal(k)?k:"unsure";});
  if(part&&!api.large(api.regionByKey(a.region),part)){
  group(controls,"Size",[["small","Small piece"],["area","Area-sized"]],a.scale,k=>{a.scale=k;a.coverage="panel";});
  if(a.scale==="small")controls.append(node("p","calc-help","Highlighted patch is illustrative, not a measurement or a fixed tattoo size."));
  if(a.scale==="area"&&api.wraps(part))group(controls,"Coverage",[["panel","One side"],["wrap","Wraparound"]],a.coverage,k=>a.coverage=k);
  if(["forearm","upper_arm"].includes(part)&&a.scale==="area"&&a.coverage==="panel")group(controls,"Surface",[["front","Front side"],["back","Back side"],["outer","Outer"],["inner","Inner"]],a.surface==="unsure"?"front":a.surface,k=>{a.surface=k;});
- if(part==="forearm"&&a.scale==="area"&&a.coverage==="wrap"){const lower=node("button","calc-ink","Estimate a lower half sleeve instead (elbow to wrist)");lower.type="button";lower.onclick=()=>{const s=choose("arm","half_sleeve",a.side);s.half="lower";render();};controls.append(lower);}
+ if(part==="forearm"&&a.scale==="area"&&a.coverage==="wrap"){const lower=node("button","calc-ink","Estimate a lower half sleeve instead (elbow to wrist)");lower.type="button";lower.onclick=()=>{const s=choose("arm","half_sleeve",a.side);s.half="lower";s.coverage="wrap";s.surface="unsure";render();};controls.append(lower);}
  }
  }
  group(controls,"Style",[["black_grey","Black & Grey"],["colour","Colour"],["mixed","Mixed"]],styleKey(),setStyle);

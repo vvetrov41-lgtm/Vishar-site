@@ -27,7 +27,9 @@ assert.equal(api.estimate(oldInk).numeric,false);
 assert.equal(api.breakdown(oldInk)[0].result.numeric,false);
 assert.match(api.booking(make("forearm",["black_grey"],{surface:"front"})).notes,/Front surface/);
 assert.match(api.booking(make("upper_arm",["black_grey"],{surface:"back"})).notes,/Back surface/);
-let combinations=20;
+for(const [region,part] of [["arm","half_sleeve"],["leg","half_leg_sleeve"]])for(const half of ["inner","outer"]){const p=make(part,["black_grey"],{region,half});assert.equal(api.estimate(p).numeric,false);assert.match(api.booking(p).notes,new RegExp("Full-length "+half+" side"));assert.deepEqual(api.fromHash("#"+new URLSearchParams({estimate:"2",project:JSON.stringify(p)})).project,p);}
+assert.equal(api.estimate(make("half_sleeve",["black_grey"],{half:"invalid"})),null);
+let combinations=24;
 // Mutate all bands together to catch stale visible FAQ answers and JSON-LD.
 const change = {
   hourly: 170,

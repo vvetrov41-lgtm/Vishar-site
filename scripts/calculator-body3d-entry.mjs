@@ -20,11 +20,11 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const groups=new Map(manifest.groups.map(g=>[g.id,g]));
  const regions=new Map(manifest.regions.map(v=>{const g=groups.get(v.group),def=BASES[g.base];if(!def)throw Error("Unmapped model region: "+v.key);const area=typeof def.area==="string"?def.area:(def.area[v.facet]||def.area["*"]);if(!area)throw Error("Unmapped model facet: "+v.key);return [v.id,{...v,area,base:g.base,side:g.side==="l"?"left":g.side==="r"?"right":null}];}));
  const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
- let color,ids,positions,world,worldPoints,worldNormals,forearmBounds={},armSections={};let currentView="front",lastPick=null;
+ let color,ids,positions,world,worldPoints,worldNormals,forearmBounds={},armSections={},legSections={};let currentView="front",lastPick=null;
  const dark=new THREE.Color("#303030"),light=new THREE.Color("#eeeeee"),vec=new THREE.Vector3();
  function sideFor(region,i){if(region.side)return region.side;if(region.area==="chest")return worldPoints[i*3]>0?"left":"right";return null;}
  function cacheGeometry(){
- worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);forearmBounds={};armSections={};
+ worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);forearmBounds={};armSections={};legSections={};
  const normal=geometry.attributes.normal,normalMatrix=new THREE.Matrix3().getNormalMatrix(world),n=new THREE.Vector3();
  if(!normal)throw Error("Model normals unavailable");
  for(let i=0;i<ids.count;i++){vec.fromBufferAttribute(positions,i).applyMatrix4(world);worldPoints.set([vec.x,vec.y,vec.z],i*3);n.fromBufferAttribute(normal,i).applyNormalMatrix(normalMatrix);worldNormals.set([n.x,n.y,n.z],i*3);
@@ -32,7 +32,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  // A smoothed centreline from horizontal cross-sections of the actual limb mesh.
  // The selected hemisphere is a spatial half-plane, not a single mesh facet
  // or a normal-based patch that changes with local muscle curvature.
- const armBases=new Set(["shoulder","upper_arm","elbow","forearm","wrist"]);
+ for(const limb of ["arm","leg"]){const armBases=new Set(limb==="arm"?["shoulder","upper_arm","elbow","forearm","wrist"]:["thigh","knee","calf","ankle"]);const sections=limb==="arm"?armSections:legSections;
  for(const side of ["left","right"]){
  const points=[];let minY=Infinity,maxY=-Infinity;
  for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i)));if(region.side!==side||!armBases.has(region.base))continue;const j=i*3,x=worldPoints[j],y=worldPoints[j+1],z=worldPoints[j+2];points.push([x,y,z]);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
@@ -41,9 +41,10 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  for(let n=0;n<=bins;n++){const y=minY+n*step;let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const [x,py,z] of points){if(Math.abs(py-y)>step*1.25)continue;x0=Math.min(x0,x);x1=Math.max(x1,x);z0=Math.min(z0,z);z1=Math.max(z1,z);}centres.push(x0!==Infinity?[(x0+x1)/2,(z0+z1)/2]:null);}
  const fallback=points[Math.floor(points.length/2)];for(let n=0;n<=bins;n++){if(centres[n])continue;let j=n;while(j>0&&!centres[j])j--;let k=n;while(k<bins&&!centres[k])k++;centres[n]=centres[j]||centres[k]||[fallback[0],fallback[2]];}
  const smooth=centres.map((v,n)=>{const a=centres[Math.max(0,n-1)],b=centres[Math.min(bins,n+1)];return [(a[0]+2*v[0]+b[0])/4,(a[1]+2*v[1]+b[1])/4];});
- const elbow=[...groups.values()].find(g=>g.base==="elbow"&&g.side===(side==="left"?"l":"r"));
+ const elbow=[...groups.values()].find(g=>g.base===(limb==="arm"?"elbow":"knee")&&g.side===(side==="left"?"l":"r"));
  const shoulder=[...groups.values()].find(g=>g.base==="shoulder"&&g.side===(side==="left"?"l":"r"));
- armSections[side]={minY,step,centres:smooth,elbowY:elbow?.center[1],shoulder};
+ sections[side]={minY,step,centres:smooth,elbowY:elbow?.center[1],shoulder};
+ }
  }
  }
  function recolor(){
@@ -53,7 +54,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const broadPanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm"].includes(info.part);
  const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["thigh","calf","shin"].includes(info.part);
  function panelFacing(info,side,i){
- const face=info.surface==="unsure"?"front":info.surface||"front",s=armSections[side],j=i*3,outer=side==="left"?1:-1;
+ const face=info.half==="inner"||info.half==="outer"?info.half:info.surface==="unsure"?"front":info.surface||"front",s=(info.region==="leg"?legSections:armSections)[side],j=i*3,outer=side==="left"?1:-1;
  let x=worldNormals[j],z=worldNormals[j+2];
  if(s){const t=THREE.MathUtils.clamp((worldPoints[j+1]-s.minY)/s.step,0,s.centres.length-1),a=Math.floor(t),b=Math.min(a+1,s.centres.length-1),cx=THREE.MathUtils.lerp(s.centres[a][0],s.centres[b][0],t-a),cz=THREE.MathUtils.lerp(s.centres[a][1],s.centres[b][1],t-a);x=worldPoints[j]-cx;z=worldPoints[j+2]-cz;}
  return face==="inner"?x*outer<=0:face==="outer"?x*outer>=0:face==="back"?z<=0:z>=0;
@@ -86,7 +87,8 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const upper=info.part==="upper_arm"||info.part==="half_sleeve"&&info.half==="upper",lower=info.part==="forearm"||info.part==="half_sleeve"&&info.half==="lower",cut=armSections[side]?.elbowY;
  if(Number.isFinite(cut)){if(upper)active=worldPoints[i*3+1]>=cut;else if(lower)active=worldPoints[i*3+1]<cut;}
  }
- if(active&&broadPanel(info))active=panelFacing(info,side,i);
+ if(active&&(broadPanel(info)||["half_sleeve","half_leg_sleeve"].includes(info.part)&&["inner","outer"].includes(info.half)))active=panelFacing(info,side,i);
+ if(active&&info.part==="half_leg_sleeve"&&region.base==="knee"){const cut=legSections[side]?.elbowY;if(Number.isFinite(cut)){if(info.half==="upper")active=worldPoints[i*3+1]>=cut;else if(info.half==="lower")active=worldPoints[i*3+1]<cut;}}
  // Arm projects stop at the deltoid cap. The source shoulder label also
  // contains medial/top vertices on the trapezius; keep those out of arm coverage.
  if(active&&info.scale==="area"&&region.base==="shoulder"&&["upper_arm","half_sleeve","three_quarter_sleeve","full_sleeve"].includes(info.part)){

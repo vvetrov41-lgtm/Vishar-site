@@ -342,6 +342,19 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     const full=await fraction();
     await page.locator('#calc-arm-length').fill('2');
     const partial=await fraction();assert.ok(partial>0&&partial<full,'3/4 sleeve must highlight less skin than full sleeve');
+    await page.getByRole('button',{name:'Half sleeve',exact:true}).click();
+    await page.getByRole('button',{name:'Outer side · full length',exact:true}).click();
+    const outerArm=JSON.parse(await model.getAttribute('data-highlighted-regions'));
+    assert.ok(outerArm['shoulder|left']>0&&outerArm['forearm|left']>0&&outerArm['wrist|left']>0);
+    assert.equal(await page.locator('.calc-result').innerText(),'By assessment');
+    await page.getByRole('button',{name:'Inner side · full length',exact:true}).click();
+    assert.ok(await fraction()>0);
+    await page.getByRole('button',{name:'Half leg sleeve',exact:true}).click();
+    await page.getByRole('button',{name:'Outer side · full length',exact:true}).click();
+    const outerLeg=JSON.parse(await model.getAttribute('data-highlighted-regions'));
+    assert.ok(outerLeg['thigh|left']>0&&outerLeg['calf|left']>0&&outerLeg['ankle|left']>0);
+    await page.getByRole('button',{name:'Inner side · full length',exact:true}).click();
+    assert.ok(await fraction()>0);
     await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   }
   await page.getByRole('button',{name:'2D',exact:true}).click();
