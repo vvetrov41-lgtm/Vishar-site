@@ -53,7 +53,8 @@ const server = createHttpsServer(tls, async (req, res) => {
     if (file.endsWith(path.join('booking', 'index.html'))) {
       body = Buffer.from(String(body).replace('<meta name="vishar-booking-endpoint" content="">', `<meta name="vishar-booking-endpoint" content="${ENDPOINT}">`));
     }
-    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+    const extra = process.env.TEST_CALCULATOR_3D==='1' && file.endsWith(path.join('tattoo-price-calculator','index.html')) ? {'Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self'; font-src 'self'; object-src 'none'"} : {};
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store', ...extra });
     res.end(body);
   } catch {
     res.writeHead(404); res.end('not found');
@@ -308,6 +309,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     await page.getByRole('button',{name:'Front',exact:true}).click();
     await page.getByRole('button',{name:'Full sleeve',exact:true}).click();
     assert.match(await page.locator('.calc-result').innerText(),/£5,880–£7,840/);
+    await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   }
   await page.getByRole('button',{name:'2D',exact:true}).click();
   for (const width of [320,390,1024]) {

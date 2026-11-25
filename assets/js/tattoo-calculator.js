@@ -143,6 +143,6 @@ next.onclick=()=>{
 };
 $("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";mode="project";hours=7;render();};
 body.closest(".planner").hidden=false;render();
-// Keep 2D immediately usable; 3D loads only on explicit selection.
+// Standalone calculator loads 3D; booking dialog starts with lightweight 2D.
 window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});
 })();
