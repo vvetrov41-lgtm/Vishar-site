@@ -14,6 +14,7 @@ const BACKEND_RPCS = new Set([
   'service_record_gmail_client_message',
   'claim_email_outbox',
   'record_email_outbox_result',
+  'service_record_review_email_sent',
 ]);
 
 const USER_RPCS = new Set([

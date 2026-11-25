@@ -443,8 +443,9 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
     throw new Error('gmail_target_scope_invalid');
   }
   if (!target.delivery_allowed) {
-    throw new Error(target.configuration?.lifecycle_email === true
-      ? 'gmail_lifecycle_email_obsolete' : 'gmail_deposit_email_obsolete');
+    throw new Error(target.configuration?.review_email === true ? 'gmail_email_job_invalid'
+      : target.configuration?.lifecycle_email === true
+        ? 'gmail_lifecycle_email_obsolete' : 'gmail_deposit_email_obsolete');
   }
   if (target.integration_key !== job.integration_key || target.mailbox_email !== job.mailbox_email || target.client_email !== String(job.to_email || '').trim().toLowerCase()) {
     throw new Error('gmail_email_route_changed');
@@ -517,13 +518,23 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
     });
   }
 
-  await db.backendRpc('record_email_outbox_result', {
-    p_outbox_id: job.outbox_id,
-    p_worker_id: id,
-    p_succeeded: true,
-    p_provider_message_id: sent.providerMessageId,
-    p_error_code: null,
-  });
+  if (target.configuration?.review_email === true) {
+    await db.backendRpc('service_record_review_email_sent', {
+      p_outbox_id: job.outbox_id,
+      p_worker_id: id,
+      p_provider_message_id: sent.providerMessageId,
+      p_provider_thread_id: sent.providerThreadId,
+      p_rfc822_message_id: sent.rfc822MessageId,
+    });
+  } else {
+    await db.backendRpc('record_email_outbox_result', {
+      p_outbox_id: job.outbox_id,
+      p_worker_id: id,
+      p_succeeded: true,
+      p_provider_message_id: sent.providerMessageId,
+      p_error_code: null,
+    });
+  }
   return { outbox_id: job.outbox_id, outcome: sent.deduplicated ? 'deduplicated' : 'sent' };
 }
 

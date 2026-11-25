@@ -1,5 +1,6 @@
 import { refreshAccessToken, getProfile } from './lib/google-gmail.js';
 import { captureKnownGmailReplies } from './gmail-client-ai-background.js';
+import { pollReviewEmailReplies } from './lib/review-email-reply.js';
 
 const GMAIL_API_ORIGIN = 'https://gmail.googleapis.com';
 const CRM_ORIGIN = 'https://crm.vishartattoo.com';
@@ -545,6 +546,14 @@ export async function refreshGmailMetadataSnapshots(env, fetchImpl = fetch, now 
     const profile = await getProfile(accessToken, budgeted);
     if (safeEmail(profile.emailAddress) !== safeEmail(mailbox.external_account_label)) {
       throw new Error('gmail_profile_binding_mismatch');
+    }
+    // Check up to two exact healing threads before optional enrichment consumes
+    // the remaining mailbox request budget. No new send or public route.
+    try {
+      await pollReviewEmailReplies({ env, mailbox, accessToken, fetchImpl: budgeted, rpc: serviceRpc });
+    } catch {
+      // DB-first/Worker-first compatibility; a failed poll cannot make a
+      // mailbox ready and must not interrupt the existing snapshot.
     }
     const captureCandidates = [];
     const metadata = await listRecentMetadata(
