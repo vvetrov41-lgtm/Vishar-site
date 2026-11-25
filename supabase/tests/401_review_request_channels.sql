@@ -106,9 +106,10 @@ update public.artist_integrations set is_enabled=false where artist_id=(select i
 insert into public.artist_integrations(artist_id,integration_type,provider,integration_key,external_account_label,is_enabled)
 select id,'email','google','review-test-mailbox','artist@example.test',true from t_fu_artist;
 select public.service_list_review_email_checks((select id from t_fu_artist),'review-test-mailbox','artist@example.test');
--- Existing seeded Instagram route is the authoritative test identity.
-update public.artist_integrations set is_enabled=true where artist_id=(select id from t_fu_artist)
-  and integration_type='instagram' and integration_key='vladimir-instagram';
+-- Bind an isolated synthetic Instagram account using the same backend RPC as OAuth.
+select public.service_set_instagram_integration(
+  (select id from t_fu_artist),'vladimir-instagram','17841400000000001',
+  'vladimir.synthetic',array['instagram_business_basic','instagram_business_manage_messages']);
 insert into public.communication_conversations(id,artist_id,channel,integration_key,external_contact_id,client_id,link_state,state,last_inbound_at,last_message_at)
 select 'e99e0000-0000-4000-8000-000000000002',id,'instagram','vladimir-instagram','987654321001',
   'e99c0000-0000-4000-8000-000000000001','linked','open',clock_timestamp(),clock_timestamp()
