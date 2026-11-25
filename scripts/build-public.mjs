@@ -23,6 +23,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { renderPricingCopy } from './lib/pricing-copy.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -39,6 +40,7 @@ export const PUBLIC_PAGES = [
   'colour-realism-tattoo-london/index.html',
   'cover-up-tattoo-london/index.html',
   'faq/index.html',
+  'tattoo-price-calculator/index.html',
   'arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html',
   'healed-tattoos/index.html',
   'large-scale-realism-tattoo-london/index.html',
@@ -281,6 +283,19 @@ async function main() {
   const outDir = check ? await fs.mkdtemp(path.join(os.tmpdir(), 'public-check-')) : OUT_DIR;
   try {
     const bytes = await copyFiles(files, outDir);
+    for (const [file,id] of [['faq','faq'],['colour-realism-tattoo-london','colour-realism'],['black-and-grey-realism-london','black-grey']]) {
+      const page=path.join(outDir,file,'index.html');
+      await fs.writeFile(page,renderPricingCopy(await fs.readFile(page,'utf8'),id));
+    }
+    // TattooBodyMap's owner confirmed authorship and use on this site on 2026-11-25.
+    // Public and preview use the same pricing catalogue and model.
+    if (!check) {
+      const {prepareCalculator3D} = await import('./prepare-calculator-3d.mjs');
+      await prepareCalculator3D(outDir);
+    } else {
+      const file=path.join(outDir,'assets/js/tattoo-calculator.js');
+      await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const HAS_3D=true','const HAS_3D=false'));
+    }
     const refs = await verifyReferences(outDir, files);
     if (refs.problems.length) {
       console.error(`Public build failed (${refs.problems.length} unresolved references):\n  ${refs.problems.slice(0, 50).join('\n  ')}`);

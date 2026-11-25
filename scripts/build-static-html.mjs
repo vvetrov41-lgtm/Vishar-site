@@ -18,6 +18,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { renderPricingCopy } from './lib/pricing-copy.mjs';
 
 import {
   rootDir,
@@ -44,6 +45,7 @@ const PAGES = [
   { file: 'ai-tools/index.html', pageId: 'ai-tools' },
   { file: 'book/index.html', pageId: 'book' },
   { file: 'booking/index.html', pageId: 'booking' },
+  { file: 'tattoo-price-calculator/index.html', pageId: 'calculator' },
   { file: 'faq/index.html', pageId: 'faq' },
   { file: 'privacy/index.html', pageId: 'privacy' },
   { file: 'privacy/meta/index.html', pageId: 'privacy' },
@@ -123,6 +125,7 @@ export async function buildStaticHtml({ write = true } = {}) {
       updated = applyBlock(updated, key, markup, page.file);
     }
 
+    updated = renderPricingCopy(updated, page.pageId);
     if (updated === original) continue;
     stale.push(page.file);
     if (write) await writeFile(filePath, updated, 'utf8');
