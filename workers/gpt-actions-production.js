@@ -445,7 +445,7 @@ export async function handleOAuthRelay(request, env, fetchImpl = fetch) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const limited = await enforceRateLimit(request, url, env);
     if (limited) return limited;
@@ -456,7 +456,7 @@ export default {
     if (!exactProductionOrigin(env)) return jsonError(503, 'gpt_actions_production_boundary_mismatch');
     const relayResponse = await handleOAuthRelay(request, env);
     if (relayResponse) return relayResponse;
-    return gptActionsWorker.fetch(request, env);
+    return gptActionsWorker.fetch(request, env, ctx);
   },
 };
 

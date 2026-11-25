@@ -1,3 +1,4 @@
+import {wakeAfterBookingRpc} from './booking-wake-dispatch.js';
 import { handleGptActionsRequest as handleCoreGptActionsRequest } from './gpt-actions.js';
 import { routeForFullGptAction } from './gpt-full-actions.js';
 import { routeForDomainOperation } from './gpt-domain-operations.js';
@@ -179,7 +180,7 @@ async function removeStorageObjectFirst(route, token, env, fetchImpl) {
   return null;
 }
 
-async function handleFullRequest(request, env, fetchImpl) {
+async function handleFullRequest(request, env, fetchImpl, ctx) {
   if (!configured(env)) return json(404, { error: 'not_found' });
   const token = bearer(request);
   if (!token) return json(401, { error: 'oauth_token_required' });
@@ -229,6 +230,7 @@ async function handleFullRequest(request, env, fetchImpl) {
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return json(502, { error: 'invalid_upstream_response' });
       return await callProvider(route, parsed, token, env, fetchImpl);
     }
+    wakeAfterBookingRpc(route.rpc,token,env,ctx,fetchImpl);
     if (route.responseKind === 'single-row') {
       if (!Array.isArray(parsed) || parsed.length === 0) {
         return json(404, { error: route.notFoundError || 'record_not_found' });
@@ -254,7 +256,7 @@ async function handleFullRequest(request, env, fetchImpl) {
   }
 }
 
-export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
+export async function handleGptActionsRequest(request, env, fetchImpl = fetch, ctx) {
   // Cloudflare control is routed before ordinary CRM actions because Worker-code
   // deployment has a deliberately larger bounded request body. The handler does
   // not inspect non-Cloudflare bodies before falling through.
@@ -268,9 +270,9 @@ export async function handleGptActionsRequest(request, env, fetchImpl = fetch) {
 
   // Use a clone because the extension parser may inspect a request body before
   // deciding that a path belongs to the unchanged core handler.
-  const extended = await handleFullRequest(request.clone(), env, fetchImpl);
+  const extended = await handleFullRequest(request.clone(), env, fetchImpl, ctx);
   if (extended) return extended;
-  return handleCoreGptActionsRequest(request, env, fetchImpl);
+  return handleCoreGptActionsRequest(request, env, fetchImpl, ctx);
 }
 
 export const __testing = Object.freeze({ configured, bearer, clientListRoute, contextRoute, handleFullRequest });

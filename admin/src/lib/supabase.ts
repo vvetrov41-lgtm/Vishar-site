@@ -10,6 +10,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import type { CrmClient } from './api';
+import { createBookingWakeFetch } from './booking-wake-fetch';
 
 const STAFF_INVITE_PARAMETER = 'staff_invite';
 const STAFF_INVITE_VALUE = '1';
@@ -279,6 +280,7 @@ export function createCrmClient(
   const { url, publishableKey, configured } = readConfig(env, allowLocal);
   if (!configured) return null;
   return createClient(url, publishableKey, {
+    global: { fetch: createBookingWakeFetch(url, typeof window === 'undefined' ? '' : window.location.origin) },
     auth: {
       persistSession: true,
       autoRefreshToken: true,

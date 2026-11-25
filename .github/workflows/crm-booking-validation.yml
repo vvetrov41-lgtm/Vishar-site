@@ -115,6 +115,9 @@ jobs:
       - name: Compile dormant Monzo API Worker with Wrangler
         run: npm run check:monzo-api-bundle
 
+      - name: Compile disabled booking wake Worker with Wrangler
+        run: npx wrangler deploy --config wrangler.outbox-wake.production.toml --dry-run --outdir .wrangler/outbox-wake-dry-run
+
       - name: Compile inert production Calendar Worker with Wrangler
         run: npm run check:calendar-production-bundle
 

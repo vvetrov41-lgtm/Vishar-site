@@ -1,0 +1,52 @@
+# Dedicated wake-hint service. Cron workers are unchanged as fallback.
+# Provision the queue and public Supabase key through the guarded release before enabling.
+name = "vishar-outbox-wake-production"
+main = "workers/outbox-wake.js"
+compatibility_date = "2026-11-25"
+workers_dev = false
+preview_urls = false
+
+routes = [
+  { pattern = "outbox-wake.vishartattoo.com", zone_name = "vishartattoo.com", custom_domain = true, enabled = true, previews_enabled = false }
+]
+
+[vars]
+VISHAR_ENVIRONMENT = "production"
+OUTBOX_WAKE_ENABLED = "false"
+SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
+# SUPABASE_PUBLISHABLE_KEY is generated from the production environment.
+
+[[ratelimits]]
+name = "OUTBOX_WAKE_RATE_LIMIT"
+namespace_id = "10071"
+simple = { limit = 30, period = 60 }
+
+[observability]
+enabled = true
+[observability.logs]
+enabled = true
+invocation_logs = false
+
+[[services]]
+binding = "CALENDAR_SERVICE"
+service = "vishar-calendar-production"
+[[services]]
+binding = "WHATSAPP_SERVICE"
+service = "vishar-whatsapp-drain-production"
+[[services]]
+binding = "INSTAGRAM_SERVICE"
+service = "vishar-instagram-production"
+[[services]]
+binding = "GMAIL_SERVICE"
+service = "vishar-gmail-production"
+
+[[queues.producers]]
+binding = "OUTBOX_WAKE_QUEUE"
+queue = "vishar-outbox-wake-production"
+
+[[queues.consumers]]
+queue = "vishar-outbox-wake-production"
+max_batch_size = 10
+max_batch_timeout = 1
+max_retries = 3
+max_concurrency = 2
