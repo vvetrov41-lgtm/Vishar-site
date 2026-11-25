@@ -18,17 +18,32 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  scene.add(new THREE.HemisphereLight(0xffffff,0x454545,2.1));const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(2,3,3);scene.add(key);const rim=new THREE.DirectionalLight(0xffffff,1.9);rim.position.set(-2,2,-2);scene.add(rim);
  const manifest=await fetch(new URL("male.regions.json",base)).then(r=>{if(!r.ok)throw Error("Region manifest unavailable");return r.json();});
  const groups=new Map(manifest.groups.map(g=>[g.id,g]));
- const regions=new Map(manifest.regions.map(v=>{const g=groups.get(v.group),def=BASES[g.base];if(!def)throw Error("Unmapped model region: "+v.key);const area=typeof def.area==="string"?def.area:(def.area[v.facet]||def.area["*"]);if(!area)throw Error("Unmapped model facet: "+v.key);return [v.id,{...v,area,side:g.side==="l"?"left":g.side==="r"?"right":null}];}));
+ const regions=new Map(manifest.regions.map(v=>{const g=groups.get(v.group),def=BASES[g.base];if(!def)throw Error("Unmapped model region: "+v.key);const area=typeof def.area==="string"?def.area:(def.area[v.facet]||def.area["*"]);if(!area)throw Error("Unmapped model facet: "+v.key);return [v.id,{...v,area,base:g.base,side:g.side==="l"?"left":g.side==="r"?"right":null}];}));
  const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
- let color,ids,positions,world,worldPoints,worldNormals,forearmBounds={};let currentView="front",lastPick=null;
+ let color,ids,positions,world,worldPoints,worldNormals,forearmBounds={},armSections={};let currentView="front",lastPick=null;
  const dark=new THREE.Color("#303030"),light=new THREE.Color("#eeeeee"),vec=new THREE.Vector3();
  function sideFor(region,i){if(region.side)return region.side;if(region.area==="chest")return worldPoints[i*3]>0?"left":"right";return null;}
  function cacheGeometry(){
- worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);forearmBounds={};
+ worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);forearmBounds={};armSections={};
  const normal=geometry.attributes.normal,normalMatrix=new THREE.Matrix3().getNormalMatrix(world),n=new THREE.Vector3();
  if(!normal)throw Error("Model normals unavailable");
  for(let i=0;i<ids.count;i++){vec.fromBufferAttribute(positions,i).applyMatrix4(world);worldPoints.set([vec.x,vec.y,vec.z],i*3);n.fromBufferAttribute(normal,i).applyNormalMatrix(normalMatrix);worldNormals.set([n.x,n.y,n.z],i*3);
  const region=regions.get(Math.round(ids.getX(i)));if(region.area==="inner_forearm"||region.area==="outer_forearm"){const b=forearmBounds[region.side]??=[Infinity,-Infinity];b[0]=Math.min(b[0],vec.y);b[1]=Math.max(b[1],vec.y);}}
+ // A smoothed centreline from horizontal cross-sections of the actual limb mesh.
+ // The selected hemisphere is a spatial half-plane, not a single mesh facet
+ // or a normal-based patch that changes with local muscle curvature.
+ const armBases=new Set(["shoulder","upper_arm","elbow","forearm","wrist"]);
+ for(const side of ["left","right"]){
+ const points=[];let minY=Infinity,maxY=-Infinity;
+ for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i)));if(region.side!==side||!armBases.has(region.base))continue;const j=i*3,x=worldPoints[j],y=worldPoints[j+1],z=worldPoints[j+2];points.push([x,y,z]);minY=Math.min(minY,y);maxY=Math.max(maxY,y);}
+ if(!points.length||maxY<=minY)continue;
+ const bins=32,step=(maxY-minY)/bins,centres=[];
+ for(let n=0;n<=bins;n++){const y=minY+n*step;let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;for(const [x,py,z] of points){if(Math.abs(py-y)>step*1.25)continue;x0=Math.min(x0,x);x1=Math.max(x1,x);z0=Math.min(z0,z);z1=Math.max(z1,z);}centres.push(x0!==Infinity?[(x0+x1)/2,(z0+z1)/2]:null);}
+ const fallback=points[Math.floor(points.length/2)];for(let n=0;n<=bins;n++){if(centres[n])continue;let j=n;while(j>0&&!centres[j])j--;let k=n;while(k<bins&&!centres[k])k++;centres[n]=centres[j]||centres[k]||[fallback[0],fallback[2]];}
+ const smooth=centres.map((v,n)=>{const a=centres[Math.max(0,n-1)],b=centres[Math.min(bins,n+1)];return [(a[0]+2*v[0]+b[0])/4,(a[1]+2*v[1]+b[1])/4];});
+ const elbow=[...groups.values()].find(g=>g.base==="elbow"&&g.side===(side==="left"?"l":"r"));
+ armSections[side]={minY,step,centres:smooth,elbowY:elbow?.center[1]};
+ }
  }
  function recolor(){
  if(!geometry||!ids||!worldPoints)return;
@@ -36,7 +51,12 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const keyFor=(info,side)=>info.region+"|"+(side||"centre");
  const broadPanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm"].includes(info.part);
  const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["thigh","calf","shin"].includes(info.part);
- function panelFacing(info,side,i){const face=info.surface||"front",x=worldNormals[i*3],z=worldNormals[i*3+2],outer=side==="left"?1:-1;return face==="inner"?x*outer<=0:face==="outer"?x*outer>=0:face==="back"?z<=0:z>=0;}
+ function panelFacing(info,side,i){
+ const face=info.surface==="unsure"?"front":info.surface||"front",s=armSections[side],j=i*3,outer=side==="left"?1:-1;
+ let x=worldNormals[j],z=worldNormals[j+2];
+ if(s){const t=THREE.MathUtils.clamp((worldPoints[j+1]-s.minY)/s.step,0,s.centres.length-1),a=Math.floor(t),b=Math.min(a+1,s.centres.length-1),cx=THREE.MathUtils.lerp(s.centres[a][0],s.centres[b][0],t-a),cz=THREE.MathUtils.lerp(s.centres[a][1],s.centres[b][1],t-a);x=worldPoints[j]-cx;z=worldPoints[j+2]-cz;}
+ return face==="inner"?x*outer<=0:face==="outer"?x*outer>=0:face==="back"?z<=0:z>=0;
+ }
  // Choose one anatomical surface for a small design, preferring the last tapped surface.
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
@@ -57,10 +77,14 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const d=Math.hypot(worldPoints[i*3]-patch.center[0],worldPoints[i*3+1]-patch.center[1],worldPoints[i*3+2]-patch.center[2]);
  patch.min=Math.min(patch.min,d);
  }
- let count=0;
+ let count=0;const highlighted={};
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
  let active=!!info;
+ if(active&&info.scale==="area"&&region.base==="elbow"){
+ const upper=info.part==="upper_arm"||info.part==="half_sleeve"&&info.half==="upper",lower=info.part==="forearm"||info.part==="half_sleeve"&&info.half==="lower",cut=armSections[side]?.elbowY;
+ if(Number.isFinite(cut)){if(upper)active=worldPoints[i*3+1]>=cut;else if(lower)active=worldPoints[i*3+1]<cut;}
+ }
  if(active&&broadPanel(info))active=panelFacing(info,side,i);
  if(active&&onePanel(info))active=panels.get(keyFor(info,side))===region.id;
  if(active&&info.part==="three_quarter_sleeve"&&(region.area==="inner_forearm"||region.area==="outer_forearm")){const b=forearmBounds[region.side];active=!!b&&worldPoints[i*3+1]>=(b[0]+b[1])/2;}
@@ -68,10 +92,10 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const patch=patches.get(keyFor(info,side));
  active=!!patch&&patch.id===region.id&&Math.hypot(worldPoints[i*3]-patch.center[0],worldPoints[i*3+1]-patch.center[1],worldPoints[i*3+2]-patch.center[2])<=Math.max(patch.radius,patch.min+.008);
  }
- if(active)count++;
+ if(active){count++;const key=region.base+"|"+(side||"centre");highlighted[key]=(highlighted[key]||0)+1;}
  const c=active?light:dark;color.setXYZ(i,c.r,c.g,c.b);
  }
- canvas.dataset.selectedVertices=String(count);canvas.dataset.vertexCount=String(ids.count);color.needsUpdate=true;invalidate();
+ canvas.dataset.highlightedRegions=JSON.stringify(highlighted);canvas.dataset.selectedVertices=String(count);canvas.dataset.vertexCount=String(ids.count);color.needsUpdate=true;invalidate();
  }
  async function load(file){const gltf=await loader.loadAsync(new URL(file,base).href);if(dead){gltf.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});return;}
  let src;gltf.scene.traverse(o=>{if(o.isMesh&&!src)src=o;});if(!src||!src.geometry.attributes._data)throw Error("Missing region-labelled mesh");src.updateWorldMatrix(true,false);const next=src.geometry,nextIds=next.attributes._data;
