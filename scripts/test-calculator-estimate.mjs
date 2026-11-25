@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { parseProjectDetails } from '../workers/lib/enquiry-v2.js';
+const project={areas:[{region:'arm',placements:['half_sleeve'],work:['cover_up'],side:'right',scale:'area',coverage:'wrap',half:'lower',surface:'unsure'}],styles:['black_grey']};
+const input={areas:[{region:'arm',placements:['half_sleeve'],work:['cover_up']}],styles:['black_grey'],calculator_estimate:{schema:'tattoo-estimate-v1',rules_version:'2026-11-25.1',project,price:1}};
+const parse=p=>parseProjectDetails(JSON.stringify(p)).details;
+const valid=parse(input).calculator_estimate;
+assert.equal(valid.result.price,'£3,920–£4,900');
+assert.deepEqual(valid.result.cost_gbp,[3920,4900]);
+assert.equal(valid.project.areas[0].side,'right');
+assert.equal(valid.project.styles[0],'black_grey');
+assert.equal(valid.result.cover_up,true);
+assert.equal(valid.non_binding,true);
+assert.equal(parse({...input,calculator_estimate:{...input.calculator_estimate,rules_version:'old'}}).calculator_estimate,undefined);
+assert.equal(parse({...input,calculator_estimate:{...input.calculator_estimate,project:{...project,styles:['colour']}}}).calculator_estimate,undefined);
+assert.equal(parse({...input,calculator_estimate:{...input.calculator_estimate,project:{...project,areas:[{...project.areas[0],side:'bad'}]}}}).calculator_estimate,undefined);
+assert.equal(parse({...input,calculator_estimate:null}).calculator_estimate,undefined);
+console.log('Calculator metadata validation, server repricing, and old-client compatibility passed');

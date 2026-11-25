@@ -121,6 +121,10 @@ async function main() {
   if (!result.ok) {
     report(result, MANIFEST_PATH, actualLabel);
     if (mode === '--compare') {
+      // Only signatures and hashes, never SQL bodies. Preserve the failing gate.
+      for (const key of [...result.unexpected, ...result.changed].sort()) {
+        console.error(`Generated manifest entry: ${key}\t${actual.get(key)}`);
+      }
       console.error('If a migration in this change intentionally alters these functions, regenerate the manifest:');
       console.error(`  psql "$DB_URL" -X -A -t -v ON_ERROR_STOP=1 -f ${QUERY_PATH} > /tmp/functions.tsv && node scripts/check-function-manifest.mjs --write /tmp/functions.tsv`);
     }

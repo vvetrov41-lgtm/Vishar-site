@@ -182,12 +182,26 @@ async function handleEnquiryIntakeInternal(
     }
 
     const { honeypot, idempotencyKey, enquiry, project } = parseEnquiryFields(form);
+    // Vladimir's pricing engine is not an artist-wide price list. Only the
+    // registry-resolved, trusted Vladimir website can supply this estimate.
+    if (enquiry?.projectDetails?.calculator_estimate && (bookingConfig.sourceKey !== 'vladimir-website' || origin !== 'https://vishartattoo.com')) {
+      delete enquiry.projectDetails.calculator_estimate;
+      if (project?.details) delete project.details.calculator_estimate;
+    }
     if (honeypot) {
       // Answer exactly as a success would, so a bot learns nothing, and record
       // nothing. Source resolution may already have performed a read-only
       // lookup; it never writes a client or enquiry for a honeypot hit.
       logger.info('enquiry.honeypot', { route: 'enquiries', outcome: 'ignored' });
       return jsonResponse({ ok: true }, 200, responseCors);
+    }
+
+    // The redesigned Vladimir website requires a design reference for every
+    // structured project, even a small cover-up or rework. Keep the original
+    // requirements on the other artist's existing form and hosted forms.
+    if (!hostedMode && project && bookingConfig.sourceKey === 'vladimir-website' && origin === 'https://vishartattoo.com') {
+      project.requiresDesignReference = true;
+      project.details.imageRequirements.designReference = true;
     }
 
     // Semantic preflight: same source resolution and deterministic validation
