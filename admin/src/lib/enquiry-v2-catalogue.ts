@@ -8,7 +8,7 @@
 // authority.
 
 import catalogue from '../../../config/enquiry-form-v2.json';
-import type { EnquiryProjectDetails } from './types';
+import type { EnquiryProjectDetails, TattooCoverage, TattooAreaSelection } from './types';
 
 export interface CataloguePlacement { key: string; label: string; group?: string; large?: boolean }
 export interface CatalogueRegion { key: string; label: string; placements: CataloguePlacement[] }
@@ -25,6 +25,7 @@ export interface AreaInput {
   placements: string[];
   otherPlacement?: string;
   work: string[];
+  selection?: TattooCoverage;
 }
 
 export interface ProjectInput {
@@ -32,7 +33,13 @@ export interface ProjectInput {
   styles: string[];
   sizeNotes?: string;
   existingDetails?: string;
+  calculator_selection?: TattooAreaSelection[];
 }
+
+export const COVERAGE_KEYS = ['side','half','scale','coverage','surface'] as const;
+export const COVERAGE_OPTIONS: Record<typeof COVERAGE_KEYS[number], string[]> = {side:['left','right','both','unsure'],half:['upper','lower','outer','inner','unsure'],scale:['small','area','unsure'],coverage:['panel','wrap','unsure'],surface:['front','back','inner','outer','unsure']};
+export function selectionFields(s: TattooCoverage): TattooCoverage { return Object.fromEntries(COVERAGE_KEYS.filter(k=>COVERAGE_OPTIONS[k].includes(s[k]??'')).map(k=>[k,s[k]])); }
+export function currentCalculatorSelection(details: EnquiryProjectDetails): TattooAreaSelection[] { return details.calculator_selection ?? (details.calculator_estimate_superseded ? [] : details.calculator_estimate?.project.areas.map(a=>({region:a.region,placements:a.placements,...selectionFields(a)})) ?? []); }
 
 const byLabel = <T extends { label: string }>(list: T[], label: string) => list.find((item) => item.label === label);
 
@@ -58,8 +65,10 @@ export function detailsToInput(details: EnquiryProjectDetails): ProjectInput | n
       if (!option) return null;
       work.push(option.key);
     }
+    const selected=currentCalculatorSelection(details).find(a=>a.region===region.key && a.placements.length===placements.length && a.placements.every(p=>placements.includes(p)));
     areas.push({
       region: region.key,
+      ...(selected ? {selection:selectionFields(selected)} : {}),
       placements,
       ...(area.otherPlacement ? { otherPlacement: area.otherPlacement } : {}),
       work,
@@ -74,6 +83,7 @@ export function detailsToInput(details: EnquiryProjectDetails): ProjectInput | n
   return {
     areas,
     styles,
+    ...(details.calculator_selection || details.calculator_estimate ? {calculator_selection:[]} : {}),
     ...(details.sizeNotes ? { sizeNotes: details.sizeNotes } : {}),
     ...(details.existingDetails ? { existingDetails: details.existingDetails } : {}),
   };
@@ -129,7 +139,9 @@ export function firstProblem(input: ProjectInput): 'area' | 'placement' | 'other
 /** The payload the RPC accepts: only the fields the form itself sends. */
 export function toPayload(input: ProjectInput): ProjectInput {
   const existing = hasExistingWork(input);
+  const selection=input.areas.filter(a=>a.selection && Object.keys(selectionFields(a.selection)).length).map(a=>({region:a.region,placements:a.placements,...selectionFields(a.selection!)}));
   return {
+    ...(selection.length || input.calculator_selection!==undefined ? {calculator_selection:selection} : {}),
     areas: input.areas.map((area) => {
       const needsOther = area.region === 'other' || area.placements.includes('other');
       return {
