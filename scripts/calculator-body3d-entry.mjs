@@ -42,7 +42,8 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const fallback=points[Math.floor(points.length/2)];for(let n=0;n<=bins;n++){if(centres[n])continue;let j=n;while(j>0&&!centres[j])j--;let k=n;while(k<bins&&!centres[k])k++;centres[n]=centres[j]||centres[k]||[fallback[0],fallback[2]];}
  const smooth=centres.map((v,n)=>{const a=centres[Math.max(0,n-1)],b=centres[Math.min(bins,n+1)];return [(a[0]+2*v[0]+b[0])/4,(a[1]+2*v[1]+b[1])/4];});
  const elbow=[...groups.values()].find(g=>g.base==="elbow"&&g.side===(side==="left"?"l":"r"));
- armSections[side]={minY,step,centres:smooth,elbowY:elbow?.center[1]};
+ const shoulder=[...groups.values()].find(g=>g.base==="shoulder"&&g.side===(side==="left"?"l":"r"));
+ armSections[side]={minY,step,centres:smooth,elbowY:elbow?.center[1],shoulder};
  }
  }
  function recolor(){
@@ -77,7 +78,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const d=Math.hypot(worldPoints[i*3]-patch.center[0],worldPoints[i*3+1]-patch.center[1],worldPoints[i*3+2]-patch.center[2]);
  patch.min=Math.min(patch.min,d);
  }
- let count=0;const highlighted={};
+ let count=0,shoulderTrimmed=0;const highlighted={};
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
  let active=!!info;
@@ -86,6 +87,15 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  if(Number.isFinite(cut)){if(upper)active=worldPoints[i*3+1]>=cut;else if(lower)active=worldPoints[i*3+1]<cut;}
  }
  if(active&&broadPanel(info))active=panelFacing(info,side,i);
+ // Arm projects stop at the deltoid cap. The source shoulder label also
+ // contains medial/top vertices on the trapezius; keep those out of arm coverage.
+ if(active&&info.scale==="area"&&region.base==="shoulder"&&["upper_arm","half_sleeve","three_quarter_sleeve","full_sleeve"].includes(info.part)){
+ const shoulder=armSections[side]?.shoulder;
+ if(shoulder){const y=worldPoints[i*3+1],lateral=Math.abs(worldPoints[i*3]),rise=Math.max(0,y-shoulder.center[1]);
+ const medialLimit=Math.abs(shoulder.center[0])-shoulder.radius*.30+.85*rise;
+ const topLimit=shoulder.center[1]+shoulder.radius*.72;
+ if(lateral<medialLimit||y>topLimit){active=false;shoulderTrimmed++;}}
+ }
  if(active&&onePanel(info))active=panels.get(keyFor(info,side))===region.id;
  if(active&&info.part==="three_quarter_sleeve"&&(region.area==="inner_forearm"||region.area==="outer_forearm")){const b=forearmBounds[region.side];active=!!b&&worldPoints[i*3+1]>=(b[0]+b[1])/2;}
  if(active&&info.scale==="small"){
@@ -95,7 +105,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  if(active){count++;const key=region.base+"|"+(side||"centre");highlighted[key]=(highlighted[key]||0)+1;}
  const c=active?light:dark;color.setXYZ(i,c.r,c.g,c.b);
  }
- canvas.dataset.highlightedRegions=JSON.stringify(highlighted);canvas.dataset.selectedVertices=String(count);canvas.dataset.vertexCount=String(ids.count);color.needsUpdate=true;invalidate();
+ canvas.dataset.shoulderTrimmed=String(shoulderTrimmed);canvas.dataset.highlightedRegions=JSON.stringify(highlighted);canvas.dataset.selectedVertices=String(count);canvas.dataset.vertexCount=String(ids.count);color.needsUpdate=true;invalidate();
  }
  async function load(file){const gltf=await loader.loadAsync(new URL(file,base).href);if(dead){gltf.scene.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});return;}
  let src;gltf.scene.traverse(o=>{if(o.isMesh&&!src)src=o;});if(!src||!src.geometry.attributes._data)throw Error("Missing region-labelled mesh");src.updateWorldMatrix(true,false);const next=src.geometry,nextIds=next.attributes._data;

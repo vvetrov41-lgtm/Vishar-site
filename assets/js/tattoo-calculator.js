@@ -165,8 +165,8 @@ function updateResult(){
  }else{
  price=money(api.rules.hourly)+"/h";caption="Tattooing rate";metrics=[[money(api.rules.hourly*api.rules.day),"Full day"],[api.rules.day+" h","Full-day duration"]];help="Tap the body or choose a quick project to calculate its estimated cost. No enquiry needed.";
  }
- root.append(node("p","calc-label",caption),node("p","calc-result",price));
- const row=node("div","calc-stat-row");for(const [value,label] of metrics){const card=node("div","calc-stat");card.append(node("strong","",value),node("span","",label));row.append(card);}details.append(row,node("p","calc-help",help));
+ const headline=node("div","calc-headline");headline.append(node("p","calc-label",caption),node("p","calc-result",price));root.append(headline);
+ const row=node("div","calc-stat-row");for(const [value,label] of metrics){const card=node("div","calc-stat");card.append(node("strong","",value),node("span","",label));row.append(card);}root.append(row,node("p","calc-help",help));
  if(mode==="project"&&r?.combined){
  const detail=node("div","calc-breakdown");detail.append(node("p","calc-label","Separate area guides"));
  for(const item of api.breakdown(p)){
@@ -232,7 +232,7 @@ next.onclick=()=>{
 };
 $("calc-reset").onclick=()=>{p.areas=[];p.styles=["black_grey"];view="front";modelViewer?.view(view);mode="project";hours=7;budget=2000;combine=false;activeRegion="";render();};
 body.closest(".planner").hidden=false;render();
-// Measure the actual header and the compact price row, including text wrapping.
+// Measure the actual header and complete result block, including text wrapping.
 const stickyOutput=$("calc-estimate").parentElement;
 const scrollRoot=embedded?body.closest("dialog"):document.documentElement;
 const stickyHeader=embedded?scrollRoot.querySelector(".booking-calculator-header"):document.querySelector("#site-nav nav");
