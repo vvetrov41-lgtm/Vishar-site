@@ -37,6 +37,17 @@ describe('enquiry image classification', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('supports exact placements and distinct half sleeves',async()=>{
+    const setEnquiryFileClassification=vi.fn().mockResolvedValue({});
+    render(<EnquiryFileClassification file={FILE} role="booking_manager" api={{setEnquiryFileClassification} as unknown as Pick<RecordEditApi,'setEnquiryFileClassification'>} language="en" suggestedAreas={['arm:half_sleeve:outer']} onSaved={vi.fn()}/>);
+    fireEvent.click(screen.getByRole('button',{name:'Classify'}));
+    fireEvent.click(screen.getByRole('checkbox',{name:'Arm: Half sleeve · Outer side · full length'}));
+    fireEvent.click(screen.getByRole('checkbox',{name:'Arm: Forearm'}));
+    fireEvent.click(screen.getByRole('button',{name:'Save'}));
+    await waitFor(()=>expect(setEnquiryFileClassification).toHaveBeenCalledWith('file-1',null,['arm:half_sleeve:outer','arm:forearm']));
+    expect(describeFileClassification({intake_role:null,body_areas:['arm:half_sleeve:outer']},'ru')).toContain('Внешняя сторона по всей длине');
+  });
+
   it('is read-only for users who cannot manage files', () => {
     render(
       <EnquiryFileClassification

@@ -8,6 +8,7 @@
 
 import catalogue from '../../config/enquiry-form-v2.json' with { type: 'json' };
 import { RequestError } from './http.js';
+import { normaliseCalculatorEstimate } from './calculator-estimate.js';
 
 export const ENQUIRY_V2_SCHEMA = catalogue.schema;
 export const ENQUIRY_V2_LIMITS = Object.freeze({ ...catalogue.limits });
@@ -129,8 +130,10 @@ export function parseProjectDetails(raw) {
   ));
   const requiresExistingPhoto = hasExistingWork;
 
+  const calculatorEstimate = normaliseCalculatorEstimate(input.calculator_estimate, areas, styleKeys);
   const details = {
     schema: ENQUIRY_V2_SCHEMA,
+    ...(calculatorEstimate ? { calculator_estimate: calculatorEstimate } : {}),
     areas: areas.map((area) => ({
       region: area.region,
       placements: area.placements,

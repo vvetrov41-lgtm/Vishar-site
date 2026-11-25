@@ -6,7 +6,7 @@ import { useState } from 'react';
 import { can } from '../lib/permissions';
 import type { Language } from '../lib/i18n';
 import type { RecordEditApi } from '../lib/record-edit-api';
-import { V2_REGIONS } from '../lib/enquiry-v2-catalogue';
+import { BODY_ZONE_GROUPS, bodyZoneLabel } from '../lib/body-zones';
 import type { CrmRole, EnquiryFile } from '../lib/types';
 import { catalogueLabel } from './EnquiryProjectDetails';
 
@@ -18,10 +18,7 @@ const COPY = {
 export function describeFileClassification(file: Pick<EnquiryFile, 'intake_role' | 'body_areas'>, language: Language): string {
   const copy = COPY[language] ?? COPY.en;
   const role = file.intake_role === 'design_reference' ? copy.design : file.intake_role === 'existing_tattoo' ? copy.existing : null;
-  const areas = (file.body_areas ?? [])
-    .map((key) => V2_REGIONS.find((region) => region.key === key)?.label)
-    .filter((label): label is string => Boolean(label))
-    .map((label) => catalogueLabel(label, language));
+  const areas = (file.body_areas ?? []).map(key=>bodyZoneLabel(key,language,catalogueLabel));
   return [role, areas.join(', ')].filter(Boolean).join(' / ');
 }
 
@@ -66,10 +63,9 @@ export function EnquiryFileClassification({
     );
   }
 
-  const ordered = [
-    ...V2_REGIONS.filter((region) => suggestedAreas.includes(region.key)),
-    ...V2_REGIONS.filter((region) => !suggestedAreas.includes(region.key)),
-  ];
+  const suggestedRegions=new Set(suggestedAreas.map(key=>key.split(':')[0]));
+  const ordered = [...BODY_ZONE_GROUPS.filter(r=>suggestedRegions.has(r.key)),...BODY_ZONE_GROUPS.filter(r=>!suggestedRegions.has(r.key))];
+  const toggle=(key:string)=>setAreas(current=>current.includes(key)?current.filter(k=>k!==key):[...current,key]);
 
   async function save() {
     setBusy(true);
@@ -101,17 +97,23 @@ export function EnquiryFileClassification({
       </label>
       <div role="group" aria-label={copy.areas}>
         <div className="meta">{copy.areas}</div>
-        {ordered.map((region) => (
-          <label key={region.key} style={{ display: 'inline-flex', gap: 4, marginRight: 10 }}>
-            <input
-              type="checkbox"
-              checked={areas.includes(region.key)}
-              onChange={() => setAreas(areas.includes(region.key)
-                ? areas.filter((key) => key !== region.key)
-                : [...areas, region.key])}
-            />
-            {catalogueLabel(region.label, language)}
-          </label>
+        <p className="meta">{language==='ru'?'Выбери конкретные участки тела или оставь общую зону, если расположение пока неизвестно.':'Choose specific placements, or a general area if the exact placement is unknown.'}</p>
+        {ordered.map(region=>(
+          <div key={region.key} style={{borderTop:'1px solid var(--border)',padding:'8px 0'}}>
+            <label style={{display:'flex',alignItems:'center',gap:8}}>
+              <input type="checkbox" checked={areas.includes(region.key)} onChange={()=>toggle(region.key)} />
+              {catalogueLabel(region.label,language)}
+            </label>
+            {region.zones.length>0?<details open={suggestedRegions.has(region.key)||areas.some(k=>k.startsWith(region.key+':'))||undefined}>
+              <summary style={{padding:'8px 0',cursor:'pointer'}}>{language==='ru'?'Конкретные зоны':'Specific placements'} · {region.zones.length}</summary>
+              <div style={{display:'grid',gap:4,paddingLeft:8}}>
+                {[...region.zones.filter(z=>suggestedAreas.includes(z.key)),...region.zones.filter(z=>!suggestedAreas.includes(z.key))].map(z=><label key={z.key} style={{display:'flex',alignItems:'center',gap:8,minHeight:36}}>
+                  <input type="checkbox" checked={areas.includes(z.key)} onChange={()=>toggle(z.key)} />
+                  {bodyZoneLabel(z.key,language,catalogueLabel)}
+                </label>)}
+              </div>
+            </details>:null}
+          </div>
         ))}
       </div>
       <div className="actions">

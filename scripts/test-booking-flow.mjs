@@ -1242,17 +1242,45 @@ await test('v2: an unknown privacy notice version is still refused', async () =>
   assert.equal(payload.code, 'privacy_notice_not_acknowledged');
 });
 
-await test('v2: a plain cover-up needs only an existing tattoo photo', async () => {
+await test('v2: Vladimir cover-up, rework and extension require both image categories', async () => {
+  for (const work of ['cover_up', 'rework', 'extension']) {
+    const details = v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: [work] }] });
+    const refused = stubBackend();
+    let result = await send(v2Form({ details, design: 0, existing: 1 }));
+    assert.equal(result.response.status, 400);
+    assert.equal(result.payload.code, 'missing_design_reference');
+    result = await send(v2Form({ details, design: 1, existing: 0 }));
+    assert.equal(result.payload.code, 'missing_existing_tattoo_photo');
+    assert.equal(refused.rpc.length, 0);
+    assert.equal(refused.uploads.length, 0);
+    const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+    result = await send(v2Form({ details, design: 1, existing: 1 }));
+    assert.equal(result.response.status, 200, JSON.stringify(result.payload));
+    const args = intakeArgs(calls);
+    assert.deepEqual(args.p_enquiry.project_details.imageRequirements, { designReference: true, existingTattooPhoto: true });
+    assert.deepEqual(args.p_files.map(file => file.intake_role), ['design_reference', 'existing_tattoo']);
+  }
+});
+
+await test('v2: the other artist can still submit a plain cover-up with the existing photo', async () => {
   const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
-  const details = v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: ['cover_up'] }], existingDetails: 'Faded name on forearm' });
-  const { response, payload } = await send(v2Form({ details, design: 0, existing: 1 }));
-  assert.equal(response.status, 200, JSON.stringify(payload));
-  const args = intakeArgs(calls);
-  assert.equal(args.p_enquiry.project_type, 'Cover-up');
-  assert.equal(args.p_enquiry.cover_up, 'Yes');
-  assert.equal(args.p_enquiry.project_details.existingDetails, 'Faded name on forearm');
-  assert.deepEqual(args.p_enquiry.project_details.imageRequirements, { designReference: false, existingTattooPhoto: true });
-  assert.deepEqual(args.p_files.map((file) => file.intake_role), ['existing_tattoo']);
+  const details = v2Details({ areas: [{ region: 'arm', placements: ['forearm'], work: ['cover_up'] }] });
+  const result = await send(v2Form({ details, design: 0, existing: 1 }), {
+    origin: 'https://www.kristinavishar.com',
+    env: { ...env, BOOKING_SOURCE_KEY: 'kristina-website', ALLOWED_ORIGINS: 'https://www.kristinavishar.com' },
+  });
+  assert.equal(result.response.status, 200, JSON.stringify(result.payload));
+  assert.deepEqual(intakeArgs(calls).p_enquiry.project_details.imageRequirements, { designReference: false, existingTattooPhoto: true });
+});
+
+await test('v2: optional placement uses existing catalogue fallback without losing work type', async () => {
+  const calls = stubBackend({ state: { fileIds: V2_FILE_IDS } });
+  const details = v2Details({ areas: [{ region: 'other', placements: [], otherPlacement: 'Placement not decided yet', work: ['cover_up'] }], sizeNotes: '' });
+  const result = await send(v2Form({ details, design: 1, existing: 1 }));
+  assert.equal(result.response.status, 200, JSON.stringify(result.payload));
+  assert.equal(intakeArgs(calls).p_enquiry.cover_up, 'Yes');
+  assert.equal(intakeArgs(calls).p_enquiry.approximate_size, 'Not specified');
+  assert.deepEqual(intakeArgs(calls).p_enquiry.project_details.imageRequirements, { designReference: true, existingTattooPhoto: true });
 });
 
 await test('v2: full sleeve with a cover-up requires both image categories', async () => {
