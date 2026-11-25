@@ -308,7 +308,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.setViewportSize({width:390,height:844});
   await page.addScriptTag({content:axeSource});
   const audit = await page.evaluate(() => axe.run('main', {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}));
-  assert.deepEqual(audit.violations.map(v => v.id),[]);
+  assert.deepEqual(audit.violations.map(v => v.id),[], JSON.stringify(audit.violations.map(v=>({id:v.id,nodes:v.nodes.map(n=>({target:n.target,summary:n.failureSummary}))}))));
   const bytes = await page.evaluate(() => performance.getEntriesByType('resource')
     .filter(r => /tattoo-(pricing|calculator)\.(js|css)/.test(r.name))
     .reduce((sum,r) => sum + r.decodedBodySize,0));

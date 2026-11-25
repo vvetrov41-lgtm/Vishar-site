@@ -282,6 +282,10 @@ async function main() {
   const outDir = check ? await fs.mkdtemp(path.join(os.tmpdir(), 'public-check-')) : OUT_DIR;
   try {
     const bytes = await copyFiles(files, outDir);
+    if (!check && process.env.CF_PAGES_BRANCH === 'tattoo-calculator-preview') {
+      const {prepareCalculator3D} = await import('./prepare-calculator-3d.mjs');
+      await prepareCalculator3D(outDir);
+    }
     const refs = await verifyReferences(outDir, files);
     if (refs.problems.length) {
       console.error(`Public build failed (${refs.problems.length} unresolved references):\n  ${refs.problems.slice(0, 50).join('\n  ')}`);
