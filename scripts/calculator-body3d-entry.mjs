@@ -20,19 +20,23 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const groups=new Map(manifest.groups.map(g=>[g.id,g]));
  const regions=new Map(manifest.regions.map(v=>{const g=groups.get(v.group),def=BASES[g.base];if(!def)throw Error("Unmapped model region: "+v.key);const area=typeof def.area==="string"?def.area:(def.area[v.facet]||def.area["*"]);if(!area)throw Error("Unmapped model facet: "+v.key);return [v.id,{...v,area,side:g.side==="l"?"left":g.side==="r"?"right":null}];}));
  const loader=new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
- let color,ids,positions,world,worldPoints,forearmBounds={};let currentView="front",lastPick=null;
- const dark=new THREE.Color("#454545"),light=new THREE.Color("#f1f1f1"),vec=new THREE.Vector3();
+ let color,ids,positions,world,worldPoints,worldNormals,forearmBounds={};let currentView="front",lastPick=null;
+ const dark=new THREE.Color("#303030"),light=new THREE.Color("#eeeeee"),vec=new THREE.Vector3();
  function sideFor(region,i){if(region.side)return region.side;if(region.area==="chest")return worldPoints[i*3]>0?"left":"right";return null;}
  function cacheGeometry(){
- worldPoints=new Float32Array(ids.count*3);forearmBounds={};
- for(let i=0;i<ids.count;i++){vec.fromBufferAttribute(positions,i).applyMatrix4(world);worldPoints.set([vec.x,vec.y,vec.z],i*3);
+ worldPoints=new Float32Array(ids.count*3);worldNormals=new Float32Array(ids.count*3);forearmBounds={};
+ const normal=geometry.attributes.normal,normalMatrix=new THREE.Matrix3().getNormalMatrix(world),n=new THREE.Vector3();
+ if(!normal)throw Error("Model normals unavailable");
+ for(let i=0;i<ids.count;i++){vec.fromBufferAttribute(positions,i).applyMatrix4(world);worldPoints.set([vec.x,vec.y,vec.z],i*3);n.fromBufferAttribute(normal,i).applyNormalMatrix(normalMatrix);worldNormals.set([n.x,n.y,n.z],i*3);
  const region=regions.get(Math.round(ids.getX(i)));if(region.area==="inner_forearm"||region.area==="outer_forearm"){const b=forearmBounds[region.side]??=[Infinity,-Infinity];b[0]=Math.min(b[0],vec.y);b[1]=Math.max(b[1],vec.y);}}
  }
  function recolor(){
  if(!geometry||!ids||!worldPoints)return;
  const patches=new Map(),candidates=new Map(),panels=new Map();
  const keyFor=(info,side)=>info.region+"|"+(side||"centre");
- const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm","thigh","calf","shin"].includes(info.part);
+ const broadPanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["forearm","upper_arm"].includes(info.part);
+ const onePanel=info=>info?.scale==="area"&&info.single&&info.coverage==="panel"&&["thigh","calf","shin"].includes(info.part);
+ function panelFacing(info,side,i){const face=info.surface||"front",x=worldNormals[i*3],z=worldNormals[i*3+2],outer=side==="left"?1:-1;return face==="inner"?x*outer<=0:face==="outer"?x*outer>=0:face==="back"?z<=0:z>=0;}
  // Choose one anatomical surface for a small design, preferring the last tapped surface.
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
@@ -56,7 +60,8 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  let count=0;
  for(let i=0;i<ids.count;i++){
  const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);
- let active=!!info&&isSelected(region.area,side);
+ let active=!!info;
+ if(active&&broadPanel(info))active=panelFacing(info,side,i);
  if(active&&onePanel(info))active=panels.get(keyFor(info,side))===region.id;
  if(active&&info.part==="three_quarter_sleeve"&&(region.area==="inner_forearm"||region.area==="outer_forearm")){const b=forearmBounds[region.side];active=!!b&&worldPoints[i*3+1]>=(b[0]+b[1])/2;}
  if(active&&info.scale==="small"){
@@ -80,7 +85,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  const ray=new THREE.Raycaster(),ndc=new THREE.Vector2();let down=null,multi=false;
  canvas.addEventListener("pointerdown",e=>{if(!e.isPrimary){multi=true;down=null;return;}multi=false;down={id:e.pointerId,x:e.clientX,y:e.clientY,t:performance.now()};});
  canvas.addEventListener("pointercancel",()=>{down=null;multi=true;});
- canvas.addEventListener("pointerup",e=>{const d=down;down=null;if(!d||multi||d.id!==e.pointerId||Math.hypot(e.clientX-d.x,e.clientY-d.y)>8||performance.now()-d.t>500||!mesh)return;const b=canvas.getBoundingClientRect();ndc.set((e.clientX-b.left)/b.width*2-1,-((e.clientY-b.top)/b.height)*2+1);ray.setFromCamera(ndc,camera);const hit=ray.intersectObject(mesh,false)[0];if(!hit)return;const region=regions.get(Math.round(ids.getX(hit.face.a)));if(region){const side=region.side||(region.area==="chest"?(hit.point.x>0?"left":"right"):null);lastPick={id:region.id,side,point:hit.point.toArray()};onPick(region.area,side||(hit.point.x>0?"left":"right"));}});
+ canvas.addEventListener("pointerup",e=>{const d=down;down=null;if(!d||multi||d.id!==e.pointerId||Math.hypot(e.clientX-d.x,e.clientY-d.y)>8||performance.now()-d.t>500||!mesh)return;const b=canvas.getBoundingClientRect();ndc.set((e.clientX-b.left)/b.width*2-1,-((e.clientY-b.top)/b.height)*2+1);ray.setFromCamera(ndc,camera);const hit=ray.intersectObject(mesh,false)[0];if(!hit)return;const region=regions.get(Math.round(ids.getX(hit.face.a)));if(region){const side=region.side||(region.area==="chest"?(hit.point.x>0?"left":"right"):null);lastPick={id:region.id,side,point:hit.point.toArray()};onPick(region.area,side||(hit.point.x>0?"left":"right"),region.facet);}});
  function resize(){const w=host.clientWidth,h=host.clientHeight;if(!w||!h)return;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h,false);invalidate();}
  observer=new ResizeObserver(resize);observer.observe(host);
  visibleObserver=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible){resize();invalidate();}});visibleObserver.observe(host);
@@ -90,7 +95,7 @@ window.VisharCalculator3D=async function mount(host,{base,onPick,isSelected,cove
  return {update:recolor,focus(regionKey){
  if(!mesh||!worldPoints||!regionKey)return;
  const bounds=new THREE.Box3();for(let i=0;i<ids.count;i++){const region=regions.get(Math.round(ids.getX(i))),side=sideFor(region,i),info=coverage(region.area,side);if(info?.region===regionKey)bounds.expandByPoint(vec.fromArray(worldPoints,i*3));}
- if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),radius=Math.max(.16,size.length()/2);const delta=camera.position.clone().sub(controls.target).normalize();const halfFov=THREE.MathUtils.degToRad(camera.fov/2),horizontal=Math.atan(Math.tan(halfFov)*camera.aspect);const distance=Math.max(controls.minDistance,Math.min(controls.maxDistance,1.18*radius/Math.sin(Math.min(halfFov,horizontal))));controls.target.copy(center);camera.position.copy(center).addScaledVector(delta,distance);controls.update();canvas.dataset.focusedArea=regionKey;invalidate();
+ if(bounds.isEmpty())return;const center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3()),radius=Math.max(.22,size.length()/2);const delta=camera.position.clone().sub(controls.target).normalize();const halfFov=THREE.MathUtils.degToRad(camera.fov/2),horizontal=Math.atan(Math.tan(halfFov)*camera.aspect);const distance=Math.max(controls.minDistance,Math.min(controls.maxDistance,1.35*radius/Math.sin(Math.min(halfFov,horizontal))));controls.target.copy(center);camera.position.copy(center).addScaledVector(delta,distance);controls.update();canvas.dataset.focusedArea=regionKey;invalidate();
  },view(v){delete canvas.dataset.focusedArea;currentView=v;camera.position.set(0,.85,v==="back"?-3.65:3.65);controls.target.set(0,.84,0);controls.update();recolor();invalidate();},zoom(f){const delta=camera.position.clone().sub(controls.target);delta.multiplyScalar(f);delta.clampLength(controls.minDistance,controls.maxDistance);camera.position.copy(controls.target).add(delta);controls.update();invalidate();},dispose};
  }catch(err){dispose();throw err;}
 };

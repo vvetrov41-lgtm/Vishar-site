@@ -55,7 +55,7 @@ const large=(r,k)=>r.placements.find(x=>x[0]===k)?.[3];
 const limb=r=>["arm","leg"].includes(r);
 const paired=r=>["arm","leg","hand","foot"].includes(r);
 const halves={upper:"Upper half",lower:"Lower half",unsure:"Not decided"};
-const surfaces={inner:"Inner surface",outer:"Outer surface",unsure:"Not decided"};
+const surfaces={front:"Front surface",back:"Back surface",inner:"Inner surface",outer:"Outer surface",unsure:"Not decided"};
 const half=k=>["half_sleeve","half_leg_sleeve"].includes(k);
 const wraps=k=>["forearm","upper_arm","thigh","calf","shin"].includes(k);
 function valid(p){
@@ -124,7 +124,7 @@ function booking(p){
  const notes=[],labels=[];
  for(const a of p.areas){
  const r=regionByKey(a.region),label=a.region==="other"?a.other:a.placements.map(k=>k==="other"?a.other:r.placements.find(x=>x[0]===k)[1]).join(", ");
- labels.push(label);notes.push([label,sides[a.side],a.placements.some(half)?halves[a.half]:null,a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null,a.placements.includes("forearm")&&a.coverage==="panel"?surfaces[a.surface]:null].filter(Boolean).join(" / "));
+ labels.push(label);notes.push([label,sides[a.side],a.placements.some(half)?halves[a.half]:null,a.placements.length===1&&!large(r,a.placements[0])?scales[a.scale]:null,a.scale==="area"&&a.placements.length===1&&wraps(a.placements[0])?coverage[a.coverage]:null,a.placements.some(k=>["forearm","upper_arm"].includes(k))&&a.coverage==="panel"?surfaces[a.surface]:null].filter(Boolean).join(" / "));
  }
  return {areas:p.areas.map(a=>({region:a.region,placements:a.placements.slice(),work:a.work.slice(),other:a.other||""})),styles:p.styles.slice(),notes:notes.join("; ").slice(0,160),label:labels.join("; ").slice(0,160),result:estimate(p),project:p};
 }

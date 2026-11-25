@@ -15,12 +15,12 @@ const activeArea=()=>areaFor(activeRegion)||p.areas[0];
 const lengthSteps=[["forearm","Forearm panel"],["half_sleeve","Half sleeve"],["three_quarter_sleeve","¾ sleeve"],["full_sleeve","Full sleeve"]];
 function choose(region,part,side,surface="unsure",other=""){
  const prev=areaFor(region),same=!!prev;
- const a={region,placements:region==="other"?[]:[part],work:same?prev.work.slice():["new"],side:side||(same&&prev.side)||"left",scale:"area",coverage:"panel",half:api.half(part)?(same&&prev.half&&prev.half!=="unsure"?prev.half:same&&prev.placements.includes("forearm")?"lower":"upper"):"",surface,other:other||(region==="other"||part==="other"?"Other placement":"")};
+ const a={region,placements:region==="other"?[]:[part],work:same?prev.work.slice():["new"],side:side||(same&&prev.side)||"left",scale:"area",coverage:"panel",half:api.half(part)?(same&&prev.half&&prev.half!=="unsure"?prev.half:same&&prev.placements.includes("forearm")?"lower":"upper"):"",surface:surface==="unsure"&&["forearm","upper_arm"].includes(part)?"front":surface,other:other||(region==="other"||part==="other"?"Other placement":"")};
  if(combine){p.areas=p.areas.filter(x=>x.region!==region);p.areas.push(a);}else p.areas=[a];activeRegion=region;mode="project";start();return a;
 }
-function pickZone(area,side){
+function pickZone(area,side,facet){
  const key=map[area];if(!key)return;
- const [region,part]=key,existing=areaFor(region),surface=area==="inner_forearm"?"inner":area==="outer_forearm"?"outer":"unsure",other=area==="armpit"?"Armpit":area==="glutes"?"Glutes":"";
+ const [region,part]=key,existing=areaFor(region),surface=["forearm","upper_arm"].includes(part)&&["front","back","inner","outer"].includes(facet)?facet:area==="inner_forearm"?"inner":area==="outer_forearm"?(view==="front"?"front":"back"):"unsure",other=area==="armpit"?"Armpit":area==="glutes"?"Glutes":"";
  if(!combine||!existing){choose(region,part,side,surface,other);render();return;}
  activeRegion=region;
  const isPaired=api.paired(region)||part==="one_side_chest"||existing.placements.includes("one_side_chest");
@@ -63,11 +63,13 @@ function selectedArea(area,side){
  if(part==="half_leg_sleeve")return key[0]==="leg"&&(a.half==="upper"?["thigh","knee"]:["knee","shin","calf","ankle"]).includes(key[1]);
  if(part==="full_back")return key[0]==="back";
  if(part==="full_chest")return ["chest","sternum","areola","collarbone"].includes(area);
- if(a.placements.length===1&&part==="forearm"&&a.coverage==="panel"&&a.surface!=="unsure")return key[1]==="forearm"&&area===(a.surface==="inner"?"inner_forearm":"outer_forearm");
+ if(a.placements.length===1&&part==="forearm"&&a.coverage==="panel"&&["inner","outer"].includes(a.surface))return key[1]==="forearm"&&area===(a.surface==="inner"?"inner_forearm":"outer_forearm");
  return a.placements.includes(key[1])||(key[0]==="other"&&a.other==="Glutes");
 }
-function coverageAt(area,side){
- const key=map[area],a=key&&areaFor(key[0]);if(!a||!selectedArea(area,side))return null;
+function coverageAt(area,side,model=false){
+ const key=map[area],a=key&&areaFor(key[0]);if(!a)return null;
+ const panel=model&&a.placements.length===1&&a.coverage==="panel"&&a.scale==="area"&&(!side||a.side===side||a.side==="both")&&((a.placements[0]==="forearm"&&key[1]==="forearm")||(a.placements[0]==="upper_arm"&&["upper_arm","inner_bicep"].includes(key[1])));
+ if(!panel&&!selectedArea(area,side))return null;
  return {region:a.region,part:a.placements[0],side:a.side,coverage:a.coverage,surface:a.surface,scale:a.placements.length===1&&!api.large(api.regionByKey(a.region),a.placements[0])?a.scale:"area",single:a.placements.length===1};
 }
 function paint2D(path){
@@ -81,7 +83,7 @@ function load3D(){
  modelHost??=node("div","calc-model-host");
  modelHost.textContent="Loading 3D model…";
  const script=document.createElement("script");script.src=new URL("viewer.js",assetBase).href;
- modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,coverage:coverageAt,onPick:pickZone,onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
+ modelLoad=new Promise((resolve,reject)=>{script.onload=resolve;script.onerror=()=>reject(Error("3D viewer unavailable"));document.head.append(script);}).then(()=>window.VisharCalculator3D(modelHost,{base:assetBase,isSelected:selectedArea,coverage:(area,side)=>coverageAt(area,side,true),onPick:pickZone,onError(){modelViewer=null;modelLoad=null;modelFailed=true;modelMode="2d";render();}})).then(v=>{modelViewer=v;v.view(view);v.update();return v;}).catch(err=>{console.warn("Tattoo calculator 3D:",err);modelViewer=null;modelLoad=null;script.remove();modelFailed=true;modelMode="2d";render();});
  return modelLoad;
 }
 function atlas(parent,interactive=true){
@@ -206,7 +208,7 @@ function render(focus){
  group(controls,"Size",[["small","Small piece"],["area","Area-sized"]],a.scale,k=>{a.scale=k;a.coverage="panel";});
  if(a.scale==="small")controls.append(node("p","calc-help","Highlighted patch is illustrative, not a measurement or a fixed tattoo size."));
  if(a.scale==="area"&&api.wraps(part))group(controls,"Coverage",[["panel","One side"],["wrap","Wraparound"]],a.coverage,k=>a.coverage=k);
- if(part==="forearm"&&a.scale==="area"&&a.coverage==="panel")group(controls,"Surface",[["outer","Outer"],["inner","Inner"],["unsure","Not sure"]],a.surface,k=>a.surface=k);
+ if(["forearm","upper_arm"].includes(part)&&a.scale==="area"&&a.coverage==="panel")group(controls,"Surface",[["front","Front side"],["back","Back side"],["outer","Outer"],["inner","Inner"]],a.surface==="unsure"?"front":a.surface,k=>{a.surface=k;});
  if(part==="forearm"&&a.scale==="area"&&a.coverage==="wrap"){const lower=node("button","calc-ink","Estimate a lower half sleeve instead (elbow to wrist)");lower.type="button";lower.onclick=()=>{const s=choose("arm","half_sleeve",a.side);s.half="lower";render();};controls.append(lower);}
  }
  }

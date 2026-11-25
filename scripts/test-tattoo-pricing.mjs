@@ -25,6 +25,8 @@ assert.equal(api.estimate(draftMix).numeric,false);
 const oldInk={...armLeg,areas:[{...armLeg.areas[0],work:["cover_up"]},armLeg.areas[1]]};
 assert.equal(api.estimate(oldInk).numeric,false);
 assert.equal(api.breakdown(oldInk)[0].result.numeric,false);
+assert.match(api.booking(make("forearm",["black_grey"],{surface:"front"})).notes,/Front surface/);
+assert.match(api.booking(make("upper_arm",["black_grey"],{surface:"back"})).notes,/Back surface/);
 let combinations=20;
 // Mutate all bands together to catch stale visible FAQ answers and JSON-LD.
 const change = {

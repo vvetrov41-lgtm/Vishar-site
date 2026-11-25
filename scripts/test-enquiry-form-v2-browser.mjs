@@ -311,6 +311,18 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     const model=page.locator('.calc-webgl');
     const fraction=async()=>Number(await model.getAttribute('data-selected-vertices'))/Number(await model.getAttribute('data-vertex-count'));
     const large=await fraction();assert.ok(large>0);
+    await page.getByRole('button',{name:'Wraparound',exact:true}).click();
+    const wrap=await fraction();assert.ok(large/wrap>.32&&large/wrap<.72,'forearm panel should approximate half of wraparound coverage');
+    await page.getByRole('button',{name:'One side',exact:true}).click();
+    const beforeRotate=await fraction();
+    await page.getByRole('button',{name:'Back',exact:true}).click();
+    assert.ok(Math.abs((await fraction())-beforeRotate)<.006,'rotation must preserve the selected surface');
+    await page.getByRole('button',{name:'Front',exact:true}).click();
+    await page.getByRole('button',{name:'Upper arm',exact:true}).click();
+    const upperPanel=await fraction();
+    await page.getByRole('button',{name:'Wraparound',exact:true}).click();
+    assert.ok(upperPanel/(await fraction())>.32&&upperPanel/(await fraction())<.8,'upper-arm panel should cover approximately half of the arm');
+    await page.getByRole('button',{name:'Forearm',exact:true}).click();
     await page.getByRole('button',{name:'Focus area',exact:true}).click();
     assert.equal(await model.getAttribute('data-focused-area'),'arm');
     await page.getByRole('button',{name:'Front',exact:true}).click();
