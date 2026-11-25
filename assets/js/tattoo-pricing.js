@@ -10,8 +10,9 @@ const rules = {
     colour: [8, 10],
     legExtra: 2,
     torso: [6, 12],
-    // Draft planning bands, NOT published FAQ rates. Require artist sign-off before release.
-    draftPartial: {half_sleeve:{upper:{black_grey:[3,5],colour:[4,6]},lower:{black_grey:[2,4],colour:[3,5]}},three_quarter_sleeve:{black_grey:[4,7],colour:[5,9]}}
+    // Artist-approved lower half sleeve; remaining partial sleeve bands are draft estimates.
+    lowerHalf: {black_grey:[3,4],colour:[4,5]},
+    draftPartial: {half_sleeve:{upper:{black_grey:[3,5],colour:[4,6]}},three_quarter_sleeve:{black_grey:[4,7],colour:[5,9]}}
   };
   var REGIONS = [
     { key: 'arm', label: 'Arm', placements: [
@@ -84,9 +85,10 @@ function estimate(p){
  sessions=band.map(n=>n+extra);open=true;reason="Guide for one full sleeve. Mixed or undecided styles use the combined FAQ range. Detailed designs may take longer.";
  }else if(["full_back","full_chest"].includes(part)){sessions=rules.torso;open=true;reason="Broad FAQ range for major back or torso projects, not a placement-specific quote.";}
  else if(["half_sleeve","three_quarter_sleeve"].includes(part)){
- const band=part==="half_sleeve"?rules.draftPartial[part][a.half]:rules.draftPartial[part];
+ const approved=part==="half_sleeve"&&a.half==="lower";
+ const band=approved?rules.lowerHalf:part==="half_sleeve"?rules.draftPartial[part][a.half]:rules.draftPartial[part];
  if(!band||!band.black_grey)return review("Choose the upper or lower half of the arm for a planning range.");
- sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=true;provisional=true;reason="Provisional planning range for partial sleeves; not an established FAQ estimate. Actual time depends on the composition and wraparound coverage.";
+ sessions=p.styles.length===1&&band[p.styles[0]]?band[p.styles[0]]:[band.black_grey[0],band.colour[1]];open=!approved;provisional=!approved;reason=approved?"Artist-approved guide for a lower half sleeve. Actual time depends on the composition and wraparound coverage.":"Provisional planning range for partial sleeves; not an established FAQ estimate. Actual time depends on the composition and wraparound coverage.";
  }else if(part==="half_leg_sleeve")return review("Partial leg sleeves need an individual estimate.");
  else if(a.scale==="small"&&!["neck_head","hand","foot","other"].includes(a.region)&&part!=="other"){hours=rules.small;sessions=[1,1];reason="Possible for a smaller idea if the placement, detail and realism style are suitable.";}
  else if(a.scale==="area"&&["forearm","upper_arm","shoulder"].includes(part)){
