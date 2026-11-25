@@ -370,7 +370,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   }
   await page.setViewportSize({width:390,height:844});
   await page.evaluate(()=>window.scrollTo(0,document.querySelector('.calc-atlas').getBoundingClientRect().top+window.scrollY+100));
-  await page.waitForFunction(()=>{const p=document.querySelector('.calc-output').getBoundingClientRect(),h=document.querySelector('#site-nav nav').getBoundingClientRect();return Math.abs(p.top-h.bottom)<3&&p.height<260&&p.querySelector('.calc-stat-row')!==null;});
+  await page.waitForFunction(()=>{const p=document.querySelector('.calc-output').getBoundingClientRect(),h=document.querySelector('#site-nav nav').getBoundingClientRect();return Math.abs(p.top-h.bottom)<3&&p.height<260&&document.querySelector('.calc-output .calc-stat-row')!==null;});
   await page.evaluate(()=>window.scrollTo(0,0));
   await page.addScriptTag({content:axeSource});
   const audit = await page.evaluate(() => axe.run('main', {runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21aa']}}));
@@ -457,7 +457,7 @@ await test('Calculator mobile optional booking dialog and live transfer', async 
  const dialog=page.locator('#booking-calculator-dialog');
  assert.equal(await dialog.isVisible(),true);
  await dialog.evaluate(el=>el.scrollTop=250);
- await page.waitForFunction(()=>{const d=document.querySelector('#booking-calculator-dialog'),p=d.querySelector('.calc-output').getBoundingClientRect(),h=d.querySelector('.booking-calculator-header').getBoundingClientRect();return Math.abs(p.top-h.bottom)<3&&p.height<260&&p.querySelector('.calc-stat-row')!==null;});
+ await page.waitForFunction(()=>{const d=document.querySelector('#booking-calculator-dialog'),p=d.querySelector('.calc-output').getBoundingClientRect(),h=d.querySelector('.booking-calculator-header').getBoundingClientRect();return Math.abs(p.top-h.bottom)<3&&p.height<260&&d.querySelector('.calc-output .calc-stat-row')!==null;});
  await dialog.evaluate(el=>el.scrollTop=0);
  if(process.env.TEST_CALCULATOR_3D==='1')await dialog.locator('.calc-webgl[data-ready="true"]').waitFor({timeout:30000});
  await dialog.getByRole('button',{name:'Full sleeve',exact:true}).click();
