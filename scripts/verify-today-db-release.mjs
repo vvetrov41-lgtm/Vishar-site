@@ -175,6 +175,7 @@ export function verifyTodayLineage(source) {
     ['20261125204000', '20261125210000'],
     // Atomic enquiry coverage and immutable calculator snapshot; no finance or send writes.
     ['20261125210000', '20261125213000'],
+    ['20261125213000', '20261125215000'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');

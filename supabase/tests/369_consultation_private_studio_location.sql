@@ -30,5 +30,7 @@ SELECT ok(NOT EXISTS(SELECT 1 FROM crm_private.lifecycle_whatsapp_template_regis
 SELECT is((SELECT prosecdef FROM pg_proc
  WHERE oid='crm_private.consultation_email_location()'::regprocedure),
  false,'Consultation location remains security invoker');
+SELECT ok(position('consultation_email_location() l' in pg_get_functiondef('crm_private.decorate_consultation_reminder_email()'::regprocedure))>0,'Plain text uses verified consultation venue');
+SELECT ok(position('consultation_email_location() l' in pg_get_functiondef('crm_private.queue_lifecycle_instagram_job(uuid)'::regprocedure))>0,'Instagram reminder uses verified consultation venue');
 SELECT * FROM finish();
 ROLLBACK;
