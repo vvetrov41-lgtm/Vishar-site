@@ -4,6 +4,7 @@ import { useApi, useSession } from '../lib/session';
 import { useAsync } from '../components/AsyncData';
 import { EmptyState, ErrorState, LoadingState } from '../components/StateViews';
 import { EnquiryBoard } from '../components/EnquiryBoard';
+import { BodyZonePicker } from '../components/BodyZonePicker';
 import { Link, useQueryState } from '../lib/router';
 import { formatDateTime } from '../lib/format';
 import { useLanguage, type Language } from '../lib/i18n';
@@ -286,14 +287,7 @@ export function EnquiriesPage() {
                   onChange={(event) => updateManual('projectType', event.target.value)}
                 />
               </label>
-              <label>
-                <span>{copy.placement}</span>
-                <input
-                  value={manual.placement}
-                  maxLength={160}
-                  onChange={(event) => updateManual('placement', event.target.value)}
-                />
-              </label>
+              <BodyZonePicker value={manual.placement} label={copy.placement} language={language} onChange={value=>updateManual('placement',value)} />
               <label>
                 <span>{copy.size}</span>
                 <input

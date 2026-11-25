@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BodyZonePicker } from './BodyZonePicker';
 import { can } from '../lib/permissions';
 import type { RecordEditApi } from '../lib/record-edit-api';
 import { useRouter } from '../lib/router';
@@ -104,7 +105,7 @@ export function EnquiryEditPanel({
       {error ? <div className="notice warn" role="alert">{error}</div> : null}
       {mode === 'all' ? <div className="form-grid">
         <label>{copy.type}<input value={projectType} maxLength={100} onChange={(event) => setProjectType(event.target.value)} /></label>
-        <label>{copy.placement}<input value={placement} maxLength={160} onChange={(event) => setPlacement(event.target.value)} /></label>
+        <BodyZonePicker value={placement} onChange={setPlacement} language={language} label={copy.placement} />
         <label>{copy.size}<input value={approximateSize} maxLength={120} onChange={(event) => setApproximateSize(event.target.value)} /></label>
         <label>{copy.cover}<input value={coverUp} maxLength={40} onChange={(event) => setCoverUp(event.target.value)} /></label>
         <label>{copy.timing}<input value={preferredTiming} maxLength={160} onChange={(event) => setPreferredTiming(event.target.value)} /></label>

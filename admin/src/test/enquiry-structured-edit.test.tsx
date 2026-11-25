@@ -52,6 +52,13 @@ describe('booking form v2 catalogue mapping', () => {
     });
   });
 
+  it('round trips operator coverage without sending the original amount', () => {
+    const input=detailsToInput({...DETAILS,calculator_selection:[{region:'leg',placements:['calf'],side:'right',coverage:'wrap'}]})!;
+    expect(input.areas[1].selection).toEqual({side:'right',coverage:'wrap'});
+    expect(toPayload(input).calculator_selection).toEqual([{region:'leg',placements:['calf'],side:'right',coverage:'wrap'}]);
+    expect(toPayload(input)).not.toHaveProperty('calculator_estimate');
+  });
+
   it('refuses to guess an unknown stored label', () => {
     expect(detailsToInput({ ...DETAILS, areas: [{ region: 'Tail', placements: [], work: ['New tattoo'] }] })).toBeNull();
   });
