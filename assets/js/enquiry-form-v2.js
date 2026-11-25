@@ -260,6 +260,7 @@
     errorBox.textContent = message;
     errorBox.hidden = false;
     if (focusTarget && typeof focusTarget.focus === 'function') {
+      var disclosure=focusTarget.closest('details');if(disclosure)disclosure.open=true;
       try { focusTarget.focus({ preventScroll: false }); } catch (e) { focusTarget.focus(); }
     } else {
       scrollIntoViewIfNeeded(errorBox);
@@ -512,7 +513,6 @@
 
   function renderImages() {
     var wrap = el('div');
-    var design = needsDesign();
     var existing = needsExisting();
     wrap.appendChild(el('h2', { className: 'ef-question', text: 'Add images' }));
     wrap.appendChild(el('p', { className: 'ef-help', text: 'JPG, PNG or WebP. Large photos are resized on your device before sending.' }));
@@ -917,7 +917,7 @@
       card.appendChild(el('p',{className:'ef-help',text:result.coverUp?'A touch-up may be needed after full healing; not included.':'Final cost may vary depending on the design, size and placement.'}));
     } else {
       card.appendChild(el('h2',{className:'ef-calculator-title',text:'Choose on the body map'}));
-      card.appendChild(el('p',{className:'ef-help',text:'Select a placement, coverage and style. You can also use the list below if you are not sure.'}));
+      card.appendChild(el('p',{className:'ef-help',text:'Select a placement, coverage and style. You can also choose a body area above or leave the placement undecided.'}));
     }
     card.appendChild(el('a',{href:'/tattoo-price-calculator/',className:'ef-btn ef-btn-secondary ef-calculator-open','data-calculator-open':true,text:guide?'Edit selection':'Open calculator'}));
     return card;

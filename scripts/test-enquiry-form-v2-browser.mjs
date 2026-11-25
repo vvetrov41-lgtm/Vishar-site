@@ -234,19 +234,17 @@ async function contactEmail(page, { name = 'Vera Client', email = 'vera@example.
 }
 
 /** Runs a project from screen 1 to review. `areas` = [{ region, placements, work }]. */
+async function openPlacement(page) { const d=page.locator('.ef-placement-options'); if(!(await d.getAttribute('open')!==null)) await d.locator('summary').click(); }
 async function fillProject(page, { areas, styles = ['Black & Grey realism'], idea = 'A realistic owl in soft light.', design = [], existing = [], discovery = 'Instagram', contact = {} }) {
+  await openPlacement(page);
   for (const area of areas) await pick(page, area.region, group(page, 'Where would you like your tattoo?'));
-  await next(page);
   if (areas.some((a) => a.region !== 'Other')) {
-    await expectSection(page, 'Details');
     for (const area of areas) {
       if (area.region === 'Other') continue;
       const scope = areas.filter((a) => a.region !== 'Other').length > 1 ? group(page, area.region) : page.locator('#enquiry-v2');
       for (const placement of area.placements) await pick(page, placement, scope);
     }
-    await next(page);
   }
-  await expectSection(page, 'Existing work');
   for (const area of areas) {
     const scope = areas.length > 1 ? group(page, area.region) : page.locator('#enquiry-v2');
     for (const work of area.work) await pick(page, work, scope);
@@ -257,8 +255,6 @@ async function fillProject(page, { areas, styles = ['Black & Grey realism'], ide
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill(idea);
   await page.locator('#enquiry-v2').getByLabel(/^Exact placement and approximate size/).fill('About 20 cm');
   if (await page.locator('#enquiry-v2').getByLabel(/^Existing tattoo details/).count()) await page.locator('#enquiry-v2').getByLabel(/^Existing tattoo details/).fill('Faded, about 8 years old');
-  await next(page);
-  await expectSection(page, 'Images');
   if (existing.length) await upload(page, 'existing', existing);
   if (design.length) await upload(page, 'design', design);
   await next(page);
@@ -458,7 +454,7 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByRole('button',{name:'Use this selection in an enquiry (optional)',exact:true}).click();
   await expectSection(page,'Design');
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Colour wildlife sleeve');
-  await next(page); await upload(page,'design',[fixture('design.jpg')]);
+  await upload(page,'design',[fixture('design.jpg')]);
   await next(page); await pick(page,'Instagram'); await next(page);
   await contactEmail(page,{}); await next(page); await send(page);
   const submission=finalSubmission(log).fields;
@@ -515,6 +511,37 @@ await test('Calculator mobile optional booking dialog and live transfer', async 
  await context.close();
 });
 
+await test('Calculator mobile five-step enquiry without a decided placement', async () => {
+  const {page,context,log}=await openPage();
+  await page.goto(BASE+'/booking/');
+  await page.getByRole('button',{name:'Decline',exact:true}).click();
+  await expectSection(page,'Placement');
+  assert.equal(await page.locator('.ef-placement-options').getAttribute('open'),null);
+  await next(page);
+  assert.match(await errorText(page),/answer for your project/);
+  await pick(page,'Cover-up'); await next(page);
+  await expectSection(page,'Design');
+  await pick(page,'Not sure yet');
+  await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('A new floral design over my old tattoo.');
+  await next(page);
+  assert.match(await errorText(page),/photo of your existing tattoo/);
+  await upload(page,'existing',[fixture('design.jpg')]); await next(page);
+  assert.match(await errorText(page),/design reference/);
+  await upload(page,'design',[fixture('design.jpg')]); await next(page);
+  await expectSection(page,'Discovery'); await next(page);
+  assert.match(await errorText(page),/how you heard/);
+  await pick(page,'Instagram'); await next(page);
+  await contactEmail(page); await next(page); await expectSection(page,'Review');
+  assert.match(await page.locator('.ef-summary').innerText(),/Placement not decided yet/);
+  await send(page);
+  const submission=finalSubmission(log);
+  assert.deepEqual(JSON.parse(submission.fields.projectDetails).areas,[{region:'other',placements:[],otherPlacement:'Placement not decided yet',work:['cover_up']}]);
+  assert.equal(submission.files.designReferences.length,1);
+  assert.equal(submission.files.existingTattooPhotos.length,1);
+  assert.equal(submission.fields.discoverySource,'instagram');
+  await context.close();
+});
+
 await test('1 new tattoo with one design reference (iPhone)', async () => {
   const { page, context, log } = await openPage();
   await fillProject(page, { areas: [{ region: 'Arm', placements: ['Forearm'], work: ['No existing tattoo'] }], design: [fixture('design.jpg')] });
@@ -542,9 +569,9 @@ await test('1 new tattoo with one design reference (iPhone)', async () => {
   await context.close();
 });
 
-await test('2 plain cover-up with one existing photo', async () => {
+await test('2 plain cover-up requires reference and existing photo', async () => {
   const { page, context, log } = await openPage();
-  await fillProject(page, { areas: [{ region: 'Back', placements: ['Shoulder blade'], work: ['Cover-up'] }], existing: [fixture('existing.png')] });
+  await fillProject(page, { areas: [{ region: 'Back', placements: ['Shoulder blade'], work: ['Cover-up'] }], existing: [fixture('existing.png')], design:[fixture('design.jpg')] });
   assert.equal(await page.locator('.ef-summary').getByText('1 existing tattoo').count(), 1);
   await send(page);
   const submission = finalSubmission(log);
@@ -559,18 +586,16 @@ await test('2 plain cover-up with one existing photo', async () => {
 
 await test('3 full sleeve + forearm cover-up requires both categories', async () => {
   const { page, context, log } = await openPage();
-  await pick(page, 'Arm'); await next(page);
+  await openPlacement(page); await pick(page, 'Arm');
   await pick(page, 'Full sleeve'); await pick(page, 'Forearm');
   assert.ok(await page.locator('.ef-note:not([hidden])').count(), 'sleeve note shown');
   await pick(page, 'Half sleeve');
   assert.equal(await page.locator('input[value="full_sleeve"]').isChecked(), false, 'sleeve lengths are exclusive');
   await pick(page, 'Full sleeve');
-  await next(page);
   await pick(page, 'Cover-up'); await next(page);
   await pick(page, 'Black & Grey realism');
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Sleeve covering an old forearm piece.');
-  await next(page);
-  await expectSection(page, 'Images');
+  await expectSection(page, 'Design');
   assert.equal(await page.locator('[data-image-role="design"] .required').count(), 1, 'design marked required');
   assert.equal(await page.locator('[data-image-role="existing"] .required').count(), 1, 'existing marked required');
   await upload(page, 'existing', [fixture('existing.png')]);
@@ -618,8 +643,8 @@ await test('5 arm + leg with different work types, 6 B&G + colour (desktop)', as
 
 await test('6b exclusive choices: Not sure yet and No existing tattoo', async () => {
   const { page, context } = await openPage();
-  await pick(page, 'Hand'); await next(page);
-  await pick(page, 'Fingers'); await next(page);
+  await openPlacement(page); await pick(page, 'Hand');
+  await pick(page, 'Fingers');
   await pick(page, 'Cover-up'); await pick(page, 'Rework');
   await pick(page, 'No existing tattoo');
   assert.equal(await page.locator('input[value="cover_up"]').isChecked(), false);
@@ -633,15 +658,14 @@ await test('6b exclusive choices: Not sure yet and No existing tattoo', async ()
 
 await test('7 missing required image is blocked in the browser', async () => {
   const { page, context, log } = await openPage();
-  await pick(page, 'Leg'); await next(page);
-  await pick(page, 'Thigh'); await next(page);
+  await openPlacement(page); await pick(page, 'Leg');
+  await pick(page, 'Thigh');
   await pick(page, 'No existing tattoo'); await next(page);
   await pick(page, 'Colour realism');
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Peony');
   await next(page);
-  await next(page);
   assert.match(await errorText(page), /design reference/);
-  assert.equal(await section(page), 'Images');
+  assert.equal(await section(page), 'Design');
   assert.equal(log.requests.length, 0);
   await context.close();
 });
@@ -685,11 +709,9 @@ await test('9 email with backup WhatsApp', async () => {
 await test('10 back navigation keeps answers and photos; reload keeps text only', async () => {
   const { page, context } = await openPage();
   await fillProject(page, { areas: [{ region: 'Arm', placements: ['Wrist'], work: ['No existing tattoo'] }], design: [fixture('design.jpg')], idea: 'Keep me' });
-  for (let i = 0; i < 4; i += 1) await page.locator('#enquiry-v2').getByRole('button', { name: 'Back', exact: true }).click();
+  for (let i = 0; i < 3; i += 1) await page.locator('#enquiry-v2').getByRole('button', { name: 'Back', exact: true }).click();
   await expectSection(page, 'Design');
   assert.equal(await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).inputValue(), 'Keep me');
-  await next(page);
-  await expectSection(page, 'Images');
   assert.equal(await page.locator('[data-image-role="design"] .ef-thumb').count(), 1, 'photo kept');
   await page.locator('[data-image-role="design"] .ef-thumb-remove').click();
   assert.equal(await page.locator('[data-image-role="design"] .ef-thumb').count(), 0, 'photo removed');
@@ -697,13 +719,12 @@ await test('10 back navigation keeps answers and photos; reload keeps text only'
   await page.waitForTimeout(400);
   await page.reload();
   await page.waitForSelector('.ef-notice:not([hidden])');
-  await expectSection(page, 'Images');
+  await expectSection(page, 'Design');
   assert.ok(await page.getByText('photos need to be chosen again').count(), 're-select prompt');
   const stored = await page.evaluate(() => ({ local: localStorage.getItem('vishar.enquiry.v2.draft'), session: sessionStorage.getItem('vishar.enquiry.v2.contact') }));
   assert.match(stored.local, /Keep me/);
   assert.doesNotMatch(stored.local, /vera@example\.test|Vera Client/, 'no contact details in localStorage');
   assert.match(stored.session, /vera@example\.test/);
-  await page.locator('#enquiry-v2').getByRole('button', { name: 'Back', exact: true }).click();
   assert.equal(await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).inputValue(), 'Keep me');
   await page.evaluate(() => sessionStorage.setItem('vishar.enquiry.idempotencyKey', '11111111-2222-4333-8444-555555555555'));
   await page.getByRole('button', { name: 'Start over' }).click();
@@ -781,7 +802,7 @@ await test('12 dropped connection and 503 retry with the same key; 4xx clears th
   await fillProject(second.page, { areas: [{ region: 'Arm', placements: ['Elbow'], work: ['No existing tattoo'] }], design: [fixture('design.jpg')] });
   await second.page.locator('.ef-consent').click();
   await next(second.page);
-  await expectSection(second.page, 'Images');
+  await expectSection(second.page, 'Design');
   assert.match(await errorText(second.page), /design reference/);
   assert.equal(await second.page.evaluate(() => sessionStorage.getItem('vishar.enquiry.idempotencyKey')), null, '4xx clears key');
   await second.context.close();
@@ -789,12 +810,11 @@ await test('12 dropped connection and 503 retry with the same key; 4xx clears th
 
 await test('12b large iPhone photo is resized; unreadable file is refused', async () => {
   const { page, context, log } = await openPage();
-  await pick(page, 'Back'); await next(page);
-  await pick(page, 'Full back'); await next(page);
+  await openPlacement(page); await pick(page, 'Back');
+  await pick(page, 'Full back');
   await pick(page, 'No existing tattoo'); await next(page);
   await pick(page, 'Black & Grey realism');
   await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Angel');
-  await next(page);
   await page.locator('[data-image-role="design"] input[type=file]').setInputFiles([fixture('not-image.jpg')]);
   await page.waitForFunction(() => /not a supported image|could not/.test(document.getElementById('ef-error')?.textContent || ''), null, { timeout: 15000 });
   await upload(page, 'design', [fixture('iphone-large.jpg')]);
@@ -869,11 +889,11 @@ await test('15 keyboard only: select, continue, back', async () => {
   await page.locator('#ef-section').focus();
   await page.keyboard.press('Tab');
   await page.keyboard.press('Space');
-  assert.equal(await page.locator('input[name="region"][value="arm"]').isChecked(), true, 'Space selects the focused card');
+  assert.equal(await page.locator('input[name="work-unassigned"][value="new"]').isChecked(), true, 'Space selects the mandatory work answer');
   const focusVisible = await page.evaluate(() => { const label = document.activeElement.closest('.ef-choice'); return label ? getComputedStyle(label).outlineStyle : 'none'; });
   assert.notEqual(focusVisible, 'none', 'focused card shows an outline');
   await page.keyboard.press('Enter');
-  await expectSection(page, 'Details');
+  await expectSection(page, 'Design');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'ef-section', 'focus moves to the new section');
   await context.close();
 });
@@ -902,10 +922,10 @@ await test('16 accessibility (axe) and layout on every step, iPhone SE and iPhon
     await page.waitForLoadState('load');
     await page.waitForTimeout(600);
     await checkStep('placement');
-    await pick(page, 'Arm'); await next(page); await checkStep('specific');
-    await pick(page, 'Full sleeve'); await next(page); await checkStep('existing');
+    await openPlacement(page); await pick(page, 'Arm'); await checkStep('specific');
+    await pick(page, 'Full sleeve'); await checkStep('existing');
     await pick(page, 'Cover-up'); await next(page); await checkStep('design');
-    await pick(page, 'Colour realism'); await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Koi'); await next(page); await checkStep('images');
+    await pick(page, 'Colour realism'); await page.locator('#enquiry-v2').getByLabel(/^Your tattoo idea/).fill('Koi'); await checkStep('images');
     await upload(page, 'existing', [fixture('existing.png')]); await upload(page, 'design', [fixture('design.jpg')]);
     await checkStep('images with thumbnails');
     await next(page); await checkStep('discovery');
@@ -946,9 +966,9 @@ await test('18 first visit: body areas stay usable while consent is pending', as
       assert.ok(bannerBounds.y >= formBounds.y + formBounds.height || bannerBounds.x >= formBounds.x + formBounds.width,
         `${device}: consent and form do not overlap`);
 
-      await pick(page, 'Arm');
+      await pick(page, 'No existing tattoo');
       await next(page);
-      await expectSection(page, 'Details');
+      await expectSection(page, 'Design');
       assert.equal(await banner.isVisible(), true, 'a choice is optional to continue');
       await banner.getByRole('button', { name: 'Decline' }).click();
       await banner.waitFor({ state: 'detached' });
