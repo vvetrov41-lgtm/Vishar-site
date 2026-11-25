@@ -184,7 +184,7 @@ async function handleEnquiryIntakeInternal(
     const { honeypot, idempotencyKey, enquiry, project } = parseEnquiryFields(form);
     // Vladimir's pricing engine is not an artist-wide price list. Only the
     // registry-resolved, trusted Vladimir website can supply this estimate.
-    if (enquiry.projectDetails?.calculator_estimate && (bookingConfig.sourceKey !== 'vladimir-website' || origin !== 'https://vishartattoo.com')) {
+    if (enquiry?.projectDetails?.calculator_estimate && (bookingConfig.sourceKey !== 'vladimir-website' || origin !== 'https://vishartattoo.com')) {
       delete enquiry.projectDetails.calculator_estimate;
       if (project?.details) delete project.details.calculator_estimate;
     }
