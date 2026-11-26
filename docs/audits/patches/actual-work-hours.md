@@ -1,0 +1,8 @@
+# Actual work hours — correction
+
+Base: 8b11a71c43594466c0ece5549e39daaf0143a7c2 (active CRM trunk).
+Migration `20261126233317_actual_work_hours.sql` was generated with the repository-pinned Supabase CLI 2.110.0 in an isolated GitHub Actions runner (run 45911599932, job 140221034439). Its version is greater than every base migration (20261125215000). The temporary filename-only workflow and candidate file were removed. No remote database was connected or changed.
+
+Production read-only aggregate: 17 completed work sessions, 108 old planned hours, 106 corrected combined hours, 78 confirmed actual hours and 28 scheduled fallback hours (4 unverified sessions). The effective statistics_core body matched the repository source in 20261102182000_statistics_studio_share.sql, and the production manifest hash matched the committed manifest. Candidate manifest hash calculated with the repository's SHA-256 formula, preserving the existing function header, owner and ACL; clean-database CI must independently confirm this value. No exhaustive checkout/migration history scan was completed. The isolated migration changes only statistics_core; the same authorized RPCs remain the callers.
+
+Eight synthetic pgTAP assertions cover shorter and longer actual sessions, deferred visit, fallback, unchanged diary and finances, correction and unchanged booking duration. Existing authorization tests remain. Optional frontend fields support older database versions. No application data, prices, payment ledger, calendar or external integrations are mutated. Full exact-head CI, review and protected release still required; no deployed behavior claim.

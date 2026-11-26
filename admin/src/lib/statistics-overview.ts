@@ -171,6 +171,15 @@ export function combineCores(cores: StatisticsCore[]): StatisticsCore {
       cancelled: add((core) => core.sessions.cancelled),
       no_show: add((core) => core.sessions.no_show),
       hours: add((core) => core.sessions.hours),
+      ...(cores.length > 0 && cores.every((core) =>
+        core.sessions.hours_confirmed !== undefined &&
+        core.sessions.hours_scheduled_fallback !== undefined &&
+        core.sessions.hours_unverified_sessions !== undefined
+      ) ? {
+        hours_confirmed: add((core) => core.sessions.hours_confirmed ?? 0),
+        hours_scheduled_fallback: add((core) => core.sessions.hours_scheduled_fallback ?? 0),
+        hours_unverified_sessions: add((core) => core.sessions.hours_unverified_sessions ?? 0),
+      } : {}),
       consultations_held: add((core) => core.sessions.consultations_held),
       consultations_no_show: add((core) => core.sessions.consultations_no_show),
       consultations_unverified: add((core) => core.sessions.consultations_unverified),

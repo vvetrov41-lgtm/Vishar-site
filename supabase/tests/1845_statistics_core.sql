@@ -262,6 +262,50 @@ select is(
    ) -> 'upcoming' -> 'weeks' -> 1 ->> 'week_start')),
   '2026-10-26', 'the week after the clock change begins on Monday 26 October');
 
+-- Actual hours are confirmed visit facts; the diary and price forecast are planned.
+create temporary table hours_before on commit drop as
+select crm_private.statistics_core(
+  'a1111111-1111-4111-8111-111111111111', now() - interval '30 days',
+  now() + interval '1 day', now(), true) as r;
+insert into public.visit_outcomes
+  (session_id, artist_id, client_id, appointment_type, state, outcome, worked_minutes,
+   currency, confirmed_at, deferred_until)
+select s.id, s.artist_id, s.client_id, s.appointment_type, v.state, v.outcome,
+       v.minutes, 'GBP', case when v.state = 'confirmed' then now() end,
+       case when v.state = 'deferred' then now() + interval '1 day' end
+from public.sessions s
+join (values
+  ('5c40000c-0000-4000-8000-00000000000c'::uuid, 'confirmed', 'attended', 300),
+  ('5c40000d-0000-4000-8000-00000000000d'::uuid, 'confirmed', 'attended', 510),
+  ('5c40000b-0000-4000-8000-00000000000b'::uuid, 'deferred', null, 60)
+) v(id, state, outcome, minutes) on v.id = s.id;
+
+create temporary table hours_after on commit drop as
+select crm_private.statistics_core(
+  'a1111111-1111-4111-8111-111111111111', now() - interval '30 days',
+  now() + interval '1 day', now(), true) as r;
+select is((select (a.r->'sessions'->>'hours')::numeric - (b.r->'sessions'->>'hours')::numeric
+           from hours_after a cross join hours_before b), -0.5::numeric,
+  '7h planned / 5h actual and 7h planned / 8.5h actual correct the total; deferred outcome ignored');
+select is((select (a.r->'sessions'->>'hours_confirmed')::numeric - (b.r->'sessions'->>'hours_confirmed')::numeric
+           from hours_after a cross join hours_before b), 13.5::numeric, 'only confirmed attended minutes count as actual');
+select is((select (a.r->'sessions'->>'hours_scheduled_fallback')::numeric - (b.r->'sessions'->>'hours_scheduled_fallback')::numeric
+           from hours_after a cross join hours_before b), -14::numeric, 'confirmed outcomes replace scheduled fallback');
+select is((select (a.r->'sessions'->>'hours_unverified_sessions')::int - (b.r->'sessions'->>'hours_unverified_sessions')::int
+           from hours_after a cross join hours_before b), -2, 'the deferred visit remains unverified');
+select is((select a.r->'upcoming' from hours_after a), (select b.r->'upcoming' from hours_before b),
+  'the future diary does not change when historical hours are corrected');
+select is((select a.r->'finance' from hours_after a), (select b.r->'finance' from hours_before b),
+  'historical work duration does not change payment, commission or forecast figures');
+update public.visit_outcomes set worked_minutes = 360, version = version + 1
+where session_id = '5c40000c-0000-4000-8000-00000000000c';
+select is((select (crm_private.statistics_core(
+  'a1111111-1111-4111-8111-111111111111', now() - interval '30 days', now() + interval '1 day', now(), false)
+  ->'sessions'->>'hours_confirmed')::numeric - (select (r->'sessions'->>'hours_confirmed')::numeric from hours_after)),
+  1::numeric, 'a later correction replaces the old minutes rather than adding a second visit');
+select is((select duration_hours from public.sessions where id='5c40000c-0000-4000-8000-00000000000c'), 7::numeric,
+  'the original booking duration remains unchanged');
+
 -- ---------------------------------------------------------- authorization
 
 create function pg_temp.claims(p text) returns void language sql as $$

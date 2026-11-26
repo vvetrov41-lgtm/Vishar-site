@@ -106,7 +106,12 @@ export interface StatisticsCore {
     planned: number;
     cancelled: number;
     no_show: number;
+    /** Compatible total: confirmed actual hours plus scheduled fallback. */
     hours: number;
+    /** Optional until the actual-work-hours migration is deployed. */
+    hours_confirmed?: number;
+    hours_scheduled_fallback?: number;
+    hours_unverified_sessions?: number;
     /** Consultations known to have taken place (status completed). */
     consultations_held: number;
     consultations_no_show: number;
