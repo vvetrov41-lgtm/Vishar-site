@@ -153,3 +153,7 @@ convergence. It does not override Vishar-specific procedures for:
 A completed specification or task list never grants permission to deploy or to
 mutate production. Code presence, merge state, and green CI are not production
 verification.
+
+## Shared Vishar engineering baseline (v0.1.0)
+
+The [shared engineering standard](https://github.com/vvetrov41-lgtm/Vishar-Engineering/blob/6a6e5a030c47f0691827bfd2a5865be497125a2c/README.md) supplements these rules. Existing Spec Kit, constitution, local skills and approval gates remain authoritative. Use the local checklist in `docs/ai/shared-engineering-checklist.md` for implementation, debugging, security review and release verification. Do not fetch or execute third-party skills automatically.
