@@ -305,6 +305,9 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     await page.getByRole('button',{name:'Front',exact:true}).click();
     await page.getByRole('button',{name:'Forearm',exact:true}).click();
     const model=page.locator('.calc-webgl');
+    await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true})));
+    await page.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true})));
+    assert.equal(await model.count(),1,'cached navigation must preserve WebGL canvas');
     const fraction=async()=>Number(await model.getAttribute('data-selected-vertices'))/Number(await model.getAttribute('data-vertex-count'));
     const large=await fraction();assert.ok(large>0);
     const lowerRegions=JSON.parse(await model.getAttribute('data-highlighted-regions'));
@@ -369,6 +372,13 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
     await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   }
   await page.getByRole('button',{name:'2D',exact:true}).click();
+  await page.getByRole('button',{name:'Back',exact:true}).click();
+  await page.locator('.calc-figure .hit[data-area="hamstring"][data-side="left"]').evaluate(e=>e.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+  assert.equal(await page.getByRole('button',{name:'Back side',exact:true}).getAttribute('aria-pressed'),'true');
+  await page.getByRole('button',{name:'Front',exact:true}).click();
+  await page.locator('.calc-figure .hit[data-area="inner_thigh"][data-side="left"]').evaluate(e=>e.dispatchEvent(new MouseEvent('click',{bubbles:true})));
+  assert.equal(await page.getByRole('button',{name:'Inner',exact:true}).getAttribute('aria-pressed'),'true');
+  await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   for (const width of [320,390,1024]) {
     await page.setViewportSize({width,height:844});
     await noHorizontalScroll(page,'calculator');
