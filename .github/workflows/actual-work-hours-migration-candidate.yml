@@ -1,0 +1,28 @@
+# Temporary PR-only migration filename generator. Remove before merge.
+name: Generate actual work hours migration candidate
+on:
+  pull_request:
+    branches:
+      - agent/platform-telegram-self-service
+    paths:
+      - '.github/workflows/actual-work-hours-migration-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  generate:
+    if: github.event.pull_request.head.ref == 'fix/crm-actual-work-hours' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Install pinned Supabase CLI
+        uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359 # v3
+        with:
+          version: 2.110.0
+      - name: Generate migration filename locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$(mktemp -d)"
+          supabase init
+          supabase migration new actual_work_hours
+          find supabase/migrations -maxdepth 1 -type f -name '*_actual_work_hours.sql' -printf 'GENERATED_MIGRATION=%f\n'
