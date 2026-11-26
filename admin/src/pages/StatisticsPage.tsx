@@ -317,8 +317,24 @@ export function StatisticsPage() {
         <dl className="definition stats-definition">
           <dt>{t('stats.kpi.completed')}</dt>
           <dd>{format(current.sessions.completed, locale)}{view.comparable ? ` · ${t('stats.change.previous', { value: format(view.completed.previous, locale) })}` : ''}</dd>
-          <dt>{t('stats.kpi.hours')}</dt>
-          <dd>{formatHours(Number(current.sessions.hours), locale)}</dd>
+          {current.sessions.hours_confirmed !== undefined &&
+           current.sessions.hours_scheduled_fallback !== undefined &&
+           current.sessions.hours_unverified_sessions !== undefined ? (
+            <>
+              <dt>{t('stats.kpi.confirmedHours')}</dt>
+              <dd>{formatHours(Number(current.sessions.hours_confirmed), locale)}</dd>
+              <dt>{t('stats.kpi.unverifiedHours')}</dt>
+              <dd>{t('stats.kpi.unverifiedHoursDetail', {
+                hours: formatHours(Number(current.sessions.hours_scheduled_fallback), locale),
+                count: format(Number(current.sessions.hours_unverified_sessions), locale),
+              })}</dd>
+            </>
+          ) : (
+            <>
+              <dt>{t('stats.kpi.hours')}</dt>
+              <dd>{formatHours(Number(current.sessions.hours), locale)}</dd>
+            </>
+          )}
           <dt>{t('stats.kpi.repeat')}</dt>
           <dd>{t('stats.kpi.repeatDetail', {
             rate: current.returning_clients.active === 0 ? '—' : percentOrDash((current.returning_clients.returning / current.returning_clients.active) * 100, locale),
