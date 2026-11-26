@@ -381,6 +381,8 @@ await test('Calculator mobile layout, accessibility and intake', async () => {
   await page.getByRole('button',{name:'Reset calculator',exact:true}).click();
   for (const width of [320,390,1024]) {
     await page.setViewportSize({width,height:844});
+    // The sticky estimate is intended to overlay scrolled content; check initial layout at the top.
+    await page.evaluate(async()=>{window.scrollTo({top:0,behavior:'instant'});await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));});
     await noHorizontalScroll(page,'calculator');
     assert.ok(await page.locator('.calc-toolbar').isVisible());
     assert.ok(await page.locator('.calc-toolbar').evaluate(e=>e.getBoundingClientRect().height)<90,'single-row model toolbar');
