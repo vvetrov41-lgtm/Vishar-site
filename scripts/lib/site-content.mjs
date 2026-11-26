@@ -31,6 +31,7 @@ const FOOTER_YEAR = 2026;
 export const NAV_LINKS = [
   { id: 'home',      label: 'Home',          href: '/' },
   { id: 'booking',   label: 'Book a Tattoo', href: '/booking/' },
+  { id: 'calculator',label: 'Price Calculator', href: '/tattoo-price-calculator/' },
   { id: 'about',     label: 'About',         href: '/about/' },
   { id: 'book',      label: 'The Book',      href: '/book/' },
   { id: 'aftercare', label: 'Aftercare',     href: '/aftercare/' },

@@ -22,7 +22,7 @@ function choose(region,part,side,surface="unsure",other=""){
 }
 function pickZone(area,side,facet){
  const key=map[area];if(!key)return;
- const [region,part]=key,existing=areaFor(region),surface=["forearm","upper_arm"].includes(part)&&["front","back","inner","outer"].includes(facet)?facet:area==="inner_forearm"?"inner":area==="outer_forearm"?(view==="front"?"front":"back"):"unsure",other=area==="armpit"?"Armpit":area==="glutes"?"Glutes":"";
+ const [region,part]=key,existing=areaFor(region),surface=["forearm","upper_arm","thigh"].includes(part)&&["front","back","inner","outer"].includes(facet)?facet:area==="inner_forearm"||area==="inner_thigh"?"inner":area==="hamstring"?"back":area==="outer_thigh"?"front":area==="outer_forearm"?(view==="front"?"front":"back"):"unsure",other=area==="armpit"?"Armpit":area==="glutes"?"Glutes":"";
  if(!combine||!existing){choose(region,part,side,surface,other);render();return;}
  activeRegion=region;
  const isPaired=api.paired(region)||api.sidedPlacement(part)||api.sided(existing);
@@ -264,5 +264,6 @@ if("ResizeObserver" in window){const sizeObserver=new ResizeObserver(stickySize)
 if(embedded)scrollRoot.addEventListener("vishar-calculator-open",stickySize);
 if(embedded)body.closest("dialog").addEventListener("vishar-calculator-open",e=>{const incoming=e.detail?.project;if(api.valid(incoming)){p.areas=JSON.parse(JSON.stringify(incoming.areas));p.styles=incoming.styles.slice();activeRegion=p.areas[0]?.region||"";combine=p.areas.length>1||p.areas.some(a=>a.placements.length>1);mode="project";view=activeRegion==="back"?"back":"front";modelViewer?.view(view);render();}if(modelMode==="3d")load3D();});
 // The embedded calculator loads WebGL only when its dialog is opened.
-window.addEventListener("pagehide",()=>modelViewer?.dispose(),{once:true});
+window.addEventListener("pagehide",e=>{if(!e.persisted)modelViewer?.dispose();});
+ window.addEventListener("pageshow",e=>{if(e.persisted)modelViewer?.update();});
 })();
