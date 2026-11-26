@@ -445,7 +445,7 @@ crm_private.slot_fill_candidates(p_session_id uuid, p_now timestamp with time zo
 crm_private.slot_fill_draft(p_reason text, p_client_name text, p_artist_name text, p_start_at timestamp with time zone, p_end_at timestamp with time zone, p_timezone text)	01f7862bf2f634e37af1cabbf563126102c81b00718b4d0f666f630986d6e59c
 crm_private.slugify(p_text text)	7eb13d5058088c3a16f5b05df13061bdef2e7c66f4d04ed9f85a834a45efac90
 crm_private.staff_privacy_notice_version(p_artist_id uuid)	02f085ba4a80f154b28f8e98737c15984875c61442c9135030a928488a48b837
-crm_private.statistics_core(p_artist_id uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_now timestamp with time zone, p_finance boolean)	49e402352cdaf0719b280d5a0428678aeb4db764dd482935f0fc913345d646ab
+crm_private.statistics_core(p_artist_id uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_now timestamp with time zone, p_finance boolean)	cf453693ed7c913a93d0a6f0ba16f81f23a36a0a8dd54fbe823a1bc99c545849
 crm_private.statistics_host(p_referrer text)	18f88f6978ffa6670e89dcf8d0e7caf8e4af1811c49e457ede7998a9a29378fc
 crm_private.statistics_studio_share(p_artist_id uuid, p_from timestamp with time zone, p_to timestamp with time zone)	978d5f66aade4839c86af2882ca6539a14af0fd27885ec126d795049245ea13e
 crm_private.strip_invisible_format(p_value text)	70758761b840fb6750b1bf3c0967088f7c1c26e515f5f107a43452ab34f46427

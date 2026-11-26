@@ -1,9 +1,5 @@
--- REVIEW CANDIDATE ONLY. Not a migration. Do not apply this file directly to a live database.
--- Generate the actual ordered migration with the repository-pinned Supabase CLI
--- (supabase migration new actual_work_hours) after re-verifying the current trunk
--- and effective function, then copy this reviewed body into that new migration.
--- Existing SECURITY DEFINER, pinned search_path, authorization, ACL, and caller contract remain unchanged.
--- Base: 8b11a71c43594466c0ece5549e39daaf0143a7c2; effective production body matched 20261102182000_statistics_studio_share.sql byte-for-byte.
+-- Use confirmed attended visit minutes for completed work only.
+-- Keep scheduled fallback and the existing aggregate contract; expose verification coverage.
 CREATE OR REPLACE FUNCTION crm_private.statistics_core(p_artist_id uuid, p_from timestamp with time zone, p_to timestamp with time zone, p_now timestamp with time zone, p_finance boolean)
  RETURNS jsonb
  LANGUAGE plpgsql
