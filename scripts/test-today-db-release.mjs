@@ -763,3 +763,24 @@ const calculatorRelease = ' Local | Remote | Time\n 20261125210000 | 20261125210
 assert.equal(verifyTodayLineage(calculatorRelease), '20261125213000');
 assert.equal(deferredTodayMigration(calculatorRelease), null);
 for (const invalid of [calculatorRelease+'\n 20261125213100 | | t', calculatorRelease.replace('20261125213000 | |','20261125213100 | |'), calculatorRelease.replaceAll('20261125210000','20261125204000'), calculatorRelease+'\n | 20261125212000 | t']) assert.throws(()=>verifyTodayLineage(invalid));
+ 
+// PR #1339: the actual work hours migration is the sole next permitted step.
+// Keep the reviewed consultation venue migration as the required predecessor.
+const actualHoursRelease = [
+  ' Local | Remote | Time (UTC)',
+  ' 20261125213000 | 20261125213000 | t',
+  ' 20261125215000 | 20261125215000 | t',
+  ' 20261126233317 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(actualHoursRelease), '20261126233317');
+assert.equal(deferredTodayMigration(actualHoursRelease), null);
+for (const invalid of [
+  actualHoursRelease.replace('20261126233317 | |', '20261126233318 | |'),
+  actualHoursRelease.replace('20261125215000 | 20261125215000', '20261125215000 | '),
+  actualHoursRelease + '\n 20261126233318 | | t',
+  actualHoursRelease + '\n | 20261126233316 | t',
+  actualHoursRelease.replace('20261126233317 | |', '20261126233317 | 20261126233317 |'),
+]) {
+  assert.throws(() => verifyTodayLineage(invalid));
+  assert.throws(() => deferredTodayMigration(invalid));
+}

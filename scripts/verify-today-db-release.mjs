@@ -176,6 +176,8 @@ export function verifyTodayLineage(source) {
     // Atomic enquiry coverage and immutable calculator snapshot; no finance or send writes.
     ['20261125210000', '20261125213000'],
     ['20261125213000', '20261125215000'],
+    // PR #1339: read-only statistics calculation, confirmed visit hours only.
+    ['20261125215000', '20261126233317'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
