@@ -104,7 +104,10 @@ async function main() {
     console.log(`Wrote ${MANIFEST_PATH}`);
     return;
   }
-  const expected = parseManifest(readFileSync(MANIFEST_PATH, 'utf8'), MANIFEST_PATH);
+  // An intermediate release may compare against its clean local migration
+  // snapshot, generated before connecting to production. Never skip comparison.
+  const expectedPath = mode === '--production' && file ? file : MANIFEST_PATH;
+  const expected = parseManifest(readFileSync(expectedPath, 'utf8'), expectedPath);
   let actual;
   let actualLabel;
   if (mode === '--compare') {
@@ -119,7 +122,7 @@ async function main() {
   }
   const result = compareManifests(expected, actual);
   if (!result.ok) {
-    report(result, MANIFEST_PATH, actualLabel);
+    report(result, expectedPath, actualLabel);
     if (mode === '--compare') {
       // Only signatures and hashes, never SQL bodies. Preserve the failing gate.
       for (const key of [...result.unexpected, ...result.changed].sort()) {
@@ -130,7 +133,7 @@ async function main() {
     }
     process.exit(1);
   }
-  console.log(`Function definitions match ${MANIFEST_PATH} in ${actualLabel}: ${expected.size} functions.`);
+  console.log(`Function definitions match ${expectedPath} in ${actualLabel}: ${expected.size} functions.`);
 }
 
 main().catch((error) => {
