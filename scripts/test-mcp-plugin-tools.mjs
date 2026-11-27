@@ -622,4 +622,41 @@ for (const claims of [
   assert.equal(attempts, 1);
 }
 
+
+{
+  const params = { name: 'crm_list_clients', arguments: { limit: 10 } };
+  const success = { async fetch() { return Response.json({ items: [] }); } };
+  const normal = await handlePluginMcpRequest(rpcRequest('tools/call', params), env(success), authFetch());
+  assert.equal(normal.headers.get('server-timing'), null, 'default is off');
+  const enabled = { MCP_READ_TIMING_DIAGNOSTICS: 'true' };
+  let attempts = 0, authCalls = 0;
+  const timed = await handlePluginMcpRequest(
+    rpcRequest('tools/call', params),
+    env({ async fetch() {
+      attempts += 1;
+      if (attempts === 1) return new Response('synthetic transient', { status: 503 });
+      return Response.json({ items: [] });
+    } }, enabled),
+    async (...args) => { authCalls += 1; return authFetch()(...args); },
+  );
+  assert.equal(authCalls, 1, 'per-request authority is preserved');
+  assert.equal(attempts, 2);
+  assert.match(timed.headers.get('server-timing'), /^auth;dur=\d+, rate;dur=\d+, action;dur=\d+, total;dur=\d+, attempts;desc="2"$/);
+  assert.deepEqual(await timed.json(), await normal.json(), 'response body is unchanged');
+  assert.equal(timed.headers.get('cache-control'), 'no-store');
+  for (const [method, arguments_, access, service, fetchAuth] of [
+    ['tools/list', {}, null, success, authFetch()],
+    ['tools/call', params, null, success, authFetch()],
+    ['tools/call', params, token(), success, async () => new Response(null,{status:401})],
+    ['tools/call', params, token(), { async fetch() { return Response.json({ error: 'permission_denied' }, {status:403}); } }, authFetch()],
+    ['tools/call', {name:'crm_create_internal_note',arguments:{body:'synthetic only',client_id:USER}}, token(), {async fetch(){return Response.json({success:true})}}, authFetch()],
+  ]) {
+    const result = await handlePluginMcpRequest(rpcRequest(method, arguments_, access), env(service, enabled), fetchAuth);
+    assert.equal(result.headers.get('server-timing'), null, 'discovery, unauthenticated, denied and write requests expose no timing');
+  }
+  const blocked = await handlePluginMcpRequest(rpcRequest('tools/call',params),env(success,{...enabled,MCP_RATE_LIMIT:{async limit(){return {success:false}}}}),authFetch());
+  assert.equal(blocked.status,429);
+  assert.equal(blocked.headers.get('server-timing'),null);
+}
+
 console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict issuer/audience/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
