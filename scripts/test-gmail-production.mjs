@@ -621,3 +621,30 @@ await test('backend/user RPC gateways are explicit allow-lists and expose no gen
 });
 
 console.log(`Gmail production tests passed: ${passes}`);
+
+await test('forwarded domain replies and sent copies belong only to the pinned Vladimir mailbox', () => {
+  const context = {mailboxEmail:'vvetrov41@gmail.com',clientEmail:'client@example.com'};
+  const incoming = gmailMessage({id:'msg_alias_in',from:'client@example.com',to:'info@vishartattoo.com',body:'Reply'});
+  const outgoing = gmailMessage({id:'msg_alias_out',from:'info@vishartattoo.com',to:'client@example.com',body:'Original'});
+  assert.equal(gmail.normalizeMessage(incoming,context)?.direction,'inbound');
+  assert.equal(gmail.normalizeMessage(incoming,context)?.to,'info@vishartattoo.com');
+  assert.equal(gmail.normalizeMessage(outgoing,context)?.direction,'outbound');
+  assert.equal(gmail.normalizeMessage(outgoing,context)?.from,'info@vishartattoo.com');
+  assert.equal(gmail.normalizeMessage(incoming,{...context,mailboxEmail:'tinaakaten@gmail.com'}),null);
+  assert.equal(gmail.normalizeMessage(outgoing,{...context,mailboxEmail:'tinaakaten@gmail.com'}),null);
+  assert.equal(gmail.normalizeMessage(incoming,{...context,clientEmail:'stranger@example.com'}),null);
+  assert.equal(gmail.normalizeMessage(outgoing,{...context,clientEmail:'info@vishartattoo.com'}),null);
+});
+
+const {getThread: gmailGetThreadForAlias}=await import('../workers/lib/google-gmail.js');
+await test('domain alias thread remains bilateral for the pinned owner only', async () => {
+  const fetchImpl = async () => Response.json({id:'thread_alias',messages:[
+    gmailMessage({id:'msg_alias_in',from:'client@example.com',to:'info@vishartattoo.com'}),
+    gmailMessage({id:'msg_alias_out',from:'info@vishartattoo.com',to:'client@example.com'}),
+  ]});
+  const options={mailboxEmail:'vvetrov41@gmail.com',clientEmail:'client@example.com',fetchImpl};
+  const thread=await gmailGetThreadForAlias('access','thread_alias',options);
+  assert.equal(thread._bilateral,true);
+  assert.equal(thread.messages.length,2);
+  await assert.rejects(gmailGetThreadForAlias('access','thread_alias',{...options,mailboxEmail:'tinaakaten@gmail.com'}),/gmail_thread_outside_client_scope/);
+});
