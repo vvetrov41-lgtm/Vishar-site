@@ -178,6 +178,9 @@ export function verifyTodayLineage(source) {
     ['20261125213000', '20261125215000'],
     // PR #1339: read-only statistics calculation, confirmed visit hours only.
     ['20261125215000', '20261126233317'],
+    // Lead magnet: inert foundation first, reporting and attribution second.
+    ['20261126233317', '20261127200000'],
+    ['20261127200000', '20261127200100'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
@@ -221,6 +224,13 @@ export function deferredTodayMigration(source) {
       && pending[1] === '20261116170000'
       && local.slice(0,remote.length).every((v,i) => v === remote[i])) {
     return '20261116170000_healing_check_whatsapp_candidate.sql';
+  }
+  if (remote.at(-1) === '20261126233317'
+      && pending.length === 2
+      && pending[0] === '20261127200000'
+      && pending[1] === '20261127200100'
+      && local.slice(0,remote.length).every((v,i) => v === remote[i])) {
+    return '20261127200100_lead_magnet_reporting.sql';
   }
   // All other states must pass the existing strict one-pending release gate.
   verifyTodayLineage(source);

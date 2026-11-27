@@ -784,3 +784,15 @@ for (const invalid of [
   assert.throws(() => verifyTodayLineage(invalid));
   assert.throws(() => deferredTodayMigration(invalid));
 }
+
+// Release the two lead-magnet migrations in separate guarded steps.
+const lmBase = ' Local | Remote | Time\n 20261126233317 | 20261126233317 | t';
+const lmFirst = lmBase+'\n 20261127200000 | | t';
+const lmBoth = lmFirst+'\n 20261127200100 | | t';
+const lmSecond = lmBase+'\n 20261127200000 | 20261127200000 | t\n 20261127200100 | | t';
+assert.equal(verifyTodayLineage(lmFirst), '20261127200000');
+assert.equal(deferredTodayMigration(lmBoth), '20261127200100_lead_magnet_reporting.sql');
+assert.throws(()=>verifyTodayLineage(lmBoth));
+assert.equal(verifyTodayLineage(lmSecond), '20261127200100');
+assert.equal(deferredTodayMigration(lmSecond), null);
+for (const bad of [lmBoth+'\n 20261127200200 | | t',lmBoth.replace('20261127200100 | |','20261127200101 | |'),lmSecond.replace('20261127200000 | 20261127200000','20261127200000 | ')+'\n 20261127200200 | | t']) assert.throws(()=>deferredTodayMigration(bad));

@@ -57,6 +57,7 @@ import { PaymentsPage } from './pages/PaymentsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { ProjectsPage } from './pages/ProjectsPage';
 import { StatisticsPage } from './pages/StatisticsPage';
+import { LeadMagnetsPage } from './pages/LeadMagnetsPage';
 import { TelegramConnectionsPage } from './pages/TelegramConnectionsPage';
 import { UsersPage } from './pages/UsersPage';
 import { WhatsAppConnectionsPage } from './pages/WhatsAppConnectionsPage';
@@ -267,6 +268,8 @@ function Routes() {
     // It invents no role and grants no access - every read behind it is refused
     // by the database to anyone the database refuses those tables to, and the
     // money block appears only where finance rows came back.
+    case '/lead-magnets':
+      return <RequireCapability capability="viewEnquiries"><LeadMagnetsPage /></RequireCapability>;
     case '/statistics':
       return <RequireCapability capability="viewEnquiries"><StatisticsPage /></RequireCapability>;
     case '/automations':

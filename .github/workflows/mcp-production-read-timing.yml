@@ -1,0 +1,122 @@
+name: MCP production read timing pilot
+on:
+  push:
+    branches: ['release/private-crm-rc*-inventory-mcp-read-timing']
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: mcp-plugin-production-activation
+  cancel-in-progress: false
+jobs:
+  rollout:
+    if: github.actor == github.repository_owner && github.event.before != '0000000000000000000000000000000000000000'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crm-production
+    env:
+      APPROVED_SHA: ${{ github.event.before }}
+      SOURCE_SHA: ${{ github.event.before }}
+      CANONICAL: agent/platform-telegram-self-service
+      LIVE_SOURCE: 2205f2ae90e9c4eaae5dfada9237da79f21a0495
+      BEFORE_VERSION: 37cdbd5e-73b6-4517-a6fe-ab2697f5aa7d
+      WORKER_NAME: vishar-mcp-production
+      SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
+      PLUGIN_CLIENT_ID: 3b5c6da9-cac4-4720-ad47-5188136a5534
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CRM_PRODUCTION_CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Verify explicit immutable approval and canonical CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF_NAME" in release/private-crm-rc*-inventory-mcp-read-timing) ;; *) exit 1 ;; esac
+          [ "$GITHUB_ACTOR" = "$GITHUB_REPOSITORY_OWNER" ]
+          [ "$(git rev-parse "$GITHUB_SHA^")" = "$APPROVED_SHA" ]
+          [ "$(git rev-parse "$GITHUB_SHA^{tree}")" = "$(git rev-parse "$APPROVED_SHA^{tree}")" ]
+          [ "$(git ls-remote origin "refs/heads/$CANONICAL" | awk 'NR==1{print $1}')" = "$APPROVED_SHA" ]
+          git merge-base --is-ancestor "$LIVE_SOURCE" "$APPROVED_SHA"
+          [ "$SUPABASE_URL" = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co' ]
+          case "$SUPABASE_PUBLISHABLE_KEY" in sb_publishable_*) ;; *) exit 1 ;; esac
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$APPROVED_SHA&per_page=100" --jq '.workflow_runs[] | {name,status,conclusion,head_sha}' | jq -s . > "$RUNNER_TEMP/runs.json"
+          for workflow in 'Static Validation' 'CRM and booking validation' 'MCP Plugin migration validation'; do
+            jq -e --arg n "$workflow" --arg sha "$APPROVED_SHA" 'any(.[]; .name==$n and .head_sha==$sha and .status=="completed" and .conclusion=="success")' "$RUNNER_TEMP/runs.json" >/dev/null
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Construct only the reviewed runtime patch on deployed source
+        run: |
+          set -euo pipefail
+          git checkout --detach "$LIVE_SOURCE"
+          git checkout "$APPROVED_SHA" -- workers/lib/mcp-plugin-server.js workers/lib/mcp-plugin-actions.js scripts/test-mcp-plugin-tools.mjs
+          expected="$(printf '%s\n' scripts/test-mcp-plugin-tools.mjs workers/lib/mcp-plugin-actions.js workers/lib/mcp-plugin-server.js)"
+          [ "$(git diff --cached --name-only | sort)" = "$expected" ]
+          npm ci --ignore-scripts
+          node scripts/audit-root-dependencies.mjs --audit-level=moderate
+          node scripts/build-mcp-plugin-tools.mjs
+          node scripts/test-mcp-plugin-tools.mjs
+          node scripts/test-mcp-production-config.mjs
+          npm run check:mcp-production-bundle
+          npm run scan:secrets
+          git diff --exit-code
+          [ "$(git diff --cached --name-only | sort)" = "$expected" ]
+          node scripts/probe-mcp-plugin-production.mjs
+      - name: Verify current binding topology and deploy only MCP Worker
+        run: |
+          set -euo pipefail
+          # Never print live binding values or credentials. Use a safe allowlist.
+          cat > "$RUNNER_TEMP/check-worker.mjs" <<'JS'
+          import assert from 'node:assert/strict';
+          const base='https://api.cloudflare.com/client/v4/accounts/'+process.env.CLOUDFLARE_ACCOUNT_ID;
+          async function get(path){
+            const r=await fetch(base+path,{headers:{authorization:'Bearer '+process.env.CLOUDFLARE_API_TOKEN},signal:AbortSignal.timeout(30000)});
+            if(!r.ok)throw Error('Cloudflare preflight HTTP '+r.status);
+            const j=await r.json();if(!j.success)throw Error('Cloudflare preflight refused');return j.result;
+          }
+          const prefix='/workers/scripts/'+process.env.WORKER_NAME;
+          const settings=await get(prefix+'/settings');
+          const dep=await get(prefix+'/deployments');
+          const current=(dep.deployments??dep)[0];
+          const after=process.argv[2]==='after';
+          assert.equal(current.versions.length,1);
+          assert.equal(current.versions[0].percentage,100);
+          if(!after)assert.equal(current.versions[0].version_id,process.env.BEFORE_VERSION);
+          else {
+            assert.notEqual(current.versions[0].version_id,process.env.BEFORE_VERSION);
+            assert.equal(current.annotations?.['workers/message'],'MCP read timing pilot '+process.env.APPROVED_SHA);
+          }
+          const vars={MCP_ENABLED:'true',MCP_PLUGIN_TOOLS_ENABLED:'true',MCP_GMAIL_TOOLS_ENABLED:'false',MCP_META_TOOLS_ENABLED:'false',MCP_PLUGIN_OAUTH_CLIENT_ID:process.env.PLUGIN_CLIENT_ID,MCP_PUBLIC_HOST:'mcp.vishartattoo.com',SUPABASE_URL:process.env.SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY:process.env.SUPABASE_PUBLISHABLE_KEY,VISHAR_ENVIRONMENT:'production'};
+          if(after)vars.MCP_READ_TIMING_DIAGNOSTICS='true';
+          const m=new Map(settings.bindings.map(b=>[b.name,b]));
+          assert.deepEqual([...m.keys()].sort(),[...Object.keys(vars),'GPT_ACTIONS_SERVICE','MCP_RATE_LIMIT'].sort());
+          for(const [name,value] of Object.entries(vars))if(m.get(name)?.type!=='plain_text'||m.get(name)?.text!==value)throw Error('Binding mismatch: '+name);
+          if(m.get('GPT_ACTIONS_SERVICE')?.type!=='service'||m.get('GPT_ACTIONS_SERVICE')?.service!=='vishar-gpt-actions-production')throw Error('Service mismatch');
+          const rate=m.get('MCP_RATE_LIMIT');
+          if(rate?.type!=='ratelimit'||String(rate.namespace_id)!=='1003'||rate.simple?.limit!==60||rate.simple?.period!==60)throw Error('Rate limiter mismatch');
+          const domains=await get('/workers/domains');
+          assert.deepEqual(domains.filter(d=>d.service===process.env.WORKER_NAME).map(d=>d.hostname),['mcp.vishartattoo.com']);
+          const sub=await get(prefix+'/subdomain');
+          if(sub.enabled!==false||sub.previews_enabled!==false)throw Error('Unexpected preview exposure');
+          console.log('Verified '+(after?'new':'previous')+' MCP version '+current.versions[0].version_id);
+          JS
+          node "$RUNNER_TEMP/check-worker.mjs" before
+          [ "$(git ls-remote origin "refs/heads/$CANONICAL" | awk 'NR==1{print $1}')" = "$APPROVED_SHA" ]
+          [ "$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | awk 'NR==1{print $1}')" = "$GITHUB_SHA" ]
+          npx wrangler deploy --config wrangler.mcp.production.toml --name "$WORKER_NAME" --strict \
+            --message "MCP read timing pilot $APPROVED_SHA" \
+            --var VISHAR_ENVIRONMENT:production --var MCP_PUBLIC_HOST:mcp.vishartattoo.com \
+            --var MCP_ENABLED:true --var MCP_PLUGIN_TOOLS_ENABLED:true \
+            --var MCP_GMAIL_TOOLS_ENABLED:false --var MCP_META_TOOLS_ENABLED:false \
+            --var MCP_PLUGIN_OAUTH_CLIENT_ID:"$PLUGIN_CLIENT_ID" \
+            --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
+            --var MCP_READ_TIMING_DIAGNOSTICS:true
+          node "$RUNNER_TEMP/check-worker.mjs" after
+          node scripts/probe-mcp-plugin-production.mjs
+          echo 'MCP pilot deployed, binding readback and public acceptance passed. Authenticated header collection still requires an authorized client.' >> "$GITHUB_STEP_SUMMARY"
