@@ -648,3 +648,40 @@ await test('domain alias thread remains bilateral for the pinned owner only', as
   assert.equal(thread.messages.length,2);
   await assert.rejects(gmailGetThreadForAlias('access','thread_alias',{...options,mailboxEmail:'tinaakaten@gmail.com'}),/gmail_thread_outside_client_scope/);
 });
+
+const {prepareResendRequest,sendResendCorrespondence}=await import('../workers/lib/resend-correspondence.mjs');
+const resendTestId='11111111-1111-4111-8111-111111111111';
+const resendTestEnv={VISHAR_ENVIRONMENT:'production',RESEND_CORRESPONDENCE_MODE:'test',RESEND_CORRESPONDENCE_API_KEY: 're_'+'synthetic_only_not_live'};
+const resendTestTarget={artist_id:'a1111111-1111-4111-8111-111111111111',integration_key:'google_gmail_vladimir',mailbox_email:'vvetrov41@gmail.com',client_email:'vvetrov41@gmail.com',email_message_id:resendTestId,delivery_allowed:true};
+const resendTestMessage={toEmail:'vvetrov41@gmail.com',emailMessageId:resendTestId,subject:'Test',body:'Test body',htmlBody:'<p>Test</p>',inReplyTo:'<prior@example.test>',references:'<first@example.test> <prior@example.test>'};
+const resendTestOptions={preparedAt:1000,now:2000};
+await test('Resend correspondence accepts only pinned artist, mailbox, test recipient and prepared attempt',()=>{
+  const request=prepareResendRequest(resendTestEnv,resendTestTarget,resendTestMessage,resendTestOptions);
+  assert.equal(request.key,'crm-email/'+resendTestId);
+  assert.deepEqual(request.payload,{from:'Vladimir Vishar <info@vishartattoo.com>',to:['vvetrov41@gmail.com'],subject:'Test',text:'Test body',html:'<p>Test</p>',reply_to:'info@vishartattoo.com',headers:{'X-Vishar-Email-ID':resendTestId,'In-Reply-To':'<prior@example.test>',References:'<first@example.test> <prior@example.test>'}});
+  for(const [env,target,message,opts] of [
+    [{...resendTestEnv,RESEND_CORRESPONDENCE_MODE:'live'},resendTestTarget,resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,artist_id:'a2222222-2222-4222-8222-222222222222'},resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,mailbox_email:'tinaakaten@gmail.com'},resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,delivery_allowed:false},resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,client_email:'client@example.test'},{...resendTestMessage,toEmail:'client@example.test'},resendTestOptions],
+    [resendTestEnv,resendTestTarget,{...resendTestMessage,inReplyTo:'<prior@example.test>\r\nBcc: bad'},resendTestOptions],
+    [resendTestEnv,resendTestTarget,{...resendTestMessage,subject:'Test\nBcc: bad'},resendTestOptions],
+    [resendTestEnv,resendTestTarget,resendTestMessage,{preparedAt:1000,now:1000+23*3600000}],
+  ])assert.throws(()=>prepareResendRequest(env,target,message,opts));
+});
+await test('Resend receipt does not pretend to be a Gmail thread and uses one idempotent request',async()=>{
+  let calls=0;
+  const receipt=await sendResendCorrespondence(resendTestEnv,resendTestTarget,resendTestMessage,{...resendTestOptions,fetchImpl:async(url,init)=>{
+    calls++;assert.equal(url,'https://api.resend.com/emails');assert.equal(init.redirect,'error');
+    assert.equal(init.headers['Idempotency-Key'],'crm-email/'+resendTestId);
+    return Response.json({id:resendTestId});
+  }});
+  assert.equal(calls,1);assert.deepEqual(receipt,{provider:'resend',providerMessageId:resendTestId,acceptance:'accepted'});
+});
+await test('Resend ambiguous results never trigger an automatic retry',async()=>{
+  for(const result of [()=>{throw Error('timeout')},()=>Response.json({}, {status:503}),()=>Response.json({}, {status:409}),()=>Response.json({id:'invalid'})]){
+    let calls=0;await assert.rejects(sendResendCorrespondence(resendTestEnv,resendTestTarget,resendTestMessage,{...resendTestOptions,fetchImpl:async()=>{calls++;return result()}}),/resend_correspondence_uncertain/);
+    assert.equal(calls,1);
+  }
+});
