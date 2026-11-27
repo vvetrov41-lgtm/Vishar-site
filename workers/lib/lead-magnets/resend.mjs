@@ -15,7 +15,7 @@ export async function sendGuideViaResend(key,message,fetchImpl=fetch){
   // Do not retry a provider call here. The durable outbox quarantines uncertain
   // responses; provider idempotency is a second line of duplicate protection.
   const r=await fetchImpl('https://api.resend.com/emails',{
-    method:'POST',redirect:'error',
+    method:'POST',redirect:'manual',
     headers:{Authorization:'Bearer '+key,'Content-Type':'application/json','Idempotency-Key':'cover-up-guide/'+message.emailMessageId},
     body:JSON.stringify({from:FROM,to:[message.toEmail],subject:message.subject,text:message.body,reply_to:MAILBOX}),
     signal:AbortSignal.timeout(12000),

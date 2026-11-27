@@ -14,7 +14,7 @@ test('dedicated sender is fixed and artist bound',()=>{
 });
 test('Resend request has pinned From, Reply-To, recipient and per-job idempotency',async()=>{
  const receipt=await sendGuideViaResend(key,{...message,from:'untrusted@example.invalid'},async(url,init)=>{
- assert.equal(url,'https://api.resend.com/emails');assert.equal(init.method,'POST');assert.equal(init.redirect,'error');
+ assert.equal(url,'https://api.resend.com/emails');assert.equal(init.method,'POST');assert.equal(init.redirect,'manual');
  assert.equal(init.headers.Authorization,'Bearer '+key);assert.equal(init.headers['Idempotency-Key'],'cover-up-guide/'+id);
  const body=JSON.parse(init.body);
  assert.deepEqual(body,{from:'Vladimir Vishar <info@vishartattoo.com>',to:[message.toEmail],subject:message.subject,text:message.body,reply_to:'info@vishartattoo.com'});
@@ -26,5 +26,5 @@ test('missing key, invalid recipient and injected subject never call provider',a
  for(const args of [[null,message],[key,{...message,toEmail:'x\n@example.invalid'}],[key,{...message,subject:'x\nBcc: y'}],[key,{...message,emailMessageId:'bad'}]])await assert.rejects(sendGuideViaResend(...args,deny));
 });
 test('provider rejection, timeout, and malformed receipt fail closed without retries',async()=>{
- for(const response of [()=>Response.json({error:'bad'},{status:429}),()=>Response.json({id:'invalid'}),()=>{throw Error('timeout')}]){let calls=0;await assert.rejects(sendGuideViaResend(key,message,async()=>{calls++;return response()}));assert.equal(calls,1);}
+ for(const response of [()=>new Response(null,{status:302,headers:{Location:'https://other.invalid/'}}),()=>Response.json({error:'bad'},{status:429}),()=>Response.json({id:'invalid'}),()=>{throw Error('timeout')}]){let calls=0;await assert.rejects(sendGuideViaResend(key,message,async()=>{calls++;return response()}));assert.equal(calls,1);}
 });
