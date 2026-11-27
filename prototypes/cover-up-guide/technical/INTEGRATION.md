@@ -17,4 +17,8 @@ Production audit: no lead-magnet tables on 27 Nov 2026. `client_marketing_consen
 7. E2E in isolated environment with synthetic emails and controlled delivery: request without opt-in, with opt-in, duplicate, database unavailable, 429, wrong artist, invalid email, disabled flag, unsubscribe before D3, unsubscribe while job leased, real enquiry conversion; check iOS Safari, Android, desktop and server analytics. Then deploy with flags initially off, activate only after verified rights and owner signoff; monitor delivery failures, no automated spam or campaign spend.
 
 ## Configuration
-Proposed URL: https://vishartattoo.com/cover-up-guide/ . Asset: https://vishartattoo.com/assets/lead-magnets/cover-up-guide-v5.pdf . Both are proposed, not live. `LEAD_MAGNET_INTAKE_ENABLED` defaults off. `nurture_enabled` defaults false. Pilot only Vladimir. No provider credentials in code. No campaign is started.
+Proposed URL: https://vishartattoo.com/cover-up-guide/ . Asset: https://vishartattoo.com/assets/lead-magnets/cover-up-guide-v6.pdf . Both are proposed, not live. `LEAD_MAGNET_INTAKE_ENABLED` defaults off. `nurture_enabled` defaults false. Pilot only Vladimir. No provider credentials in code. No campaign is started.
+
+
+## Queue candidate update
+Separate claim/authorize/finish RPCs added; expired or uncertain provider jobs are quarantined, not blindly retried. Withdrawal cancels leased marketing jobs and suppresses unverified re-enrolment. Delivery adapter, unsubscribe HTTP route, report and attribution are still required. Do not enable production.

@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {handleLeadMagnetIntake} from './lead-magnet-intake.mjs';
 const payload={request_id:'11111111-1111-4111-8111-111111111111',first_name:'Test',email:'TEST@example.invalid',marketing_opt_in:false,marketing_consent_version:'coverup-email-v1',website:'',attribution:{}};
-const expected='https://vishartattoo.com/assets/lead-magnets/cover-up-guide-v5.pdf';
+const expected='https://vishartattoo.com/assets/lead-magnets/cover-up-guide-v6.pdf';
 const env={LEAD_MAGNET_INTAKE_ENABLED:'true'};
 function req(body=payload,origin='https://vishartattoo.com',method='POST'){return new Request('https://api.vishartattoo.com/api/lead-magnets/cover-up-guide',{method,headers:{Origin:origin,'Content-Type':'application/json','CF-Connecting-IP':'192.0.2.1'},...(method==='POST'?{body:JSON.stringify(body)}:{})});}
 function setup(){let calls=[];return {calls,deps:{rateLimit:async()=>true,capture:async x=>{calls.push(x);return {ok:true,delivery_queued:true,download_url:expected};}}};}

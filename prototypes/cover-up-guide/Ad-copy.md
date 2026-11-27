@@ -1,6 +1,6 @@
 # Meta Ads: The Art of Tattoo Cover-Ups
 
-All variants promote the full free guide by Vladimir Vishar. The landing page is planned at https://vishartattoo.com/cover-up-guide/ . Do not publish ads until this URL, CRM delivery, permission for the images, and consent flow are verified. CTA in Ads Manager: Learn More (or Download if available for the selected setup). Use the native CTA, not a fabricated UI button.
+All variants promote the full free guide by Vladimir Vishar. The landing page is planned at https://vishartattoo.com/cover-up-guide/ . Do not publish ads until this URL, CRM delivery, client-image publication and consent flow are verified. CTA in Ads Manager: Learn More (or Download if available for the selected setup). Use the native CTA, not a fabricated UI button.
 
 ## A — Design before ink
 Asset: `creatives/A_design-feed.jpg`
@@ -50,4 +50,4 @@ Headline: Read the free cover-up guide
 Description: 25 pages by Vladimir Vishar, London.
 URL query: `utm_source=meta&utm_medium=paid_social&utm_campaign=coverup_guide_v1&utm_content=d_reel`
 
-The images show portfolio results, not claims of complete pigment removal or guaranteed healed outcomes. Avoid the Poseidon images in paid ads until rights and attribution are cleared. All copy is British English.
+The images show portfolio results, not claims of complete pigment removal or guaranteed healed outcomes. The author confirmed the Poseidon example is his earlier work and authorised its use. Existing ad creatives still use the successful portfolio cases. All copy is British English.

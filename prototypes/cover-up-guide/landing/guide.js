@@ -7,7 +7,7 @@
   const success = document.querySelector('#success');
   const preview = document.body.dataset.mode !== 'live';
   const endpoint = 'https://api.vishartattoo.com/api/lead-magnets/cover-up-guide';
-  const expectedDownload = 'https://vishartattoo.com/assets/lead-magnets/cover-up-guide-v5.pdf';
+  const expectedDownload = 'https://vishartattoo.com/assets/lead-magnets/cover-up-guide-v6.pdf';
   let pending = false, requestId = null, lastFingerprint = null;
   function setStatus(message, error = false) { status.textContent = message; status.classList.toggle('error', error); }
   function showSuccess(url, message) {
