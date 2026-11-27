@@ -274,7 +274,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 <!-- Before / After Gallery -->
 <section id="gallery" class="py-24 px-4 border-y border-white/5">
     <div class="max-w-[1200px] mx-auto text-center mb-12">
-        <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">12 matched cover-up pairs</p>
+        <p class="text-sm uppercase tracking-[0.3em] text-white/30 mb-4">13 matched cover-up pairs</p>
         <h2 class="text-3xl md:text-5xl font-semibold tracking-tight">Before &amp; After</h2>
         <p class="text-white/50 mt-4 max-w-2xl mx-auto">The original tattoo is shown on the left. The completed cover-up is shown on the right.</p>
     </div>
@@ -472,6 +472,22 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
         </div>
       </div>
     </figure>
+    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="13">
+      <div class="grid grid-cols-2 gap-2 p-2">
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before (AI-expanded)</p>
+          <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Old faded cross tattoo on upper arm before cover-up, AI-expanded framing, comparison 13 by Vladimir Vishar">
+            <img src="/assets/cover-ups/before-13.webp" srcset="/assets/cover-ups/thumbs/before-13-320.webp 320w, /assets/cover-ups/thumbs/before-13-480.webp 480w, /assets/cover-ups/thumbs/before-13-720.webp 720w, /assets/cover-ups/thumbs/before-13-960.webp 960w" sizes="(min-width: 1232px) 280px, (min-width: 768px) 25vw, 50vw" loading="lazy" decoding="async" width="1122" height="1402" alt="Old faded cross tattoo on upper arm before cover-up, AI-expanded framing, comparison 13 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+        <div>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
+          <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open Completed black and grey Spartan helmet upper arm cover-up tattoo, comparison 13 by Vladimir Vishar">
+            <img src="/assets/cover-ups/after-13.webp" srcset="/assets/cover-ups/thumbs/after-13-320.webp 320w, /assets/cover-ups/thumbs/after-13-480.webp 480w, /assets/cover-ups/thumbs/after-13-720.webp 720w, /assets/cover-ups/thumbs/after-13-960.webp 960w" sizes="(min-width: 1232px) 280px, (min-width: 768px) 25vw, 50vw" loading="lazy" decoding="async" width="1229" height="1536" alt="Completed black and grey Spartan helmet upper arm cover-up tattoo, comparison 13 by Vladimir Vishar" class="w-full h-full" style="object-fit:contain;background:#000">
+          </button>
+        </div>
+      </div>
+    </figure>
 <!-- /build:gallery -->
     </div>
     <div class="text-center mt-12"><a href="/#portfolio" class="inline-flex items-center gap-2 text-white/60 hover:text-white transition-colors text-sm font-medium">View full portfolio →</a></div>
@@ -638,7 +654,7 @@ body{background:#000;color:#f5f5f7;-webkit-font-smoothing:antialiased}
 <script>
 function toggleFaq(btn){const item=btn.parentElement;const was=item.classList.contains('active');document.querySelectorAll('.faq-item').forEach(i=>{i.classList.remove('active');i.querySelector('button').setAttribute('aria-expanded','false');});if(!was){item.classList.add('active');btn.setAttribute('aria-expanded','true');}}
 </script>
-<script src="/assets/js/coverup-pair-compare.js?v=20261127-pair12" defer></script>
+<script src="/assets/js/coverup-pair-compare.js?v=20261127-pair13" defer></script>
 
 </body>
 </html>
