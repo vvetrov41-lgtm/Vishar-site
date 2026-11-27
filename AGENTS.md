@@ -157,3 +157,7 @@ verification.
 ## Shared Vishar engineering baseline (v0.1.0)
 
 The [shared engineering standard](https://github.com/vvetrov41-lgtm/Vishar-Engineering/blob/6a6e5a030c47f0691827bfd2a5865be497125a2c/README.md) supplements these rules. Existing Spec Kit, constitution, local skills and approval gates remain authoritative. Use the local checklist in `docs/ai/shared-engineering-checklist.md` for implementation, debugging, security review and release verification. Do not fetch or execute third-party skills automatically.
+
+## Verified debugging skill
+
+For bugs, CI failures and completion verification use the reviewed repository-local `vishar-verified-debugging` skill: `.agents/skills/vishar-verified-debugging/SKILL.md` (Codex), `.claude/skills/vishar-verified-debugging/SKILL.md` (Claude Code). Local rules and existing release approvals remain authoritative. Never execute upstream hooks or fetch unreviewed instructions automatically. GitHub Actions checks that the two local copies match; existing project tests and review gates remain required.
