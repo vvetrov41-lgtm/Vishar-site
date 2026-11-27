@@ -156,11 +156,7 @@ create function public.service_claim_lead_magnet_jobs(p_worker text,p_limit inte
 returns table(job_id uuid,lease_token uuid) language plpgsql security definer set search_path=pg_catalog,public,crm_private as $$
 begin
   if not crm_private.is_service_backend() then raise exception 'backend_only' using errcode='42501'; end if;
-  if p_worker is null or p_worker !~ '^[a-z][a-z0-9_-]{2,127} claim/lease/consent recheck and provider-result
--- RPCs, Gmail adapter, artist-scoped reporting, conversion linking, data retention,
--- public opt-out handler, release configuration and integration tests. Do not
--- activate a magnet or the intake Worker until these gates are accepted.
- or p_limit is null or p_limit not between 1 and 20 then raise exception 'invalid_claim' using errcode='22023'; end if;
+  if p_worker is null or p_worker !~ '^[a-z][a-z0-9_-]{2,127}$' or p_limit is null or p_limit not between 1 and 20 then raise exception 'invalid_claim' using errcode='22023'; end if;
   update crm_private.lead_magnet_delivery_jobs j set status='dead_letter', error_code='lease_expired_uncertain',leased_by=null,lease_expires_at=null,lease_token=null where j.status='leased' and j.lease_expires_at<=now();
   return query
     with eligible as (
@@ -204,11 +200,7 @@ returns boolean language plpgsql security definer set search_path=pg_catalog,pub
 begin
   if not crm_private.is_service_backend() then raise exception 'backend_only' using errcode='42501'; end if;
   if p_outcome is null or p_outcome not in ('sent','retry_before_send','uncertain','cancelled') or
-    (p_outcome='sent' and (p_provider_id is null or p_provider_id !~ '^[A-Za-z0-9_-]{1,200} claim/lease/consent recheck and provider-result
--- RPCs, Gmail adapter, artist-scoped reporting, conversion linking, data retention,
--- public opt-out handler, release configuration and integration tests. Do not
--- activate a magnet or the intake Worker until these gates are accepted.
-)) or
+    (p_outcome='sent' and (p_provider_id is null or p_provider_id !~ '^[A-Za-z0-9_-]{1,200}$')) or
     (p_outcome<>'sent' and p_provider_id is not null) then raise exception 'invalid_outcome' using errcode='22023'; end if;
   update crm_private.lead_magnet_delivery_jobs j set
     status=case when p_outcome='sent' then 'sent' when p_outcome='cancelled' then 'cancelled' when p_outcome='retry_before_send' and j.attempts<5 then 'failed' else 'dead_letter' end,
