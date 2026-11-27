@@ -53,6 +53,8 @@ enabled = true
 invocation_logs = false
 
 [vars]
+LEAD_MAGNET_INTAKE_ENABLED = "false"
+LEAD_MAGNET_UNSUBSCRIBE_ENABLED = "false"
 ALLOWED_ORIGINS = "https://vishartattoo.com,https://booking.vishartattoo.com,https://www.kristinavishar.com"
 BOOKING_SOURCE_KEY = "vladimir-website"
 BOOKING_FORM_VERSION = "booking-v1"

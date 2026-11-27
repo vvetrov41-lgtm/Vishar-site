@@ -1,0 +1,35 @@
+{
+  "campaign": "cover-up-guide",
+  "version": "v1",
+  "from_name": "Vladimir Vishar",
+  "schedule": [
+    {
+      "step": 0,
+      "delay_days": 0,
+      "category": "requested_delivery",
+      "subject": "Your tattoo cover-up guide",
+      "body": "Hi {{first_name}},\n\nHere's the complete copy of The Art of Tattoo Cover-Ups you requested.\n\n{{download_url}}\n\nYou can read it at your own pace. It includes five selected before-and-after cases, design decisions, laser options, healed results and a checklist for planning a cover-up.\n\nThanks for requesting the guide.\nVladimir Vishar"
+    },
+    {
+      "step": 3,
+      "delay_days": 3,
+      "category": "marketing_opt_in_only",
+      "subject": "Why I changed the lighting in this cover-up",
+      "body": "Hi {{first_name}},\n\nOne of the cases in the guide is a samurai mask on the forearm. There was only a narrow strip of clean skin available for most of the highlights, so I built the design around it.\n\nI chose a reference with rim lighting. That allowed most of the mask to stay in shadow, where the old tattoo could be covered, while preserving the sense of volume.\n\nThis is one reason a reference that looks perfect on paper may need to change before it becomes a cover-up.\n\nSee the before and after: https://vishartattoo.com/cover-up-tattoo-london/?utm_source=email&utm_medium=email&utm_campaign=coverup_guide&utm_content=day3_samurai\n\nVladimir\n\nYou're receiving this because you opted in to my tattoo emails. Unsubscribe: {{unsubscribe_url}}"
+    },
+    {
+      "step": 7,
+      "delay_days": 7,
+      "category": "marketing_opt_in_only",
+      "subject": "Another way to work with old tribal ink",
+      "body": "Hi {{first_name}},\n\nHere's a cover-up that isn't included in the guide: an old tribal tattoo on the chest, transformed into a wolf with a mountain landscape.\n\nThe finished composition has a different silhouette from the old design. The dark fur and mountain textures are part of a coherent image, rather than a flat block of black.\n\nYou can see it alongside the other before-and-after examples here: https://vishartattoo.com/cover-up-tattoo-london/?utm_source=email&utm_medium=email&utm_campaign=coverup_guide&utm_content=day7_wolf\n\nVladimir\n\nYou're receiving this because you opted in to my tattoo emails. Unsubscribe: {{unsubscribe_url}}"
+    },
+    {
+      "step": 14,
+      "delay_days": 14,
+      "category": "marketing_opt_in_only",
+      "subject": "Planning a cover-up? Here's what I need to see",
+      "body": "Hi {{first_name}},\n\nIf you're considering a cover-up, I can give you an initial assessment of the options.\n\nSend me one clear close-up of the old tattoo, one wider photo showing where it sits, and a short description of what you'd like instead. Natural daylight and no filters are ideal.\n\nI'll look at the existing pigment, the available space and whether a direct cover-up or a different approach makes sense.\n\nSend photos here: https://vishartattoo.com/booking/?utm_source=email&utm_medium=email&utm_campaign=coverup_guide&utm_content=day14_assessment\n\nThere's no obligation to book.\n\nVladimir Vishar\nLondon\n\nYou're receiving this because you opted in to my tattoo emails. Unsubscribe: {{unsubscribe_url}}"
+    }
+  ]
+}
