@@ -22,3 +22,6 @@ Proposed URL: https://vishartattoo.com/cover-up-guide/ . Asset: https://visharta
 
 ## Queue candidate update
 Separate claim/authorize/finish RPCs added; expired or uncertain provider jobs are quarantined, not blindly retried. Withdrawal cancels leased marketing jobs and suppresses unverified re-enrolment. Delivery adapter, unsubscribe HTTP route, report and attribution are still required. Do not enable production.
+
+## Staging increment
+Database migration now applied successfully in staging only. No active magnet seeded. Queue claim/authorization/finish and unsubscribe tested transactionally. New `lead-magnet-rpc.mjs` is a narrow server-side Supabase adapter. `lead-magnet-delivery.mjs` checks the job and independently bound sender, reauthorizes immediately before provider call, quarantines uncertain send outcomes. `lead-magnet-unsubscribe.mjs` supplies side-effect-free GET and confirmed POST with noindex/no-referrer. Both remain feature-gated, not wired to the deployed workers. Tests use mock transport. Remaining: production-source port, explicit artist sender resolver using existing Gmail OAuth, controlled live mail test, anti-abuse/rate-limit bindings, consent and attribution adapter, CRM view/conversion, privacy, public PDF/landing, and full E2E. No ads.

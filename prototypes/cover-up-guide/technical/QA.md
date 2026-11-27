@@ -5,3 +5,8 @@
 - API boundary: Node 22 `node --test lead-magnet-intake.test.mjs`: 5 pass, 0 fail. Mock persistence only. No Supabase migration, real mail send, provider integration, Meta conversion, or production browser acceptance performed.
 
 - v6: author note and introduction corrected; 25 pages and 36 links preserved. No production deployment.
+
+## Staging validation (2026-11-27)
+- Applied the isolated lead-magnet migration to CRM staging only. Production untouched. Two initial SQL syntax errors were corrected before successful application. Verified RLS enabled and anonymous/authenticated direct SELECT denied for all five private tables.
+- Synthetic transactional database acceptance passed 10 scenarios: capture, duplicate, no opt-in, artist isolation, opt-in, D0-before-marketing, lease token, unsubscribe, suppression, expired-lease quarantine. Fixtures rolled back. No real email sent.
+- Node 22 delivery adapter 10/10 and unsubscribe handler 4/4 passed with mock provider and database. These are not real Gmail/HTTP integration tests.

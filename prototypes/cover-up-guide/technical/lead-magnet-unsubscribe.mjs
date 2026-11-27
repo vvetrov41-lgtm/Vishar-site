@@ -1,0 +1,15 @@
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const PATH='/api/lead-magnets/unsubscribe';
+const ORIGIN='https://api.vishartattoo.com';
+const headers={'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow, noarchive','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'"};
+function page(status,title,body){return new Response(`<!doctype html><html lang="en-GB"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font:1rem/1.6 system-ui,sans-serif;max-width:34rem;margin:10vh auto;padding:1.5rem}button{font:inherit;padding:.7rem 1rem}h1{line-height:1.2}</style><main><h1>${title}</h1>${body}</main></html>`,{status,headers})}
+const unavailable=()=>page(503,'Please try again','<p>We could not confirm your request. Please try again, or email info@vishartattoo.com.</p>');
+export async function handleLeadMagnetUnsubscribe(req,env,{db,rateLimit}={}){
+ const u=new URL(req.url);if(u.pathname!==PATH)return null;
+ if(u.origin!==ORIGIN||env?.LEAD_MAGNET_UNSUBSCRIBE_ENABLED!=='true')return unavailable();
+ if(req.method==='GET'){const t=u.searchParams.get('t');if(!UUID.test(t||''))return page(400,'Invalid link','<p>Please use the unsubscribe link from your email.</p>');return page(200,'Unsubscribe from tattoo emails',`<p>Confirm to stop marketing emails from this artist. This will not affect any tattoo booking.</p><form method="post" action="${PATH}"><input type="hidden" name="token" value="${t}"><button type="submit">Unsubscribe</button></form>`)}
+ if(req.method!=='POST')return page(405,'Method not allowed','');
+ if(req.headers.get('Origin')!==ORIGIN||!/^application\/x-www-form-urlencoded(?:;|$)/i.test(req.headers.get('Content-Type')||''))return page(403,'Invalid request','');
+ const ip=req.headers.get('CF-Connecting-IP');if(!ip||typeof rateLimit!=='function'||typeof db?.unsubscribe!=='function')return unavailable();
+ try{if(!await rateLimit(ip))return page(429,'Please try again later','');const reader=req.body?.getReader();if(!reader)return page(400,'Invalid request','');let length=0;const chunks=[];try{for(;;){const {value,done}=await reader.read();if(done)break;length+=value.byteLength;if(length>1024){await reader.cancel();return page(400,'Invalid request','')}chunks.push(value)}}finally{reader.releaseLock()};const bytes=new Uint8Array(length);let offset=0;for(const c of chunks){bytes.set(c,offset);offset+=c.length}const params=new URLSearchParams(new TextDecoder().decode(bytes));const token=params.get('token');if([...params].length!==1||!UUID.test(token||''))return page(400,'Invalid request','');if(await db.unsubscribe(token)!==true)return page(400,'Invalid link','<p>We could not verify the link. Please email info@vishartattoo.com.</p>');return page(200,'You are unsubscribed','<p>We have recorded your choice to stop future marketing emails from this artist.</p>');}catch{return unavailable()}
+}

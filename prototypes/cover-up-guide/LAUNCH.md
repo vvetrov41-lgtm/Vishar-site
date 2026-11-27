@@ -37,3 +37,6 @@ D0 — сразу выдать PDF и поставить в очередь за�
 ## Справочные материалы
 - ICO, electronic mail marketing: https://ico.org.uk/for-organisations/direct-marketing-and-privacy-and-electronic-communications/guidance-on-direct-marketing-using-electronic-mail/how-do-we-comply-with-the-pecr-electronic-mail-marketing-rules/
 - Meta, lead ads with forms: https://eventsmanager.facebook.com/business/ads/ad-objectives/lead-generation/lead-ads-with-forms?locale=en_GB
+
+### Update: v6 and staging
+The PDF author note is confirmed. Isolated staging schema and queue are installed and verified against synthetic cases. Delivery and unsubscribe adapters pass mocked tests. No public deployment or real email; retain activation gates.
