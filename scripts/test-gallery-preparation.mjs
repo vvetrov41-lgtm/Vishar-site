@@ -36,7 +36,7 @@ test('replacing raw upload refreshes generated sidecar and previews; explicit re
   const dir=path.join(root,'assets/portraits');await fs.mkdir(dir,{recursive:true});
   const raw=path.join(dir,'27.jpg'),webp=path.join(dir,'27.webp'),thumb=path.join(dir,'thumbs/27-320.webp');
   const make=async(file,format,background)=>sharp({create:{width:1100,height:1400,channels:3,background}}).toFormat(format).toFile(file);
-  const pixel=async(file)=>{const p=await sharp(file).extract({left:10,top:10,width:1,height:1}).removeAlpha().raw().toBuffer();return [...p];};
+  const pixel=async(file)=>{const p=await sharp(await fs.readFile(file)).extract({left:10,top:10,width:1,height:1}).removeAlpha().raw().toBuffer();return [...p];};
   await make(raw,'jpeg','red');
   await prepareGalleryAssets(root,{baseline:{},sharp});
   assert.ok((await pixel(webp))[0]>200);
@@ -51,5 +51,16 @@ test('replacing raw upload refreshes generated sidecar and previews; explicit re
   await prepareGalleryAssets(root,{baseline:{},sharp});
   assert.deepEqual(await fs.readFile(webp),supplied);
   assert.ok((await pixel(thumb))[1]>100);
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});
+
+test('new metadata-bearing source is rejected in public repository',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'gallery-privacy-'));
+ try{
+  const dir=path.join(root,'assets/portraits');await fs.mkdir(dir,{recursive:true});
+  const p=path.join(dir,'27.jpg');
+  await sharp({create:{width:800,height:1200,channels:3,background:'red'}}).withExif({IFD0:{ImageDescription:'PRIVATE'}}).jpeg().toFile(p);
+  await assert.rejects(prepareGalleryAssets(root,{baseline:{},sharp}),/Private metadata in public gallery source/);
+  await assert.rejects(fs.access(path.join(dir,'27.webp')));
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });

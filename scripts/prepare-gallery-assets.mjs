@@ -70,13 +70,25 @@ export async function prepareGalleryAssets(root=ROOT,{baseline,sharp:injected,pr
   const changes=new Map();
   if(!jobs.length){console.log('Gallery automatic preparation: all existing sources/variants unchanged.');return changes;}
   const process=async sharp=>{
+    // Paths may be replaced in the same process; never reuse cached decoded pixels.
+    const cache=sharp.cache();
+    sharp.cache(false);
+    try{
     for(const j of jobs){
       const {d,g,dir,selected,convert,thumbDir}=j;
+      // Public Git repository: newly submitted files must already be safe to
+      // publish. Fail closed rather than pretending build-time stripping
+      // removes metadata from Git history. The editor sanitizes before commit.
+      for(const input of [g.raw[0],g.webp].filter(Boolean)){
+        if(baseline[input.rel]===input.hash)continue;
+        const metadata=await sharp(await fs.readFile(input.file)).metadata();
+        if(metadata.exif||metadata.xmp||metadata.iptc)throw Error('Private metadata in public gallery source: '+input.rel+'; sanitize before committing');
+      }
       let source=selected.file;
       if(convert){
         source=path.join(dir,g.stem+'.webp');
         // A WebP explicitly supplied by the editor is never overwritten.
-        await sharp(selected.file).rotate().resize({width:2400,height:2400,fit:'inside',withoutEnlargement:true}).webp({quality:92,effort:6}).toFile(source);
+        await sharp(await fs.readFile(selected.file)).rotate().resize({width:2400,height:2400,fit:'inside',withoutEnlargement:true}).webp({quality:92,effort:6}).toFile(source);
         const rel='assets/'+d+'/'+g.stem+'.webp';
         provenance[rel]={source:selected.rel,rawHash:selected.hash,webpHash:await gitBlob(source)};
         provenanceDirty=true;
@@ -86,11 +98,11 @@ export async function prepareGalleryAssets(root=ROOT,{baseline,sharp:injected,pr
       for(const w of WIDTHS){
         const dest=path.join(thumbDir,g.stem+'-'+w+'.webp');
         if(j.all||j.missing.includes(w)){
-          let im=sharp(source).rotate();
+          let im=sharp(await fs.readFile(source)).rotate();
           im=d==='gallery'?im.resize({width:w,height:w,fit:'cover',position:'centre',withoutEnlargement:true}):im.resize({width:w,fit:'inside',withoutEnlargement:true});
           await im.webp({quality:80,effort:6,smartSubsample:true}).toFile(dest);
         }
-        const meta=await sharp(dest).metadata();
+        const meta=await sharp(await fs.readFile(dest)).metadata();
         if(meta.format!=='webp'||!meta.width)throw Error('Invalid generated derivative '+dest);
         variants.push({url:'/'+path.relative(root,dest).split(path.sep).join('/'),width:meta.width});
       }
@@ -100,6 +112,7 @@ export async function prepareGalleryAssets(root=ROOT,{baseline,sharp:injected,pr
       changes.set(info.full,info);
       console.log('Prepared '+d+'/'+g.stem+' ('+unique.length+' responsive candidates)');
     }
+    }finally{sharp.cache({memory:cache.memory.max,files:cache.files.max,items:cache.items.max});}
   };
   if(injected)await process(injected);else await useSharp(process);
   if(provenanceDirty&&persistProvenance){
