@@ -1,12 +1,14 @@
 (function () {
   'use strict';
 
-  const PAIR_COUNT = 8;
+  const PAIR_COUNT = 10;
   const BASE = '/assets/cover-ups/';
   const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)';
   const SWIPE_THRESHOLD = 45;
 
   function altText(state, index) {
+    if (index === 9) return state === 'before' ? 'Old illustrated woman portrait on upper arm before cover-up, comparison 9 by Vladimir Vishar' : 'Completed colour castle at night upper arm cover-up tattoo, comparison 9 by Vladimir Vishar';
+    if (index === 10) return state === 'before' ? 'Old forearm tattoo with black panther cover-up stencil applied before tattooing, comparison 10 by Vladimir Vishar' : 'Completed realistic black panther forearm cover-up tattoo, comparison 10 by Vladimir Vishar';
     if (index === 8) return state === 'before' ? 'Old tiger and tribal upper arm tattoo before cover-up, comparison 8 by Vladimir Vishar' : 'Completed black and grey Viking skull upper arm cover-up tattoo, comparison 8 by Vladimir Vishar';
     if (index === 7) return state === 'before' ? 'Old faded forearm tattoo before cover-up, comparison 7 by Vladimir Vishar' : 'Completed black and grey forearm cover-up tattoo, comparison 7 by Vladimir Vishar';
     return state === 'before'
