@@ -107,6 +107,7 @@ const GALLERY_CONFIGS = [
       'before-14', 'after-14',
       'before-15', 'after-15',
       'before-16', 'after-16',
+      'before-17', 'after-17',
     ],
     originalJpgs: [
       'before-01.jpg', 'after-01.jpg',
@@ -125,6 +126,7 @@ const GALLERY_CONFIGS = [
       'before-14.jpg', 'after-14.jpg',
       'before-15.jpg', 'after-15.jpg',
       'before-16.jpg', 'after-16.jpg',
+      'before-17.jpg', 'after-17.jpg',
     ],
   },
   {
@@ -1221,7 +1223,7 @@ function getWebpAllowlistEntries() {
       ['11.jpg', '11.webp'],
       ['12.jpg', '12.webp'],
     ].map(([source, sidecar]) => [`assets/colour-realism/${source}`, `assets/colour-realism/${sidecar}`]),
-    ...Array.from({ length: 16 }, (_, i) => String(i + 1).padStart(2, '0')).flatMap((number) => [
+    ...Array.from({ length: 17 }, (_, i) => String(i + 1).padStart(2, '0')).flatMap((number) => [
       [`assets/cover-ups/before-${number}.jpg`, `assets/cover-ups/before-${number}.webp`],
       [`assets/cover-ups/after-${number}.jpg`, `assets/cover-ups/after-${number}.webp`],
     ]),
@@ -1474,7 +1476,7 @@ const RAW_GALLERY_EXPECTATIONS = [
   { file: 'index.html', label: 'homepage portfolio grid', marker: 'portfolio-grid', images: 12 },
   { file: 'colour-realism-tattoo-london/index.html', label: 'colour realism gallery', marker: 'gallery', images: 12 },
   { file: 'black-and-grey-realism-london/index.html', label: 'black and grey gallery', marker: 'gallery', images: 12 },
-  { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 32 },
+  { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 34 },
   { file: 'portrait-tattoo-artist-london/index.html', label: 'portrait gallery', marker: 'gallery', images: 26, metadata: 'assets/portraits/metadata.json' },
   { file: 'large-scale-realism-tattoo-london/index.html', label: 'large scale gallery', marker: 'gallery', images: 20, metadata: 'assets/large-scale/metadata.json' },
   { file: 'healed-tattoos/index.html', label: 'fresh vs healed pairs', marker: 'gallery', images: 50, metadata: 'assets/healed/metadata.json', pair: true },
