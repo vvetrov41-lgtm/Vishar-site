@@ -625,6 +625,7 @@ const EN = {
   'event.project.deposit_changed': 'Deposit changed',
 
   'nav.statistics': 'Statistics',
+  'nav.leadMagnets': 'Lead magnets',
 
   // Statistics. Every phrase here states a formula rather than a mood: what is
   // counted, over which window, divided by what. The definitions block at the
@@ -1378,6 +1379,7 @@ const RU: Record<TranslationKey, string> = {
   'event.project.deposit_changed': 'Статус депозита изменён',
 
   'nav.statistics': 'Статистика',
+  'nav.leadMagnets': 'Лид-магниты',
 
   'stats.loading': 'Считаем показатели…',
   'stats.emptyTitle': 'За этот период записей нет',

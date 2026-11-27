@@ -54,6 +54,7 @@ import { createLifecycleApi, type LifecycleApi } from './lifecycle-api';
 import { createPlatformApi, type PlatformApi } from './platform-api';
 import { createSignupApi, type BootstrapResult, type SignupApi } from './signup-api';
 import { createStatisticsApi, type StatisticsApi } from './statistics-api';
+import { createLeadMagnetsApi, type LeadMagnetsApi } from './lead-magnets-api';
 import { createTelegramConnectionsApi, type TelegramConnectionsApi } from './telegram-connections-api';
 import { hasMfa, needsChallenge, verifiedFactors, verifyCode, type MfaAuth } from './mfa';
 import { passwordProblem } from './password';
@@ -86,7 +87,7 @@ export type AccessState =
   | 'active'
   | 'unconfigured'; // the build has no Supabase URL or anon key
 
-export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & OutgoingReviewApi & ReplyDraftApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi & VisitOutcomeApi & ReviewRequestsApi & CancelledSlotApi;
+export type CrmApi = Api & AccountApi & AppointmentApi & AvailabilityApi & CalendarConnectionsApi & OAuthConsentApi & ManualIntakeApi & PaymentApi & InvoiceApi & ProjectOperationsApi & RecordEditApi & WhatsAppConnectionsApi & CommunicationsApi & EmailApi & OutgoingReviewApi & ReplyDraftApi & GmailMetadataApi & SchedulingApi & InstagramConnectionsApi & PlatformApi & TelegramConnectionsApi & ControlPlaneApi & LifecycleApi & SignupApi & StatisticsApi & LeadMagnetsApi & AiIntakeApi & AttentionApi & TodayPulseApi & SessionPricingApi & VisitOutcomeApi & ReviewRequestsApi & CancelledSlotApi;
 
 type PasswordUpdateAuth = CrmClient['auth'] & {
   updateUser: (attributes: { password: string }) => Promise<{ data: unknown; error: unknown }>;
@@ -185,6 +186,7 @@ export function SessionProvider({
       createLifecycleApi(client),
       createSignupApi(client),
       createStatisticsApi(client),
+      createLeadMagnetsApi(client),
       createSessionPricingApi(client),
     );
   }, [client, teamInviteUrl]);
