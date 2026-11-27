@@ -153,7 +153,7 @@ grant execute on function public.service_unsubscribe_lead_magnet(uuid) to servic
 -- Claim only due, authorised jobs. Expired leases are quarantined instead of
 -- blindly re-sending: a provider may have accepted the original request.
 create function public.service_claim_lead_magnet_jobs(p_worker text,p_limit integer default 5)
-returns table(job_id uuid,lease_token uuid) language plpgsql security definer set search_path=pg_catalog,public,crm_private as $
+returns table(job_id uuid,lease_token uuid) language plpgsql security definer set search_path=pg_catalog,public,crm_private as $$
 begin
   if not crm_private.is_service_backend() then raise exception 'backend_only' using errcode='42501'; end if;
   if p_worker is null or p_worker !~ '^[a-z][a-z0-9_-]{2,127} claim/lease/consent recheck and provider-result
@@ -177,12 +177,12 @@ begin
       update crm_private.lead_magnet_delivery_jobs j set status='leased',leased_by=p_worker,lease_expires_at=now()+interval '3 minutes',lease_token=gen_random_uuid(),attempts=j.attempts+1,error_code=null
       from eligible x where j.id=x.id returning j.id,j.lease_token
     ) select x.id,x.lease_token from claimed x;
-end; $;
+end; $$;
 
 -- Called immediately before provider delivery. Return data only for a live lease.
 -- This is not a public endpoint. Provider routing must independently verify artist identity.
 create function public.service_authorize_lead_magnet_job(p_job uuid,p_worker text,p_token uuid)
-returns jsonb language plpgsql security definer set search_path=pg_catalog,public,crm_private as $
+returns jsonb language plpgsql security definer set search_path=pg_catalog,public,crm_private as $$
 declare payload jsonb;
 begin
   if not crm_private.is_service_backend() then raise exception 'backend_only' using errcode='42501'; end if;
@@ -197,10 +197,10 @@ begin
     and a.is_active and m.active and j.asset_version=m.asset_version
     and (j.step=0 or (m.nurture_enabled and e.marketing_enabled and e.converted_at is null and c.marketing_suppressed_at is null and exists(select 1 from crm_private.lead_magnet_delivery_jobs d where d.enrolment_id=e.id and d.asset_version=j.asset_version and d.step=0 and d.status='sent')));
   return payload;
-end; $;
+end; $$;
 
 create function public.service_finish_lead_magnet_job(p_job uuid,p_worker text,p_token uuid,p_outcome text,p_provider_id text default null)
-returns boolean language plpgsql security definer set search_path=pg_catalog,public,crm_private as $
+returns boolean language plpgsql security definer set search_path=pg_catalog,public,crm_private as $$
 begin
   if not crm_private.is_service_backend() then raise exception 'backend_only' using errcode='42501'; end if;
   if p_outcome is null or p_outcome not in ('sent','retry_before_send','uncertain','cancelled') or
@@ -218,7 +218,7 @@ begin
     leased_by=null,lease_expires_at=null,lease_token=null
   where j.id=p_job and j.status='leased' and j.leased_by=p_worker and j.lease_token=p_token and j.lease_expires_at>now();
   return found;
-end; $;
+end; $$;
 revoke all on function public.service_claim_lead_magnet_jobs(text,integer), public.service_authorize_lead_magnet_job(uuid,text,uuid), public.service_finish_lead_magnet_job(uuid,text,uuid,text,text) from public,anon,authenticated;
 grant execute on function public.service_claim_lead_magnet_jobs(text,integer), public.service_authorize_lead_magnet_job(uuid,text,uuid), public.service_finish_lead_magnet_job(uuid,text,uuid,text,text) to service_role;
 
