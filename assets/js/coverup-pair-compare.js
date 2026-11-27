@@ -1,12 +1,13 @@
 (function () {
   'use strict';
 
-  const PAIR_COUNT = 16;
+  const PAIR_COUNT = 17;
   const BASE = '/assets/cover-ups/';
   const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)';
   const SWIPE_THRESHOLD = 45;
 
   function altText(state, index) {
+    if (index === 17) return state === 'before' ? 'Two old dreamcatcher tattoos on upper arm before cover-up, comparison 17 by Vladimir Vishar' : 'Completed black and grey warrior portrait with winged helmet upper arm cover-up tattoo, comparison 17 by Vladimir Vishar';
     if (index === 15) return state === 'before' ? 'Old dumbbell tattoo on forearm before cover-up, comparison 15 by Vladimir Vishar' : 'Completed black and grey roaring tiger forearm cover-up tattoo, comparison 15 by Vladimir Vishar';
     if (index === 16) return state === 'before' ? 'Old Manchester City crest tattoo on calf before cover-up, comparison 16 by Vladimir Vishar' : 'Completed black and grey Viking portrait calf cover-up tattoo, comparison 16 by Vladimir Vishar';
     if (index === 14) return state === 'before' ? 'Old faded floral tattoo on forearm before cover-up, comparison 14 by Vladimir Vishar' : 'Completed colour realism leopard forearm cover-up tattoo, comparison 14 by Vladimir Vishar';
