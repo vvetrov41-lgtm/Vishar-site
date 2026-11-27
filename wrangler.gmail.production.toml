@@ -47,6 +47,8 @@ GMAIL_KRISTINA_ENABLED = "false"
 # Cloudflare Service Binding. The Telegram Worker receives no Gmail credential,
 # token, KV or Supabase binding from this arrangement.
 #
+# Optional dedicated lead-magnet secret (sending-only, vishartattoo.com):
+#   LEAD_MAGNET_RESEND_API_KEY
 # Required Worker secrets before OAuth activation:
 #   GOOGLE_OAUTH_CLIENT_ID
 #   GOOGLE_OAUTH_CLIENT_SECRET

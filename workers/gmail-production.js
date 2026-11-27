@@ -15,6 +15,7 @@ import {
 import { createGmailSupabase } from './lib/gmail-supabase.js';
 import { createLeadMagnetRpc } from './lib/lead-magnets/rpc.mjs';
 import { drainLeadMagnetJobs } from './lib/lead-magnets/delivery.mjs';
+import { resolveGuideSender, sendGuideViaResend } from './lib/lead-magnets/resend.mjs';
 import leadMagnetSequence from './lib/lead-magnets/sequence.json' with { type: 'json' };
 import { enqueueGmailEnquiryAnalysis } from './lib/gmail-enquiry-ai.js';
 
@@ -576,21 +577,18 @@ export async function drainEmailOutbox(env, { fetchImpl = fetch, limit = 10, lea
 
 export async function drainLeadMagnetOutbox(env, {fetchImpl=fetch, limit=5, id=workerId()}={}) {
   if (env?.LEAD_MAGNET_DELIVERY_ENABLED!=='true') return {skipped:true,processed:0,results:[]};
-  if (!configured(env) || !artistConfig('vladimir',env)) throw Error('lead_magnet_sender_unconfigured');
-  const gmailDb=createGmailSupabase(env,fetchImpl);
+  if (env?.VISHAR_ENVIRONMENT!=='production'||env?.SUPABASE_URL!==PRODUCTION_SUPABASE_ORIGIN) throw Error('lead_magnet_backend_unconfigured');
+  // Validate the dedicated sending configuration before claiming any jobs.
+  const sender=resolveGuideSender(env,ARTISTS.vladimir.artistId);
   const db=createLeadMagnetRpc(env,fetchImpl);
   return drainLeadMagnetJobs(env,{
     db,sequence:leadMagnetSequence,workerId:id,limit,
     async resolveSender(artistId) {
-      const approved=artistConfig('vladimir',env);
-      if(!approved || artistId!==approved.artistId) throw Error('lead_magnet_artist_not_enabled');
-      const target=firstRow(await gmailDb.backendRpc('service_resolve_gmail_mailbox',{p_artist_id:artistId}));
-      if(!target || target.artist_id!==artistId || target.integration_key!==approved.integrationKey || target.mailbox_email!==approved.expectedEmail) throw Error('lead_magnet_sender_mismatch');
+      if(artistId!==ARTISTS.vladimir.artistId) throw Error('lead_magnet_artist_not_enabled');
       if (!env.GMAIL_RATE_LIMIT?.limit || !(await env.GMAIL_RATE_LIMIT.limit({key:'lead-magnet:send:'+artistId})).success) throw Error('lead_magnet_sender_rate_limit');
-      const accessToken=await accessForTarget(env,gmailDb,target,fetchImpl);
-      return {artistId,mailboxEmail:target.mailbox_email,accessToken};
+      return sender;
     },
-    send:(token,message)=>sendMessage(token,{...message,fetchImpl}),
+    send:(token,message)=>sendGuideViaResend(token,message,fetchImpl),
   });
 }
 

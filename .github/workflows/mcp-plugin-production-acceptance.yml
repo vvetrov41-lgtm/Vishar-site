@@ -136,6 +136,11 @@ jobs:
           node scripts/build-mcp-plugin-tools.mjs
 
       - name: Verify live discovery and closed CRM access
+        env:
+          # The canonical timing-result rollout expects the diagnostic tool in
+          # production. A missing definition is a failed acceptance, not a
+          # reason to weaken the exact catalogue comparison.
+          MCP_EXPECT_TIMING_TOOL: 'true'
         run: node scripts/probe-mcp-plugin-production.mjs
 
       - name: Read only OAuth registration configuration
