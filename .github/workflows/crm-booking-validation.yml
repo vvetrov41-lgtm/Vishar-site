@@ -152,6 +152,8 @@ jobs:
         run: |
           node scripts/test-gpt-operator-parity.mjs
           node scripts/test-gpt-domain-operations.mjs
+      - name: Test lead magnet API, delivery and opt-out
+        run: node --test workers/lib/lead-magnets/*.test.mjs
           node scripts/test-gpt-provider-proxy.mjs
           node scripts/build-gpt-unified-openapi.mjs --check
           node scripts/test-gpt-unified-domain-rollout.mjs

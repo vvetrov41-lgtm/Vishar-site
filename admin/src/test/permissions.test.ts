@@ -114,7 +114,7 @@ describe('navigation', () => {
       '/projects',
       '/appointments',
       '/availability',
-      '/statistics',
+      '/statistics', '/lead-magnets',
       '/automations',
       '/invoices',
       '/payments',
@@ -180,7 +180,7 @@ describe('navigation', () => {
       // Statistics counts the same enquiries, projects and sessions a read-only
       // role already reads, so it is offered to that role too. Its money block
       // is not: the database returns no finance rows to a read-only viewer.
-      '/statistics',
+      '/statistics', '/lead-magnets',
       '/automations', '/notifications',
     ]);
   });

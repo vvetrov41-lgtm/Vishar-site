@@ -141,6 +141,8 @@ export const OPERATOR_PARITY = Object.freeze([
   row('statistics.summary', 'CRM Core', 'view_enquiries', 'read', A, 'getStatistics',
     ['public.gpt_get_statistics', 'public.get_statistics', 'RLS:public.statistics_enquiries', 'RLS:public.statistics_sessions', 'RLS:public.statistics_projects', 'RLS:public.statistics_payment_requests', 'RLS:public.statistics_payment_transactions'],
     { note: 'The CRM screen (get_statistics) and the GPT (gpt_get_statistics) read one definition, crm_private.statistics_core, over these views; money only with view_finance.' }),
+  row('lead_magnets.summary', 'CRM Core', 'view_enquiries', 'read', N, 'getLeadMagnetSummary', ['public.get_lead_magnet_summary'],
+    { note: 'Staged CRM-only pilot; a bounded profile-scoped GPT read is owed but is not exposed or required to deliver the guide.' }),
   row('deliveries.failed.list', 'CRM Core', 'view_crm', 'read', A, 'listFailedDeliveries', ['public.gpt_list_failed_deliveries', 'RLS:public.integration_outbox']),
   row('clients.list', 'CRM Core', 'view_clients', 'read', A, 'listClients', ['public.gpt_list_clients']),
   row('clients.search_for_appointment', 'CRM Core', 'view_clients', 'read', A, 'searchAppointmentClients', ['public.gpt_search_clients']),

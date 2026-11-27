@@ -32,7 +32,7 @@ export const NAV_KEYS: Record<string, string> = {
   '/sessions': 'nav.appointments',
   '/availability': 'nav.availability',
   '/statistics': 'nav.statistics',
-  '/lead-magnets': 'nav.leadMagnets',
+  '/lead-magnets': 'nav.lead-magnets',
   '/automations': 'nav.automations',
   '/invoices': 'nav.invoices',
   '/payments': 'nav.payments',

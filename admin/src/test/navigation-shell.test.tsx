@@ -80,6 +80,7 @@ describe('responsive navigation shell', () => {
         // Statistics is work, not setup: it is read every week rather than
         // configured once.
         'Statistics',
+        'Lead magnets',
       ]);
       // Eight money and setup screens became two hub entries: the sheet lists
       // six links instead of twelve.
@@ -146,6 +147,7 @@ describe('responsive navigation shell', () => {
       'Follow-ups',
       'Projects',
       'Statistics',
+        'Lead magnets',
       // Time off, Automatic messages and Notifications behind one hub.
       'Settings',
     ]);
