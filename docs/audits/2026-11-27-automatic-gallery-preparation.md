@@ -1,0 +1,3 @@
+# Automatic gallery upload preparation
+
+Scope: existing numbered portfolio/gallery/cover-up and metadata-driven speciality galleries, with explicit editorial placement. Preserve raw uploaded originals, current gallery categories and full-size lightbox destinations. Use pinned Sharp 0.33.5, regenerate new/replaced inputs or missing derivatives, reuse previously reviewed source hashes on unchanged assets. Public build prepares only the allowlisted dist copy and validates references. CI runs the same asset preparation and synthetic new JPEG/PNG regressions. No Git write automation or production credential changes. Existing fixed editorial slots remain curated; photo placement and pairing are not inferred. Review exact-head CI and Cloudflare preview before release.
