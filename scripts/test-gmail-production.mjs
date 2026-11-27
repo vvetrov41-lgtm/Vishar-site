@@ -685,3 +685,33 @@ await test('Resend ambiguous results never trigger an automatic retry',async()=>
     assert.equal(calls,1);
   }
 });
+
+const {verifyResendEvent}=await import('../workers/lib/resend-correspondence-webhook.mjs');
+const webhookSecret='whsec_'+Buffer.alloc(32,17).toString('base64');
+const webhookNow=1795813200;
+const webhookEvent={type:'email.sent',created_at:'2026-11-27T21:00:00Z',data:{email_id:resendTestId,from:'Vladimir Vishar <info@vishartattoo.com>',to:['vvetrov41@gmail.com'],message_id:'<provider-rfc@example.test>',subject:'Do not retain'}};
+async function webhookHeaders(raw,ts=webhookNow,id='msg_synthetic_webhook'){
+  const key=await crypto.subtle.importKey('raw',Buffer.alloc(32,17),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const sig=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(id+'.'+ts+'.'+raw))).toString('base64');
+  return new Headers({'svix-id':id,'svix-timestamp':String(ts),'svix-signature':'v1,'+sig});
+}
+await test('verified Resend event yields bounded receipt metadata, not body or subject',async()=>{
+ const raw=JSON.stringify(webhookEvent);
+ const result=await verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow});
+ assert.deepEqual(result,{eventId:'msg_synthetic_webhook',providerMessageId:resendTestId,type:'email.sent',from:'info@vishartattoo.com',to:['vvetrov41@gmail.com'],rfcMessageId:'<provider-rfc@example.test>',createdAt:'2026-11-27T21:00:00.000Z'});
+});
+await test('Resend webhook denies tampering, stale events and wrong signatures',async()=>{
+ const raw=JSON.stringify(webhookEvent);
+ const headers=await webhookHeaders(raw);
+ await assert.rejects(verifyResendEvent({rawBody:raw+' ',headers,secret:webhookSecret,nowSeconds:webhookNow}),/signature_invalid/);
+ await assert.rejects(verifyResendEvent({rawBody:raw,headers,secret:webhookSecret,nowSeconds:webhookNow+301}),/webhook_invalid/);
+ await assert.rejects(verifyResendEvent({rawBody:raw,headers,secret:'whsec_'+Buffer.alloc(32,99).toString('base64'),nowSeconds:webhookNow}),/signature_invalid/);
+});
+await test('Resend webhook ignores unrelated sender or event and rejects injected RFC IDs',async()=>{
+ for(const event of [{...webhookEvent,data:{...webhookEvent.data,from:'other@example.test'}},{...webhookEvent,type:'email.opened'}]){
+  const raw=JSON.stringify(event);
+  assert.equal(await verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow}),null);
+ }
+ const raw=JSON.stringify({...webhookEvent,data:{...webhookEvent.data,message_id:'<id@example.test>\r\nBcc: bad'}});
+ await assert.rejects(verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow}),/webhook_invalid/);
+});
