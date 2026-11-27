@@ -1347,7 +1347,19 @@ async function checkGalleryThumbnails() {
 
   for (const gallery of GALLERY_CONFIGS) {
     for (const stem of gallery.stems) {
+      // The thumbnail generator uses withoutEnlargement for non-square galleries.
+      let sourceWidth;
+      if (!gallery.squareThumbs) {
+        try {
+          sourceWidth = (await sharp(path.join(rootDir, gallery.dir, `${stem}.webp`)).metadata()).width;
+          if (!sourceWidth) throw new Error('missing source width');
+        } catch (error) {
+          fail(`Gallery thumbnail source ${gallery.dir}/${stem}.webp could not be read (${error.message}).`);
+          continue;
+        }
+      }
       for (const width of GALLERY_THUMB_WIDTHS) {
+        const expectedWidth = gallery.squareThumbs ? width : Math.min(width, sourceWidth);
         const thumbRel = `${gallery.dir}/thumbs/${stem}-${width}.webp`;
         const thumbPath = path.join(rootDir, thumbRel);
 
@@ -1375,8 +1387,8 @@ async function checkGalleryThumbnails() {
           continue;
         }
 
-        if (metadata.width !== width) {
-          fail(`Gallery thumbnail ${thumbRel} has width ${metadata.width}px, expected ${width}px.`);
+        if (metadata.width !== expectedWidth) {
+          fail(`Gallery thumbnail ${thumbRel} has width ${metadata.width}px, expected ${expectedWidth}px.`);
           continue;
         }
 
