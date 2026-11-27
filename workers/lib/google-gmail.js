@@ -27,7 +27,7 @@ function safeEmail(value) {
 
 // The domain mailbox is forwarded to this already verified Gmail account.
 // Keep the Google OAuth identity unchanged; never accept aliases from input.
-function mailboxAddresses(value) {
+export function mailboxAddresses(value) {
   const mailbox = safeEmail(value);
   if (!mailbox) return new Set();
   return mailbox === 'vvetrov41@gmail.com'

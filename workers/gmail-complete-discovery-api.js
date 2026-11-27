@@ -2,6 +2,7 @@ import {
   deleteRefreshToken,
   getProfile,
   refreshAccessToken,
+  mailboxAddresses,
 } from './lib/google-gmail.js';
 import { createGmailSupabase } from './lib/gmail-supabase.js';
 
@@ -174,18 +175,21 @@ function correspondentFromMetadata(message, mailboxEmail) {
 
   let counterpart = null;
   let direction = null;
-  if (toEmails.has(mailbox) && !fromEmails.has(mailbox)) {
+  const owned = mailboxAddresses(mailbox);
+  const fromOwned = [...fromEmails].some((email) => owned.has(email));
+  const toOwned = [...toEmails].some((email) => owned.has(email));
+  if (toOwned && !fromOwned) {
     for (const email of fromEmails) {
-      if (email !== mailbox) { counterpart = email; break; }
+      if (!owned.has(email)) { counterpart = email; break; }
     }
     direction = 'inbound';
-  } else if (fromEmails.has(mailbox)) {
+  } else if (fromOwned) {
     for (const email of toEmails) {
-      if (email !== mailbox) { counterpart = email; break; }
+      if (!owned.has(email)) { counterpart = email; break; }
     }
     direction = 'outbound';
   }
-  if (!counterpart || counterpart === mailbox) return null;
+  if (!counterpart || owned.has(counterpart)) return null;
 
   return {
     email: counterpart,

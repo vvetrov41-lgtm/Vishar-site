@@ -214,3 +214,10 @@ test('writer rejects already-superseded events without re-enqueuing client AI', 
   assert.equal(result.skipped, 1);
   assert.equal(result.failed, 0);
 });
+
+test('strict reply capture recognizes only the owner domain alias, rejects third-party participants',()=>{
+ const m=message({to:'info@vishartattoo.com'});
+ assert.equal(__testing.strictBilateral(m,'vvetrov41@gmail.com',EMAIL),true);
+ assert.equal(__testing.strictBilateral(m,'tinaakaten@gmail.com',EMAIL),false);
+ assert.equal(__testing.strictBilateral(message({to:'info@vishartattoo.com',cc:'other@example.com'}),'vvetrov41@gmail.com',EMAIL),false);
+});

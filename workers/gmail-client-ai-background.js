@@ -1,6 +1,6 @@
 // Private Gmail message capture for existing CRM clients. No send capability,
 // no public route, no browser tokens, no legacy enquiry-AI job.
-import { normalizeMessage, extractEmails } from './lib/google-gmail.js';
+import { normalizeMessage, extractEmails, mailboxAddresses } from './lib/google-gmail.js';
 
 export const MAX_CAPTURE_CANDIDATES = 20;
 export const MAX_CAPTURE_PER_RUN = 2;
@@ -31,7 +31,8 @@ function strictBilateral(message, mailboxEmail, clientEmail) {
   const from = [...extractEmails(h.get('from'))];
   const to = [...extractEmails(h.get('to'))];
   return from.length === 1 && from[0] === clientEmail
-    && to.length === 1 && to[0] === mailboxEmail
+    && !mailboxAddresses(mailboxEmail).has(clientEmail)
+    && to.length === 1 && mailboxAddresses(mailboxEmail).has(to[0])
     && extractEmails(h.get('cc')).size === 0
     && extractEmails(h.get('bcc')).size === 0;
 }

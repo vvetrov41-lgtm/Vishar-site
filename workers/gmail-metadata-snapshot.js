@@ -1,4 +1,4 @@
-import { refreshAccessToken, getProfile } from './lib/google-gmail.js';
+import { refreshAccessToken, getProfile, mailboxAddresses } from './lib/google-gmail.js';
 import { captureKnownGmailReplies } from './gmail-client-ai-background.js';
 import { pollReviewEmailReplies } from './lib/review-email-reply.js';
 
@@ -149,11 +149,18 @@ function metadataCorrespondent(message, mailboxEmail) {
   const to = extractEmails(headers.get('to'));
   let email = null;
   let direction = null;
-  if (to.has(mailbox) && !from.has(mailbox)) {
-    email = [...from].find((candidate) => candidate !== mailbox) || null;
+  const owned = mailboxAddresses(mailbox);
+  const fromOwned = [...from].some((email) => owned.has(email));
+  const toOwned = [...to].some((email) => owned.has(email));
+  if (toOwned && !fromOwned) {
+    email = [...from].find((candidate) => !owned.has(candidate)) || null;
     direction = 'inbound';
-  } else if (from.has(mailbox)) {
-    email = [...to].find((candidate) => candidate !== mailbox) || null;
+  } else if (fromOwned && !toOwned) {
+    email = [...to].find((candidate) => !owned.has(candidate)) || null;
+    direction = 'outbound';
+  } else if (fromOwned) {
+    // Gmail may contain an outbound mailbox copy with the artist also in To.
+    email = [...to].find((candidate) => !owned.has(candidate)) || null;
     direction = 'outbound';
   }
   if (!email) return null;
@@ -332,13 +339,16 @@ function gmailQueryAddress(email) {
 function historyEvidence(message, mailboxEmail, clientEmail) {
   const mailbox = safeEmail(mailboxEmail);
   const client = safeEmail(clientEmail);
-  if (!mailbox || !client || mailbox === client) return null;
+  const owned = mailboxAddresses(mailbox);
+  if (!mailbox || !client || owned.has(client)) return null;
   const headers = headerMap(message?.payload?.headers);
   const from = extractEmails(headers.get('from'));
   const to = extractEmails(headers.get('to'));
   let direction = null;
-  if (from.has(client) && to.has(mailbox)) direction = 'inbound';
-  else if (from.has(mailbox) && to.has(client)) direction = 'outbound';
+  const fromOwned = [...from].some((email) => owned.has(email));
+  const toOwned = [...to].some((email) => owned.has(email));
+  if (from.has(client) && toOwned && !fromOwned) direction = 'inbound';
+  else if (fromOwned && to.has(client) && !from.has(client)) direction = 'outbound';
   if (!direction) return null;
   const internal = Number(message?.internalDate);
   if (!Number.isFinite(internal) || internal <= 0) return null;

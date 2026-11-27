@@ -428,3 +428,15 @@ test('background capture keeps provider ids private while exposing only safe met
   assert.deepEqual(captures.map(x => [x.provider_message_id, x.provider_thread_id]),
     [['gmailmsg001','threadmsg001']]);
 });
+
+test('domain alias metadata and history only match the verified owner mailbox', () => {
+  const m={internalDate:String(Date.parse('2026-11-27T21:00:00Z')),payload:{headers:[
+    {name:'From',value:'known@example.com'},{name:'To',value:'info@vishartattoo.com'}]}};
+  assert.equal(__testing.metadataCorrespondent(m,'vvetrov41@gmail.com')?.email,'known@example.com');
+  assert.equal(__testing.metadataCorrespondent(m,'tinaakaten@gmail.com'),null);
+  assert.equal(__testing.historyEvidence(m,'vvetrov41@gmail.com','known@example.com')?.direction,'inbound');
+  assert.equal(__testing.historyEvidence(m,'tinaakaten@gmail.com','known@example.com'),null);
+  const sentCopy={...m,payload:{headers:[{name:'From',value:'info@vishartattoo.com'},{name:'To',value:'known@example.com'}]}};
+  assert.equal(__testing.metadataCorrespondent(sentCopy,'vvetrov41@gmail.com')?.direction,'outbound');
+  assert.equal(__testing.metadataCorrespondent(sentCopy,'vvetrov41@gmail.com')?.sent,undefined);
+});
