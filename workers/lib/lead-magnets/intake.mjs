@@ -2,7 +2,7 @@
 // Wire only to the verified artist-owned Worker route after the CRM migration is accepted.
 const WEB_ORIGIN = 'https://vishartattoo.com';
 const ROUTE = '/api/lead-magnets/cover-up-guide';
-const EXPECTED_DOWNLOAD = `${WEB_ORIGIN}/assets/lead-magnets/cover-up-guide-v6.pdf`;
+const EXPECTED_DOWNLOAD = `${WEB_ORIGIN}/assets/lead-magnets/cover-up-guide-v7.pdf`;
 const CONSENT_VERSION = 'coverup-email-v1';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
