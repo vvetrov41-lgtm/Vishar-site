@@ -1,12 +1,13 @@
 (function () {
   'use strict';
 
-  const PAIR_COUNT = 6;
+  const PAIR_COUNT = 7;
   const BASE = '/assets/cover-ups/';
   const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)';
   const SWIPE_THRESHOLD = 45;
 
   function altText(state, index) {
+    if (index === 7) return state === 'before' ? 'Old faded forearm tattoo before cover-up, comparison 7 by Vladimir Vishar' : 'Completed black and grey forearm cover-up tattoo, comparison 7 by Vladimir Vishar';
     return state === 'before'
       ? `Old tattoo before cover-up, comparison ${index} by Vladimir Vishar`
       : `Completed cover-up tattoo, comparison ${index} by Vladimir Vishar`;
@@ -191,7 +192,7 @@
     });
   }
 
-  // The six paired comparison cards are rendered into the page HTML at build
+  // The paired comparison cards are rendered into the page HTML at build
   // time by scripts/build-static-html.mjs, so this script only attaches the
   // before/after compare lightbox to them.
   if (document.readyState === 'loading') {

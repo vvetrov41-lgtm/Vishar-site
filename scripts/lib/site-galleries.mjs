@@ -100,22 +100,23 @@ export function renderSimpleGallery(name) {
 /* ── Cover-up: 6 matched before/after pairs ── */
 export function renderCoverUpPairs() {
   const cards = [];
-  for (let index = 1; index <= 6; index += 1) {
+  for (let index = 1; index <= 7; index += 1) {
     const stem = String(index).padStart(2, '0');
-    const beforeAlt = `Old tattoo before cover-up, comparison ${index} by Vladimir Vishar`;
-    const afterAlt = `Completed cover-up tattoo, comparison ${index} by Vladimir Vishar`;
+    const beforeAlt = index === 7 ? 'Old faded forearm tattoo before cover-up, comparison 7 by Vladimir Vishar' : `Old tattoo before cover-up, comparison ${index} by Vladimir Vishar`;
+    const afterAlt = index === 7 ? 'Completed black and grey forearm cover-up tattoo, comparison 7 by Vladimir Vishar' : `Completed cover-up tattoo, comparison ${index} by Vladimir Vishar`;
+    const responsive = (state) => index === 7 ? ` srcset="${thumbSrcset('/assets/cover-ups/', `${state}-${stem}`)}" sizes="(min-width: 1232px) 280px, (min-width: 768px) 25vw, 50vw"` : '';
     cards.push(`    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="${index}">
       <div class="grid grid-cols-2 gap-2 p-2">
         <div>
           <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
           <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${esc(beforeAlt)}">
-            <img src="/assets/cover-ups/before-${stem}.webp" loading="lazy" decoding="async" width="900" height="1200" alt="${esc(beforeAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
+            <img src="/assets/cover-ups/before-${stem}.webp"${responsive('before')} loading="lazy" decoding="async" width="${index === 7 ? 1152 : 900}" height="${index === 7 ? 1536 : 1200}" alt="${esc(beforeAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
           </button>
         </div>
         <div>
           <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
           <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${esc(afterAlt)}">
-            <img src="/assets/cover-ups/after-${stem}.webp" loading="lazy" decoding="async" width="900" height="1200" alt="${esc(afterAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
+            <img src="/assets/cover-ups/after-${stem}.webp"${responsive('after')} loading="lazy" decoding="async" width="${index === 7 ? 1113 : 900}" height="${index === 7 ? 1536 : 1200}" alt="${esc(afterAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
           </button>
         </div>
       </div>
