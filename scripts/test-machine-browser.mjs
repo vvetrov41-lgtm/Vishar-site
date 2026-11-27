@@ -61,11 +61,16 @@ try{
    const snapshots=[];
    for(const [name,y] of [['assembly-middle',midpoint],['assembly-late',late],['reverse',early]]){
     await scroll(page,y);
+    // Wait for the scroll handler to observe the new position before testing
+    // convergence. A settled previous pose is not evidence of this scroll.
+    const expected=(y-anchors.assemblyStart)/(anchors.assemblyEnd-anchors.assemblyStart);
+    await page.waitForFunction(expected=>Math.abs(window.__machine.debugState().target-expected)<.03,expected,{timeout:45000});
     await page.waitForFunction(()=>Math.abs(window.__machine.debugState().target-window.__machine.debugState().current)<.06,{},{timeout:45000});
     const state=await get(page);
     assert.equal(state.mode,'live');
     assert.ok(state.stats.frames>0&&state.stats.triangles>0);
     snapshots.push({name,...state});
+    console.log('MACHINE_POSE '+JSON.stringify({label,name,expected,actual:state}));
     await page.screenshot({path:resolve(evidence,label+'-'+name+'.png'),timeout:60000});
    }
    assert.ok(snapshots[1].state.target>snapshots[0].state.target+.25);
