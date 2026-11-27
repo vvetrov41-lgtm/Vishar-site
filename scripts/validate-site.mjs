@@ -103,6 +103,7 @@ const GALLERY_CONFIGS = [
       'before-10', 'after-10',
       'before-11', 'after-11',
       'before-12', 'after-12',
+      'before-13', 'after-13',
     ],
     originalJpgs: [
       'before-01.jpg', 'after-01.jpg',
@@ -117,6 +118,7 @@ const GALLERY_CONFIGS = [
       'before-10.jpg', 'after-10.jpg',
       'before-11.jpg', 'after-11.jpg',
       'before-12.jpg', 'after-12.jpg',
+      'before-13.jpg', 'after-13.jpg',
     ],
   },
   {
@@ -1213,7 +1215,7 @@ function getWebpAllowlistEntries() {
       ['11.jpg', '11.webp'],
       ['12.jpg', '12.webp'],
     ].map(([source, sidecar]) => [`assets/colour-realism/${source}`, `assets/colour-realism/${sidecar}`]),
-    ...Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')).flatMap((number) => [
+    ...Array.from({ length: 13 }, (_, i) => String(i + 1).padStart(2, '0')).flatMap((number) => [
       [`assets/cover-ups/before-${number}.jpg`, `assets/cover-ups/before-${number}.webp`],
       [`assets/cover-ups/after-${number}.jpg`, `assets/cover-ups/after-${number}.webp`],
     ]),
@@ -1466,7 +1468,7 @@ const RAW_GALLERY_EXPECTATIONS = [
   { file: 'index.html', label: 'homepage portfolio grid', marker: 'portfolio-grid', images: 12 },
   { file: 'colour-realism-tattoo-london/index.html', label: 'colour realism gallery', marker: 'gallery', images: 12 },
   { file: 'black-and-grey-realism-london/index.html', label: 'black and grey gallery', marker: 'gallery', images: 12 },
-  { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 24 },
+  { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 26 },
   { file: 'portrait-tattoo-artist-london/index.html', label: 'portrait gallery', marker: 'gallery', images: 26 },
   { file: 'large-scale-realism-tattoo-london/index.html', label: 'large scale gallery', marker: 'gallery', images: 20 },
   { file: 'healed-tattoos/index.html', label: 'fresh vs healed pairs', marker: 'gallery', images: 50 },

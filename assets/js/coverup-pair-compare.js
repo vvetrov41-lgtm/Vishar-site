@@ -1,12 +1,13 @@
 (function () {
   'use strict';
 
-  const PAIR_COUNT = 12;
+  const PAIR_COUNT = 13;
   const BASE = '/assets/cover-ups/';
   const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)';
   const SWIPE_THRESHOLD = 45;
 
   function altText(state, index) {
+    if (index === 13) return state === 'before' ? 'Old faded cross tattoo on upper arm before cover-up, AI-expanded framing, comparison 13 by Vladimir Vishar' : 'Completed black and grey Spartan helmet upper arm cover-up tattoo, comparison 13 by Vladimir Vishar';
     if (index === 11) return state === 'before' ? 'Old tribal chest and shoulder tattoo before cover-up, comparison 11 by Vladimir Vishar' : 'Completed black and grey wolf and mountain landscape chest cover-up tattoo, comparison 11 by Vladimir Vishar';
     if (index === 12) return state === 'before' ? 'Old illustrated forearm tattoo before cover-up, comparison 12 by Vladimir Vishar' : 'Completed black and grey samurai mask forearm cover-up tattoo, comparison 12 by Vladimir Vishar';
     if (index === 9) return state === 'before' ? 'Old illustrated woman portrait on upper arm before cover-up, comparison 9 by Vladimir Vishar' : 'Completed colour castle at night upper arm cover-up tattoo, comparison 9 by Vladimir Vishar';
@@ -24,6 +25,7 @@
       before: {
         source: `${BASE}before-${stem}.webp`,
         alt: altText('before', index),
+        label: index === 13 ? 'Before (AI-expanded)' : 'Before',
       },
       after: {
         source: `${BASE}after-${stem}.webp`,
@@ -92,7 +94,7 @@
 
       overlay.__state = state;
       const item = pair[state];
-      if (badge) badge.textContent = state === 'before' ? 'Before' : 'After';
+      if (badge) badge.textContent = state === 'before' ? (item.label || 'Before') : 'After';
       if (status) {
         status.style.display = 'block';
         status.textContent = 'Loading...';
