@@ -1,0 +1,22 @@
+name: Verified debugging skill integrity
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  skill-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify local reviewed skill copies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp .agents/skills/vishar-verified-debugging/SKILL.md .claude/skills/vishar-verified-debugging/SKILL.md
+          grep -Fq 'name: vishar-verified-debugging' .agents/skills/vishar-verified-debugging/SKILL.md
+          grep -Fq '95794848ba331b2b8b6f44eef728b71cb6bd40ce' .agents/skills/vishar-verified-debugging/SKILL.md
+          test -s docs/third-party/superpowers-LICENSE.txt
+          grep -Fq 'vishar-verified-debugging' AGENTS.md
