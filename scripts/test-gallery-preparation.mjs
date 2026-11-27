@@ -29,3 +29,27 @@ test('new JPEG and PNG prepare WebP previews without changing originals; markup 
   assert.match(html,/srcset="[^"]+27-320\.webp 320w/);
  }finally{await fs.rm(root,{recursive:true,force:true});}
 });
+
+test('replacing raw upload refreshes generated sidecar and previews; explicit replacement WebP wins',async()=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'gallery-replace-'));
+ try{
+  const dir=path.join(root,'assets/portraits');await fs.mkdir(dir,{recursive:true});
+  const raw=path.join(dir,'27.jpg'),webp=path.join(dir,'27.webp'),thumb=path.join(dir,'thumbs/27-320.webp');
+  const make=async(file,format,background)=>sharp({create:{width:1100,height:1400,channels:3,background}}).toFormat(format).toFile(file);
+  const pixel=async(file)=>{const p=await sharp(file).extract({left:10,top:10,width:1,height:1}).removeAlpha().raw().toBuffer();return [...p];};
+  await make(raw,'jpeg','red');
+  await prepareGalleryAssets(root,{baseline:{},sharp});
+  assert.ok((await pixel(webp))[0]>200);
+  await make(raw,'jpeg','blue');
+  const rawBytes=await fs.readFile(raw);
+  await prepareGalleryAssets(root,{baseline:{},sharp});
+  assert.ok((await pixel(webp))[2]>200);
+  assert.ok((await pixel(thumb))[2]>200);
+  assert.deepEqual(await fs.readFile(raw),rawBytes);
+  await make(webp,'webp','green');
+  const supplied=await fs.readFile(webp);
+  await prepareGalleryAssets(root,{baseline:{},sharp});
+  assert.deepEqual(await fs.readFile(webp),supplied);
+  assert.ok((await pixel(thumb))[1]>100);
+ }finally{await fs.rm(root,{recursive:true,force:true});}
+});

@@ -285,7 +285,7 @@ async function main() {
   const outDir = check ? await fs.mkdtemp(path.join(os.tmpdir(), 'public-check-')) : OUT_DIR;
   try {
     const bytes = await copyFiles(files, outDir);
-    const prepared = await prepareGalleryAssets(outDir);
+    const prepared = await prepareGalleryAssets(outDir,{provenancePath:path.join(rootDir,'scripts','gallery-generated-sidecars.json'),persistProvenance:false});
     await buildStaticHtml({ write: true, outputRoot: outDir });
     await applyPreparedGalleryMarkup(outDir, prepared);
     const built = await collectPublicFiles(outDir);

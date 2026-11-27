@@ -165,3 +165,15 @@ For bugs, CI failures and completion verification use the reviewed repository-lo
 ## Automatic gallery preparation
 
 The public build prepares new/replaced numbered gallery image sources in its isolated output before serving them, generates WebP copies and responsive derivatives using the existing widths, and renders static gallery blocks. CI runs the same asset preparation before validation. Keep original files and explicit gallery placement, descriptions and before/after pairing; do not infer image identity or classification from a filename. No additional manual thumbnail generation is required for supported gallery inputs. The private CRM release workflow is not changed.
+
+## Photos sent in chat for publication
+
+When the owner sends photos and asks to add or replace work in a gallery, that request includes optimization and verification. Never require a separate instruction to generate thumbnails.
+
+- Use the actual supplied files; preserve source bytes. Do not replace work with generated imagery, alter colours or invent descriptions. Keep unrelated attachments and private client information out of public assets. Use the requested gallery, editorial placement and correct alt text; retain explicit fresh/healed and before/after pairing.
+- Follow the existing numbered slots and metadata conventions. Add the photo to the curated gallery, not just the asset directory; if the slot or pairing is ambiguous, resolve it before publishing. Use the source format supported by the gallery and retain original files; do not overwrite an independently supplied WebP with an unrelated image.
+- Run `node scripts/prepare-gallery-assets.mjs` and `npm run build:public:check` as part of the upload task. Commit generated sidecar provenance with generated assets when applicable. The public build also prepares supported image sources automatically.
+- Verify actual responsive selection on mobile and desktop, original/full-size lightbox, visual quality, expected image ordering and categories. Run relevant static CI and exact-head review. Report only verified publication; existing release gates remain authoritative.
+- Never treat a file placed in a folder, a green build alone, or a generated thumbnail as proof that a gallery addition is published.
+
+The owner only needs to send the photo and identify the intended gallery. The agent is responsible for preparation and checks; booking reference uploads and private CRM data are not part of this workflow.
