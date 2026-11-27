@@ -100,23 +100,23 @@ export function renderSimpleGallery(name) {
 /* ── Cover-up: 6 matched before/after pairs ── */
 export function renderCoverUpPairs() {
   const cards = [];
-  for (let index = 1; index <= 8; index += 1) {
+  for (let index = 1; index <= 12; index += 1) {
     const stem = String(index).padStart(2, '0');
-    const beforeAlt = index === 8 ? 'Old tiger and tribal upper arm tattoo before cover-up, comparison 8 by Vladimir Vishar' : index === 7 ? 'Old faded forearm tattoo before cover-up, comparison 7 by Vladimir Vishar' : `Old tattoo before cover-up, comparison ${index} by Vladimir Vishar`;
-    const afterAlt = index === 8 ? 'Completed black and grey Viking skull upper arm cover-up tattoo, comparison 8 by Vladimir Vishar' : index === 7 ? 'Completed black and grey forearm cover-up tattoo, comparison 7 by Vladimir Vishar' : `Completed cover-up tattoo, comparison ${index} by Vladimir Vishar`;
-    const responsive = (state) => index >= 7 ? ` srcset="${thumbSrcset('/assets/cover-ups/', `${state}-${stem}`)}" sizes="(min-width: 1232px) 280px, (min-width: 768px) 25vw, 50vw"` : '';
+    const beforeAlt = index === 11 ? 'Old tribal chest and shoulder tattoo before cover-up, comparison 11 by Vladimir Vishar' : index === 12 ? 'Old illustrated forearm tattoo before cover-up, comparison 12 by Vladimir Vishar' : index === 9 ? 'Old illustrated woman portrait on upper arm before cover-up, comparison 9 by Vladimir Vishar' : index === 10 ? 'Old forearm tattoo with lion cover-up stencil applied before tattooing, comparison 10 by Vladimir Vishar' : index === 8 ? 'Old tiger and tribal upper arm tattoo before cover-up, comparison 8 by Vladimir Vishar' : index === 7 ? 'Old faded forearm tattoo before cover-up, comparison 7 by Vladimir Vishar' : `Old tattoo before cover-up, comparison ${index} by Vladimir Vishar`;
+    const afterAlt = index === 11 ? 'Completed black and grey wolf and mountain landscape chest cover-up tattoo, comparison 11 by Vladimir Vishar' : index === 12 ? 'Completed black and grey samurai mask forearm cover-up tattoo, comparison 12 by Vladimir Vishar' : index === 9 ? 'Completed colour castle at night upper arm cover-up tattoo, comparison 9 by Vladimir Vishar' : index === 10 ? 'Completed realistic lion forearm cover-up tattoo, comparison 10 by Vladimir Vishar' : index === 8 ? 'Completed black and grey Viking skull upper arm cover-up tattoo, comparison 8 by Vladimir Vishar' : index === 7 ? 'Completed black and grey forearm cover-up tattoo, comparison 7 by Vladimir Vishar' : `Completed cover-up tattoo, comparison ${index} by Vladimir Vishar`;
+    const responsive = (state) => index >= 7 ? ` srcset="${thumbSrcset('/assets/cover-ups/', `${state}-${stem}`).replace('960w', index === 10 && state === 'before' ? '904w' : index === 12 && state === 'after' ? '864w' : '960w')}" sizes="(min-width: 1232px) 280px, (min-width: 768px) 25vw, 50vw"` : '';
     cards.push(`    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="${index}">
       <div class="grid grid-cols-2 gap-2 p-2">
         <div>
-          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">Before</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">${index === 10 ? 'Before (stencil)' : 'Before'}</p>
           <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${esc(beforeAlt)}">
-            <img src="/assets/cover-ups/before-${stem}.webp"${responsive('before')} loading="lazy" decoding="async" width="${index === 8 ? 968 : index === 7 ? 1152 : 900}" height="${index === 8 ? 1290 : index === 7 ? 1536 : 1200}" alt="${esc(beforeAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
+            <img src="/assets/cover-ups/before-${stem}.webp"${responsive('before')} loading="lazy" decoding="async" width="${index === 10 ? 904 : index >= 9 ? 1152 : index === 8 ? 968 : index === 7 ? 1152 : 900}" height="${index === 8 ? 1290 : index >= 7 ? 1536 : 1200}" alt="${esc(beforeAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
           </button>
         </div>
         <div>
           <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">After</p>
           <button type="button" data-coverup-state="after" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${esc(afterAlt)}">
-            <img src="/assets/cover-ups/after-${stem}.webp"${responsive('after')} loading="lazy" decoding="async" width="${index === 8 ? 1152 : index === 7 ? 1113 : 900}" height="${index >= 7 ? 1536 : 1200}" alt="${esc(afterAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
+            <img src="/assets/cover-ups/after-${stem}.webp"${responsive('after')} loading="lazy" decoding="async" width="${index === 12 ? 864 : index === 11 ? 1024 : index >= 8 ? 1152 : index === 7 ? 1113 : 900}" height="${index >= 7 ? 1536 : 1200}" alt="${esc(afterAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
           </button>
         </div>
       </div>

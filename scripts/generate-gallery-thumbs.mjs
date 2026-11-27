@@ -33,6 +33,10 @@ const GALLERIES = [
       'before-06', 'after-06',
       'before-07', 'after-07',
       'before-08', 'after-08',
+      'before-09', 'after-09',
+      'before-10', 'after-10',
+      'before-11', 'after-11',
+      'before-12', 'after-12',
     ],
   },
   {
