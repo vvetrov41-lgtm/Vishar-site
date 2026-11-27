@@ -2,8 +2,8 @@
  * specs/homepage-machine-assembly/ (spec.md FR-001…FR-012).
  *
  * Runs on the vendored Three.js r128 global build. Nothing 3D is requested
- * during initial page load: libraries, timeline and model load on the first
- * scroll or when the page is idle after `load`. Frames are rendered only while
+ * during initial page load: libraries, timeline and model load after meaningful
+ * scrolling (or explicit diagnostic flags). Frames are rendered only while
  * the damped scroll value moves, and never while the section is out of view.
  *
  * Scroll value s ∈ [-1, 1]:
@@ -783,7 +783,10 @@
     if (resizeTimer) clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
       resizeTimer = null;
-      if (renderer) resizeRenderer(false); else measure();
+      if (renderer) resizeRenderer(false); else {
+        measure();
+        if (!started) showPoster('exploded');
+      }
       updatePortfolioMotion();
     }, 150);
   }
@@ -932,10 +935,16 @@
   // ── Start-up ────────────────────────────────────────────────────────────
   var started = false;
   var loadPhase = 'idle';
+  // Avoid starting on initial viewport resize or a one-pixel scroll restoration.
+  // Keep the static poster visible until the visitor actually moves down the page.
+  function startOnScroll() {
+    if (window.scrollY < 48 || document.hidden) return;
+    start();
+  }
   function start() {
     if (started) return;
     started = true;
-    window.removeEventListener('scroll', start);
+    window.removeEventListener('scroll', startOnScroll);
     if (FORCE_STATIC) return enterStaticMode('forced');
     if (!FORCE_LIVE && prefersReducedMotion()) return enterStaticMode('reduced motion');
     if (!FORCE_LIVE && isWeakDevice()) return enterStaticMode('weak device or data saver');
@@ -1113,14 +1122,13 @@
 
   if (FORCED_S !== null || DEBUG || FORCE_STATIC || FORCE_LIVE) {
     start();
+  } else if (prefersReducedMotion() || isWeakDevice()) {
+    // Respect accessibility/data-saver preferences without waiting for scroll.
+    start();
   } else {
-    window.addEventListener('scroll', start, { passive: true });
-    // Start loading shortly after LCP instead of waiting 1.5–3.5 seconds.
-    // This keeps the hero static but makes the model far more likely to be
-    // ready before the user reaches the assembly section.
-    window.addEventListener('load', function () {
-      var idle = window.requestIdleCallback || function (cb) { return setTimeout(cb, 1); };
-      setTimeout(function () { idle(start, { timeout: 500 }); }, 100);
-    });
+    // The WebP poster is cheap; the WebGL probe, Three.js and 3.16 MB model
+    // are intentionally excluded from the first-screen loading path.
+    showPoster('exploded');
+    window.addEventListener('scroll', startOnScroll, { passive: true });
   }
 })();
