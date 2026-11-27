@@ -17,13 +17,15 @@
 //   node scripts/build-public.mjs --check    build into a temp dir, verify, delete
 //   node scripts/build-public.mjs --self-test  exercise the rules on a synthetic tree
 //
-// No dependencies (Node built-ins only), so Pages can run it with
-// SKIP_DEPENDENCY_INSTALL=1.
+// Pages can run with SKIP_DEPENDENCY_INSTALL=1; the gallery preparation
+// imports pinned Sharp only for changed/missing derivatives.
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPricingCopy } from './lib/pricing-copy.mjs';
+import { prepareGalleryAssets, applyPreparedGalleryMarkup } from './prepare-gallery-assets.mjs';
+import { buildStaticHtml } from './build-static-html.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -283,6 +285,11 @@ async function main() {
   const outDir = check ? await fs.mkdtemp(path.join(os.tmpdir(), 'public-check-')) : OUT_DIR;
   try {
     const bytes = await copyFiles(files, outDir);
+    const prepared = await prepareGalleryAssets(outDir);
+    await buildStaticHtml({ write: true, outputRoot: outDir });
+    await applyPreparedGalleryMarkup(outDir, prepared);
+    const built = await collectPublicFiles(outDir);
+    if (built.problems.length) throw Error(built.problems.join('\n'));
     for (const [file,id] of [['faq','faq'],['colour-realism-tattoo-london','colour-realism'],['black-and-grey-realism-london','black-grey']]) {
       const page=path.join(outDir,file,'index.html');
       await fs.writeFile(page,renderPricingCopy(await fs.readFile(page,'utf8'),id));
@@ -296,7 +303,7 @@ async function main() {
       const file=path.join(outDir,'assets/js/tattoo-calculator.js');
       await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const HAS_3D=true','const HAS_3D=false'));
     }
-    const refs = await verifyReferences(outDir, files);
+    const refs = await verifyReferences(outDir, built.files);
     if (refs.problems.length) {
       console.error(`Public build failed (${refs.problems.length} unresolved references):\n  ${refs.problems.slice(0, 50).join('\n  ')}`);
       process.exit(1);

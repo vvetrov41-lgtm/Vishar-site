@@ -1,0 +1,125 @@
+// Build-time preparation of explicitly placed gallery photos. No Git writes,
+// no publishing or CRM calls. Existing gallery paths and originals stay intact.
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+import {createHash} from 'node:crypto';
+import {execFileSync} from 'node:child_process';
+
+const here=path.dirname(fileURLToPath(import.meta.url));
+const ROOT=path.resolve(here,'..');
+const DIRS=['portfolio','colour-realism','black-grey','cover-ups','gallery','portraits','large-scale','healed','healed/fresh'];
+const WIDTHS=[320,480,720,960];
+const ALLOWED=/^(?:(?:before|after)-)?\d{2}(?:\.jpg)?\.(?:jpe?g|png|webp)$/i;
+async function exists(p){try{await fs.access(p);return true;}catch(e){if(e.code==='ENOENT')return false;throw e;}}
+async function gitBlob(p){const b=await fs.readFile(p);return createHash('sha1').update('blob '+b.length+'\0').update(b).digest('hex');}
+async function useSharp(fn){
+  let sharp;
+  try{sharp=(await import('sharp')).default;}catch(e){if(e.code!=='ERR_MODULE_NOT_FOUND')throw e;}
+  if(sharp)return fn(sharp);
+  const tmp=await fs.mkdtemp(path.join(os.tmpdir(),'gallery-sharp-'));
+  try{
+    // Same pinned version as package-lock; Pages has dependency install disabled.
+    execFileSync('npm',['install','--prefix',tmp,'--no-save','--no-package-lock','--no-audit','--no-fund','sharp@0.33.5'],{stdio:'inherit',timeout:120000});
+    return await fn((await import(pathToFileURL(path.join(tmp,'node_modules/sharp/lib/index.js')).href)).default);
+  }finally{await fs.rm(tmp,{recursive:true,force:true});}
+}
+
+export async function prepareGalleryAssets(root=ROOT,{baseline,sharp:injected}={}){
+  baseline??=JSON.parse(await fs.readFile(path.join(here,'gallery-source-baseline.json'),'utf8'));
+  const jobs=[];
+  for(const d of DIRS){
+    const dir=path.join(root,'assets',d);
+    if(!await exists(dir))continue;
+    const groups=new Map();
+    for(const entry of await fs.readdir(dir,{withFileTypes:true})){
+      if(!entry.isFile()||!ALLOWED.test(entry.name))continue;
+      const stem=entry.name.replace(/\.(?:jpe?g|png|webp)$/i,'');
+      const rel='assets/'+d+'/'+entry.name;
+      const info={rel,file:path.join(root,rel),hash:await gitBlob(path.join(root,rel))};
+      const group=groups.get(stem)??{stem,raw:[],webp:null};groups.set(stem,group);
+      if(/\.webp$/i.test(entry.name))group.webp=info;else group.raw.push(info);
+    }
+    for(const g of groups.values()){
+      if(g.raw.length>1)throw Error('Ambiguous gallery source: '+d+'/'+g.stem);
+      const raw=g.raw[0],webp=g.webp;
+      const rawChanged=raw&&baseline[raw.rel]!==raw.hash;
+      const webpChanged=webp&&baseline[webp.rel]!==webp.hash;
+      const missing=[];
+      const thumbDir=path.join(dir,'thumbs');
+      for(const w of WIDTHS)if(!await exists(path.join(thumbDir,g.stem+'-'+w+'.webp')))missing.push(w);
+      // Existing fresh comparison photos intentionally had no derivatives.
+      if(d==='healed/fresh'&&!rawChanged&&!webpChanged)continue;
+      if(!rawChanged&&!webpChanged&&!missing.length)continue;
+      // A supplied new WebP is authoritative. Otherwise refresh a derivative
+      // when the submitted JPEG/PNG changed, retaining the submitted bytes.
+      const convert=!!raw&&(!webp||(rawChanged&&!webpChanged));
+      const selected=convert?raw:webp??raw;
+      if(!selected)throw Error('No image source '+d+'/'+g.stem);
+      jobs.push({d,g,dir,thumbDir,selected,convert,all:!!(rawChanged||webpChanged||convert),missing});
+    }
+  }
+  const changes=new Map();
+  if(!jobs.length){console.log('Gallery automatic preparation: all existing sources/variants unchanged.');return changes;}
+  const process=async sharp=>{
+    for(const j of jobs){
+      const {d,g,dir,selected,convert,thumbDir}=j;
+      let source=selected.file;
+      if(convert){
+        source=path.join(dir,g.stem+'.webp');
+        // A WebP explicitly supplied by the editor is never overwritten.
+        await sharp(selected.file).rotate().resize({width:2400,height:2400,fit:'inside',withoutEnlargement:true}).webp({quality:92,effort:6}).toFile(source);
+      }
+      await fs.mkdir(thumbDir,{recursive:true});
+      const variants=[];
+      for(const w of WIDTHS){
+        const dest=path.join(thumbDir,g.stem+'-'+w+'.webp');
+        if(j.all||j.missing.includes(w)){
+          let im=sharp(source).rotate();
+          im=d==='gallery'?im.resize({width:w,height:w,fit:'cover',position:'centre',withoutEnlargement:true}):im.resize({width:w,fit:'inside',withoutEnlargement:true});
+          await im.webp({quality:80,effort:6,smartSubsample:true}).toFile(dest);
+        }
+        const meta=await sharp(dest).metadata();
+        if(meta.format!=='webp'||!meta.width)throw Error('Invalid generated derivative '+dest);
+        variants.push({url:'/'+path.relative(root,dest).split(path.sep).join('/'),width:meta.width});
+      }
+      const unique=[...new Map(variants.map(v=>[v.width,v])).values()].sort((a,b)=>a.width-b.width);
+      const info={srcset:unique.map(v=>v.url+' '+v.width+'w').join(', '),full:'/'+path.relative(root,source).split(path.sep).join('/')};
+      for(const x of [g.raw[0],g.webp].filter(Boolean))changes.set('/'+x.rel,info);
+      changes.set(info.full,info);
+      console.log('Prepared '+d+'/'+g.stem+' ('+unique.length+' responsive candidates)');
+    }
+  };
+  if(injected)await process(injected);else await useSharp(process);
+  return changes;
+}
+
+// Keep explicit lightbox href/data-file and source ordering. Adapt only the
+// generated gallery blocks, not booking, hero, CRM or any arbitrary HTML.
+export async function applyPreparedGalleryMarkup(root,changes){
+  if(!changes.size)return;
+  const pages=['index.html','colour-realism-tattoo-london/index.html','black-and-grey-realism-london/index.html','cover-up-tattoo-london/index.html','portrait-tattoo-artist-london/index.html','large-scale-realism-tattoo-london/index.html','healed-tattoos/index.html'];
+  for(const page of pages){
+    const file=path.join(root,page);
+    if(!await exists(file))continue;
+    const html=await fs.readFile(file,'utf8');
+    const updated=html.replace(/<!-- build:(portfolio-grid|portfolio-collections|gallery) -->[\s\S]*?<!-- \/build:\1 -->/g,block=>block.replace(/<picture\b[^>]*>[\s\S]*?<\/picture>|<img\b[^>]*>/gi,media=>{
+      const img=media.match(/<img\b[^>]*>/i)?.[0];
+      const url=img?.match(/\bsrc="([^"]+)"/)?.[1]?.split('?')[0];
+      const rec=changes.get(url);
+      if(!rec)return media;
+      const sizes=media.match(/\bsizes="([^"]+)"/)?.[1]??(page==='index.html'?'(min-width:768px) 33vw, 100vw':'(min-width:768px) 33vw, 50vw');
+      const clean=img.replace(/\s(?:srcset|sizes)="[^"]*"/g,'');
+      if(media.startsWith('<picture'))return media.replace(/<source\b[^>]*>/i,()=>'<source type="image/webp" srcset="'+rec.srcset+'" sizes="'+sizes+'">').replace(img,()=>clean);
+      return clean.slice(0,-1)+' srcset="'+rec.srcset+'" sizes="'+sizes+'">';
+    }));
+    if(updated!==html)await fs.writeFile(file,updated);
+  }
+}
+
+if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
+  await prepareGalleryAssets();
+  const {buildStaticHtml}=await import('./build-static-html.mjs');
+  await buildStaticHtml({write:true});
+}

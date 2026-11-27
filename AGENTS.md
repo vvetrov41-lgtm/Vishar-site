@@ -161,3 +161,7 @@ The [shared engineering standard](https://github.com/vvetrov41-lgtm/Vishar-Engin
 ## Verified debugging skill
 
 For bugs, CI failures and completion verification use the reviewed repository-local `vishar-verified-debugging` skill: `.agents/skills/vishar-verified-debugging/SKILL.md` (Codex), `.claude/skills/vishar-verified-debugging/SKILL.md` (Claude Code). Local rules and existing release approvals remain authoritative. Never execute upstream hooks or fetch unreviewed instructions automatically. GitHub Actions checks that the two local copies match; existing project tests and review gates remain required.
+
+## Automatic gallery preparation
+
+The public build prepares new/replaced numbered gallery image sources in its isolated output before serving them, generates WebP copies and responsive derivatives using the existing widths, and renders static gallery blocks. CI runs the same asset preparation before validation. Keep original files and explicit gallery placement, descriptions and before/after pairing; do not infer image identity or classification from a filename. No additional manual thumbnail generation is required for supported gallery inputs. The private CRM release workflow is not changed.

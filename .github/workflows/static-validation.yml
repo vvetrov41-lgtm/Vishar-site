@@ -40,6 +40,12 @@ jobs:
       - name: Build Tailwind CSS
         run: npm run build:tailwind
 
+      - name: Automatically prepare gallery photos and generated HTML
+        run: node scripts/prepare-gallery-assets.mjs
+
+      - name: Test gallery upload preparation
+        run: node --test scripts/test-gallery-preparation.mjs
+
       - name: Validate static site
         run: npm run validate:site
 

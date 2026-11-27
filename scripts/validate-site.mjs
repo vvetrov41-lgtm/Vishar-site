@@ -1467,9 +1467,9 @@ const RAW_GALLERY_EXPECTATIONS = [
   { file: 'colour-realism-tattoo-london/index.html', label: 'colour realism gallery', marker: 'gallery', images: 12 },
   { file: 'black-and-grey-realism-london/index.html', label: 'black and grey gallery', marker: 'gallery', images: 12 },
   { file: 'cover-up-tattoo-london/index.html', label: 'cover-up before/after pairs', marker: 'gallery', images: 24 },
-  { file: 'portrait-tattoo-artist-london/index.html', label: 'portrait gallery', marker: 'gallery', images: 26 },
-  { file: 'large-scale-realism-tattoo-london/index.html', label: 'large scale gallery', marker: 'gallery', images: 20 },
-  { file: 'healed-tattoos/index.html', label: 'fresh vs healed pairs', marker: 'gallery', images: 50 },
+  { file: 'portrait-tattoo-artist-london/index.html', label: 'portrait gallery', marker: 'gallery', images: 26, metadata: 'assets/portraits/metadata.json' },
+  { file: 'large-scale-realism-tattoo-london/index.html', label: 'large scale gallery', marker: 'gallery', images: 20, metadata: 'assets/large-scale/metadata.json' },
+  { file: 'healed-tattoos/index.html', label: 'fresh vs healed pairs', marker: 'gallery', images: 50, metadata: 'assets/healed/metadata.json', pair: true },
 ];
 
 async function checkRawHtmlGalleryContent() {
@@ -1487,8 +1487,18 @@ async function checkRawHtmlGalleryContent() {
 
     const block = contents.slice(start + open.length, end);
     const images = (block.match(/<img\b/gi) || []).length;
-    if (images !== expectation.images) {
-      fail(`${expectation.file} ${expectation.label} has ${images} raw <img> elements; expected ${expectation.images}.`);
+    let expected = expectation.images;
+    if (expectation.metadata) {
+      const metadata = JSON.parse(await readFile(path.join(rootDir, expectation.metadata), 'utf8'));
+      const count = Object.keys(metadata).filter(key => /^\d{2}$/.test(key)).length;
+      expected = count * (expectation.pair ? 2 : 1);
+      if (count > 32 || expected < expectation.images) {
+        fail(`${expectation.file}: gallery catalog count out of reviewed bounds (${expected}).`);
+        continue;
+      }
+    }
+    if (images !== expected) {
+      fail(`${expectation.file} ${expectation.label} has ${images} raw <img> elements; expected ${expected}.`);
       continue;
     }
 
