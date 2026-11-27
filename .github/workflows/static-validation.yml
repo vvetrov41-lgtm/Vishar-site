@@ -46,6 +46,18 @@ jobs:
       - name: Check deferred homepage 3D startup
         run: node --test scripts/test-machine-startup.mjs
 
+      - name: Browser-test real scroll-driven 3D on mobile and desktop
+        run: |
+          npm install --prefix "$RUNNER_TEMP/machine-qa" --no-audit --no-fund playwright@1.58.2
+          PLAYWRIGHT_MODULE="$RUNNER_TEMP/machine-qa/node_modules/playwright/index.mjs" PLAYWRIGHT_EXECUTABLE="$(command -v google-chrome)" node scripts/test-machine-browser.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: machine-browser-evidence
+          path: ${{ runner.temp }}/machine-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Check social share previews
         run: node scripts/test-social-preview.mjs
 
