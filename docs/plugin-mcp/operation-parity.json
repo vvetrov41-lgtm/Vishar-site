@@ -9,7 +9,7 @@
     "requiringSchemaChange": 0,
     "uiOnly": 17,
     "excludedCurrentGptOperations": 0,
-    "excludedStage2Candidates": 13,
+    "excludedStage2Candidates": 14,
     "unresolved": 0
   },
   "operations": [
@@ -9394,6 +9394,11 @@
     }
   ],
   "stage2": [
+    {
+      "operationId": "getLeadMagnetSummary",
+      "status": "excluded_initial_release",
+      "reason": "Staged CRM-only pilot; a bounded profile-scoped GPT read is owed but is not exposed or required to deliver the guide. Not in the current 13 OpenAPI schemas."
+    },
     {
       "operationId": "setEnquiryFileClassification",
       "status": "excluded_initial_release",
