@@ -1,12 +1,13 @@
 (function () {
   'use strict';
 
-  const PAIR_COUNT = 13;
+  const PAIR_COUNT = 14;
   const BASE = '/assets/cover-ups/';
   const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)';
   const SWIPE_THRESHOLD = 45;
 
   function altText(state, index) {
+    if (index === 14) return state === 'before' ? 'Old faded floral tattoo on forearm before cover-up, comparison 14 by Vladimir Vishar' : 'Completed colour realism leopard forearm cover-up tattoo, comparison 14 by Vladimir Vishar';
     if (index === 13) return state === 'before' ? 'Old faded cross tattoo on upper arm before cover-up, AI-expanded framing, comparison 13 by Vladimir Vishar' : 'Completed black and grey Spartan helmet upper arm cover-up tattoo, comparison 13 by Vladimir Vishar';
     if (index === 11) return state === 'before' ? 'Old tribal chest and shoulder tattoo before cover-up, comparison 11 by Vladimir Vishar' : 'Completed black and grey wolf and mountain landscape chest cover-up tattoo, comparison 11 by Vladimir Vishar';
     if (index === 12) return state === 'before' ? 'Old illustrated forearm tattoo before cover-up, comparison 12 by Vladimir Vishar' : 'Completed black and grey samurai mask forearm cover-up tattoo, comparison 12 by Vladimir Vishar';
