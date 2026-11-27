@@ -43,6 +43,9 @@ jobs:
       - name: Validate static site
         run: npm run validate:site
 
+      - name: Check deferred homepage 3D startup
+        run: node --test scripts/test-machine-startup.mjs
+
       - name: Check social share previews
         run: node scripts/test-social-preview.mjs
 
