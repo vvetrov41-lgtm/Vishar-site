@@ -17,3 +17,6 @@ Added an inert Svix HMAC-SHA256 verifier with bounded input, five-minute timesta
 
 ## CI compatibility correction
 Exact head 3194c973fef218958b681b5c10f26d5a59f0fd6d passed Gmail and static validation, and CRM database/UI jobs. Worker test rejected redirect:error because Cloudflare runtime requires manual redirect refusal. Adapter now requests manual mode and treats 3xx as uncertain without following Location or retrying. Added redirect regression to the existing uncertainty test. New head requires fresh CI.
+
+## Credential reuse
+The owner explicitly approved temporary reuse of LEAD_MAGNET_RESEND_API_KEY. Cloudflare secret-name listing confirms the binding already exists on vishar-gmail-production; the value was never read. The correspondence adapter now reads that binding only in its test mode and no call sites are enabled. No changes to the existing guide transport, Gmail OAuth credentials, or live flags. Exact head f82d0c131980d8e7b9cb98c4ce61293acbd27dfd passed all three CI workflows; new commit requires fresh CI. A shared domain credential means both flows share quotas and revocation impact.

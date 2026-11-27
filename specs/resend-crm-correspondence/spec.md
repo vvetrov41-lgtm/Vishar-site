@@ -13,3 +13,6 @@ Status: draft; production sending unchanged.
 4. Ambiguous timeout, provider limits, retries, concurrent drains and rollback cannot generate duplicate sends.
 5. Exact-head tests pass, then controlled receipt/reply and CRM-history verification; no real client test traffic. Free quota respected.
 6. Kristina and the legacy Gmail read/send path remain unchanged until explicit gated activation.
+
+## Owner decision, 2026-11-27
+Temporarily reuse the existing domain-scoped sending-only Cloudflare Worker secret `LEAD_MAGNET_RESEND_API_KEY` for both the guide and ordinary CRM correspondence. Do not create or rotate another key or grant extra permissions. Independent feature flags and idempotency namespaces stay separate. Later credential separation can be reviewed independently.

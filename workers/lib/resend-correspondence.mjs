@@ -12,6 +12,8 @@ const MAX_RETRY_MS=23*60*60*1000;
 function cleanEmail(value) {
   return typeof value==='string'&&value.length<=254&&EMAIL.test(value)?value.toLowerCase():null;
 }
+// Temporarily reuse the owner's existing domain-scoped sending credential.
+// No additional secret or permission expansion is required.
 function validKey(value) { return typeof value==='string'&&/^re_[A-Za-z0-9_-]{12,}$/.test(value); }
 function bounded(value,max) { return typeof value==='string'&&value.trim().length>0&&value.length<=max&&!value.includes('\0'); }
 function validRfcId(value) { return bounded(value,998)&&RFC_ID.test(value)&&!/[\r\n]/.test(value); }
@@ -19,7 +21,7 @@ function validRfcId(value) { return bounded(value,998)&&RFC_ID.test(value)&&!/[\
 export function prepareResendRequest(env,target,message,{preparedAt,now=Date.now()}={}) {
   // Only trusted server-owned target and a previously persisted attempt may enter.
   if(env?.VISHAR_ENVIRONMENT!=='production'||env?.RESEND_CORRESPONDENCE_MODE!=='test'||
-     !validKey(env?.RESEND_CORRESPONDENCE_API_KEY))throw Error('resend_correspondence_disabled');
+     !validKey(env?.LEAD_MAGNET_RESEND_API_KEY))throw Error('resend_correspondence_disabled');
   if(target?.artist_id!==ARTIST||target?.integration_key!==INTEGRATION||
      target?.mailbox_email!==MAILBOX||target?.delivery_allowed!==true)
     throw Error('resend_correspondence_scope_invalid');
@@ -59,7 +61,7 @@ export async function sendResendCorrespondence(env,target,message,options={}) {
   let response;
   try {
     response=await fetchImpl('https://api.resend.com/emails',{method:'POST',redirect:'manual',
-      headers:{Authorization:'Bearer '+env.RESEND_CORRESPONDENCE_API_KEY,'Content-Type':'application/json','Idempotency-Key':key},
+      headers:{Authorization:'Bearer '+env.LEAD_MAGNET_RESEND_API_KEY,'Content-Type':'application/json','Idempotency-Key':key},
       body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});
   } catch { throw Error('resend_correspondence_uncertain'); }
   if(!response.ok) {

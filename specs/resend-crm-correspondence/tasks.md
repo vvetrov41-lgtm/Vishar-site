@@ -14,3 +14,5 @@
 - [x] Correct Worker redirect incompatibility; reject 3xx without following redirects (new head CI pending).
 
 - [x] Extend domain alias recognition to metadata snapshot, complete discovery and background reply capture; denial tests added. Exact-head CI pending. Gmail SENT evidence still requires Gmail SENT label; external-provider outbound evidence requires durable Resend receipt.
+
+- [x] Confirm existing secret binding and owner-approved shared credential strategy; adapter updated. No new API key required; new head CI pending.

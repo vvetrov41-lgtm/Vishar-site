@@ -651,7 +651,7 @@ await test('domain alias thread remains bilateral for the pinned owner only', as
 
 const {prepareResendRequest,sendResendCorrespondence}=await import('../workers/lib/resend-correspondence.mjs');
 const resendTestId='11111111-1111-4111-8111-111111111111';
-const resendTestEnv={VISHAR_ENVIRONMENT:'production',RESEND_CORRESPONDENCE_MODE:'test',RESEND_CORRESPONDENCE_API_KEY: 're_'+'synthetic_only_not_live'};
+const resendTestEnv={VISHAR_ENVIRONMENT:'production',RESEND_CORRESPONDENCE_MODE:'test',LEAD_MAGNET_RESEND_API_KEY: 're_'+'synthetic_only_not_live'};
 const resendTestTarget={artist_id:'a1111111-1111-4111-8111-111111111111',integration_key:'google_gmail_vladimir',mailbox_email:'vvetrov41@gmail.com',client_email:'vvetrov41@gmail.com',email_message_id:resendTestId,delivery_allowed:true};
 const resendTestMessage={toEmail:'vvetrov41@gmail.com',emailMessageId:resendTestId,subject:'Test',body:'Test body',htmlBody:'<p>Test</p>',inReplyTo:'<prior@example.test>',references:'<first@example.test> <prior@example.test>'};
 const resendTestOptions={preparedAt:1000,now:2000};
@@ -714,4 +714,10 @@ await test('Resend webhook ignores unrelated sender or event and rejects injecte
  }
  const raw=JSON.stringify({...webhookEvent,data:{...webhookEvent.data,message_id:'<id@example.test>\r\nBcc: bad'}});
  await assert.rejects(verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow}),/webhook_invalid/);
+});
+
+await test('correspondence uses the existing guide sending secret and fails closed if absent',()=>{
+ const {LEAD_MAGNET_RESEND_API_KEY,...withoutKey}=resendTestEnv;
+ assert.throws(()=>prepareResendRequest(withoutKey,resendTestTarget,resendTestMessage,resendTestOptions),/resend_correspondence_disabled/);
+ assert.equal(prepareResendRequest({...withoutKey,LEAD_MAGNET_RESEND_API_KEY},resendTestTarget,resendTestMessage,resendTestOptions).key,'crm-email/'+resendTestId);
 });
