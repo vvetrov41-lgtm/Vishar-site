@@ -17,14 +17,16 @@
 //   node scripts/build-public.mjs --check    build into a temp dir, verify, delete
 //   node scripts/build-public.mjs --self-test  exercise the rules on a synthetic tree
 //
-// No dependencies (Node built-ins only), so Pages can run it with
-// SKIP_DEPENDENCY_INSTALL=1.
+// Pages can run with SKIP_DEPENDENCY_INSTALL=1; the gallery preparation
+// imports pinned Sharp only for changed/missing derivatives.
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPricingCopy } from './lib/pricing-copy.mjs';
 import { GUIDE_PDF_PATH, readGuidePdf } from './lib/lead-magnet-asset.mjs';
+import { prepareGalleryAssets, applyPreparedGalleryMarkup } from './prepare-gallery-assets.mjs';
+import { buildStaticHtml } from './build-static-html.mjs';
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -160,10 +162,9 @@ export async function collectPublicFiles(root = rootDir, allow = {}) {
     if (await exists(path.join(root, dir))) files.push(...await listAssetDir(root, dir));
     else problems.push(`allowlisted asset directory is missing: ${dir}`);
   }
-  // The fixed-version public PDF is generated from validated source parts.
-  // Custom synthetic allowlists do not implicitly publish it.
+  // Only this checksum-pinned PDF is published; source-assets stays private.
   if (!allow.rootFiles && !allow.pages && !allow.assetDirs) {
-    try { await readGuidePdf(root); files.push(GUIDE_PDF_PATH); }
+    try { await readGuidePdf(root, root !== rootDir); files.push(GUIDE_PDF_PATH); }
     catch (error) { problems.push('Guide PDF asset invalid: '+error.message); }
   }
   for (const file of files) {
@@ -293,6 +294,11 @@ async function main() {
   const outDir = check ? await fs.mkdtemp(path.join(os.tmpdir(), 'public-check-')) : OUT_DIR;
   try {
     const bytes = await copyFiles(files, outDir);
+    const prepared = await prepareGalleryAssets(outDir,{provenancePath:path.join(rootDir,'scripts','gallery-generated-sidecars.json'),persistProvenance:false});
+    await buildStaticHtml({ write: true, outputRoot: outDir });
+    await applyPreparedGalleryMarkup(outDir, prepared);
+    const built = await collectPublicFiles(outDir);
+    if (built.problems.length) throw Error(built.problems.join('\n'));
     for (const [file,id] of [['faq','faq'],['colour-realism-tattoo-london','colour-realism'],['black-and-grey-realism-london','black-grey']]) {
       const page=path.join(outDir,file,'index.html');
       await fs.writeFile(page,renderPricingCopy(await fs.readFile(page,'utf8'),id));
@@ -306,7 +312,7 @@ async function main() {
       const file=path.join(outDir,'assets/js/tattoo-calculator.js');
       await fs.writeFile(file,(await fs.readFile(file,'utf8')).replace('const HAS_3D=true','const HAS_3D=false'));
     }
-    const refs = await verifyReferences(outDir, files);
+    const refs = await verifyReferences(outDir, built.files);
     if (refs.problems.length) {
       console.error(`Public build failed (${refs.problems.length} unresolved references):\n  ${refs.problems.slice(0, 50).join('\n  ')}`);
       process.exit(1);

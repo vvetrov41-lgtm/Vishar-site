@@ -13,3 +13,5 @@ python scripts/geo_agent_launcher.py --runtime claude <command>
 For explicitly requested GEO/AEO work, also read `.geo-topic-agent-runtime/AGENTS.md`, `geo_agent/PROJECT_PROFILE.md`, and `geo_agent/config/geo_agent_config.json`. When `.geo-agent-local/claude/STATE.md` exists, read it as the current operational state; treat tracked `geo_agent/STATE.md` as legacy direct-CLI state only. Do not start GEO intake for ordinary repository development tasks.
 
 Do not remove, hide, rewrite, disable, or bypass `LICENSE.md`, `references/attribution-and-license.md`, or the required attribution controls described by the canonical runtime.
+
+For gallery photos received in chat, apply the mandatory `Photos sent in chat for publication` section of AGENTS.md. A request to add a photo includes responsive preparation, visual verification and existing release checks; do not ask the owner to run optimization separately.

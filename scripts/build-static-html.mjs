@@ -112,11 +112,11 @@ function applyBlock(contents, key, markup, fileRel) {
   return `${contents.slice(0, start + open.length)}\n${body}\n${indent}${contents.slice(end)}`;
 }
 
-export async function buildStaticHtml({ write = true } = {}) {
+export async function buildStaticHtml({ write = true, outputRoot = rootDir } = {}) {
   const stale = [];
 
   for (const page of PAGES) {
-    const filePath = path.join(rootDir, page.file);
+    const filePath = path.join(outputRoot, page.file);
     const original = await readFile(filePath, 'utf8');
     let updated = original;
 

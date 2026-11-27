@@ -161,3 +161,19 @@ The [shared engineering standard](https://github.com/vvetrov41-lgtm/Vishar-Engin
 ## Verified debugging skill
 
 For bugs, CI failures and completion verification use the reviewed repository-local `vishar-verified-debugging` skill: `.agents/skills/vishar-verified-debugging/SKILL.md` (Codex), `.claude/skills/vishar-verified-debugging/SKILL.md` (Claude Code). Local rules and existing release approvals remain authoritative. Never execute upstream hooks or fetch unreviewed instructions automatically. GitHub Actions checks that the two local copies match; existing project tests and review gates remain required.
+
+## Automatic gallery preparation
+
+The public build prepares new/replaced numbered gallery image sources in its isolated output before serving them, generates WebP copies and responsive derivatives using the existing widths, and renders static gallery blocks. CI runs the same asset preparation before validation. Keep original files and explicit gallery placement, descriptions and before/after pairing; do not infer image identity or classification from a filename. No additional manual thumbnail generation is required for supported gallery inputs. The private CRM release workflow is not changed.
+
+## Photos sent in chat for publication
+
+When the owner sends photos and asks to add or replace work in a gallery, that request includes optimization and verification. Never require a separate instruction to generate thumbnails.
+
+- Use the actual supplied files; preserve the unmodified originals only in an explicitly authorized private store, never in this public repository or its history. Before any Git upload, remove EXIF, GPS, XMP and IPTC metadata from the publication copy, apply EXIF orientation, retain appropriate colour rendering, and verify the metadata is absent. Never rely on build-time sanitization to hide a public Git commit. Do not replace work with generated imagery, alter colours or invent descriptions. Keep unrelated attachments and private client information out of public assets. Use the requested gallery, editorial placement and correct alt text; retain explicit fresh/healed and before/after pairing.
+- Follow the existing numbered slots and metadata conventions. Add the photo to the curated gallery, not just the asset directory; if the slot or pairing is ambiguous, resolve it before publishing. Use the source format supported by the gallery and retain sanitized publication files; do not overwrite an independently supplied WebP with an unrelated image.
+- Run `node scripts/prepare-gallery-assets.mjs` and `npm run build:public:check` as part of the upload task. Commit generated sidecar provenance with generated assets when applicable. The public build also prepares supported image sources automatically.
+- Verify actual responsive selection on mobile and desktop, original/full-size lightbox, visual quality, expected image ordering and categories. Run relevant static CI and exact-head review. Report only verified publication; existing release gates remain authoritative.
+- Never treat a file placed in a folder, a green build alone, or a generated thumbnail as proof that a gallery addition is published.
+
+The owner only needs to send the photo and identify the intended gallery. The agent is responsible for preparation and checks; booking reference uploads and private CRM data are not part of this workflow.
