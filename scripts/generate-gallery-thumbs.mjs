@@ -38,6 +38,7 @@ const GALLERIES = [
       'before-11', 'after-11',
       'before-12', 'after-12',
       'before-13', 'after-13',
+      'before-14', 'after-14',
     ],
   },
   {
