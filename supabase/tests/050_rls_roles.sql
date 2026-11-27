@@ -942,6 +942,15 @@ insert into expected_function_acl values
   ('public.service_record_review_email_check(uuid,text,uuid,text,text,timestamptz,text)', false, false, true),
   ('public.close_review_request(uuid,uuid,uuid)', false, true, false),
 
+  -- Lead magnet: only the backend can capture, unsubscribe and dispatch;
+  -- CRM aggregate reporting requires an authenticated artist capability.
+  ('public.service_capture_lead_magnet(text,text,uuid,text,text,boolean,text,jsonb)', false, false, true),
+  ('public.service_unsubscribe_lead_magnet(uuid)', false, false, true),
+  ('public.service_claim_lead_magnet_jobs(text,integer)', false, false, true),
+  ('public.service_authorize_lead_magnet_job(uuid,text,uuid)', false, false, true),
+  ('public.service_finish_lead_magnet_job(uuid,text,uuid,text,text)', false, false, true),
+  ('public.get_lead_magnet_summary(uuid)', false, true, false),
+
   -- Private helpers required by RLS; crm_private is not a PostgREST schema.
   ('crm_private.jwt_role()', false, true, true),
   ('crm_private.is_service_backend()', false, true, true),
