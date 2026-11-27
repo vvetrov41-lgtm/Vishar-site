@@ -1,5 +1,5 @@
 // Isolated adapter: does not send unless explicitly enabled and wired to reviewed
-// server-only database and artist-bound Gmail dependencies. Never expose to browsers.
+// server-only database and artist-bound mail dependencies. Never expose to browsers.
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAIL=/^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const STEPS=new Set([0,3,7,14]);
