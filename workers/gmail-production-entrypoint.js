@@ -1,6 +1,6 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { deliverFailedBookingMail } from './lib/booking-fallback-email.js';
-import gmailWorker, { drainEmailOutbox } from './gmail-production.js';
+import gmailWorker, { drainEmailOutbox, drainLeadMagnetOutbox } from './gmail-production.js';
 import { handleCompleteGmailDiscoveryRequest } from './gmail-complete-discovery-api.js';
 import {
   handleCachedGmailDiscoveryRequest,
@@ -61,6 +61,16 @@ export default class GmailProductionEntrypoint extends WorkerEntrypoint {
   async drainApprovedEmailOutbox() {
     const result = await drainEmailOutbox(this.env);
     return summarizeDrain(result);
+  }
+
+  async drainLeadMagnetOutbox() {
+    const result = await drainLeadMagnetOutbox(this.env);
+    const rows = Array.isArray(result.results) ? result.results : [];
+    const processed = safeCount(result.processed);
+    const sent = rows.filter(r=>r.outcome==='sent').length;
+    const attention = rows.filter(r=>['uncertain','acknowledgement_unknown','retry_before_send'].includes(r.outcome)).length;
+    if (attention) console.error('lead_magnet.delivery_attention', JSON.stringify({processed,attention}));
+    return {skipped:result.skipped===true,processed,sent,attention};
   }
 
   async refreshClientMetadataSnapshot() {

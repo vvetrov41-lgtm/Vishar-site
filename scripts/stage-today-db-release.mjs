@@ -11,6 +11,7 @@ import { deferredTodayMigration } from './verify-today-db-release.mjs';
 const DEFERRABLE = [
   '20261113120000_whatsapp_reminder_24h_clean_v5.sql',
   '20261116170000_healing_check_whatsapp_candidate.sql',
+  '20261127200100_lead_magnet_reporting.sql',
 ];
 const mode = process.argv[2];
 const targetDir = resolve(mode === '--stage' ? process.argv[4] ?? '' : process.argv[3] ?? '');
@@ -47,6 +48,11 @@ if (mode === '--stage') {
       if (existsSync(source)) throw new Error('Cannot overwrite source during restore');
       assertCanonicalBytes(destination,file);
       renameSync(destination,source);
+    }
+    // Some listed future migrations do not exist on older release snapshots.
+    // For the new lead-magnet file, require restoration only if it is in HEAD.
+    if (file === '20261127200100_lead_magnet_reporting.sql' && !existsSync(source)) {
+      try { committedBytes(file); } catch { continue; }
     }
     if (!existsSync(source)) throw new Error('Canonical migration missing after restore');
     assertCanonicalBytes(source,file);

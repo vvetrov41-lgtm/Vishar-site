@@ -40,6 +40,9 @@ export const PENDING_CHANGES = Object.freeze(new Map([
   // Reply drafts (specs/reply-drafts), approved by the owner 2026-11-20.
   // null: the variable did not exist before this release.
   ['REPLY_DRAFTS_ENABLED', null],
+  // Dormant lead-magnet routes: accept absence only on the pre-release snapshot.
+  ['LEAD_MAGNET_INTAKE_ENABLED', null],
+  ['LEAD_MAGNET_UNSUBSCRIBE_ENABLED', null],
 ]));
 
 function bindingsFrom(snapshot) {

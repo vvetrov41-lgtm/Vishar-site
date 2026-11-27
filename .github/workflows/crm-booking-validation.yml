@@ -159,6 +159,9 @@ jobs:
           node scripts/test-gpt-communications-domain-rollout.mjs
           node scripts/test-gpt-worker-rollout.mjs
 
+      - name: Test lead magnet API, delivery and opt-out
+        run: node --test workers/lib/lead-magnets/*.test.mjs
+
       - name: Scan repository for committed secrets
         run: npm run scan:secrets
 

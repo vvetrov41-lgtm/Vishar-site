@@ -201,6 +201,16 @@ jobs:
       - name: Lint PostgreSQL functions
         run: supabase db lint --local --schema public,crm_private --level error --fail-on error
 
+      - name: Generate exact foundation-only manifest from clean local migrations
+        if: github.event_name == 'push' || inputs.deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase db reset --local --no-seed --version 20261127200000
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres \
+            -X -A -t -v ON_ERROR_STOP=1 -f scripts/function-manifest.sql > "$RUNNER_TEMP/lead-magnet-foundation-manifest.tsv"
+          test -s "$RUNNER_TEMP/lead-magnet-foundation-manifest.tsv"
+
       - name: Stop local Supabase stack
         if: always()
         run: supabase stop --no-backup
@@ -238,6 +248,9 @@ jobs:
           [ "$PROJECT_REF" = 'vfjexhfdbrjmuxfdvbdx' ]
           supabase migration list > "$RUNNER_TEMP/today-migrations.txt"
           node scripts/verify-today-db-release.mjs "$RUNNER_TEMP/today-migrations.txt"
+          if [ -f "$RUNNER_TEMP/today-deferred/20261127200100_lead_magnet_reporting.sql" ]; then
+            echo 'LEAD_MAGNET_FOUNDATION_ONLY=true' >> "$GITHUB_ENV"
+          fi
 
       - name: Dry-run production migrations without seed
         run: supabase db push --dry-run
@@ -283,7 +296,14 @@ jobs:
       # that production carries outside the migrations.
       - name: Verify production function definitions match the released manifest
         if: success() && (github.event_name == 'push' || inputs.deploy)
-        run: node scripts/check-function-manifest.mjs --production
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${LEAD_MAGNET_FOUNDATION_ONLY:-}" = 'true' ]; then
+            node scripts/check-function-manifest.mjs --production "$RUNNER_TEMP/lead-magnet-foundation-manifest.tsv"
+          else
+            node scripts/check-function-manifest.mjs --production
+          fi
 
 
       - name: Production database boundary summary

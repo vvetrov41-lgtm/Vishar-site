@@ -9,6 +9,7 @@
 // boundary and never receives browser CORS.
 
 import tattooai from './tattooai.js';
+import { dispatchLeadMagnet, isLeadMagnetRoute } from './lib/lead-magnets/routes.mjs';
 import { drainEnquiryAi } from './lib/enquiry-ai.js';
 import { convergeClientAiBriefs, drainCrmAgent, recordAttentionShadow, runRetentionDryRun } from './lib/crm-agent.js';
 import {
@@ -239,6 +240,7 @@ async function handleInternalCrmAgentDrain(request, env) {
 
 export default {
   async fetch(request, env, ctx) {
+    if (isLeadMagnetRoute(request)) return dispatchLeadMagnet(request, env, ctx);
     if (isInternalAiDrainRequest(request)) {
       return handleInternalAiDrain(request, env);
     }

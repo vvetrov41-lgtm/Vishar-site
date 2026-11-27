@@ -254,6 +254,7 @@ export const NAV_ITEMS: NavItem[] = [
   { path: '/appointments', label: 'Calendar', capability: 'viewSessions' },
   { path: '/availability', label: 'Time off', capability: 'viewSessions' },
   { path: '/statistics', label: 'Statistics', capability: 'viewEnquiries' },
+  { path: '/lead-magnets', label: 'Lead magnets', capability: 'viewEnquiries' },
   { path: '/automations', label: 'Automations', capability: 'viewAutomations' },
   { path: '/invoices', label: 'nav.invoices', capability: 'viewFinance' },
   { path: '/payments', label: 'Payments', capability: 'manageFinance' },

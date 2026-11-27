@@ -205,6 +205,18 @@ export async function runSharedGmailMetadataRefresh(env) {
   }
 }
 
+export async function runSharedLeadMagnetDrain(env) {
+  try {
+    if(typeof env?.GMAIL_SERVICE?.drainLeadMagnetOutbox!=='function') throw Error('lead_magnet_binding_missing');
+    const result=await env.GMAIL_SERVICE.drainLeadMagnetOutbox();
+    if(!result || !Number.isInteger(result.processed) || result.processed<0 || result.processed>20 || !Number.isInteger(result.sent) || !Number.isInteger(result.attention) || result.sent<0 || result.attention<0 || result.sent+result.attention>result.processed) throw Error('lead_magnet_invalid_summary');
+    return result;
+  } catch {
+    console.error('lead_magnet.scheduled_drain_failed');
+    throw Error('lead_magnet_scheduled_drain_failed');
+  }
+}
+
 export async function runMetaAdsDrain(env) {
   try {
     const summary = await drainMetaConversionOutbox(env);
@@ -261,6 +273,10 @@ export function createProductionScheduler(baseWorker = telegramWorker) {
       if (env?.VISHAR_ENVIRONMENT === 'production'
           && env?.GMAIL_SHARED_DRAIN_ENABLED === 'true') {
         tasks.push(runSharedGmailMetadataRefresh(env));
+      }
+
+      if (env?.VISHAR_ENVIRONMENT === 'production' && env?.LEAD_MAGNET_SHARED_DRAIN_ENABLED === 'true') {
+        tasks.push(runSharedLeadMagnetDrain(env));
       }
 
       // Outbound WhatsApp replies queued by operators in the CRM.
