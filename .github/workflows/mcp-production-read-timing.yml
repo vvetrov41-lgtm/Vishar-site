@@ -19,7 +19,7 @@ jobs:
       SOURCE_SHA: ${{ github.event.before }}
       CANONICAL: agent/platform-telegram-self-service
       LIVE_SOURCE: 2205f2ae90e9c4eaae5dfada9237da79f21a0495
-      BEFORE_VERSION: 37cdbd5e-73b6-4517-a6fe-ab2697f5aa7d
+      BEFORE_VERSION: 03c5d02b-e7fd-4d5c-b9d3-803dcd5001e2
       WORKER_NAME: vishar-mcp-production
       SUPABASE_URL: ${{ vars.CRM_PRODUCTION_SUPABASE_URL }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.CRM_PRODUCTION_SUPABASE_PUBLISHABLE_KEY }}
@@ -55,8 +55,8 @@ jobs:
         run: |
           set -euo pipefail
           git checkout --detach "$LIVE_SOURCE"
-          git checkout "$APPROVED_SHA" -- workers/lib/mcp-plugin-server.js workers/lib/mcp-plugin-actions.js scripts/test-mcp-plugin-tools.mjs
-          expected="$(printf '%s\n' scripts/test-mcp-plugin-tools.mjs workers/lib/mcp-plugin-actions.js workers/lib/mcp-plugin-server.js)"
+          git checkout "$APPROVED_SHA" -- workers/lib/mcp-plugin-server.js workers/lib/mcp-plugin-actions.js scripts/test-mcp-plugin-tools.mjs scripts/probe-mcp-plugin-production.mjs
+          expected="$(printf '%s\n' scripts/probe-mcp-plugin-production.mjs scripts/test-mcp-plugin-tools.mjs workers/lib/mcp-plugin-actions.js workers/lib/mcp-plugin-server.js)"
           [ "$(git diff --cached --name-only | sort)" = "$expected" ]
           npm ci --ignore-scripts
           node scripts/audit-root-dependencies.mjs --audit-level=moderate
@@ -93,7 +93,7 @@ jobs:
             assert.equal(current.annotations?.['workers/message'],'MCP read timing pilot '+process.env.APPROVED_SHA);
           }
           const vars={MCP_ENABLED:'true',MCP_PLUGIN_TOOLS_ENABLED:'true',MCP_GMAIL_TOOLS_ENABLED:'false',MCP_META_TOOLS_ENABLED:'false',MCP_PLUGIN_OAUTH_CLIENT_ID:process.env.PLUGIN_CLIENT_ID,MCP_PUBLIC_HOST:'mcp.vishartattoo.com',SUPABASE_URL:process.env.SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY:process.env.SUPABASE_PUBLISHABLE_KEY,VISHAR_ENVIRONMENT:'production'};
-          if(after)vars.MCP_READ_TIMING_DIAGNOSTICS='true';
+          vars.MCP_READ_TIMING_DIAGNOSTICS='true';
           const m=new Map(settings.bindings.map(b=>[b.name,b]));
           assert.deepEqual([...m.keys()].sort(),[...Object.keys(vars),'GPT_ACTIONS_SERVICE','MCP_RATE_LIMIT'].sort());
           for(const [name,value] of Object.entries(vars))if(m.get(name)?.type!=='plain_text'||m.get(name)?.text!==value)throw Error('Binding mismatch: '+name);
@@ -118,5 +118,5 @@ jobs:
             --var SUPABASE_URL:"$SUPABASE_URL" --var SUPABASE_PUBLISHABLE_KEY:"$SUPABASE_PUBLISHABLE_KEY" \
             --var MCP_READ_TIMING_DIAGNOSTICS:true
           node "$RUNNER_TEMP/check-worker.mjs" after
-          node scripts/probe-mcp-plugin-production.mjs
+          MCP_EXPECT_TIMING_TOOL=true node scripts/probe-mcp-plugin-production.mjs
           echo 'MCP pilot deployed, binding readback and public acceptance passed. Authenticated header collection still requires an authorized client.' >> "$GITHUB_STEP_SUMMARY"

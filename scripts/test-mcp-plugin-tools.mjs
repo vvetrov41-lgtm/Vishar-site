@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { buildPluginTools, parseGeneratedYaml, PLUGIN_TOOL_GUIDANCE } from './build-mcp-plugin-tools.mjs';
-import { handlePluginMcpRequest, __testing as pluginServerTesting } from '../workers/lib/mcp-plugin-server.js';
+import { handlePluginMcpRequest, READ_TIMING_TOOL, __testing as pluginServerTesting } from '../workers/lib/mcp-plugin-server.js';
 import { MCP_PROTOCOL_VERSION } from '../workers/lib/mcp-server.js';
 
 const PUBLISHABLE = 'sb_publishable_synthetic_value_1234567890';
@@ -657,6 +657,56 @@ for (const claims of [
   const blocked = await handlePluginMcpRequest(rpcRequest('tools/call',params),env(success,{...enabled,MCP_RATE_LIMIT:{async limit(){return {success:false}}}}),authFetch());
   assert.equal(blocked.status,429);
   assert.equal(blocked.headers.get('server-timing'),null);
+}
+
+
+{
+  const flag = { MCP_READ_TIMING_DIAGNOSTICS: 'true' };
+  const params = {name: READ_TIMING_TOOL.name, arguments:{target:'capabilities'}};
+  const privateMarker = 'synthetic_payload_must_never_be_returned';
+  let actions = 0;
+  const service = {async fetch(request) {
+    actions += 1;
+    assert.equal(request.method,'GET');
+    assert.equal(new URL(request.url).search,'');
+    return Response.json([{secret_test_marker:privateMarker}]);
+  }};
+  const offList = await handlePluginMcpRequest(rpcRequest('tools/list',{},null),env(service),authFetch());
+  assert.equal((await offList.json()).result.tools.some(t=>t.name===READ_TIMING_TOOL.name),false);
+  const onList = await handlePluginMcpRequest(rpcRequest('tools/list',{},null),env(service,flag),authFetch());
+  assert.deepEqual((await onList.json()).result.tools.at(-1),READ_TIMING_TOOL);
+  const off = await handlePluginMcpRequest(rpcRequest('tools/call',params),env(service),authFetch());
+  assert.equal((await off.json()).error.code,-32602);
+  assert.equal(actions,0);
+  for (const target of ['capabilities','integrations']) {
+    const res = await handlePluginMcpRequest(rpcRequest('tools/call',{...params,arguments:{target}}),env(service,flag),authFetch());
+    const body = await res.json();
+    assert.equal(body.result.isError,false);
+    assert(!JSON.stringify(body).includes(privateMarker));
+    const value = JSON.parse(body.result.content[0].text);
+    assert.deepEqual(Object.keys(value).sort(),['target','auth_ms','rate_ms','action_ms','total_ms','attempts','response_bytes'].sort());
+    assert.equal(value.target,target);
+    for(const key of ['auth_ms','rate_ms','action_ms','total_ms','response_bytes'])assert(Number.isInteger(value[key])&&value[key]>=0);
+    assert.equal(value.attempts,1);
+  }
+  assert.equal(actions,2);
+  for (const args of [{target:'clients'},{target:'capabilities',artist_id:USER},{}, {target:'integrations',limit:1}]) {
+    const res = await handlePluginMcpRequest(rpcRequest('tools/call',{...params,arguments:args}),env(service,flag),authFetch());
+    assert.equal((await res.json()).result.isError,true);
+  }
+  assert.equal(actions,2,'invalid arguments never reach action service');
+  const denied = await handlePluginMcpRequest(rpcRequest('tools/call',params,null),env(service,flag),authFetch());
+  await assertAuthChallenge(denied);
+  const blocked = await handlePluginMcpRequest(rpcRequest('tools/call',params),env(service,{...flag,MCP_RATE_LIMIT:{async limit(){return {success:false}}}}),authFetch());
+  assert.equal(blocked.status,429);
+  assert.equal(actions,2);
+  let deniedCalls=0;
+  const rejected = await handlePluginMcpRequest(rpcRequest('tools/call',params),env({async fetch(){deniedCalls++;return Response.json({error:'permission_denied',message:privateMarker},{status:403})}},flag),authFetch());
+  const failure=await rejected.json();
+  assert.equal(failure.result.isError,true);
+  assert.equal(JSON.parse(failure.result.content[0].text).error,'permission_denied');
+  assert(!JSON.stringify(failure).includes(privateMarker));
+  assert.equal(deniedCalls,1);
 }
 
 console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict issuer/audience/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);

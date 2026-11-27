@@ -318,6 +318,48 @@ function attachReadTimings(response, metrics) {
   return response;
 }
 
+// Separate opt-in diagnostic tool; never change existing CRM response shapes.
+// Both allowed targets use the normal authenticated, actor-scoped read path.
+// No arbitrary endpoint, caller arguments, stored samples, or CRM payloads.
+const TIMING_TARGETS = Object.freeze({
+  capabilities: 'crm_list_my_capabilities',
+  integrations: 'crm_list_integration_status',
+});
+export const READ_TIMING_TOOL = Object.freeze({
+  name: 'crm_measure_read_latency',
+  description: 'Measure one authorized CRM read (capabilities or integration status). Returns only timings in milliseconds, attempt count and serialized response byte count. Use only for explicit latency diagnostics.',
+  inputSchema: {
+    type: 'object',
+    properties: { target: { type: 'string', enum: ['capabilities', 'integrations'] } },
+    required: ['target'],
+    additionalProperties: false,
+  },
+  annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+  securitySchemes: [{ type: 'oauth2', scopes: ['email'] }],
+});
+
+async function measureReadLatency(request, env, args, metrics) {
+  validateSchema(READ_TIMING_TOOL.inputSchema, args);
+  const entry = pluginMcpToolByName(TIMING_TARGETS[args.target]);
+  if (!entry || entry.definition.annotations?.readOnlyHint !== true || !['GET', 'HEAD'].includes(entry.method)) {
+    throw new McpPluginActionError('diagnostic_unavailable', 'The configured read probe is unavailable.', 503);
+  }
+  validateSchema(entry.definition.inputSchema, {});
+  const actionStart = performance.now();
+  const value = await callPluginMcpTool(entry, {}, request, env, metrics);
+  metrics.actionMs = durationSince(actionStart);
+  const responseBytes = new TextEncoder().encode(JSON.stringify(value == null ? {} : value)).byteLength;
+  return {
+    target: args.target,
+    auth_ms: metrics.authMs,
+    rate_ms: metrics.rateMs,
+    action_ms: metrics.actionMs,
+    total_ms: durationSince(metrics.started),
+    attempts: metrics.attempts,
+    response_bytes: responseBytes,
+  };
+}
+
 async function dispatch(request, env, body, metrics = null) {
   if (body.method === 'server/discover') {
     if (exactKeys(body.params, ['_meta']).length) return rpcError(body.id, -32602, 'Invalid params.', undefined, 400);
@@ -329,7 +371,9 @@ async function dispatch(request, env, body, metrics = null) {
     }
     return rpcResult(body.id, {
       resultType: 'complete',
-      tools: pluginMcpToolDefinitions(),
+      tools: env?.MCP_READ_TIMING_DIAGNOSTICS === 'true'
+        ? [...pluginMcpToolDefinitions(), READ_TIMING_TOOL]
+        : pluginMcpToolDefinitions(),
       ttlMs: 300000,
       cacheScope: 'private',
       _meta: { 'io.modelcontextprotocol/serverInfo': SERVER_META },
@@ -338,6 +382,17 @@ async function dispatch(request, env, body, metrics = null) {
   if (body.method === 'tools/call') {
     if (exactKeys(body.params, ['_meta', 'name', 'arguments']).length || typeof body.params.name !== 'string') {
       return rpcError(body.id, -32602, 'Invalid params.', undefined, 400);
+    }
+    if (body.params.name === READ_TIMING_TOOL.name && metrics) {
+      try {
+        return rpcResult(body.id, toolResult(await measureReadLatency(request, env, body.params.arguments ?? {}, metrics)));
+      } catch (error) {
+        // Do not forward upstream error text: only a fixed error category.
+        const safe = safeToolError(error);
+        const code = ['permission_denied', 'authentication_required', 'rate_limited', 'invalid_argument', 'unexpected_argument', 'diagnostic_unavailable'].includes(safe.error)
+          ? safe.error : 'diagnostic_failed';
+        return rpcResult(body.id, toolResult({ error: code, message: 'The read latency probe could not complete.' }, true));
+      }
     }
     const entry = pluginMcpToolByName(body.params.name);
     if (!entry) return rpcError(body.id, -32602, 'Unknown tool.', undefined, 400);

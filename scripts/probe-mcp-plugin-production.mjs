@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { PLUGIN_MCP_TOOLS } from '../workers/lib/generated/mcp-plugin-tools.js';
+import { READ_TIMING_TOOL } from '../workers/lib/mcp-plugin-server.js';
 
 const origin = 'https://mcp.vishartattoo.com';
 const issuer = 'https://vfjexhfdbrjmuxfdvbdx.supabase.co/auth/v1';
@@ -47,7 +48,9 @@ assert.ok(discovery.result.supportedVersions.includes(version));
 console.log('PASS MCP server discovery');
 
 const listing = await rpc('tools/list');
-assert.deepEqual(listing.result.tools, PLUGIN_MCP_TOOLS.map(entry => entry.definition));
+const expectedTools = PLUGIN_MCP_TOOLS.map(entry => entry.definition);
+if (process.env.MCP_EXPECT_TIMING_TOOL === 'true') expectedTools.push(READ_TIMING_TOOL);
+assert.deepEqual(listing.result.tools, expectedTools);
 assert.ok(listing.result.tools.length > 100, 'production serves the broad Plugin tool surface');
 console.log(`PASS all ${listing.result.tools.length} production tool definitions and schemas match source`);
 
@@ -61,4 +64,10 @@ for (const [label, bearer] of [['unauthenticated', undefined], ['malformed token
   console.log(`PASS ${label} receives an MCP OAuth challenge and no CRM data`);
 }
 
+if (process.env.MCP_EXPECT_TIMING_TOOL === 'true') {
+  const denied = await rpc('tools/call',{name:READ_TIMING_TOOL.name,arguments:{target:'capabilities'}});
+  assert.equal(denied.result.isError,true);
+  assert.equal(JSON.parse(denied.result.content[0].text).error,'authentication_required');
+  console.log('PASS diagnostic tool discovery and unauthenticated denial');
+}
 console.log('Read-only bootstrap acceptance passed. Authenticated capability acceptance remains pending.');
