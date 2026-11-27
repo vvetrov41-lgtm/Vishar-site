@@ -58,12 +58,12 @@ export async function sendResendCorrespondence(env,target,message,options={}) {
   const fetchImpl=options.fetchImpl||fetch;
   let response;
   try {
-    response=await fetchImpl('https://api.resend.com/emails',{method:'POST',redirect:'error',
+    response=await fetchImpl('https://api.resend.com/emails',{method:'POST',redirect:'manual',
       headers:{Authorization:'Bearer '+env.RESEND_CORRESPONDENCE_API_KEY,'Content-Type':'application/json','Idempotency-Key':key},
       body:JSON.stringify(payload),signal:AbortSignal.timeout(12000)});
   } catch { throw Error('resend_correspondence_uncertain'); }
   if(!response.ok) {
-    if(response.status===409||response.status>=500)throw Error('resend_correspondence_uncertain');
+    if((response.status>=300&&response.status<400)||response.status===409||response.status>=500)throw Error('resend_correspondence_uncertain');
     if(response.status===429)throw Error('resend_correspondence_rate_limited');
     throw Error('resend_correspondence_rejected');
   }

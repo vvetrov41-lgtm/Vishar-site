@@ -9,4 +9,6 @@
 - [ ] Verify privacy notice, free limits, delivery failures, thread and cross-artist denial behavior.
 - [ ] Controlled test to owner and actual reply verification; no real clients.
 - [ ] Guarded production activation and post-release verification; disable monitoring only after all acceptance criteria pass.
-- [x] Implement inert signed webhook verification and mock denial tests (new head CI pending).
+- [x] Implement inert signed webhook verification and mock denial tests (Gmail CI passed; full Worker CI requires redirect compatibility fix).
+
+- [x] Correct Worker redirect incompatibility; reject 3xx without following redirects (new head CI pending).

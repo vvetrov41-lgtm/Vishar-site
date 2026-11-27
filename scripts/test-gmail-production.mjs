@@ -673,14 +673,14 @@ await test('Resend correspondence accepts only pinned artist, mailbox, test reci
 await test('Resend receipt does not pretend to be a Gmail thread and uses one idempotent request',async()=>{
   let calls=0;
   const receipt=await sendResendCorrespondence(resendTestEnv,resendTestTarget,resendTestMessage,{...resendTestOptions,fetchImpl:async(url,init)=>{
-    calls++;assert.equal(url,'https://api.resend.com/emails');assert.equal(init.redirect,'error');
+    calls++;assert.equal(url,'https://api.resend.com/emails');assert.equal(init.redirect,'manual');
     assert.equal(init.headers['Idempotency-Key'],'crm-email/'+resendTestId);
     return Response.json({id:resendTestId});
   }});
   assert.equal(calls,1);assert.deepEqual(receipt,{provider:'resend',providerMessageId:resendTestId,acceptance:'accepted'});
 });
 await test('Resend ambiguous results never trigger an automatic retry',async()=>{
-  for(const result of [()=>{throw Error('timeout')},()=>Response.json({}, {status:503}),()=>Response.json({}, {status:409}),()=>Response.json({id:'invalid'})]){
+  for(const result of [()=>{throw Error('timeout')},()=>Response.json({}, {status:503}),()=>Response.json({}, {status:409}),()=>new Response(null,{status:307,headers:{Location:'https://example.invalid'}}),()=>Response.json({id:'invalid'})]){
     let calls=0;await assert.rejects(sendResendCorrespondence(resendTestEnv,resendTestTarget,resendTestMessage,{...resendTestOptions,fetchImpl:async()=>{calls++;return result()}}),/resend_correspondence_uncertain/);
     assert.equal(calls,1);
   }
