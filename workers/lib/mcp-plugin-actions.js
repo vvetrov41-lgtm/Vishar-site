@@ -98,7 +98,7 @@ function safeError(status, payload) {
   return new McpPluginActionError('upstream_unavailable', 'The CRM action service is temporarily unavailable.', 502);
 }
 
-export async function callPluginMcpTool(entry, args, request, env) {
+export async function callPluginMcpTool(entry, args, request, env, metrics = null) {
   if (!entry || !entry.definition) throw new McpPluginActionError('unknown_tool', 'Unknown Vishar CRM tool.', 404);
   if (!env?.GPT_ACTIONS_SERVICE || typeof env.GPT_ACTIONS_SERVICE.fetch !== 'function') {
     throw new McpPluginActionError('action_service_unavailable', 'The CRM action service is not configured.', 503);
@@ -111,6 +111,7 @@ export async function callPluginMcpTool(entry, args, request, env) {
   const maxAttempts = retryableRead ? 3 : 1;
   let upstream;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (metrics) metrics.attempts = attempt + 1;
     try {
       upstream = await env.GPT_ACTIONS_SERVICE.fetch(upstreamRequest.clone());
     } catch {

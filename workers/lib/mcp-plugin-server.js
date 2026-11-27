@@ -300,7 +300,25 @@ function discoverResult() {
   };
 }
 
-async function dispatch(request, env, body) {
+// Operator-enabled diagnostics are off by default. Expose only fixed timing
+// names on successful authenticated reads, never token/actor/arguments/data,
+// write timings, or failed authorization details. No cross-request cache.
+function durationSince(start) {
+  return Math.max(0, Math.min(3600000, Math.round(performance.now() - start)));
+}
+
+function attachReadTimings(response, metrics) {
+  const header = [
+    ['auth', metrics.authMs],
+    ['rate', metrics.rateMs],
+    ['action', metrics.actionMs],
+    ['total', durationSince(metrics.started)],
+  ].map(([name, duration]) => name + ';dur=' + duration).join(', ');
+  response.headers.set('server-timing', header + ', attempts;desc="' + metrics.attempts + '"');
+  return response;
+}
+
+async function dispatch(request, env, body, metrics = null) {
   if (body.method === 'server/discover') {
     if (exactKeys(body.params, ['_meta']).length) return rpcError(body.id, -32602, 'Invalid params.', undefined, 400);
     return rpcResult(body.id, discoverResult());
@@ -326,8 +344,13 @@ async function dispatch(request, env, body) {
     try {
       const args = body.params.arguments ?? {};
       validateSchema(entry.definition.inputSchema, args);
-      const value = await callPluginMcpTool(entry, args, request, env);
-      return rpcResult(body.id, toolResult(value));
+      const timedRead = metrics && entry.definition.annotations?.readOnlyHint === true
+        && ['GET', 'HEAD'].includes(entry.method);
+      const actionStart = timedRead ? performance.now() : 0;
+      const value = await callPluginMcpTool(entry, args, request, env, timedRead ? metrics : null);
+      if (timedRead) metrics.actionMs = durationSince(actionStart);
+      const result = rpcResult(body.id, toolResult(value));
+      return timedRead ? attachReadTimings(result, metrics) : result;
     } catch (error) {
       return rpcResult(body.id, toolResult(safeToolError(error), true));
     }
@@ -336,6 +359,7 @@ async function dispatch(request, env, body) {
 }
 
 export async function handlePluginMcpRequest(request, env, fetchImpl = fetch) {
+  const started = env?.MCP_READ_TIMING_DIAGNOSTICS === 'true' ? performance.now() : null;
   const url = new URL(request.url);
   const path = url.pathname.replace(/\/+$/, '') || '/';
 
@@ -379,10 +403,15 @@ export async function handlePluginMcpRequest(request, env, fetchImpl = fetch) {
   if (body.method === 'tools/call') {
     const token = bearer(request);
     if (!token) return rpcResult(body.id, authenticationToolResult(env));
+    const authStart = started === null ? 0 : performance.now();
     const actor = await validateActorToken(token, env, fetchImpl);
     if (!actor) return rpcResult(body.id, authenticationToolResult(env, 'CRM authentication is invalid or expired.'));
+    const authMs = started === null ? 0 : durationSince(authStart);
+    const rateStart = started === null ? 0 : performance.now();
     const limited = await enforceRateLimit(env, token);
     if (limited) return limited;
+    const metrics = started === null ? null : { started, authMs, rateMs: durationSince(rateStart), attempts: 0 };
+    return dispatch(request, env, body, metrics);
   }
 
   return dispatch(request, env, body);
