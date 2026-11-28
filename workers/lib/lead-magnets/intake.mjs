@@ -1,3 +1,4 @@
+import { isGuidePilotRecipient } from './pilot.mjs';
 // Isolated release-candidate intake adapter. NOT wired to a production route.
 // Wire only to the verified artist-owned Worker route after the CRM migration is accepted.
 const WEB_ORIGIN = 'https://vishartattoo.com';
@@ -42,6 +43,7 @@ export async function handleLeadMagnetIntake(request, env, deps) {
   const name=str(b.first_name,80), email=str(b.email,254)?.toLowerCase();
   if(!UUID.test(b.request_id||'')||!name||/[\r\n\x00-\x1f]/.test(name)||!email||!EMAIL.test(email)||typeof b.marketing_opt_in!=='boolean'||b.marketing_consent_version!==CONSENT_VERSION||b.website!=='')return response(400,{ok:false,error:'invalid_fields'},origin);
   if(!validAttribution(b.attribution))return response(400,{ok:false,error:'invalid_attribution'},origin);
+  if(env.VISHAR_ENVIRONMENT==='production' && (b.marketing_opt_in || !await isGuidePilotRecipient(email)))return response(403,{ok:false,error:'pilot_restricted'},origin);
   try {
     const row=await deps.capture({p_artist_slug:'vladimir',p_magnet_slug:'cover-up-guide',p_request_id:b.request_id,p_first_name:name,p_email:email,p_marketing_opt_in:b.marketing_opt_in,p_consent_version:CONSENT_VERSION,p_attribution:b.attribution});
     if(!row||row.ok!==true||row.download_url!==EXPECTED_DOWNLOAD||row.delivery_queued!==true)return response(503,{ok:false,error:'not_confirmed'},origin);

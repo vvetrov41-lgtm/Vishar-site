@@ -41,7 +41,7 @@ export const PENDING_CHANGES = Object.freeze(new Map([
   // null: the variable did not exist before this release.
   ['REPLY_DRAFTS_ENABLED', null],
   // Dormant lead-magnet routes: accept absence only on the pre-release snapshot.
-  ['LEAD_MAGNET_INTAKE_ENABLED', null],
+  ['LEAD_MAGNET_INTAKE_ENABLED', 'false'],
   ['LEAD_MAGNET_UNSUBSCRIBE_ENABLED', null],
 ]));
 
