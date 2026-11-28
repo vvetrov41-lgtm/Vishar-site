@@ -324,19 +324,36 @@ function attachReadTimings(response, metrics) {
 const TIMING_TARGETS = Object.freeze({
   capabilities: 'crm_list_my_capabilities',
   integrations: 'crm_list_integration_status',
+  today_full: 'crm_get_today_pulse',
+  today_summary: 'crm_get_today_pulse',
 });
 export const READ_TIMING_TOOL = Object.freeze({
   name: 'crm_measure_read_latency',
-  description: 'Measure one authorized CRM read (capabilities or integration status). Returns only timings in milliseconds, attempt count and serialized response byte count. Use only for explicit latency diagnostics.',
+  description: 'Measure one authorized CRM read (capabilities, integration status, full or summary Today). Returns only timings in milliseconds, attempt count and serialized response byte count. Use only for explicit latency diagnostics.',
   inputSchema: {
     type: 'object',
-    properties: { target: { type: 'string', enum: ['capabilities', 'integrations'] } },
+    properties: { target: { type: 'string', enum: ['capabilities', 'integrations', 'today_full', 'today_summary'] } },
     required: ['target'],
     additionalProperties: false,
   },
   annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true },
   securitySchemes: [{ type: 'oauth2', scopes: ['email'] }],
 });
+
+// Keep the full response unchanged for existing callers. Summary removes only
+// presentation fields and message previews, not rank, reasons, action IDs,
+// acknowledgement metadata or the set of matched items. Preserve unknown fields.
+function summarizeTodayPulse(value) {
+  if (!value || !Array.isArray(value.items) || value.items.some(item => !item || typeof item !== 'object' || Array.isArray(item))) return value;
+  return { ...value, items: value.items.map(item => {
+    const { key, href, ...rest } = item;
+    if (rest.context && typeof rest.context === 'object' && !Array.isArray(rest.context)) {
+      const { preview, ...context } = rest.context;
+      rest.context = context;
+    }
+    return rest;
+  }) };
+}
 
 async function measureReadLatency(request, env, args, metrics) {
   validateSchema(READ_TIMING_TOOL.inputSchema, args);
@@ -348,7 +365,8 @@ async function measureReadLatency(request, env, args, metrics) {
   const actionStart = performance.now();
   const value = await callPluginMcpTool(entry, {}, request, env, metrics);
   metrics.actionMs = durationSince(actionStart);
-  const responseBytes = new TextEncoder().encode(JSON.stringify(value == null ? {} : value)).byteLength;
+  const resultValue = args.target === 'today_summary' ? summarizeTodayPulse(value) : value;
+  const responseBytes = new TextEncoder().encode(JSON.stringify(resultValue == null ? {} : resultValue)).byteLength;
   return {
     target: args.target,
     auth_ms: metrics.authMs,
@@ -402,9 +420,15 @@ async function dispatch(request, env, body, metrics = null) {
       const timedRead = metrics && entry.definition.annotations?.readOnlyHint === true
         && ['GET', 'HEAD'].includes(entry.method);
       const actionStart = timedRead ? performance.now() : 0;
-      const value = await callPluginMcpTool(entry, args, request, env, timedRead ? metrics : null);
+      let actionArgs = args;
+      const summary = entry.operationId === 'getTodayPulse' && args.view === 'summary';
+      if (entry.operationId === 'getTodayPulse') {
+        const { view, ...forwarded } = args;
+        actionArgs = forwarded;
+      }
+      const value = await callPluginMcpTool(entry, actionArgs, request, env, timedRead ? metrics : null);
       if (timedRead) metrics.actionMs = durationSince(actionStart);
-      const result = rpcResult(body.id, toolResult(value));
+      const result = rpcResult(body.id, toolResult(summary ? summarizeTodayPulse(value) : value));
       return timedRead ? attachReadTimings(result, metrics) : result;
     } catch (error) {
       return rpcResult(body.id, toolResult(safeToolError(error), true));

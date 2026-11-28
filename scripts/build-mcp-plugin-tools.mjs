@@ -41,7 +41,7 @@ const AFTER_CONSULTATION_CONTEXT = 'Not a follow-up to crm_get_consultation_cont
 const NOT_FOR_COMPLETENESS = 'Do not call it after a successful crm_get_today_pulse just to re-check that the attention shortlist is complete.';
 const REFERENCE_ANALYSES = 'reference_analyses.images holds the stored vision-model analysis of each attached photo, numbered as in the CRM (image "2 of 3"), with summary, image kind, whether an existing tattoo is visible, body area, subjects and quality limits; reference_analyses.not_analysed names photos without an analysis. Whenever you review or summarise the enquiry, or discuss its references, a cover-up or placement, use these together with the client\'s own text without being asked, and refer to photos by their number; the photos and the client\'s words stay authoritative, and anything an analysis does not show is unknown. An empty images list means no analysed photo.';
 export const PLUGIN_TOOL_GUIDANCE = Object.freeze({
-  getTodayPulse: 'Primary entry point for broad attention and triage questions: who needs attention or a follow-up, anything urgent, what to deal with, which clients are waiting, what is happening in the CRM, or a review of active enquiries/clients for who needs action. It evaluates the active Artist\'s active clients, enquiries, projects, appointments, conversations, follow-ups and deposits against the CRM\'s configured attention rules and returns the matched items ranked, each with a rule reason. Treat it as the authoritative shortlist within those rules: absence from it means no configured attention condition currently matches, not that the client, enquiry or project does not exist. Read details only for listed items whose fields are not enough to answer. Use the list or statistics tools for an explicit inventory, status slice, count, audit, export or historical report.',
+  getTodayPulse: 'Primary entry point for broad attention and triage questions: who needs attention or a follow-up, anything urgent, what to deal with, which clients are waiting, what is happening in the CRM, or a review of active enquiries/clients for who needs action. It evaluates the active Artist\'s active clients, enquiries, projects, appointments, conversations, follow-ups and deposits against the CRM\'s configured attention rules and returns the matched items ranked, each with a rule reason. Treat it as the authoritative shortlist within those rules: absence from it means no configured attention condition currently matches, not that the client, enquiry or project does not exist. Read details only for listed items whose fields are not enough to answer. Prefer view=summary for broad triage and prioritisation; use full for a requested message preview or UI navigation. Both views include every ranked item, all action references and reasons. Do not fetch full merely to re-check completeness; drill down only for a specific missing fact. Use the list or statistics tools for an explicit inventory, status slice, count, audit, export or historical report.',
   listEnquiries: `For an explicit enquiry list, status slice, count, audit or export. ${PULSE_FIRST} ${NOT_FOR_COMPLETENESS}`,
   listProjects: `For an explicit project list, status slice, count, audit or export. ${PULSE_FIRST} ${NOT_FOR_COMPLETENESS}`,
   listClients: `For an explicit client list, count, audit or export. ${PULSE_FIRST} ${NOT_FOR_COMPLETENESS}`,
@@ -373,6 +373,15 @@ export function buildPluginTools({ guidance = PLUGIN_TOOL_GUIDANCE } = {}) {
         names.add(name);
 
         const { inputSchema, pathParams, queryParams, bodyParams } = compileInput(operation, components, operationId);
+        // MCP-local presentation option; never send it to the shared Action API.
+        if (operationId === 'getTodayPulse') {
+          if (Object.hasOwn(inputSchema.properties, 'view')) throw new Error('Today view collides with the Action schema');
+          inputSchema.properties.view = {
+            type: 'string',
+            enum: ['summary', 'full'],
+            description: 'Use summary for broad triage; full (default) includes message previews and UI navigation fields.',
+          };
+        }
         const consequence = consequenceFor(operationId, method.toUpperCase(), domain);
         const annotations = annotationsFor(operationId, method.toUpperCase(), domain, consequence);
         const securitySchemes = [{ type: 'oauth2', scopes: ['email'] }];
