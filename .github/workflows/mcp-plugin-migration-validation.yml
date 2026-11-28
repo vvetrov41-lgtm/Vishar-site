@@ -22,6 +22,7 @@ on:
       - '.github/workflows/mcp-plugin-production-bootstrap.yml'
       - '.github/workflows/mcp-plugin-production-activation.yml'
       - '.github/workflows/mcp-plugin-production-acceptance.yml'
+      - '.github/workflows/mcp-production-today-summary.yml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   push:
     branches:
@@ -44,6 +45,7 @@ on:
       - '.github/workflows/mcp-plugin-production-bootstrap.yml'
       - '.github/workflows/mcp-plugin-production-activation.yml'
       - '.github/workflows/mcp-plugin-production-acceptance.yml'
+      - '.github/workflows/mcp-production-today-summary.yml'
       - '.github/workflows/mcp-plugin-migration-validation.yml'
   workflow_dispatch:
 
