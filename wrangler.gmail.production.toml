@@ -26,7 +26,8 @@ enabled = true
 invocation_logs = false
 
 [vars]
-LEAD_MAGNET_DELIVERY_ENABLED = "false"
+# Owner-only requested-guide pilot. No marketing or other recipients.
+LEAD_MAGNET_DELIVERY_ENABLED = "true"
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 GOOGLE_OAUTH_REDIRECT_URI = "https://gmail.vishartattoo.com/oauth/google/callback"
