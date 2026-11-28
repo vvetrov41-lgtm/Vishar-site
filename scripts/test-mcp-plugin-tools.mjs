@@ -709,4 +709,57 @@ for (const claims of [
   assert.equal(deniedCalls,1);
 }
 
+// Summary is an opt-in, MCP-local projection. No ranked rows, IDs, reasons,
+// action metadata, unknown facts, artist scope or legacy full response are lost.
+{
+  const entry = tools.find(t => t.operationId === 'getTodayPulse');
+  assert.deepEqual(entry.definition.inputSchema.properties.view.enum, ['summary','full']);
+  assert(!entry.definition.inputSchema.required?.includes('view'));
+  assert(!entry.queryParams.includes('view'));
+  const payload = { enabled:true, generated_at:'synthetic', artists:[{artist_id:USER}], items:[
+    {kind:'new_enquiry',rank:1,key:'ui:1',href:'/enquiry/1',reason:'new',client_id:USER, acknowledgement:{kind:'enquiry',entity_id:USER,observed_at:'synthetic'}, ai_suggestion:{id:USER,action_type:'reply',reason:'unanswered'}, future_fact:'keep'},
+    {kind:'client_follow_up_due',rank:2,key:'ui:2',href:'/client/2',context:{channel:'email',conversation_id:USER,preview:'synthetic private message',future_fact:'keep'}},
+  ]};
+  let calls=0;
+  const service={async fetch(request){
+    calls++;
+    assert.equal(request.method,'GET');
+    assert.equal(new URL(request.url).search,'');
+    return Response.json(payload);
+  }};
+  async function invoke(name,args,flag={},access=token()){
+    return handlePluginMcpRequest(rpcRequest('tools/call',{name,arguments:args},access),env(service,flag),authFetch());
+  }
+  const getValue=async response=>{
+    const body=await response.json();
+    assert.equal(body.result.isError,false);
+    return JSON.parse(body.result.content[0].text);
+  };
+  for(const args of [{},{view:'full'}])assert.deepEqual(await getValue(await invoke(entry.name,args)),payload);
+  const expected={...payload,items:payload.items.map(({key,href,...row})=>{
+    if(row.context){const {preview,...context}=row.context;row.context=context;}
+    return row;
+  })};
+  const summary=await getValue(await invoke(entry.name,{view:'summary'}));
+  assert.deepEqual(summary,expected);
+  assert(JSON.stringify(summary).length < JSON.stringify(payload).length);
+  assert.equal(calls,3);
+  for(const args of [{view:'other'},{view:'summary',artist_id:USER}]){
+    const body=await (await invoke(entry.name,args)).json();
+    assert.equal(body.result.isError,true);
+  }
+  assert.equal(calls,3);
+  await assertAuthChallenge(await invoke(entry.name,{view:'summary'},{},null));
+  assert.equal(calls,3);
+  const flag={MCP_READ_TIMING_DIAGNOSTICS:'true'};
+  const fullTiming=await getValue(await invoke(READ_TIMING_TOOL.name,{target:'today_full'},flag));
+  const summaryTiming=await getValue(await invoke(READ_TIMING_TOOL.name,{target:'today_summary'},flag));
+  assert.equal(fullTiming.response_bytes,new TextEncoder().encode(JSON.stringify(payload)).byteLength);
+  assert.equal(summaryTiming.response_bytes,new TextEncoder().encode(JSON.stringify(expected)).byteLength);
+  assert(summaryTiming.response_bytes<fullTiming.response_bytes);
+  assert.equal(calls,5);
+  assert(!JSON.stringify(summaryTiming).includes(USER));
+  assert(!JSON.stringify(summaryTiming).includes('synthetic'));
+}
+
 console.log(`Plugin MCP tests passed: ${tools.length} generated tools across 13 domains, bootstrap fail-closed malformed probes, pre-auth tool discovery, runtime OAuth linking challenges, strict issuer/audience/client actor validation, explicit schemas/annotations, bounded Action-service adapter, initial exclusions preserved.`);
