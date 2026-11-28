@@ -157,6 +157,26 @@ jobs:
             # emitted at 08:51:51. That release used canonical SHA below
             # before tagged version annotations were standard for Gmail.
             git merge-base --is-ancestor '52dbfce5c4500a1b37a769fec1f90d11e8095da5' "$GITHUB_SHA"
+          elif [ "$pre_version" = 'e1dac610-9171-463f-bcac-a297b1417782' ]; then
+            # Owner-authorized dashboard addition of the dedicated sending-only
+            # Resend secret on 2026-11-27. Cloudflare generated version 36
+            # without inheriting the source tag. Admit only this exact audited
+            # transition from tagged version 35; never accept arbitrary
+            # untagged versions or changes to existing bindings/runtime.
+            prior_id='c630e76f-4554-401b-bf5d-76700a22367d'
+            prior_state="$(curl --fail --silent --show-error "${auth[@]}" "$api/workers/scripts/$GMAIL_WORKER_NAME/versions/$prior_id")"
+            jq -e '.success == true and .result.number == 35 and .result.annotations["workers/tag"] == "68228c7d5bd946dca5aefab4aaae26cfb8cf048b" and .result.resources.script.etag == "afd944eac769671dc9d959c73a7ed00bc87ed737103501f54827c411b50eef35"' <<<"$prior_state" >/dev/null
+            jq -e '.result.number == 36 and .result.metadata.source == "dash" and .result.annotations["workers/message"] == "Add secret: LEAD_MAGNET_RESEND_API_KEY" and .result.resources.script.etag == "55973511ad18213f6a3c66b064ea0e20a8b8a14fbf275e1a2d802e0a2482e21a"' <<<"$pre_version_state" >/dev/null
+            jq -en --argjson old "$prior_state" --argjson new "$pre_version_state" '
+              $old.result as $o | $new.result as $n |
+              $o.metadata.author_id == $n.metadata.author_id and
+              $o.resources.script_runtime == $n.resources.script_runtime and
+              $o.resources.script.handlers == $n.resources.script.handlers and
+              ($n.resources.bindings | map(select(.name == "LEAD_MAGNET_RESEND_API_KEY") | {name,type})) == [{"name":"LEAD_MAGNET_RESEND_API_KEY","type":"secret_text"}] and
+              ($n.resources.bindings | map(select(.name != "LEAD_MAGNET_RESEND_API_KEY"))) == $o.resources.bindings
+            ' >/dev/null
+            git merge-base --is-ancestor '68228c7d5bd946dca5aefab4aaae26cfb8cf048b' "$GITHUB_SHA"
+            pre_source='68228c7d5bd946dca5aefab4aaae26cfb8cf048b'
           elif [ "$pre_version" = '139682f0-c10b-4637-be2f-b17941ad0cba' ]; then
             # Previously inventoried legacy untagged version.
             :
