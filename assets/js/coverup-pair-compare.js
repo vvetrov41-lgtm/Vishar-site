@@ -1,12 +1,15 @@
 (function () {
   'use strict';
 
-  const PAIR_COUNT = 14;
+  const PAIR_COUNT = 17;
   const BASE = '/assets/cover-ups/';
   const DESKTOP_POINTER = '(hover: hover) and (pointer: fine)';
   const SWIPE_THRESHOLD = 45;
 
   function altText(state, index) {
+    if (index === 17) return state === 'before' ? 'Two old dreamcatcher tattoos on upper arm before cover-up, comparison 17 by Vladimir Vishar' : 'Completed black and grey warrior portrait with winged helmet upper arm cover-up tattoo, comparison 17 by Vladimir Vishar';
+    if (index === 15) return state === 'before' ? 'Old dumbbell tattoo on forearm before cover-up, comparison 15 by Vladimir Vishar' : 'Completed black and grey roaring tiger forearm cover-up tattoo, comparison 15 by Vladimir Vishar';
+    if (index === 16) return state === 'before' ? 'Old Manchester City crest tattoo on calf before cover-up, comparison 16 by Vladimir Vishar' : 'Completed black and grey Viking portrait calf cover-up tattoo, comparison 16 by Vladimir Vishar';
     if (index === 14) return state === 'before' ? 'Old faded floral tattoo on forearm before cover-up, comparison 14 by Vladimir Vishar' : 'Completed colour realism leopard forearm cover-up tattoo, comparison 14 by Vladimir Vishar';
     if (index === 13) return state === 'before' ? 'Old faded cross tattoo on upper arm before cover-up, AI-expanded framing, comparison 13 by Vladimir Vishar' : 'Completed black and grey Spartan helmet upper arm cover-up tattoo, comparison 13 by Vladimir Vishar';
     if (index === 11) return state === 'before' ? 'Old tribal chest and shoulder tattoo before cover-up, comparison 11 by Vladimir Vishar' : 'Completed black and grey wolf and mountain landscape chest cover-up tattoo, comparison 11 by Vladimir Vishar';
@@ -14,7 +17,13 @@
     if (index === 9) return state === 'before' ? 'Old illustrated woman portrait on upper arm before cover-up, comparison 9 by Vladimir Vishar' : 'Completed colour castle at night upper arm cover-up tattoo, comparison 9 by Vladimir Vishar';
     if (index === 10) return state === 'before' ? 'Old forearm tattoo with lion cover-up stencil applied before tattooing, comparison 10 by Vladimir Vishar' : 'Completed realistic lion forearm cover-up tattoo, comparison 10 by Vladimir Vishar';
     if (index === 8) return state === 'before' ? 'Old tiger and tribal upper arm tattoo before cover-up, comparison 8 by Vladimir Vishar' : 'Completed black and grey Viking skull upper arm cover-up tattoo, comparison 8 by Vladimir Vishar';
-    if (index === 7) return state === 'before' ? 'Old faded forearm tattoo before cover-up, comparison 7 by Vladimir Vishar' : 'Completed black and grey forearm cover-up tattoo, comparison 7 by Vladimir Vishar';
+    if (index === 1) return state === 'before' ? 'Old black and turquoise tribal tattoo on upper arm before cover-up, comparison 1 by Vladimir Vishar' : 'Black and grey realism cover-up of a shadowed face with skeletal fingers on upper arm, comparison 1 by Vladimir Vishar';
+    if (index === 2) return state === 'before' ? 'Old cursive quote tattoo on ribs before cover-up, comparison 2 by Vladimir Vishar' : 'Black and grey realistic samurai helmet and mask cover-up on ribs, comparison 2 by Vladimir Vishar';
+    if (index === 3) return state === 'before' ? 'Old red pentagram and goat head outline tattoo on forearm before cover-up, comparison 3 by Vladimir Vishar' : 'Colour realism horror portrait with dark eyes and a hand against the face, forearm cover-up, comparison 3 by Vladimir Vishar';
+    if (index === 4) return state === 'before' ? 'Old skull, crossed blades and flames tattoo on upper arm before cover-up, comparison 4 by Vladimir Vishar' : 'Colour realism cover-up of a dark skull surrounded by red and orange flames on upper arm, comparison 4 by Vladimir Vishar';
+    if (index === 5) return state === 'before' ? 'Old cross and script ribbon tattoo on ribs before cover-up, comparison 5 by Vladimir Vishar' : 'Black and grey realistic raven perched on a twisted branch, rib cover-up, comparison 5 by Vladimir Vishar';
+    if (index === 6) return state === 'before' ? 'Old faded horned cartoon face tattoo on calf before cover-up, comparison 6 by Vladimir Vishar' : 'Colour realism cover-up of a large purple-pink flower on calf, comparison 6 by Vladimir Vishar';
+    if (index === 7) return state === 'before' ? 'Old faded long-tailed big cat tattoo on forearm before cover-up, comparison 7 by Vladimir Vishar' : 'Black and grey realism cover-up with a bone-like hand amid water splashes on forearm, comparison 7 by Vladimir Vishar';
     return state === 'before'
       ? `Old tattoo before cover-up, comparison ${index} by Vladimir Vishar`
       : `Completed cover-up tattoo, comparison ${index} by Vladimir Vishar`;
