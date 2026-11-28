@@ -21,3 +21,5 @@
 - [x] Exact-head c156a80d286dc76a8ade33a6c4528e11a91af4d0 passed all three CI workflows. Inbound Gmail self-send test observed SENT only; forwarding still unverified by independent sender.
 
 - [x] Generate and test actual ledger migration with pinned Supabase CLI in isolated CI run 46122997607; all four checks passed. Promote verified SQL to canonical migration, no worker dispatch enabled; new head CI pending.
+
+- [x] Wire owner-only test dispatch to reservation and receipt RPC contract; add queue mock tests. Draft SQL excludes reserved rows from legacy Gmail claims and rejects legacy acknowledgements. Live legacy function hashes matched base manifest before editing. Candidate migration and manifest must pass isolated CI before promotion. No production flags enabled; owner client record absent in live DB.

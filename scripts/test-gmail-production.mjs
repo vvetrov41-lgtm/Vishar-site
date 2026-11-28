@@ -721,3 +721,26 @@ await test('correspondence uses the existing guide sending secret and fails clos
  assert.throws(()=>prepareResendRequest(withoutKey,resendTestTarget,resendTestMessage,resendTestOptions),/resend_correspondence_disabled/);
  assert.equal(prepareResendRequest({...withoutKey,LEAD_MAGNET_RESEND_API_KEY},resendTestTarget,resendTestMessage,resendTestOptions).key,'crm-email/'+resendTestId);
 });
+
+const {isOwnerResendTest,dispatchOwnerResendTest}=await import('../workers/lib/resend-correspondence-queue.mjs');
+const queueJob={outbox_id:'22222222-2222-4222-8222-222222222222',email_message_id:resendTestId,attempt_count:0,subject:'[Resend owner test] Smoke',body:'Test only',thread_context_id:null};
+await test('owner test queue is opt-in, rejects customer and other artist, requires fresh job',()=>{
+ assert.equal(isOwnerResendTest(resendTestEnv,queueJob,resendTestTarget),true);
+ assert.equal(isOwnerResendTest({...resendTestEnv,RESEND_CORRESPONDENCE_MODE:'off'},queueJob,resendTestTarget),false);
+ assert.equal(isOwnerResendTest(resendTestEnv,{...queueJob,attempt_count:1},resendTestTarget),false);
+ assert.equal(isOwnerResendTest(resendTestEnv,queueJob,{...resendTestTarget,client_email:'client@example.test'}),false);
+ assert.equal(isOwnerResendTest(resendTestEnv,queueJob,{...resendTestTarget,artist_id:'a2222222-2222-4222-8222-222222222222'}),false);
+});
+await test('queue reserves before provider call and records uncertainty without fallback',async()=>{
+ const events=[];
+ const db={backendRpc:async(name,args)=>{events.push([name,args]);if(name==='service_reserve_resend_correspondence')return {reserved:true,email_message_id:resendTestId,prepared_at:new Date(Date.now()-1000).toISOString()};return {state:args.p_state};}};
+ const result=await dispatchOwnerResendTest(queueJob,resendTestEnv,db,resendTestTarget,'test-worker',async()=>{events.push(['provider']);throw Error('timeout');});
+ assert.deepEqual(events.map(x=>x[0]),['service_reserve_resend_correspondence','provider','service_record_resend_correspondence']);
+ assert.equal(events[0][1].p_payload_sha256,events[2][1].p_payload_sha256);
+ assert.equal(events[2][1].p_state,'uncertain');assert.equal(result.outcome,'uncertain');
+});
+await test('denied or repeated reservation cannot trigger any network send',async()=>{
+ let calls=0;
+ await assert.rejects(dispatchOwnerResendTest(queueJob,resendTestEnv,{backendRpc:async()=>({reserved:false})},resendTestTarget,'test-worker',async()=>{calls++;}),/reservation_denied/);
+ assert.equal(calls,0);
+});
