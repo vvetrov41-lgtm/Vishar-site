@@ -108,7 +108,7 @@ export function renderCoverUpPairs() {
     cards.push(`    <figure class="overflow-hidden bg-white/5 rounded-2xl border border-white/10" data-coverup-pair="${index}">
       <div class="grid grid-cols-2 gap-2 p-2">
         <div>
-          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">${index === 13 ? 'Before (AI-expanded)' : index === 10 ? 'Before (stencil)' : 'Before'}</p>
+          <p class="text-xs uppercase tracking-[0.3em] text-white/50 mb-2 text-center">${index === 10 ? 'Before (stencil)' : 'Before'}</p>
           <button type="button" data-coverup-state="before" class="group block w-full aspect-[3/4] overflow-hidden rounded-2xl bg-black cursor-zoom-in" aria-label="Open ${esc(beforeAlt)}">
             <img src="/assets/cover-ups/before-${stem}.webp"${responsive('before')} loading="lazy" decoding="async" width="${index === 17 ? 1229 : index === 15 ? 1228 : index === 14 ? 1155 : index === 13 ? 1122 : index === 10 ? 904 : index >= 9 ? 1152 : index === 8 ? 968 : index === 7 ? 1152 : 900}" height="${index === 13 ? 1402 : index === 8 ? 1290 : index >= 7 ? 1536 : 1200}" alt="${esc(beforeAlt)}" class="w-full h-full" style="object-fit:contain;background:#000">
           </button>
