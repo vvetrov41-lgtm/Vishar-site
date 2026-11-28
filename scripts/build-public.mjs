@@ -24,6 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderPricingCopy } from './lib/pricing-copy.mjs';
+import { GUIDE_PDF_PATH, readGuidePdf } from './lib/lead-magnet-asset.mjs';
 import { prepareGalleryAssets, applyPreparedGalleryMarkup } from './prepare-gallery-assets.mjs';
 import { buildStaticHtml } from './build-static-html.mjs';
 
@@ -41,6 +42,7 @@ export const PUBLIC_PAGES = [
   'booking/index.html',
   'colour-realism-tattoo-london/index.html',
   'cover-up-tattoo-london/index.html',
+  'cover-up-guide/index.html',
   'faq/index.html',
   'tattoo-price-calculator/index.html',
   'arrival/7f2bc57edcd447adbe549e36a5a1830f/index.html',
@@ -77,6 +79,7 @@ export const PUBLIC_ASSET_DIRS = [
   'assets/brand',
   'assets/colour-realism',
   'assets/cover-ups',
+  'assets/lead-magnets',
   'assets/css',
   'assets/gallery',
   'assets/healed',
@@ -159,6 +162,11 @@ export async function collectPublicFiles(root = rootDir, allow = {}) {
     if (await exists(path.join(root, dir))) files.push(...await listAssetDir(root, dir));
     else problems.push(`allowlisted asset directory is missing: ${dir}`);
   }
+  // Only this checksum-pinned PDF is published; source-assets stays private.
+  if (!allow.rootFiles && !allow.pages && !allow.assetDirs) {
+    try { await readGuidePdf(root, root !== rootDir); files.push(GUIDE_PDF_PATH); }
+    catch (error) { problems.push('Guide PDF asset invalid: '+error.message); }
+  }
   for (const file of files) {
     if (FORBIDDEN_OUTPUT.some((pattern) => pattern.test(file))) problems.push(`forbidden path in public output: ${file}`);
   }
@@ -171,7 +179,8 @@ async function copyFiles(files, outDir, root = rootDir) {
   for (const file of files) {
     const target = path.join(outDir, file);
     await fs.mkdir(path.dirname(target), { recursive: true });
-    await fs.copyFile(path.join(root, file), target);
+    if (file===GUIDE_PDF_PATH) await fs.writeFile(target,await readGuidePdf(root));
+    else await fs.copyFile(path.join(root, file), target);
     bytes += (await fs.stat(target)).size;
   }
   return bytes;

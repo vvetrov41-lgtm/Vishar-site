@@ -29,3 +29,14 @@
   X-Robots-Tag: noindex, nofollow, noarchive, noimageindex
   Cache-Control: private, no-store, max-age=0
   Referrer-Policy: no-referrer
+
+/cover-up-guide/*
+  X-Robots-Tag: noindex, nofollow, noarchive
+  Referrer-Policy: strict-origin
+  Cache-Control: no-cache, must-revalidate
+
+/assets/lead-magnets/cover-up-guide-v7.pdf
+  Content-Type: application/pdf
+  Content-Disposition: inline; filename="The-Art-of-Tattoo-Cover-Ups.pdf"
+  X-Robots-Tag: noindex, noarchive
+  Cache-Control: public, max-age=86400
