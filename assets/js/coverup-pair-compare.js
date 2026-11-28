@@ -35,7 +35,7 @@
       before: {
         source: `${BASE}before-${stem}.webp`,
         alt: altText('before', index),
-        label: index === 13 ? 'Before (AI-expanded)' : 'Before',
+        label: 'Before',
       },
       after: {
         source: `${BASE}after-${stem}.webp`,
