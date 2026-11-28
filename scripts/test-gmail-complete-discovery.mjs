@@ -190,3 +190,8 @@ await test('draft-like metadata cannot bypass the Gmail query boundary', () => {
 });
 
 console.log(`gmail complete discovery: ${passes} tests passed`);
+await test('domain alias discovery remains pinned to the owner mailbox',()=>{
+ const m=metadataMessage('msg_alias',knownEmail,'info@vishartattoo.com','2026-11-27T21:00:00Z');
+ assert.equal(discovery.correspondentFromMetadata(m,'vvetrov41@gmail.com')?.email,knownEmail);
+ assert.equal(discovery.correspondentFromMetadata(m,'tinaakaten@gmail.com'),null);
+});

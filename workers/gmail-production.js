@@ -13,6 +13,7 @@ import {
   sendMessage,
 } from './lib/google-gmail.js';
 import { createGmailSupabase } from './lib/gmail-supabase.js';
+import { isOwnerResendTest, dispatchOwnerResendTest } from './lib/resend-correspondence-queue.mjs';
 import { createLeadMagnetRpc } from './lib/lead-magnets/rpc.mjs';
 import { drainLeadMagnetJobs } from './lib/lead-magnets/delivery.mjs';
 import { resolveGuideSender, sendGuideViaResend } from './lib/lead-magnets/resend.mjs';
@@ -453,6 +454,11 @@ async function processEmailJob(job, env, db, id, fetchImpl) {
   }
   if (target.integration_key !== job.integration_key || target.mailbox_email !== job.mailbox_email || target.client_email !== String(job.to_email || '').trim().toLowerCase()) {
     throw new Error('gmail_email_route_changed');
+  }
+  // Test mode only; the reservation RPC must exist before this flag may be enabled.
+  // If a reservation exists the legacy acknowledgment RPC refuses it even on error.
+  if (isOwnerResendTest(env, job, target)) {
+    return dispatchOwnerResendTest(job, env, db, target, id, fetchImpl);
   }
   const accessToken = await accessForTarget(env, db, target, fetchImpl);
 

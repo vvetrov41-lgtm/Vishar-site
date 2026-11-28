@@ -25,6 +25,16 @@ function safeEmail(value) {
   return /^[^@\s<>]+@[^@\s<>]+\.[^@\s<>]+$/.test(email) && email.length <= 254 ? email : null;
 }
 
+// The domain mailbox is forwarded to this already verified Gmail account.
+// Keep the Google OAuth identity unchanged; never accept aliases from input.
+export function mailboxAddresses(value) {
+  const mailbox = safeEmail(value);
+  if (!mailbox) return new Set();
+  return mailbox === 'vvetrov41@gmail.com'
+    ? new Set([mailbox, 'info@vishartattoo.com'])
+    : new Set([mailbox]);
+}
+
 function safeProviderId(value) {
   return typeof value === 'string' && /^[A-Za-z0-9_-]{4,255}$/.test(value) ? value : null;
 }
@@ -267,11 +277,14 @@ function normalizeMessage(message, { mailboxEmail, clientEmail, maxBodyChars = 1
   const toEmails = extractEmails(headers.get('to'));
   const mailbox = safeEmail(mailboxEmail);
   const client = safeEmail(clientEmail);
-  if (!mailbox || !client) return null;
+  const owned = mailboxAddresses(mailbox);
+  if (!mailbox || !client || owned.has(client)) return null;
 
+  const fromOwned = [...fromEmails].find((email) => owned.has(email));
+  const toOwned = [...toEmails].find((email) => owned.has(email));
   let direction;
-  if (fromEmails.has(client) && toEmails.has(mailbox)) direction = 'inbound';
-  else if (fromEmails.has(mailbox) && toEmails.has(client)) direction = 'outbound';
+  if (fromEmails.has(client) && toOwned && !fromOwned) direction = 'inbound';
+  else if (fromOwned && toEmails.has(client) && !fromEmails.has(client)) direction = 'outbound';
   else return null;
 
   const body = findMimeBody(message.payload).slice(0, maxBodyChars);
@@ -286,8 +299,8 @@ function normalizeMessage(message, { mailboxEmail, clientEmail, maxBodyChars = 1
 
   return {
     provider_message_id: message.id,
-    from: direction === 'inbound' ? client : mailbox,
-    to: direction === 'inbound' ? mailbox : client,
+    from: direction === 'inbound' ? client : fromOwned,
+    to: direction === 'inbound' ? toOwned : client,
     subject,
     timestamp,
     body,
@@ -310,7 +323,7 @@ async function getThread(accessToken, providerThreadId, { mailboxEmail, clientEm
   if (!messages.length) throw new Error('gmail_thread_outside_client_scope');
   // Automatic booking replies must not join a group or unrelated thread.
   // Explicit operator-selected threads retain their existing behavior.
-  const allowedParticipants = new Set([safeEmail(mailboxEmail), safeEmail(clientEmail)]);
+  const allowedParticipants = new Set([...mailboxAddresses(mailboxEmail), safeEmail(clientEmail)]);
   const bilateral = thread.messages.every((message) => {
     const headers = headerMap(message?.payload?.headers);
     const participants = ['from', 'to', 'cc', 'bcc'].flatMap((name) => [...extractEmails(headers.get(name))]);
@@ -395,16 +408,17 @@ async function listRecentCorrespondents(accessToken, {
 
     let counterpart = null;
     let direction = null;
-    if (!fromEmails.has(mailbox)) {
+    const owned = mailboxAddresses(mailbox);
+    if (![...fromEmails].some((email) => owned.has(email))) {
       for (const email of fromEmails) { counterpart = email; break; }
       direction = 'inbound';
     } else {
       for (const email of toEmails) {
-        if (email !== mailbox) { counterpart = email; break; }
+        if (!owned.has(email)) { counterpart = email; break; }
       }
       direction = 'outbound';
     }
-    if (!counterpart || counterpart === mailbox) continue;
+    if (!counterpart || owned.has(counterpart)) continue;
 
     const timestamp = Number.isFinite(Number(message.internalDate))
       ? new Date(Number(message.internalDate)).toISOString()

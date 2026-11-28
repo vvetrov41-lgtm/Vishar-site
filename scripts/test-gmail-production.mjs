@@ -621,3 +621,126 @@ await test('backend/user RPC gateways are explicit allow-lists and expose no gen
 });
 
 console.log(`Gmail production tests passed: ${passes}`);
+
+await test('forwarded domain replies and sent copies belong only to the pinned Vladimir mailbox', () => {
+  const context = {mailboxEmail:'vvetrov41@gmail.com',clientEmail:'client@example.com'};
+  const incoming = gmailMessage({id:'msg_alias_in',from:'client@example.com',to:'info@vishartattoo.com',body:'Reply'});
+  const outgoing = gmailMessage({id:'msg_alias_out',from:'info@vishartattoo.com',to:'client@example.com',body:'Original'});
+  assert.equal(gmail.normalizeMessage(incoming,context)?.direction,'inbound');
+  assert.equal(gmail.normalizeMessage(incoming,context)?.to,'info@vishartattoo.com');
+  assert.equal(gmail.normalizeMessage(outgoing,context)?.direction,'outbound');
+  assert.equal(gmail.normalizeMessage(outgoing,context)?.from,'info@vishartattoo.com');
+  assert.equal(gmail.normalizeMessage(incoming,{...context,mailboxEmail:'tinaakaten@gmail.com'}),null);
+  assert.equal(gmail.normalizeMessage(outgoing,{...context,mailboxEmail:'tinaakaten@gmail.com'}),null);
+  assert.equal(gmail.normalizeMessage(incoming,{...context,clientEmail:'stranger@example.com'}),null);
+  assert.equal(gmail.normalizeMessage(outgoing,{...context,clientEmail:'info@vishartattoo.com'}),null);
+});
+
+const {getThread: gmailGetThreadForAlias}=await import('../workers/lib/google-gmail.js');
+await test('domain alias thread remains bilateral for the pinned owner only', async () => {
+  const fetchImpl = async () => Response.json({id:'thread_alias',messages:[
+    gmailMessage({id:'msg_alias_in',from:'client@example.com',to:'info@vishartattoo.com'}),
+    gmailMessage({id:'msg_alias_out',from:'info@vishartattoo.com',to:'client@example.com'}),
+  ]});
+  const options={mailboxEmail:'vvetrov41@gmail.com',clientEmail:'client@example.com',fetchImpl};
+  const thread=await gmailGetThreadForAlias('access','thread_alias',options);
+  assert.equal(thread._bilateral,true);
+  assert.equal(thread.messages.length,2);
+  await assert.rejects(gmailGetThreadForAlias('access','thread_alias',{...options,mailboxEmail:'tinaakaten@gmail.com'}),/gmail_thread_outside_client_scope/);
+});
+
+const {prepareResendRequest,sendResendCorrespondence}=await import('../workers/lib/resend-correspondence.mjs');
+const resendTestId='11111111-1111-4111-8111-111111111111';
+const resendTestEnv={VISHAR_ENVIRONMENT:'production',RESEND_CORRESPONDENCE_MODE:'test',LEAD_MAGNET_RESEND_API_KEY: 're_'+'synthetic_only_not_live'};
+const resendTestTarget={artist_id:'a1111111-1111-4111-8111-111111111111',integration_key:'google_gmail_vladimir',mailbox_email:'vvetrov41@gmail.com',client_email:'vvetrov41@gmail.com',email_message_id:resendTestId,delivery_allowed:true};
+const resendTestMessage={toEmail:'vvetrov41@gmail.com',emailMessageId:resendTestId,subject:'Test',body:'Test body',htmlBody:'<p>Test</p>',inReplyTo:'<prior@example.test>',references:'<first@example.test> <prior@example.test>'};
+const resendTestOptions={preparedAt:1000,now:2000};
+await test('Resend correspondence accepts only pinned artist, mailbox, test recipient and prepared attempt',()=>{
+  const request=prepareResendRequest(resendTestEnv,resendTestTarget,resendTestMessage,resendTestOptions);
+  assert.equal(request.key,'crm-email/'+resendTestId);
+  assert.deepEqual(request.payload,{from:'Vladimir Vishar <info@vishartattoo.com>',to:['vvetrov41@gmail.com'],subject:'Test',text:'Test body',html:'<p>Test</p>',reply_to:'info@vishartattoo.com',headers:{'X-Vishar-Email-ID':resendTestId,'In-Reply-To':'<prior@example.test>',References:'<first@example.test> <prior@example.test>'}});
+  for(const [env,target,message,opts] of [
+    [{...resendTestEnv,RESEND_CORRESPONDENCE_MODE:'live'},resendTestTarget,resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,artist_id:'a2222222-2222-4222-8222-222222222222'},resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,mailbox_email:'tinaakaten@gmail.com'},resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,delivery_allowed:false},resendTestMessage,resendTestOptions],
+    [resendTestEnv,{...resendTestTarget,client_email:'client@example.test'},{...resendTestMessage,toEmail:'client@example.test'},resendTestOptions],
+    [resendTestEnv,resendTestTarget,{...resendTestMessage,inReplyTo:'<prior@example.test>\r\nBcc: bad'},resendTestOptions],
+    [resendTestEnv,resendTestTarget,{...resendTestMessage,subject:'Test\nBcc: bad'},resendTestOptions],
+    [resendTestEnv,resendTestTarget,resendTestMessage,{preparedAt:1000,now:1000+23*3600000}],
+  ])assert.throws(()=>prepareResendRequest(env,target,message,opts));
+});
+await test('Resend receipt does not pretend to be a Gmail thread and uses one idempotent request',async()=>{
+  let calls=0;
+  const receipt=await sendResendCorrespondence(resendTestEnv,resendTestTarget,resendTestMessage,{...resendTestOptions,fetchImpl:async(url,init)=>{
+    calls++;assert.equal(url,'https://api.resend.com/emails');assert.equal(init.redirect,'manual');
+    assert.equal(init.headers['Idempotency-Key'],'crm-email/'+resendTestId);
+    return Response.json({id:resendTestId});
+  }});
+  assert.equal(calls,1);assert.deepEqual(receipt,{provider:'resend',providerMessageId:resendTestId,acceptance:'accepted'});
+});
+await test('Resend ambiguous results never trigger an automatic retry',async()=>{
+  for(const result of [()=>{throw Error('timeout')},()=>Response.json({}, {status:503}),()=>Response.json({}, {status:409}),()=>new Response(null,{status:307,headers:{Location:'https://example.invalid'}}),()=>Response.json({id:'invalid'})]){
+    let calls=0;await assert.rejects(sendResendCorrespondence(resendTestEnv,resendTestTarget,resendTestMessage,{...resendTestOptions,fetchImpl:async()=>{calls++;return result()}}),/resend_correspondence_uncertain/);
+    assert.equal(calls,1);
+  }
+});
+
+const {verifyResendEvent}=await import('../workers/lib/resend-correspondence-webhook.mjs');
+const webhookSecret='whsec_'+Buffer.alloc(32,17).toString('base64');
+const webhookNow=1795813200;
+const webhookEvent={type:'email.sent',created_at:'2026-11-27T21:00:00Z',data:{email_id:resendTestId,from:'Vladimir Vishar <info@vishartattoo.com>',to:['vvetrov41@gmail.com'],message_id:'<provider-rfc@example.test>',subject:'Do not retain'}};
+async function webhookHeaders(raw,ts=webhookNow,id='msg_synthetic_webhook'){
+  const key=await crypto.subtle.importKey('raw',Buffer.alloc(32,17),{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  const sig=Buffer.from(await crypto.subtle.sign('HMAC',key,new TextEncoder().encode(id+'.'+ts+'.'+raw))).toString('base64');
+  return new Headers({'svix-id':id,'svix-timestamp':String(ts),'svix-signature':'v1,'+sig});
+}
+await test('verified Resend event yields bounded receipt metadata, not body or subject',async()=>{
+ const raw=JSON.stringify(webhookEvent);
+ const result=await verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow});
+ assert.deepEqual(result,{eventId:'msg_synthetic_webhook',providerMessageId:resendTestId,type:'email.sent',from:'info@vishartattoo.com',to:['vvetrov41@gmail.com'],rfcMessageId:'<provider-rfc@example.test>',createdAt:'2026-11-27T21:00:00.000Z'});
+});
+await test('Resend webhook denies tampering, stale events and wrong signatures',async()=>{
+ const raw=JSON.stringify(webhookEvent);
+ const headers=await webhookHeaders(raw);
+ await assert.rejects(verifyResendEvent({rawBody:raw+' ',headers,secret:webhookSecret,nowSeconds:webhookNow}),/signature_invalid/);
+ await assert.rejects(verifyResendEvent({rawBody:raw,headers,secret:webhookSecret,nowSeconds:webhookNow+301}),/webhook_invalid/);
+ await assert.rejects(verifyResendEvent({rawBody:raw,headers,secret:'whsec_'+Buffer.alloc(32,99).toString('base64'),nowSeconds:webhookNow}),/signature_invalid/);
+});
+await test('Resend webhook ignores unrelated sender or event and rejects injected RFC IDs',async()=>{
+ for(const event of [{...webhookEvent,data:{...webhookEvent.data,from:'other@example.test'}},{...webhookEvent,type:'email.opened'}]){
+  const raw=JSON.stringify(event);
+  assert.equal(await verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow}),null);
+ }
+ const raw=JSON.stringify({...webhookEvent,data:{...webhookEvent.data,message_id:'<id@example.test>\r\nBcc: bad'}});
+ await assert.rejects(verifyResendEvent({rawBody:raw,headers:await webhookHeaders(raw),secret:webhookSecret,nowSeconds:webhookNow}),/webhook_invalid/);
+});
+
+await test('correspondence uses the existing guide sending secret and fails closed if absent',()=>{
+ const {LEAD_MAGNET_RESEND_API_KEY,...withoutKey}=resendTestEnv;
+ assert.throws(()=>prepareResendRequest(withoutKey,resendTestTarget,resendTestMessage,resendTestOptions),/resend_correspondence_disabled/);
+ assert.equal(prepareResendRequest({...withoutKey,LEAD_MAGNET_RESEND_API_KEY},resendTestTarget,resendTestMessage,resendTestOptions).key,'crm-email/'+resendTestId);
+});
+
+const {isOwnerResendTest,dispatchOwnerResendTest}=await import('../workers/lib/resend-correspondence-queue.mjs');
+const queueJob={outbox_id:'22222222-2222-4222-8222-222222222222',email_message_id:resendTestId,attempt_count:0,subject:'[Resend owner test] Smoke',body:'Test only',thread_context_id:null};
+await test('owner test queue is opt-in, rejects customer and other artist, requires fresh job',()=>{
+ assert.equal(isOwnerResendTest(resendTestEnv,queueJob,resendTestTarget),true);
+ assert.equal(isOwnerResendTest({...resendTestEnv,RESEND_CORRESPONDENCE_MODE:'off'},queueJob,resendTestTarget),false);
+ assert.equal(isOwnerResendTest(resendTestEnv,{...queueJob,attempt_count:1},resendTestTarget),false);
+ assert.equal(isOwnerResendTest(resendTestEnv,queueJob,{...resendTestTarget,client_email:'client@example.test'}),false);
+ assert.equal(isOwnerResendTest(resendTestEnv,queueJob,{...resendTestTarget,artist_id:'a2222222-2222-4222-8222-222222222222'}),false);
+});
+await test('queue reserves before provider call and records uncertainty without fallback',async()=>{
+ const events=[];
+ const db={backendRpc:async(name,args)=>{events.push([name,args]);if(name==='service_reserve_resend_correspondence')return {reserved:true,email_message_id:resendTestId,prepared_at:new Date(Date.now()-1000).toISOString()};return {state:args.p_state};}};
+ const result=await dispatchOwnerResendTest(queueJob,resendTestEnv,db,resendTestTarget,'test-worker',async()=>{events.push(['provider']);throw Error('timeout');});
+ assert.deepEqual(events.map(x=>x[0]),['service_reserve_resend_correspondence','provider','service_record_resend_correspondence']);
+ assert.equal(events[0][1].p_payload_sha256,events[2][1].p_payload_sha256);
+ assert.equal(events[2][1].p_state,'uncertain');assert.equal(result.outcome,'uncertain');
+});
+await test('denied or repeated reservation cannot trigger any network send',async()=>{
+ let calls=0;
+ await assert.rejects(dispatchOwnerResendTest(queueJob,resendTestEnv,{backendRpc:async()=>({reserved:false})},resendTestTarget,'test-worker',async()=>{calls++;}),/reservation_denied/);
+ assert.equal(calls,0);
+});

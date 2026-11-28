@@ -1,0 +1,109 @@
+name: Resend correspondence SQL draft validation
+on:
+  pull_request:
+    paths:
+      - 'specs/resend-crm-correspondence/**'
+      - '.github/workflows/resend-correspondence-sql-draft-validation.yml'
+permissions:
+  contents: read
+jobs:
+  local-sql:
+    if: github.head_ref == 'agent/resend-crm-correspondence-20261127'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify exact checkout
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --short)"
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359
+        with:
+          version: 2.110.0
+      - name: Verify committed migration matches validated ledger SQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f supabase/migrations/20261128075017_resend_correspondence_receipt_ledger.sql
+          diff -u <(tail -n +3 specs/resend-crm-correspondence/receipt-ledger.draft.sql) <(tail -n +3 supabase/migrations/20261128075017_resend_correspondence_receipt_ledger.sql)
+      - name: Generate queue migration candidate locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration new resend_correspondence_queue
+          candidate="$(git ls-files --others --exclude-standard supabase/migrations)"
+          test -n "$candidate"
+          test "$(printf '%s\n' "$candidate" | wc -l)" = 1
+          cp specs/resend-crm-correspondence/queue-routing.draft.sql "$candidate"
+          printf 'Generated queue candidate: %s\n' "$candidate"
+      - name: Start isolated local test stack
+        shell: bash
+        run: |
+          set -uo pipefail
+          for registry in docker.io ghcr.io public.ecr.aws; do
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY="$registry"
+            if supabase start -x studio,edge-runtime,imgproxy,logflare,vector,mailpit,supavisor; then
+              echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=$registry" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            supabase stop --no-backup || true
+          done
+          exit 1
+      - name: Apply candidate only to local database
+        run: supabase db reset --local --no-seed
+      - name: Verify ledger access and delivery state contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -X -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare r text; t text;
+          begin
+            foreach r in array array['anon','authenticated','service_role'] loop
+              foreach t in array array['resend_correspondence_attempts','resend_correspondence_events','resend_correspondence_delivery_state'] loop
+                if has_table_privilege(r,'crm_private.'||t,'SELECT') or has_table_privilege(r,'crm_private.'||t,'INSERT') or has_table_privilege(r,'crm_private.'||t,'UPDATE') or has_table_privilege(r,'crm_private.'||t,'DELETE') then
+                  raise exception 'unexpected direct access: % %',r,t;
+                end if;
+              end loop;
+            end loop;
+            if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='crm_private' and c.relname in ('resend_correspondence_attempts','resend_correspondence_events') and c.relrowsecurity) <> 2 then
+              raise exception 'RLS not enabled on both tables';
+            end if;
+          end $$;
+          SQL
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -X -A -t -v ON_ERROR_STOP=1 -f scripts/function-manifest.sql > "$RUNNER_TEMP/resend-function-manifest.tsv"
+          # Candidate-only: print exact changed manifest lines from isolated local DB.
+          # Main CRM validation still compares the unchanged canonical migration manifest.
+          node --input-type=module -e '
+            import {readFileSync} from "node:fs";
+            // The canonical manifest CLI executes main() when imported; parse here
+            // without importing it. The normal CRM workflow still runs the full CLI.
+            const parse=(file)=>{
+              const rows=new Map();
+              for(const line of readFileSync(file,"utf8").split("\n").filter(s=>s.trim())){
+                const match=/^((?:public|crm_private)\.[^\t]+\))\t([0-9a-f]{64})$/.exec(line);
+                if(!match||rows.has(match[1]))throw Error("invalid manifest line");
+                rows.set(match[1],match[2]);
+              }
+              if(!rows.size)throw Error("empty manifest");
+              return rows;
+            };
+            const before=parse("supabase/function-manifest.tsv");
+            const after=parse(process.argv[1]);
+            const diff={missing:[...before.keys()].filter(k=>!after.has(k)),changed:[...before.keys()].filter(k=>after.has(k)&&before.get(k)!==after.get(k)),unexpected:[...after.keys()].filter(k=>!before.has(k))};
+            const expected=["public.claim_email_outbox(","public.record_email_outbox_result(","public.service_reserve_resend_correspondence(","public.service_record_resend_correspondence("];
+            const actual=[...diff.changed,...diff.unexpected];
+            if(diff.missing.length||actual.length!==expected.length||!expected.every(p=>actual.some(k=>k.startsWith(p))))throw Error("unexpected manifest delta");
+            for(const k of actual.sort())console.log("RESEND_MANIFEST "+k+"\t"+after.get(k));
+          ' "$RUNNER_TEMP/resend-function-manifest.tsv"
+          supabase db lint --local --schema public,crm_private --level error --fail-on error
+      - name: Stop isolated stack
+        if: always()
+        run: supabase stop --no-backup

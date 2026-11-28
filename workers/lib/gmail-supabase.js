@@ -1,6 +1,8 @@
 import { createBackendResponseObserver, readSafeSupabaseError } from './supabase-diagnostics.js';
 
 const BACKEND_RPCS = new Set([
+  'service_reserve_resend_correspondence',
+  'service_record_resend_correspondence',
   'service_resolve_gmail_target',
   'service_resolve_gmail_client_target',
   'service_resolve_gmail_mailbox',
