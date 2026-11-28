@@ -23,3 +23,5 @@
 - [x] Generate and test actual ledger migration with pinned Supabase CLI in isolated CI run 46122997607; all four checks passed. Promote verified SQL to canonical migration, no worker dispatch enabled; new head CI pending.
 
 - [x] Wire owner-only test dispatch to reservation and receipt RPC contract; add queue mock tests. Draft SQL excludes reserved rows from legacy Gmail claims and rejects legacy acknowledgements. Live legacy function hashes matched base manifest before editing. Candidate migration and manifest must pass isolated CI before promotion. No production flags enabled; owner client record absent in live DB.
+
+- [x] Head 906fa9ad9db73421f537dbbfb396ce2a21919368 passed normal CRM/Gmail/static CI. Isolated candidate applied successfully and produced precisely four expected function hashes; the candidate-check script failed because importing the canonical manifest CLI also invokes its command-line main(). Replace with independent strict parser; retain canonical verification in normal CI. Candidate lint and behavioral SQL tests still required.

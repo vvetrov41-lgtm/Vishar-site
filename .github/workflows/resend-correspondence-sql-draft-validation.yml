@@ -83,10 +83,21 @@ jobs:
           # Main CRM validation still compares the unchanged canonical migration manifest.
           node --input-type=module -e '
             import {readFileSync} from "node:fs";
-            import {parseManifest,compareManifests} from "./scripts/check-function-manifest.mjs";
-            const before=parseManifest(readFileSync("supabase/function-manifest.tsv","utf8"),"before");
-            const after=parseManifest(readFileSync(process.argv[1],"utf8"),"after");
-            const diff=compareManifests(before,after);
+            // The canonical manifest CLI executes main() when imported; parse here
+            // without importing it. The normal CRM workflow still runs the full CLI.
+            const parse=(file)=>{
+              const rows=new Map();
+              for(const line of readFileSync(file,"utf8").split("\n").filter(s=>s.trim())){
+                const match=/^((?:public|crm_private)\.[^\t]+\))\t([0-9a-f]{64})$/.exec(line);
+                if(!match||rows.has(match[1]))throw Error("invalid manifest line");
+                rows.set(match[1],match[2]);
+              }
+              if(!rows.size)throw Error("empty manifest");
+              return rows;
+            };
+            const before=parse("supabase/function-manifest.tsv");
+            const after=parse(process.argv[1]);
+            const diff={missing:[...before.keys()].filter(k=>!after.has(k)),changed:[...before.keys()].filter(k=>after.has(k)&&before.get(k)!==after.get(k)),unexpected:[...after.keys()].filter(k=>!before.has(k))};
             const expected=["public.claim_email_outbox(","public.record_email_outbox_result(","public.service_reserve_resend_correspondence(","public.service_record_resend_correspondence("];
             const actual=[...diff.changed,...diff.unexpected];
             if(diff.missing.length||actual.length!==expected.length||!expected.every(p=>actual.some(k=>k.startsWith(p))))throw Error("unexpected manifest delta");
