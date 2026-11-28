@@ -796,3 +796,18 @@ assert.throws(()=>verifyTodayLineage(lmBoth));
 assert.equal(verifyTodayLineage(lmSecond), '20261127200100');
 assert.equal(deferredTodayMigration(lmSecond), null);
 for (const bad of [lmBoth+'\n 20261127200200 | | t',lmBoth.replace('20261127200100 | |','20261127200101 | |'),lmSecond.replace('20261127200000 | 20261127200000','20261127200000 | ')+'\n 20261127200200 | | t']) assert.throws(()=>deferredTodayMigration(bad));
+
+// Only the reviewed first-outbound echo migration may follow live reporting.
+const firstWhatsAppEchoTransition = [
+  ' Local | Remote | Time',
+  ' 20261127200100 | 20261127200100 | t',
+  ' 20261128081500 | | t',
+].join('\n');
+assert.equal(verifyTodayLineage(firstWhatsAppEchoTransition), '20261128081500');
+assert.equal(deferredTodayMigration(firstWhatsAppEchoTransition), null);
+for (const invalid of [
+  firstWhatsAppEchoTransition.replace('20261128081500 | |', '20261128081501 | |'),
+  firstWhatsAppEchoTransition + '\n 20261128081600 | | t',
+  firstWhatsAppEchoTransition.replace('20261127200100 | 20261127200100', '20261127200100 | '),
+  firstWhatsAppEchoTransition + '\n | 20261128090000 | t',
+]) assert.throws(() => verifyTodayLineage(invalid));
