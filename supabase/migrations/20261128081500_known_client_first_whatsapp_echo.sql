@@ -80,49 +80,7 @@ begin
     -- existing enquiry. Never create a conversation for a personal/unknown
     -- number, an ambiguous match, an out-of-scope client, or Instagram.
     if v_channel <> 'whatsapp'::public.communication_channel
-       or coalesce(p_external_contact_id, '') !~ '^[1-9][0-9]{6,14}
-
-  insert into public.communication_messages (
-    conversation_id, artist_id, channel, direction, origin, status,
-    message_type, body, attachments, provider_message_id, provider_timestamp,
-    sent_at
-  ) values (
-    v_conversation_id,
-    p_artist_id,
-    v_channel,
-    'outbound'::public.communication_direction,
-    'provider_app'::public.communication_origin,
-    'sent'::public.communication_status,
-    p_message_type,
-    v_body,
-    v_attachments,
-    p_provider_message_id,
-    p_provider_timestamp,
-    p_provider_timestamp
-  )
-  on conflict (artist_id, channel, provider_message_id) do nothing
-  returning id into v_message_id;
-
-  if v_message_id is null then
-    return jsonb_build_object('changed', false, 'message_id', null);
-  end if;
-
-  update public.communication_conversations c
-  set last_message_at = greatest(
-        coalesce(c.last_message_at, '-infinity'::timestamptz),
-        p_provider_timestamp
-      ),
-      last_outbound_at = greatest(
-        coalesce(c.last_outbound_at, '-infinity'::timestamptz),
-        p_provider_timestamp
-      ),
-      updated_at = now()
-  where c.id = v_conversation_id;
-
-  return jsonb_build_object('changed', true, 'message_id', v_message_id);
-end;
-$function$
- then
+       or coalesce(p_external_contact_id, '') !~ '^[1-9][0-9]{6,14}$' then
       return jsonb_build_object('changed', false, 'message_id', null);
     end if;
     v_client_id := crm_private.unique_whatsapp_client_match(p_artist_id, p_external_contact_id);
