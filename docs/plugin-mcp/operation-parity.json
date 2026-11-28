@@ -3279,7 +3279,16 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
-        "properties": {}
+        "properties": {
+          "view": {
+            "type": "string",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "description": "Use summary for broad triage; full (default) includes message previews and UI navigation fields."
+          }
+        }
       },
       "outputShape": null,
       "outputNote": "Legacy Action JSON; exact output schema is not declared in this OpenAPI operation.",
