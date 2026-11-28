@@ -181,6 +181,8 @@ export function verifyTodayLineage(source) {
     // Lead magnet: inert foundation first, reporting and attribution second.
     ['20261126233317', '20261127200000'],
     ['20261127200000', '20261127200100'],
+    // First outbound WhatsApp echo for a unique, existing artist-scoped client.
+    ['20261127200100', '20261128081500'],
   ]);
   const expectedPending = approvedTransitions.get(remote.at(-1));
   if (!expectedPending) throw new Error('Production migration head changed');
