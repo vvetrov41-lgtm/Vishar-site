@@ -1,0 +1,81 @@
+name: Resend correspondence SQL draft validation
+on:
+  pull_request:
+    paths:
+      - 'specs/resend-crm-correspondence/**'
+      - '.github/workflows/resend-correspondence-sql-draft-validation.yml'
+permissions:
+  contents: read
+jobs:
+  local-sql:
+    if: github.head_ref == 'agent/resend-crm-correspondence-20261127'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify exact checkout
+        env:
+          EXPECTED: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED"
+          test -z "$(git status --short)"
+      - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359
+        with:
+          version: 2.110.0
+      - name: Generate local migration candidate and verify order
+        shell: bash
+        run: |
+          set -euo pipefail
+          supabase migration new resend_correspondence_receipt_ledger
+          candidate="$(git ls-files --others --exclude-standard supabase/migrations)"
+          test -n "$candidate"
+          test "$(printf '%s\n' "$candidate" | wc -l)" = 1
+          cp specs/resend-crm-correspondence/receipt-ledger.draft.sql "$candidate"
+          printf 'Generated candidate: %s\n' "$candidate"
+          cp "$candidate" "$RUNNER_TEMP/$(basename "$candidate")"
+      - name: Start isolated local test stack
+        shell: bash
+        run: |
+          set -uo pipefail
+          for registry in docker.io ghcr.io public.ecr.aws; do
+            export SUPABASE_INTERNAL_IMAGE_REGISTRY="$registry"
+            if supabase start -x studio,edge-runtime,imgproxy,logflare,vector,mailpit,supavisor; then
+              echo "SUPABASE_INTERNAL_IMAGE_REGISTRY=$registry" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            supabase stop --no-backup || true
+          done
+          exit 1
+      - name: Apply candidate only to local database
+        run: supabase db reset --local --no-seed
+      - name: Verify ledger access and delivery state contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -X -v ON_ERROR_STOP=1 <<'SQL'
+          do $$
+          declare r text; t text;
+          begin
+            foreach r in array array['anon','authenticated','service_role'] loop
+              foreach t in array array['resend_correspondence_attempts','resend_correspondence_events','resend_correspondence_delivery_state'] loop
+                if has_table_privilege(r,'crm_private.'||t,'SELECT') or has_table_privilege(r,'crm_private.'||t,'INSERT') or has_table_privilege(r,'crm_private.'||t,'UPDATE') or has_table_privilege(r,'crm_private.'||t,'DELETE') then
+                  raise exception 'unexpected direct access: % %',r,t;
+                end if;
+              end loop;
+            end loop;
+            if (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='crm_private' and c.relname in ('resend_correspondence_attempts','resend_correspondence_events') and c.relrowsecurity) <> 2 then
+              raise exception 'RLS not enabled on both tables';
+            end if;
+          end $$;
+          SQL
+          PGPASSWORD=postgres psql -h 127.0.0.1 -p 54322 -U postgres -d postgres -X -A -t -v ON_ERROR_STOP=1 -f scripts/function-manifest.sql > "$RUNNER_TEMP/resend-function-manifest.tsv"
+          node scripts/check-function-manifest.mjs --compare "$RUNNER_TEMP/resend-function-manifest.tsv"
+          supabase db lint --local --schema public,crm_private --level error --fail-on error
+      - name: Stop isolated stack
+        if: always()
+        run: supabase stop --no-backup
