@@ -1,3 +1,4 @@
+import { isGuidePilotRecipient } from './pilot.mjs';
 // Isolated adapter: does not send unless explicitly enabled and wired to reviewed
 // server-only database and artist-bound mail dependencies. Never expose to browsers.
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -37,6 +38,7 @@ export async function drainLeadMagnetJobs(env,{db,resolveSender,send,sequence,wo
     if(sender?.artistId!==first.artist_id||typeof sender.mailboxEmail!=='string'||!MAIL.test(sender.mailboxEmail)||!sender.accessToken)throw Error('sender_binding');
     const live=await db.authorize(id,workerId,token);
     if(!live||!check(live,id)||fingerprint(first)!==fingerprint(live))outcome='cancelled';
+    else if(env.VISHAR_ENVIRONMENT==='production' && (live.step!==0 || !await isGuidePilotRecipient(live.email)))outcome='cancelled';
     else{
      const message=buildLeadMagnetMessage(live,sequence);
      outcome='uncertain'; // After this boundary a provider may have accepted the send.

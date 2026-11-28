@@ -51,7 +51,8 @@ enabled = true
 invocation_logs = false
 
 [vars]
-LEAD_MAGNET_SHARED_DRAIN_ENABLED = "false"
+# Owner-only requested-guide pilot; sender rechecks recipient and step.
+LEAD_MAGNET_SHARED_DRAIN_ENABLED = "true"
 VISHAR_ENVIRONMENT = "production"
 SUPABASE_URL = "https://vfjexhfdbrjmuxfdvbdx.supabase.co"
 CRM_ORIGIN = "https://crm.vishartattoo.com"
