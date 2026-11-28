@@ -121,6 +121,41 @@ export function renderCoverUpPairs() {
         </div>
       </div>
     </figure>`);
+    if (index === 4) cards.push(`    <section id="cover-up-pricing" class="md:col-span-2 py-6">
+        <div class="max-w-[900px] mx-auto rounded-3xl border border-white/10 bg-white/5 p-8 md:p-10 text-center">
+            <h2 class="text-2xl md:text-4xl font-semibold mb-4 tracking-tight">How much does a cover-up tattoo cost?</h2>
+            <p class="text-xl text-white mb-4">£140/hr · £980 for 7 hours</p>
+            <p class="text-white/60 leading-relaxed max-w-2xl mx-auto">Cover-ups usually take a similar amount of time to colour realism, even in black and grey. The price depends on the old tattoo and your new design. You pay for tattooing time used; any touch-up after healing is charged separately and is not included in the estimate.</p>
+            <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-4">
+                <a href="/tattoo-price-calculator/" class="px-6 py-3 border border-white/20 rounded-full font-medium hover:bg-white/10 transition-colors">Estimate your budget</a>
+                <a href="/booking/" class="px-6 py-3 bg-white text-black rounded-full font-medium hover:bg-white/90 transition-colors">Get a free photo assessment</a>
+            </div>
+        </div>
+    </section>`);
+    if (index === 8) cards.push(`    <section id="cover-up-options" class="md:col-span-2 py-6 px-0">
+        <div class="max-w-[900px] mx-auto">
+            <div class="rounded-3xl border border-white/10 bg-white/5 p-8 md:p-10">
+                <h2 class="text-2xl font-semibold mb-6">Key things to know about cover-ups</h2>
+                <div class="space-y-6 text-white/50 leading-relaxed">
+                    <p><span class="text-white font-medium">Darker covers darker.</span> Dark ink generally needs darker areas in the new design, often with more space around the original tattoo. Lighter, faded tattoos give more design freedom.</p>
+                    <p><span class="text-white font-medium">Size matters.</span> The cover-up usually needs to be larger than the original. How much larger depends on the old tattoo. I'll explain the required dimensions clearly.</p>
+                    <p><span class="text-white font-medium">Laser is optional.</span> Many tattoos can be covered directly. In some cases, even one or two laser lightening sessions may significantly expand the design options. The studio does not offer laser treatment or advice on laser treatment.</p>
+                    <p><span class="text-white font-medium">Both styles work.</span> Cover-ups can be done in <a href="/colour-realism-tattoo-london/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">colour realism</a> or <a href="/black-and-grey-realism-london/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">black and grey</a>. The choice depends on the old tattoo and your preference.</p>
+                </div>
+            </div>
+        </div>
+    </section>`);
+    if (index === 12) cards.push(`    <section id="how-it-works" class="md:col-span-2 py-12 px-4 sm:px-6 bg-apple-darkGray/30 rounded-3xl">
+        <div class="max-w-[900px] mx-auto">
+            <div class="text-center mb-16"><h2 class="text-3xl md:text-4xl font-semibold tracking-tight">Cover-up Process</h2><p class="text-white/40 mt-2">Step by step</p></div>
+            <div class="space-y-8">
+                <div class="flex gap-6 items-start"><div class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center font-bold shrink-0">1</div><div><h3 class="text-lg font-semibold mb-1">Photo Assessment</h3><p class="text-white/50 leading-relaxed">Send a clear close-up of the old tattoo and a wider shot showing the whole area, in good natural light. I'll assess the colour, density, and scarring to determine what's possible.</p></div></div>
+                <div class="flex gap-6 items-start"><div class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center font-bold shrink-0">2</div><div><h3 class="text-lg font-semibold mb-1">Honest Feedback</h3><p class="text-white/50 leading-relaxed">I'll explain which designs are realistic for your existing tattoo and which may not work. If the old ink limits your options, you'll know before booking.</p></div></div>
+                <div class="flex gap-6 items-start"><div class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center font-bold shrink-0">3</div><div><h3 class="text-lg font-semibold mb-1">Custom Design</h3><p class="text-white/50 leading-relaxed">The new design is built around the old tattoo's specific characteristics — using its shapes and shadows as a starting point, not working against them. You'll see the design on session day.</p></div></div>
+                <div class="flex gap-6 items-start"><div class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center font-bold shrink-0">4</div><div><h3 class="text-lg font-semibold mb-1">Tattoo &amp; Aftercare</h3><p class="text-white/50 leading-relaxed">Cover-ups usually take a similar amount of time to colour realism, even in black and grey. A touch-up may be needed after full healing and is charged separately. Full <a href="/aftercare/" class="text-white underline underline-offset-4 decoration-white/20 hover:decoration-white/60 transition-colors">aftercare guide</a> provided. I follow up during healing.</p></div></div>
+            </div>
+        </div>
+    </section>`);
   }
   return cards.join('\n');
 }
