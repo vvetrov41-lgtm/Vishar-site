@@ -19,3 +19,5 @@
 
 - [x] Inspect live email/outbox constraints read-only and draft isolated private receipt/event ledger SQL under specs (not an executable migration; no production schema changes). Atomic reservation, legacy claim/ack guards and migration validation remain open.
 - [x] Exact-head c156a80d286dc76a8ade33a6c4528e11a91af4d0 passed all three CI workflows. Inbound Gmail self-send test observed SENT only; forwarding still unverified by independent sender.
+
+- [x] Generate and test actual ledger migration with pinned Supabase CLI in isolated CI run 46122997607; all four checks passed. Promote verified SQL to canonical migration, no worker dispatch enabled; new head CI pending.

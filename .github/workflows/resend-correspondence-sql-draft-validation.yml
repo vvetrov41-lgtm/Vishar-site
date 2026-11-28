@@ -27,17 +27,12 @@ jobs:
       - uses: supabase/setup-cli@45a513f8c64c0bc8e0e3dfe572b5c95be85f6359
         with:
           version: 2.110.0
-      - name: Generate local migration candidate and verify order
+      - name: Verify committed migration matches validated ledger SQL
         shell: bash
         run: |
           set -euo pipefail
-          supabase migration new resend_correspondence_receipt_ledger
-          candidate="$(git ls-files --others --exclude-standard supabase/migrations)"
-          test -n "$candidate"
-          test "$(printf '%s\n' "$candidate" | wc -l)" = 1
-          cp specs/resend-crm-correspondence/receipt-ledger.draft.sql "$candidate"
-          printf 'Generated candidate: %s\n' "$candidate"
-          cp "$candidate" "$RUNNER_TEMP/$(basename "$candidate")"
+          test -f supabase/migrations/20261128075017_resend_correspondence_receipt_ledger.sql
+          diff -u <(tail -n +3 specs/resend-crm-correspondence/receipt-ledger.draft.sql) <(tail -n +3 supabase/migrations/20261128075017_resend_correspondence_receipt_ledger.sql)
       - name: Start isolated local test stack
         shell: bash
         run: |
